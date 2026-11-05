@@ -4,7 +4,7 @@
 # downloaded at 4-24 MB/s elsewhere. QUIC through Docker's UDP port mapping is a known slow path.
 #   bash h3-off.sh           back up the Caddyfile, add "servers { protocols h1 h2 }", validate, reload, self-check;
 #                            anything wrong puts the old file back
-#   bash h3-off.sh --undo    put back the newest backup this script made (HTTP/3 on again)
+#   bash h3-off.sh --undo    take out the lines it added (HTTP/3 on again): validate, reload, self-check
 set -euo pipefail
 CF="${WU_CADDYFILE:-/opt/openvanilla-classicplus/Caddyfile}"
 CADDY_DIR="${WU_CADDY_DIR:-/opt/wenilla-realm}"
@@ -22,10 +22,39 @@ selfcheck() {
 [ -f "$CF" ] || { echo "No Caddyfile at $CF. Nothing changed."; exit 1; }
 
 if [ "${1:-}" = "--undo" ]; then
-  last=$(ls -1d "$BKROOT"/*-h3off 2>/dev/null | tail -1 || true)
-  [ -n "$last" ] || { echo "No h3-off backup to put back."; exit 1; }
-  cat "$last/Caddyfile" > "$CF"; reload
-  echo "Put back $last/Caddyfile (HTTP/3 on again)."; echo "H3 UNDO OK"; exit 0
+  # review 4 Nov: take out only the lines this script added. Putting the whole old file back would also undo every
+  # Caddyfile change made since (the sign-in redirects, the streaming block...).
+  grep -q "tools/security/h3-off.sh" "$CF" || { echo "The Caddyfile has no h3-off lines: HTTP/3 is already on. Nothing changed."; echo "H3 UNDO OK"; exit 0; }
+  BK="$BKROOT/$(date +%Y%m%d-%H%M%S)-h3undo"; mkdir -p "$BK"; cp -p "$CF" "$BK/Caddyfile"
+  TMP=$(mktemp); trap 'rm -f "$TMP"' EXIT
+  python3 -I - "$CF" "$TMP" <<'PY' || { echo "The h3-off lines were changed by hand; nothing changed (put them back yourself, or restore a backup in $BKROOT)."; exit 1; }
+import sys
+lines = open(sys.argv[1], encoding="utf-8").read().split("\n")
+i = next(n for n, l in enumerate(lines) if "tools/security/h3-off.sh" in l)
+want = ["servers {", "protocols h1 h2", "}"]
+if [l.strip() for l in lines[i + 1:i + 4]] != want:
+    sys.exit(1)
+del lines[i:i + 4]
+# the global block this script made ("{" then "}" with nothing left between): gone too
+j = i - 1
+if 0 <= j and lines[j].strip() == "{" and i < len(lines) and lines[i].strip() == "}":
+    del lines[j:i + 1]
+    if j < len(lines) and not lines[j].strip():
+        del lines[j]
+open(sys.argv[2], "w", encoding="utf-8").write("\n".join(lines))
+PY
+  diff -u "$CF" "$TMP" || true
+  cat "$TMP" > "$CF"
+  if ! caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || ! reload; then
+    cat "$BK/Caddyfile" > "$CF"; reload || true
+    echo "Caddy refused it; the Caddyfile is as it was ($BK/Caddyfile)."; exit 1
+  fi
+  sleep "${WU_H3_WAIT:-3}"
+  if ! selfcheck; then
+    cat "$BK/Caddyfile" > "$CF"; reload || true
+    echo "The site did not answer after the change; the Caddyfile is as it was."; exit 1
+  fi
+  echo "HTTP/3 is on again. Backup: $BK/Caddyfile."; echo "H3 UNDO OK"; exit 0
 fi
 
 if grep -qE '^\s*protocols\b' "$CF"; then
@@ -57,7 +86,7 @@ if ! caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
   cat "$BK/Caddyfile" > "$CF"; reload || true
   echo "Caddy refused it; the old Caddyfile is back ($BK/Caddyfile)."; exit 1
 fi
-sleep 3
+sleep "${WU_H3_WAIT:-3}"
 if ! selfcheck; then
   cat "$BK/Caddyfile" > "$CF"; reload || true
   echo "The site did not answer after the change; the old Caddyfile is back."; exit 1

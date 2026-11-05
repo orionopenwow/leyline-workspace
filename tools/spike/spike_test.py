@@ -150,7 +150,26 @@ def main():
     out.append(run("D. Caddy over TLS (new connection each)", W, S, d_one))
 
     print("SPIKE RESULT " + json.dumps([o for o in out if o], separators=(",", ":")))
+    # review 4 Nov: say plainly which part struggled (the step still ends OK: it is a measurement, not a gate)
+    for w in verdicts(out):
+        print("SPIKE WARN " + w)
     print("SPIKE TEST OK")
+
+
+def verdicts(out, max_error_share=0.05, slow_p95_ms=2000):
+    """Plain warnings for the parts that failed answers or were slow: [] when all is well."""
+    warn = []
+    for o in out:
+        if not o:
+            continue
+        total = sum(o["codes"].values()) or 1
+        if o["errors"] / total > max_error_share:
+            warn.append(f"{o['name']}: {round(100 * o['errors'] / total)}% failed answers")
+        if o["p95_ms"] > slow_p95_ms:
+            warn.append(f"{o['name']}: slow (p95 {o['p95_ms']} ms)")
+        if any(str(c) in ("429", "503") for c in o["codes"]):
+            warn.append(f"{o['name']}: busy answers (429/503) under this load")
+    return warn
 
 
 if __name__ == "__main__":

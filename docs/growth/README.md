@@ -12,6 +12,7 @@ no version numbers in sentences.
 | File | What |
 |---|---|
 | [reddit-guides.md](reddit-guides.md) | The Reddit guide series: 12 episodes, each with a title, 5 steps, a "Stuck?" section and the GIF it uses |
+| [reddit-lessons.md](reddit-lessons.md) | Reddit lessons: 10 short posts that each teach one thing (hosting, 24/7 at home, invites, nodes, modding, the Den, agents, scaling, the browser, boss fights), with the sub to try, a call to action and what to check before posting |
 | [weekly-posts.md](weekly-posts.md) | Weekly post templates: patch notes, feature reel, guide, Den or host spotlight, state of Leyline; the week's rhythm |
 | [discord-onboarding.md](discord-onboarding.md) | Discord onboarding, roles and channels, on top of the launch layout in [../DISCORD-PLAN.md](../DISCORD-PLAN.md) |
 | [host-recruiting.md](host-recruiting.md) | The host recruiting page: copy for a "Host with us" page on the site and a pinned post |

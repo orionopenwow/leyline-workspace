@@ -627,7 +627,9 @@ if root then
     check("loot: greed -> pass", both("AC_PLAYERBOTS_LOOT_GREED_ROLL_LEVEL=0"))
     check("loot: no disenchant, no recipe rolls", both("AC_PLAYERBOTS_LOOT_ROLL_DISENCHANT=0") and both("AC_PLAYERBOTS_LOOT_ROLL_RECIPE=0"))
     check("loot: no looting under free-for-all", both("AC_PLAYERBOTS_FREE_METHOD_LOOT=0"))
-    check("caps: module 9, realm 60, group 10, raid 9, 25 off", both("AC_PLAYERBOTS_MAX_ADDED_BOTS=9") and both("OV_COMPANIONS_REALM_MAX=60")
+    -- owner 2026-10-31 "remove all live bots for now": the module cap is 0 while OV_COMPANIONS=0 (it was 9, you + 9)
+    check("caps: module 0 while bots are off (9 with them on)", both(prof:find("\nOV_COMPANIONS=0\n", 1, true) and "AC_PLAYERBOTS_MAX_ADDED_BOTS=0" or "AC_PLAYERBOTS_MAX_ADDED_BOTS=9"))
+    check("caps: realm 60, group 10, raid 9, 25 off", both("OV_COMPANIONS_REALM_MAX=60")
         and both("OV_COMPANIONS_GROUP_MAX=10") and both("OV_COMPANIONS_PER_PLAYER_RAID=9") and both("OV_COMPANIONS_RAID25=0"))
 else
     realPrint("SKIP profile checks (run with the repo path to ov_companions.lua)")

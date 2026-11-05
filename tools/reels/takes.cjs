@@ -83,6 +83,11 @@ const EXTRA = (o) => {
       case 'host_profiles': if (o.single) return [['main', 'solo'].map((id) => ({ id, label: id, version: '3.3.5a', core: 'azerothcore', in_kit: true,
         clients: [{ id: 'c335a-1', name: 'Northrend', path: 'C:\\Games\\Northrend' }], note: null })), null]; return base(cmd, a);
       case 'host_info': if (o.single) { const r = await base(cmd, a); r.realm = null; return r; } return base(cmd, a);
+      // the Host page's flow (hostflow.js: who it is for, a template, the settings, Host)
+      case 'host_flow_apply': window.__applied = a; return { profile: 'main', visibility: a.visibility, mode_name: 'x', lines: [] };
+      case 'host_flow_current': return null;
+      case 'host_plan_ask': case 'host_plan_take': return null;
+      case 'host_stop': return 'Stopped.';
       default: return base(cmd, a);
     }
   };
@@ -307,34 +312,37 @@ const SCENES = {
     rec.mark('play');
     await L.wait(page, 2000);
   } },
-  // Host a realm from a template to listed (the same steps as tools/video/record.cjs 'host')
-  host: { run: async (page, rec) => {
+  // Host a realm (hostflow.js): Public, a template, a name, Host; the running realm's card; listed under Community
+  host: { run: async (page, rec, size) => {
     await L.wait(page, 500);
     await L.click(page, nav('host'), { ms: 800 });
+    await page.waitForSelector('#hst .hst-vis');
     rec.mark('host');
-    await page.waitForSelector('#hx .hx-card');
-    await L.wait(page, 900);
-    await L.hover(page, '[data-mode="levelling"] .hx-name', 700);
-    await L.wait(page, 400);
-    await L.click(page, '[data-mode="levelling"] .hx-host', { ms: 600 });
+    await L.wait(page, 1000);
+    await L.click(page, '.hst-vis-b[data-vis="public"]', { ms: 800 });
+    await L.wait(page, 500);
+    await L.moveTo(page, size.width * 0.6, size.height * 0.6, 500);
+    await scrollTo(page, '.hst-tpl[data-tpl="vanilla-plus"]', 900, size.height * 0.3);
+    await L.click(page, '.hst-tpl[data-tpl="vanilla-plus"]', { ms: 700 });
     rec.mark('form');
-    await page.waitForSelector('#hx-name');
-    await L.wait(page, 700);
-    await L.click(page, '#hx-name', { ms: 700, after: 150 });
+    await page.waitForSelector('.hst-s3 .hst-group');
+    await L.wait(page, 900);
+    await L.moveTo(page, size.width * 0.6, size.height * 0.6, 500);
+    await scrollTo(page, '#hst-name', 1600, size.height * 0.35);
+    await L.click(page, '#hst-name', { ms: 700, after: 150 });
     await page.keyboard.press('Control+A');
     await L.typeSlow(page, 'Ember Vale', 75);
-    await L.wait(page, 300);
-    await L.click(page, '#hx-gm', { ms: 600, after: 150 });
+    await L.click(page, '#hst-gm', { ms: 600, after: 150 });
+    await page.keyboard.press('Control+A');
     await L.typeSlow(page, 'KESTREL', 60);
-    await L.wait(page, 250);
-    if (await page.$('#hx-vis .hc-seg-b[data-value="public"]')) await L.click(page, '#hx-vis .hc-seg-b[data-value="public"]', { ms: 600 });
     rec.mark('typed');
-    await L.click(page, '#hx-go', { ms: 700 });
+    await L.wait(page, 400);
+    await L.click(page, '#hst-go', { ms: 700 });
     rec.mark('start');
-    await page.waitForSelector('.hx-live-box', { timeout: 20000 });
+    await page.waitForSelector('.hst-live', { timeout: 30000 });
     rec.mark('live');
     await L.wait(page, 500);
-    await L.hover(page, '.hx-live-box .hc-live-t', 700).catch(() => {});
+    await L.hover(page, '.hst-live-st', 700).catch(() => {});
     await L.wait(page, 1500);
     await L.click(page, nav('realms'), { ms: 800 });
     rec.mark('realms');
@@ -435,11 +443,11 @@ function plan() {
       ok = false; failed++; console.error(p.dir, 'FAILED', String(e).split('\n')[0]);
       await page.screenshot({ path: path.join(OUT, '_failed-' + p.dir + '.png') }).catch(() => {});   // what was on screen
     }
-    const n = await rec.stop();
+    const n = await rec.stop().catch(() => { ok = false; return 0; });
     const unknown = sc.site ? [] : await page.evaluate(() => [...new Set(window.__unknown || [])]);
     console.log(p.dir, ok ? 'OK' : 'FAILED', n, 'frames', unknown.length ? '(core asked for: ' + unknown.join(' ') + ')' : '');
     if (!ok) fs.rmSync(dir, { recursive: true, force: true });   // never a half take in a reel
-    await ctx.close();
+    await ctx.close().catch(() => {});
   }
   for (const b of Object.values(browsers)) await b.close();
   process.exit(failed ? 1 : 0);

@@ -55,7 +55,7 @@ local CARDS = {
     { "Build mode", "F7 switches between Build mode (the tools, a thin gold edge) and Play mode. Click a prop in the gallery, then Enter or double-click to place it." },
     { "Shape ground", "Opens the world editor on your Den's ground: raise hills, dig, paint the ground. Your game shows it after a restart." },
     { "Play mode and invite", "Play mode (F7) hides every tool so you just walk your Den: Dojo, Class, Invite and Files stay in the corner." },
-    { "Keys", "F7 build / play · click a tile, Enter places · arrows move, PgUp / PgDn lift, Q / E turn, + / - size · Tab next · Del deletes · Esc lets go · Ctrl+Z / Ctrl+Y undo, redo." },
+    { "Keys", "F7 build / play · click a prop to pick it up, click to put it down · Q / E or the wheel turn what you hold · WASD walk; wheel out past the end for the far view (WASD flies) · arrows move, PgUp / PgDn lift, + / - size · Tab next · Del deletes · Esc lets go · Ctrl+Z / Ctrl+Y undo, redo." },
 }
 D.CARDS = CARDS
 

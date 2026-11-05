@@ -21,6 +21,7 @@ pub mod dens;
 pub mod denfiles; // My models: the player's own model files checked and renamed under our folder (host/denfiles.rs)
 pub mod denways; // Invite a friend: same network, your own address, the relay (host/denways.rs)
 pub mod denhost; // Hosting friends with no Docker: who's in, kick, build rights, the invite code, sharing kept (host/denhost.rs)
+pub mod creaturemodels; // Your Den's gliding copy: creature rows wearing the props' models in patch-T (host/creaturemodels.rs)
 pub mod denmodels; // My models: kept, listed for Den Lite, put in the Den's patch (host/denmodels.rs)
 pub mod engine; // Single player's Built-in engine: the realm natively on Windows, no Docker (docs/BUILTIN-ENGINE.md)
 pub mod lite; // Den Lite: the built-in Den server, no Docker (an interface; the program is labs/den-lite)

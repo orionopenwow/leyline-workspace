@@ -198,6 +198,9 @@ pub struct GroundStatus {
     /// What a ground from before got this time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub whitened: Option<String>,
+    /// The gliding copy's creature rows (host/creaturemodels.rs): "<n> prop models can glide" or "no glide (why)".
+    #[serde(default)]
+    pub creatures: String,
 }
 
 pub const STATUS: &str = "yourden.ground-status.json";
@@ -346,6 +349,26 @@ fn write_den_patch(client: &Path, den_root: &Path, d: &Delta, tile: Vec<u8>, whi
         let stock = mpq::read_own(&archive_order(client), crate::host::denmodels::TABLE).ok().flatten();
         files.extend(crate::host::denmodels::patch_files(&dens_dir, stock.as_deref()));
     }
+    // the gliding copy (host/creaturemodels.rs; owner 5 Nov: props "dynamically move instead of disappearing,
+    // reappearing"): the player's own creature tables with a row per prop model, from the model table the patch has
+    // (with the Den's own rows) or the game's own. Never stops the Den: without them the copy is a gameobject as before.
+    let order = archive_order(client);
+    let godi = files.iter().find(|f| f.0 == crate::host::denmodels::TABLE).map(|f| f.1.clone()).or_else(|| mpq::read_own(&order, crate::host::denmodels::TABLE).ok().flatten());
+    let creatures = match godi.as_deref().map(|g| crate::host::creaturemodels::patch_files(&order, g)) {
+        Some(Ok((tables, displays))) => {
+            files.extend(tables);
+            st.creatures = format!("{} prop models can glide", displays.len());
+            Some(displays)
+        }
+        Some(Err(e)) => {
+            st.creatures = format!("no glide ({e})");
+            None
+        }
+        None => {
+            st.creatures = "no glide (your game has no GameObjectDisplayInfo)".into();
+            None
+        }
+    };
     // what an archive read after ours would hide
     for p in after_slot(client) {
         let Ok(mut a) = mpq::GameArchive::open(&p) else { continue };
@@ -356,6 +379,12 @@ fn write_den_patch(client: &Path, den_root: &Path, d: &Delta, tile: Vec<u8>, whi
         }
     }
     write_patch(client, &files)?;
+    // Den Lite glides only what the game really has rows for: not when an archive read after ours hides our tables
+    let hidden = st.hidden_by.iter().any(|h| h.contains(crate::host::creaturemodels::DISPLAY_TABLE) || h.contains(crate::host::creaturemodels::MODEL_TABLE));
+    if hidden && creatures.is_some() {
+        st.creatures = "no glide (a later game archive hides the creature tables)".into();
+    }
+    crate::host::creaturemodels::write_marker(&dens_dir, creatures.as_deref().filter(|_| !hidden));
     if let Ok(t) = serde_json::to_string_pretty(&st) {
         let _ = crate::settings::write_atomic(&status_path(den_root), t.as_bytes());
     }
@@ -823,6 +852,36 @@ pub(crate) mod tests {
     /// The synthetic game with the game's own grass texture in its archives, at `name`.
     fn with_grass(g: &tempfile::TempDir, name: &str) {
         fs::write(g.path().join("Data/patch-2.MPQ"), mpq::build(&[(name.to_string(), pad::pad_texture())]).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn the_dens_patch_gives_each_prop_model_a_creature_row_and_tells_den_lite() {
+        // owner 5 Nov: props "dynamically move instead of disappearing, reappearing": Den Lite's copy is a creature
+        // wearing the prop's model, so patch-T carries the player's own creature tables with a row per prop model
+        use crate::host::creaturemodels::{DISPLAY_TABLE, MARKER, MODEL_TABLE};
+        use leyline_terrain::dbc::Dbc;
+        let g = game_with_tables(15);
+        let godi = table(19, &[vec![39, 1], vec![9007, 27]], b"\0World\\Generic\\Chair01.mdx\0World\\wmo\\Inn.wmo\0");
+        let cdi = table(16, &[vec![1, 1]], &[0]);
+        let cmd = table(28, &[vec![1, 0, 1]], b"\0Creature\\Bear\\Bear.mdx\0");
+        let four = g.path().join("Data/patch-4.MPQ");
+        fs::write(&four, mpq::build(&[(crate::host::denmodels::TABLE.to_string(), godi), (DISPLAY_TABLE.to_string(), cdi), (MODEL_TABLE.to_string(), cmd)]).unwrap()).unwrap();
+        let dens = tempfile::tempdir().unwrap();
+        prepare_client(g.path(), dens.path()).unwrap();
+        let a = fs::read(g.path().join("Data").join(SLOT)).unwrap();
+        let d = Dbc::parse(&mpq::read(&a, DISPLAY_TABLE).expect("the creature displays in patch-T")).unwrap();
+        assert!(d.row(1).is_some() && d.row(70_039).is_some() && d.row(79_007).is_none(), "the chair's model, not the inn's (a building)");
+        let m = Dbc::parse(&mpq::read(&a, MODEL_TABLE).expect("the creature models in patch-T")).unwrap();
+        assert_eq!(m.string(Dbc::get(m.row(70_039).unwrap(), 2)), "World\\Generic\\Chair01.mdx");
+        let marker = crate::host::dens::dir(dens.path()).join(MARKER);
+        let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&marker).unwrap()).unwrap();
+        assert_eq!((v["base"].as_u64(), v["displays"].as_array().map(|a| a.len())), (Some(70_000), Some(1)));
+        assert!(last_status(dens.path()).unwrap().creatures.starts_with("1 prop"));
+        // a game without creature tables: the patch without them, and no marker (Den Lite's copy a gameobject)
+        fs::write(&four, mpq::build(&[(crate::host::denmodels::TABLE.to_string(), table(19, &[vec![39, 1]], b"\0World\\Generic\\Chair01.mdx\0"))]).unwrap()).unwrap();
+        prepare_client(g.path(), dens.path()).unwrap();
+        assert!(!marker.exists());
+        assert!(last_status(dens.path()).unwrap().creatures.starts_with("no glide"));
     }
 
     #[test]

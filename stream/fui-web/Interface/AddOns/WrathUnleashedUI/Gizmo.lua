@@ -86,9 +86,25 @@ local function lite()
     local B = W.Builder
     return B and B.state and B.state.lite == "1" or false
 end
+-- Den Lite's state not here yet (it comes with the gallery's catalog, which may not have been asked for): unknown,
+-- which is not "no" (4 Nov: den-move's build mode was switched off again half a second after it went on)
+local function stateKnown()
+    local B = W.Builder
+    return B and B.state and B.state.lite ~= nil or false
+end
 function G.Wanted()
     local D = W.DenBar
-    return (D and D.active and not D.play and lite()) and true or false
+    if not (D and D.active and not D.play) then return false end
+    if lite() then return true end
+    if not stateKnown() then return G.build and true or false end
+    return false
+end
+
+-- Ask Den Lite for its state (the Builder's `state` message: the answer fills the Builder's state, `lite=1` with it).
+function G.AskState()
+    if not SendAddonMessage or not UnitName then return false end
+    pcall(SendAddonMessage, PREFIX, MOD .. "\tstate\t1/1\t", "WHISPER", UnitName("player"))
+    return true
 end
 
 -- ---------------------------------------------------------------- the cursor on the screen
@@ -742,6 +758,7 @@ function G.TestAction(w)
     local a = w[2] or ""
     if a == "build" then
         local on = w[3] ~= "off"
+        if on and not stateKnown() then G.AskState() end
         -- already so: say the mode again (Den Lite answers the look each time; the den-test reads that)
         if on == G.build then send(on and "mode build" or "mode play") else G.SetBuild(on) end
         return true
@@ -926,6 +943,13 @@ local function setup()
         acc = acc + (el or 0)
         if acc >= 0.5 then
             acc = 0
+            local D = W.DenBar
+            if D and D.active and not D.play and not stateKnown() then
+                G.asked = (G.asked or 0) + 1
+                if G.asked % 4 == 1 then G.AskState() end   -- at once, then every 2 s until it comes
+            else
+                G.asked = 0
+            end
             G.SetBuild(G.Wanted())
         end
         G.UpCheck()

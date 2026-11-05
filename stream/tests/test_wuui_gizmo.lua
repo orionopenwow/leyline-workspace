@@ -553,6 +553,22 @@ n = #sent
 tick(0.6)
 check("debug: hidden asks nothing", not has(cmds(n), "debug"))
 
+-- Den Lite's state not here yet (4 Nov den-move): build mode stays on, and the state is asked for
+local keepState = W.Builder.state
+W.Builder.state = {}
+local n0 = #sent
+G.TestAction({ "gizmo", "build", "on" })
+tick(0.6); tick(0.6)
+local asked = false
+for i = n0 + 1, #sent do if sent[i][2] == "wubuild\tstate\t1/1\t" then asked = true end end
+check("no state yet: build mode stays on, the state asked for", G.build and asked)
+W.Builder.state = { lite = "0" }
+tick(0.6)
+check("a full Den's state (lite=0): build mode off", not G.build)
+W.Builder.state = keepState
+tick(0.6)
+check("Den Lite's state back: build mode on again", G.build)
+
 -- leaving build mode: the view back, the frame and every binding gone
 W.DenBar.play = true
 n = #sent

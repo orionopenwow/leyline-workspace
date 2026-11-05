@@ -144,6 +144,12 @@ pub const NUDGE_AFTER: u64 = 120;
 pub const NUDGE_QUIET: u64 = 60;
 /// Closer than this to the player, she steps back to her spot even when it is within SLACK (she never stands in the way).
 pub const BLOCK: f32 = 1.2;
+/// Looking around the Den (jaina.rs `Act::Wander`): she lingers there until you are further than this from her.
+pub const LEASH: f32 = 10.0;
+/// She turns to face you before a line when you are more than this far round from where she looks (radians).
+pub const FACE_TURN: f32 = 0.35;
+/// MoveSplineFlag Walkmode (3.3.5a): she strolls (the walking animation), for a look around.
+pub const SPLINE_WALKMODE: u32 = 0x0000_1000;
 
 /// What she does between asks: walks behind the player, or waits where she is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -271,6 +277,14 @@ pub struct Companion {
     last_heard: u64,
     nudged: bool,
     tip_n: usize,
+    /// Her brain (jaina.rs, owner 4 Nov): what she decides by herself, her memory of the visit, her pieces and
+    /// critters, how much she talks.
+    pub brain: crate::jaina::Brain,
+    /// A hop through the air (too far to walk: flight.rs `hop_path`): it lands at this time (ms); just started.
+    hop_until: u64,
+    hop_new: bool,
+    /// A look around: she stays there until this time (ms), unless you walk off.
+    roam_until: u64,
 }
 
 impl Companion {
@@ -306,6 +320,7 @@ impl Companion {
     pub fn come(&mut self, p: At, ms: u64) -> At {
         let at = spot(p);
         (self.near, self.flying) = (Some(p), false);
+        (self.hop_until, self.hop_new, self.roam_until) = (0, false, 0);
         self.via.clear();
         (self.out, self.wanted, self.order) = (true, true, Order::Follow);
         (self.from, self.to, self.start, self.arrive) = (at, at, ms, ms);
@@ -327,6 +342,9 @@ impl Companion {
     /// A new session in the world: the nudge may be said once again, quiet since now.
     pub fn arrive(&mut self, now: u64) {
         (self.arrived, self.last_heard, self.nudged) = (now, now, false);
+        // a new visit for her brain too (seeded by the clock: the same visit replays the same in a test)
+        self.brain.rng = crate::jaina::Rng::new(now);
+        self.brain.arrive(now.saturating_mul(1000));
     }
 
     /// The player said something to her (a command or an ask): no nudge for a while.
@@ -357,7 +375,9 @@ impl Companion {
 
     /// "Jaina, stay": she waits where she is (stops on the spot she has reached).
     pub fn stay(&mut self, ms: u64) -> At {
-        let here = self.pos(ms);
+        // on a hop: she waits where it comes down (not in the air)
+        let here = if self.hopping(ms) { self.to } else { self.pos(ms) };
+        self.roam_until = 0;
         self.order = Order::Stay;
         (self.from, self.to, self.start, self.arrive) = (here, here, ms, ms);
         here
@@ -418,11 +438,16 @@ impl Companion {
     /// `steer`: around the props in the way, never ending in one or on top of the player (flight.rs); the Dojo's
     /// builds walk her straight to the spot the build wants.
     fn walk_steered(&mut self, now: At, target: At, ms: u64, steer: bool) -> (At, At, u32) {
+        self.walk_at(now, target, ms, steer, None)
+    }
+
+    /// The walk, at `speed` (None: runs when it is far, walks when near).
+    fn walk_at(&mut self, now: At, target: At, ms: u64, steer: bool, speed: Option<f32>) -> (At, At, u32) {
         let pts = if steer { crate::flight::path(now, target, self.near, &self.blocks) } else { vec![target] };
         let target = pts.last().copied().unwrap_or(target);
         self.via = pts[..pts.len().saturating_sub(1)].to_vec();
         let d = crate::flight::length(At { z: target.z, ..now }, &pts.iter().map(|p| At { z: target.z, ..*p }).collect::<Vec<_>>());
-        let speed = if d > 6.0 { RUN } else { WALK };
+        let speed = speed.unwrap_or(if d > 6.0 { RUN } else { WALK });
         let duration = ((d / speed * 1000.0) as u32).max(100);
         let last = self.via.last().copied().unwrap_or(now);
         let o = (target.y - last.y).atan2(target.x - last.x).rem_euclid(2.0 * PI);
@@ -435,7 +460,7 @@ impl Companion {
     /// One step of following the player at `p`: a walk to start (from, to, milliseconds), or None while she is close
     /// enough (or already on her way there).
     pub fn follow(&mut self, p: At, ms: u64) -> Option<(At, At, u32)> {
-        if !self.out || self.order == Order::Stay || self.flying {
+        if !self.out || self.order == Order::Stay || self.flying || self.hopping(ms) {
             return None;
         }
         self.near = Some(p);
@@ -444,10 +469,82 @@ impl Companion {
         let walking = ms < self.arrive;
         // in the player's way (they stepped onto her): she steps back to her spot, however close it is
         let blocking = !walking && dist(now, p) < BLOCK && dist(now, target) > 0.3;
+        // looking around: she stays where she went until you walk off
+        if !blocking && ms < self.roam_until {
+            if dist(now, p) <= LEASH {
+                return None;
+            }
+            self.roam_until = 0;
+        }
         if !blocking && (dist(self.to, target) <= SLACK || dist(now, target) <= SLACK) {
             return None;
         }
+        // far (but not so far she is put back at once): a hop through the air, landing beside you
+        if dist(now, target) > crate::flight::HOP {
+            let end = crate::flight::safe_end(target, Some(p), &self.blocks);
+            let (pts, t) = crate::flight::hop_path(now, end);
+            let to = pts.last().copied().unwrap_or(end);
+            self.via = pts[..pts.len() - 1].to_vec();
+            (self.from, self.to, self.start, self.arrive) = (now, to, ms, ms + t as u64);
+            (self.hop_until, self.hop_new) = (ms + t as u64, true);
+            self.moves += 1;
+            return Some((now, to, t));
+        }
         Some(self.walk_to(now, target, ms))
+    }
+
+    /// The walk `follow` just started is a hop (world.rs tells the game she flies, then sends it as a flight).
+    pub fn take_hop(&mut self) -> bool {
+        std::mem::replace(&mut self.hop_new, false)
+    }
+
+    /// In the air on a hop.
+    pub fn hopping(&self, ms: u64) -> bool {
+        self.hop_until != 0 && ms < self.hop_until
+    }
+
+    /// Her hop has come down now (once): world.rs tells the game she walks again. Not while she flies with you
+    /// (flight.rs lands her then).
+    pub fn landed(&mut self, ms: u64) -> bool {
+        if self.hop_until == 0 || ms < self.hop_until {
+            return false;
+        }
+        self.hop_until = 0;
+        !self.flying
+    }
+
+    /// A look around the Den (jaina.rs): a stroll there around the props, and she lingers (from, to, ms).
+    pub fn wander(&mut self, target: At, ms: u64) -> Option<(At, At, u32)> {
+        if !self.out || self.order == Order::Stay || self.flying || self.hopping(ms) {
+            return None;
+        }
+        let now = self.pos(ms);
+        let r = self.walk_at(now, target, ms, true, Some(WALK));
+        self.roam_until = self.arrive + crate::jaina::EXPLORE_MS;
+        Some(r)
+    }
+
+    /// Before a line: she turns to you, when standing and looking elsewhere (where she is, the spline id, the angle).
+    pub fn face_to(&mut self, p: At, ms: u64) -> Option<(At, u32, f32)> {
+        if !self.out || ms < self.arrive || self.flying {
+            return None;
+        }
+        let here = self.pos(ms);
+        if dist(here, p) < 0.3 {
+            return None;
+        }
+        let o = (p.y - here.y).atan2(p.x - here.x).rem_euclid(2.0 * PI);
+        let off = (o - here.o).rem_euclid(2.0 * PI);
+        if off.min(2.0 * PI - off) < FACE_TURN {
+            return None;
+        }
+        let (at, id) = self.face(o, ms);
+        Some((at, id, o))
+    }
+
+    /// On her way somewhere now.
+    pub fn walking(&self, ms: u64) -> bool {
+        ms < self.arrive
     }
 
     /// Following and too far from the player (a jump, a teleport): she should be put back at their side at once.
@@ -530,7 +627,7 @@ impl Companion {
         }
         self.last_beat = now;
         let v = json!({"format": "leyline-companion", "version": 1, "server": "den-lite", "at": now, "said": self.said,
-            "asks": self.asks, "companion": self.out, "owner": owner, "room": room});
+            "asks": self.asks, "companion": self.out, "owner": owner, "room": room, "jaina": self.brain.ui_line()});
         write_json(dir, IN_FILE, &v)
     }
 }
@@ -688,6 +785,66 @@ mod tests {
         assert_eq!(c.nudge(5000, 0), None, "once");
         c.arrive(9000);
         assert_eq!(c.nudge(9000 + NUDGE_AFTER + NUDGE_QUIET, 0), Some(NUDGE), "a new session");
+    }
+
+    #[test]
+    fn far_off_she_hops_through_the_air_and_lands_beside_you() {
+        let mut c = Companion::default();
+        let p = At { x: 0.0, y: 0.0, z: 0.0, o: 0.0 };
+        c.come(p, 0);
+        // 30 yards: too far to walk nicely, not so far she is put back at once
+        let far = At { x: 30.0, ..p };
+        assert!(!c.too_far(far, 1000));
+        let (from, to, ms) = c.follow(far, 1000).expect("a hop");
+        assert!(c.take_hop() && !c.take_hop(), "once");
+        assert!(dist(to, spot(far)) < 0.5 && dist(from, spot(p)) < 1e-4);
+        assert!(c.via.len() >= 2 && c.via.iter().any(|v| v.z > 2.0), "up in an arc: {:?}", c.via);
+        assert!(c.hopping(1000 + ms as u64 / 2) && c.follow(At { x: 35.0, ..p }, 1000 + ms as u64 / 2).is_none(), "in the air: no new walk");
+        assert!(!c.landed(1000 + ms as u64 / 2));
+        assert!(c.landed(1000 + ms as u64) && !c.landed(2000 + ms as u64), "comes down once");
+        // a short way: walks as before
+        let (_, _, _) = c.follow(At { x: 38.0, ..p }, 2000 + ms as u64).expect("a walk");
+        assert!(!c.take_hop());
+        // flying with you when the hop comes down: flight.rs lands her, not the hop
+        let mut c = Companion::default();
+        c.come(p, 0);
+        let (_, _, ms) = c.follow(far, 0).unwrap();
+        c.flying = true;
+        assert!(!c.landed(ms as u64));
+    }
+
+    #[test]
+    fn she_looks_around_lingers_and_comes_back_when_you_walk_off() {
+        let mut c = Companion::default();
+        let p = At { x: 0.0, y: 0.0, z: 0.0, o: 0.0 };
+        c.come(p, 0);
+        let (_, to, ms) = c.wander(At { x: 5.0, y: 5.0, z: 0.0, o: 0.0 }, 1000).expect("a stroll");
+        assert!(dist(to, At { x: 5.0, y: 5.0, z: 0.0, o: 0.0 }) < 1e-3);
+        assert!(ms as f32 >= 7.07 / WALK * 1000.0 - 1.0, "a stroll, not a run: {ms}");
+        let there = 1000 + ms as u64;
+        // you step about nearby: she stays where she went
+        assert_eq!(c.follow(At { x: 3.0, ..p }, there + 1000), None);
+        // you walk off: she follows again
+        assert!(c.follow(At { x: -12.0, ..p }, there + 2000).is_some());
+        // staying: no looking around
+        c.stay(there + 10_000);
+        assert_eq!(c.wander(At { x: 1.0, ..p }, there + 20_000), None);
+        assert!(!c.walking(there + 20_000));
+    }
+
+    #[test]
+    fn she_turns_to_you_before_she_speaks() {
+        let mut c = Companion::default();
+        let p = At { x: 0.0, y: 0.0, z: 0.0, o: 0.0 };
+        let at = c.come(p, 0);
+        // her spot is behind you, she faces your way (o 0): you are round to her right
+        let (here, _, o) = c.face_to(p, 100).expect("she turns");
+        assert!(dist(here, at) < 1e-4);
+        let want = (p.y - at.y).atan2(p.x - at.x).rem_euclid(2.0 * PI);
+        assert!((o - want).abs() < 1e-4 && (c.pos(200).o - want).abs() < 1e-4);
+        assert_eq!(c.face_to(p, 300), None, "already facing you");
+        c.follow(At { x: 20.0, ..p }, 400).unwrap();
+        assert_eq!(c.face_to(p, 500), None, "not while walking");
     }
 
     #[test]

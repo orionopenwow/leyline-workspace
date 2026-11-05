@@ -3295,21 +3295,30 @@ def queue_page(v: dict, nonce: str, retry: str) -> bytes:
             '<li><a id="q-survivors" href="/wrath/survivors" target="_blank" rel="noopener">Play Azeroth Survivors</a></li>'
             '<li><a id="q-notes" href="/wrath/docs/wrath-unleashed" target="_blank" rel="noopener">Read the Wrath Unleashed notes</a></li>'
             '</ul><p class="q-fine">Keep this tab open: your place stays yours.</p></section>')
-    script = ("(function(){var api=" + json.dumps(QUEUE_API) + ",retry=" + json.dumps(retry) + ",ms=" + str(QUEUE_POLL_S * 1000) + ";"
+    # Review 4 Nov (site 16, stream 8): a phone or another tab missed its turn. The tab title carries the place and
+    # "Your turn", a page that comes back to the front asks at once (background timers freeze, and a place without a
+    # heartbeat for QUEUE_BEAT is dropped), a phone buzzes once on its turn, and Leave the line asks first.
+    script = ("(function(){var api=" + json.dumps(QUEUE_API) + ",retry=" + json.dumps(retry) + ",ms=" + str(QUEUE_POLL_S * 1000)
+              + ",site=" + json.dumps(" · " + TITLE_NAME) + ",t=0,busy=0;"
               "function $(i){return document.getElementById(i)}"
-              "function tick(){fetch(api+'?me=1',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()})"
-              ".then(function(d){var y=d&&d.you;if(!y){location.replace(retry);return}"
-              "if(y.state==='ready'){$('q-pos').textContent=\"It's your turn\";$('q-wait').textContent='Starting…';location.replace(y.go);return}"
+              "function sched(d){clearTimeout(t);t=setTimeout(tick,d)}"
+              "function tick(){if(busy)return;busy=1;fetch(api+'?me=1',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()})"
+              ".then(function(d){busy=0;var y=d&&d.you;if(!y){location.replace(retry);return}"
+              "if(y.state==='ready'){document.title=\"Your turn!\"+site;$('q-pos').textContent=\"It's your turn\";$('q-wait').textContent='Starting…';"
+              "try{navigator.vibrate&&navigator.vibrate([120,60,120])}catch(e){}location.replace(y.go);return}"
+              "document.title='(#'+y.position+') In line'+site;"
               "$('q-pos').textContent=\"You're #\"+y.position+' in line';$('q-wait').textContent='About '+y.wait_min+' min';"
-              "setTimeout(tick,ms)}).catch(function(){setTimeout(tick,ms*2)})}"
-              "setTimeout(tick,ms);"
-              "var b=$('q-leave');if(b)b.addEventListener('click',function(){b.disabled=true;"
+              "sched(ms)}).catch(function(){busy=0;sched(ms*2)})}"
+              "sched(ms);"
+              "document.addEventListener('visibilitychange',function(){if(!document.hidden)sched(0)});"
+              "var b=$('q-leave');if(b)b.addEventListener('click',function(){if(!confirm('Leave the line? You lose your place.'))return;b.disabled=true;"
               "fetch(api+'/leave',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})"
               ".then(function(){location.assign('/wrath')},function(){location.assign('/wrath')})});"
               "})();") if v.get("token") else ""
     if script:
         body += f'<script nonce="{nonce}">{script}</script>'
-    page = ly_shell(f"In line · {SITE_NAME}", body, QUEUE_PATH, "play", next_step="", css=QUEUE_CSS, noindex=True).decode("utf-8")
+    tab = f"(#{int(v.get('position') or 1)}) In line" if state not in ("full", "limit") else "In line"
+    page = ly_shell(f"{tab} · {TITLE_NAME}", body, QUEUE_PATH, "play", next_step="", css=QUEUE_CSS, noindex=True).decode("utf-8")
     refresh = f'<noscript><meta http-equiv="refresh" content="30;url={e(retry)}"></noscript>' if script else \
         f'<meta http-equiv="refresh" content="60;url={e(retry)}">'
     return page.replace("<head>", "<head>" + refresh, 1).encode("utf-8")

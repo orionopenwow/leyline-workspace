@@ -1586,7 +1586,8 @@ NET_SWITCHES = (("herokey_sso", "Hero Key sign-in on community realms"),
                 ("relay_volunteer", "Offer Help carry the network in the launcher"),
                 ("mesh_relays", "Players use community nodes when they are closer"),
                 ("mesh_realms", "Launchers read the realm list from the mesh"),
-                ("share_own_files", "Offer Help share Leyline's own files in the launcher"))
+                ("share_own_files", "Offer Help share Leyline's own files in the launcher"),
+                ("be_a_node", "Offer Be a node on the launcher's Host page (off: every node stops within 30 minutes)"))
 
 
 def _relay_base() -> str:

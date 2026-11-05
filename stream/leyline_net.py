@@ -13,7 +13,7 @@ The flags file (docs/P2P-AND-TORRENT.md):
     {"format": 1, "updated_at": "2026-10-29T00:00:00Z",
      "flags": {"p2p_hosting": false, "torrent_downloads": false, "torrent_seeding": false, "webrtc_presence": false,
                "mesh_realms": false, "mesh_relays": false, "relay_volunteer": false, "herokey_sso": false,
-               "magnet_links": false},
+               "magnet_links": false, "share_own_files": false, "be_a_node": false},
      "limits": {"seed_upload_kbps": 0, "seed_ratio_pct": 0, "max_peers": 0},
      "stun": ["stun.cloudflare.com:3478"],
      "sha256": "<sha256 of the canonical JSON of everything above>"}
@@ -52,7 +52,10 @@ KNOWN = ("p2p_hosting", "torrent_downloads", "torrent_seeding", "webrtc_presence
          # shared magnet: links in the launcher (p2p/magnet.rs), only for Leyline's own checked packages
          "magnet_links",
          # "Help share Leyline's own files" (p2p/share.rs): offered to players; each PC still turns it on for itself
-         "share_own_files")
+         "share_own_files",
+         # "Be a node" (launcher p2p/node.rs, docs/BE-A-NODE.md): the Host page's one switch is offered; each PC still
+         # turns it on for itself. Off here = every node stops at its next look (the owner's kill switch)
+         "be_a_node")
 LIMITS = {"seed_upload_kbps": 100_000, "seed_ratio_pct": 1000, "max_peers": 200}
 DEFAULT_STUN = ["stun.cloudflare.com:3478"]
 _STUN_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}:[0-9]{1,5}$")

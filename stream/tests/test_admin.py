@@ -139,7 +139,10 @@ os.environ.update(
     WU_PORTAL_DATA=DATA, WU_MODS_DIR=MODS, WU_WORKSHOP_ITEMS_DIR=WSDIR, WU_ADMIN_OWNERS="owner1",
     WU_MODS_ADMINS="modadm", WU_ADMIN_STAFF="staff1", WU_HUB_INDEX=HUB_INDEX,
     WU_LEYLINE_RELEASES_API=f"http://127.0.0.1:{GH_PORT}/repos/orionopenwow/Leyline/releases",
-    WU_LEYLINE_RUNS_API=f"http://127.0.0.1:{GH_PORT}/runs", WU_ADDONPACK_URL=f"http://127.0.0.1:{GH_PORT}/addonpack.json", WU_HANGOUT_FILE=os.path.join(T, "none"))
+    WU_LEYLINE_RUNS_API=f"http://127.0.0.1:{GH_PORT}/runs", WU_ADDONPACK_URL=f"http://127.0.0.1:{GH_PORT}/addonpack.json", WU_HANGOUT_FILE=os.path.join(T, "none"),
+    # the switches file in this run's own folder (it was /data/leyline, shared by every run on the box, so a flags file
+    # an older checkout wrote failed the "all off" check)
+    WU_LEYLINE_DIR=os.path.join(T, "leyline"))
 
 # ---------------------------------------------------------------- fakes
 soap_log = []
@@ -457,7 +460,7 @@ st, hd, f = feed("flags.json")
 check("flags.json: the host-pack/P2P agent's format, all off, sha256", f.get("format") == 1 and f["flags"] == {
       "p2p_hosting": False, "torrent_downloads": False, "torrent_seeding": False, "webrtc_presence": False,
       "mesh_realms": False, "mesh_relays": False, "relay_volunteer": False, "herokey_sso": False, "magnet_links": False,
-      "share_own_files": False}
+      "share_own_files": False, "be_a_node": False}
       and flag_sha_ok(f) and set(f) == {"format", "updated_at", "flags", "limits", "stun", "sha256"}
       and hd.get("Access-Control-Allow-Origin") == "*", f)
 r = act("staff1", "flag.set", "p2p_hosting", on="1", confirm="p2p_hosting")

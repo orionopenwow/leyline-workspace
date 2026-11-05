@@ -30,6 +30,7 @@ pub const KNOWN: &[(&str, &str)] = &[
     ("herokey_sso", "Sign in to community realms with your Hero Key (no account per realm)"),
     ("magnet_links", "Open shared magnet links, only for Leyline's own checked packages"),
     ("share_own_files", "Help share Leyline's own files: our signed installers, Host packs, addons and server source code (uses your upload; only when you turn it on for this PC)"),
+    ("be_a_node", "Offer Be a node on the Host page: this PC shares Leyline's own files while idle (only when you turn it on for this PC)"),
 ];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +65,10 @@ pub struct Flags {
     /// "Help share Leyline's own files" (`p2p::share`): seed the files the signed release log names, never
     /// anything else. Like `relay_volunteer` it never starts on the site's word alone: see `share_allowed`.
     pub share_own_files: bool,
+    /// "Be a node" (`p2p::node`, docs/BE-A-NODE.md): the Host page's one switch is offered. The owner's switch for
+    /// everyone, and the kill switch: off here stops every node at its next look (30 minutes at most). Like
+    /// `relay_volunteer` it never starts a node on the site's word alone: each PC turns it on itself.
+    pub be_a_node: bool,
     pub limits: Limits,
     /// STUN servers for the NAT check (`host:port`), only used when `p2p_hosting` is on.
     pub stun: Vec<String>,
@@ -82,6 +87,7 @@ impl Flags {
             "herokey_sso" => self.herokey_sso,
             "magnet_links" => self.magnet_links,
             "share_own_files" => self.share_own_files,
+            "be_a_node" => self.be_a_node,
             _ => return None,
         })
     }
@@ -97,6 +103,7 @@ impl Flags {
             "herokey_sso" => self.herokey_sso = on,
             "magnet_links" => self.magnet_links = on,
             "share_own_files" => self.share_own_files = on,
+            "be_a_node" => self.be_a_node = on,
             _ => {}
         }
     }
@@ -268,10 +275,14 @@ pub fn load(app_dir: &Path, url: &str) -> View {
     View { effective: effective(&site, &local), site, local, known: KNOWN.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect(), from_cache, error }
 }
 
+/// The site's own flags from the cached copy (no overrides, no network): all off without a good copy.
+pub fn cached_site(app_dir: &Path) -> Flags {
+    crate::net::read_cache(&cache_path(app_dir)).filter(|(v, _)| check(v).is_ok()).map(|(v, _)| from_doc(&v)).unwrap_or_default()
+}
+
 /// The flags in force now, without the network (the cached site copy, if any, plus overrides).
 pub fn current(app_dir: &Path) -> Flags {
-    let site = crate::net::read_cache(&cache_path(app_dir)).filter(|(v, _)| check(v).is_ok()).map(|(v, _)| from_doc(&v)).unwrap_or_default();
-    effective(&site, &load_local(app_dir))
+    effective(&cached_site(app_dir), &load_local(app_dir))
 }
 
 #[cfg(test)]
@@ -317,7 +328,7 @@ pub mod tests {
     fn site_file_is_hash_checked() {
         let good = doc(&[("torrent_downloads", true)]);
         // The same document from stream/leyline_net.py make_doc() (stream/tests/test_leyline_net.py checks it too).
-        assert_eq!(good["sha256"], "28a527aa70f32b2555d257766e1e1af7b3b7529330b08e0542abca94dc2fb11a");
+        assert_eq!(good["sha256"], "aa43aa91be11289e70b85affa30075bf9e4b9a66f15c43b25b3601b5da857d00");
         assert!(check(&good).is_ok());
         let f = from_doc(&good);
         assert!(f.torrent_downloads && !f.p2p_hosting);

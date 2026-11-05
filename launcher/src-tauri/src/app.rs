@@ -2376,6 +2376,14 @@ pub fn run() {
             start_update_timer(app.handle().clone());
             crate::p2p::cmds::magnet_from_args(); // a shared magnet: link (only with the magnet_links flag on)
             crate::agents::commands::start(app.handle().clone()); // Agents: the heartbeat `Leyline mcp` looks for (agents.rs)
+            // Be a node (p2p/node.rs): its loop, when this PC turned it on; started by "start with Windows" (--node):
+            // the window opens minimized, the node working
+            crate::p2p::node::start(settings::app_dir());
+            if crate::p2p::node::started_as_node(std::env::args()) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.minimize();
+                }
+            }
             // Your Den shared with friends before: back on the Leyline network by itself (host/denhost.rs)
             std::thread::spawn(|| {
                 if let Err(e) = den_share_resume() {
@@ -2383,6 +2391,17 @@ pub fn run() {
                 }
             });
             Ok(())
+        })
+        // Be a node's "keep running when the window closes": closing the main window minimizes it instead while the
+        // node is on and that box is ticked (no tray icon: that needs the tauri `tray-icon` feature, a new crate in the
+        // tree). Every other window, and every close with the box unticked, closes as before.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && crate::p2p::node::keep_running_on_close(&settings::app_dir()) {
+                    api.prevent_close();
+                    let _ = window.minimize();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_state,
@@ -2548,6 +2567,10 @@ pub fn run() {
             crate::p2p::cmds::host_herokey_test,
             crate::p2p::cmds::host_carry, // Help carry the network (host/network.rs)
             crate::p2p::cmds::host_carry_set,
+            crate::p2p::cmds::node_state, // Be a node: the Host page's one switch (p2p/node.rs)
+            crate::p2p::cmds::node_set,
+            crate::p2p::cmds::node_check_network,
+            crate::p2p::cmds::node_quit,
             crate::p2p::cmds::p2p_flags,
             crate::p2p::cmds::p2p_set_flag,
             crate::p2p::cmds::p2p_set_limits,

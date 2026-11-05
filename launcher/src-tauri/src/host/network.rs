@@ -307,7 +307,8 @@ pub fn save_carry(app_dir: &Path, s: &CarrySettings) -> Result<(), String> {
 /// Pause carrying now? Only with "only while idle and plugged in": the person used this PC in the last
 /// five minutes, or it runs on battery. Unknown (another OS) never pauses.
 pub fn should_pause(s: &CarrySettings, idle_secs: Option<u64>, on_ac: Option<bool>) -> bool {
-    s.on && s.only_idle && (idle_secs.is_some_and(|i| i < 300) || on_ac == Some(false))
+    // the one rule, shared with Be a node (p2p/node.rs `resting`)
+    s.on && crate::p2p::node::resting(s.only_idle, idle_secs, on_ac).is_some()
 }
 
 pub fn pause_file(kit: &Path) -> PathBuf {

@@ -1,6 +1,6 @@
 ## Interface: 30300
 ## Title: WrathUnleashed UI
-## Notes: WrathUnleashed's defaults for the browser realm: modern UI size, every action bar on, a level 80's bars filled, Esc > Mods & Workshop (the Workshop: /workshop), Collections (Shift-P), the Builder (/builder: a gallery of turning 3D props), edit mode (F7 or /edit), Your Den's editor (the top strip, the tool rail, Files, Invite: /denbar), the Dojo (/dojo), duel tournaments (/tourney), minigolf (/golf), modes, the script editor and the device editor (/modes, /modes edit, /modes devices), the Leyline realms (/leyline) and your game folder (/folder) and your bots (/comp); the GM panel in the Leyline look (/aa skin off for the original).
+## Notes: WrathUnleashed's defaults for the browser realm: modern UI size, every action bar on, a level 80's bars filled, Esc > Mods & Workshop (the Workshop: /workshop), Collections (Shift-P), the Builder (/builder: a gallery of turning 3D props), edit mode (F7 or /edit), Your Den's editor (the top strip, the tool rail, Files, Invite: /denbar), the Dojo (/dojo), duel tournaments (/tourney), Teleports (/tp: anywhere, Back to my Den), minigolf (/golf), modes, the script editor and the device editor (/modes, /modes edit, /modes devices), the Leyline realms (/leyline) and your game folder (/folder) and your bots (/comp); the GM panel in the Leyline look (/aa skin off for the original).
 ## Author: WrathUnleashed
 ## OptionalDeps: ForeverUI, AzerothAdmin, MiniGM
 ## SavedVariables: WrathUnleashedUIDB
@@ -18,6 +18,8 @@ Gizmo.lua
 BuildTools.lua
 Dojo.lua
 DenTourney.lua
+TeleportsData.lua
+Teleports.lua
 Guide.lua
 RealmGuideData.lua
 RealmGuide.lua

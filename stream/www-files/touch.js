@@ -26,7 +26,8 @@
 //     names...); a keyboard button on the character screens relays keys to the glue screens.
 //   * Menu > Controls: Classic (stick strafes, drag turns you), Simple (stick turns, drag only
 //     looks, the camera follows), Keyboard & mouse (touch off, a corner button to come back), with
-//     a phone-vs-PC table. Interface size and auto loot sit next to it.
+//     a phone-vs-PC table; Tap test, Copy debug info, Edit layout, Layout, Left-handed, Vibration,
+//     Soft lock and Bigger interface. Interface size and auto loot sit on the Menu sheet.
 //   * The rest of the screen: tap = click (target, buttons, windows), double-tap = right-click
 //     (talk, loot, open), long-press = hover (tooltips), drag = turn the camera (or drag a window),
 //     two-finger pinch = zoom.
@@ -39,7 +40,24 @@
 //     landscape (browsers only allow it from a tap; iPhone Safari can't, so it suggests Add to
 //     Home Screen, whose manifest opens full screen in landscape). Login, realm, character list
 //     and creation all take taps; a tap during a resize or rotation is dropped, not misplaced.
-//   * A gamepad connecting hands over to the bridge's gamepad mapper and hides the touch controls.
+//   * A gamepad connecting hands over to the bridge's gamepad mapper and hides the touch controls; the first time on a
+//     device a "Controller connected" card shows its buttons' jobs (the mapper's list, or PAD_MAP).
+//
+// Added 5 Nov (build 2026-11-05b; docs/TOUCH-CONTROLS.md has every control and a phone checklist):
+//   * Tap reliability: a release sent within one game update of its press is sent again after one more settle;
+//     the button magnet (a glue tap within 10 px of a scanned button where the game hovers nothing goes to its
+//     centre; character creation only up or down, never sideways); the last 10 taps with timings in
+//     owTouch.taps; Menu > Controls > Copy debug info (one line to paste to us); the Tap test (five rings, hits,
+//     misses, the factor and where the game's cursor went), also on the character screens by a corner button
+//     and by ?taptest=1. ?tapframe=<ms> forces the game-update length.
+//   * Targeting: the reticle is the nearest-enemy button; swipe the target frame left / right for the next / last
+//     enemy; soft lock (a tap on open ground, no unit under it, keeps the target).
+//   * Casting: a cast bar over the ring (UnitCastingInfo / UnitChannelInfo); a ground-targeted spell
+//     (SpellIsTargeting) waits for the next tap in the world, with an X to cancel.
+//   * Layouts: Phone and Tablet presets (Auto by screen size); Edit layout drags the stick, the ring, Jump and the
+//     tray and resizes the ring, saved per character (ow:touch-layout:<realm>/<name>), shared as an L1 code;
+//     everything clamped on screen. Left-handed mirrors the stick and the ring. Vibration on / off. Bigger
+//     interface is a slider (the game's interface size).
 //
 // The art is drawn here as vector graphics (crisp at any screen density), in the look of the
 // Open Vanilla mobile mockups: dark stone faces and bronze-gold rims.

@@ -211,7 +211,13 @@ check(".solo handled", cmd(so, ".solo") == false)
 check(".solo: scaling and this level's dungeons", last(so):find("scales to the group", 1, true) and last(so):find("Utgarde Keep", 1, true))
 local so2 = player({ guid = 41, level = 5 })
 cmd(so2, "solo")
-check(".solo below 13: says when they open", last(so2):find("level 13", 1, true))
+check(".solo below 10: says when they open", last(so2):find("opens at level 10", 1, true))
+-- review 4 Nov: serverpass.sh opens Ragefire Chasm, Wailing Caverns, the Deadmines and Shadowfang Keep at 10
+for _, lvl in ipairs({ 10, 11, 12 }) do
+    local s10 = player({ guid = 41 + lvl, level = lvl })
+    cmd(s10, "solo")
+    check(".solo at level " .. lvl .. ": the level-10 dungeons", last(s10):find("Ragefire Chasm", 1, true) and not last(s10):find("none yet", 1, true))
+end
 
 -- .learnall with a 60 s guard
 local la = player({ guid = 27, level = 10 })

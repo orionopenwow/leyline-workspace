@@ -134,6 +134,8 @@ STEPS = {
     # Builds the browser client on this PC (client/build-browser-client.sh under Git Bash): tools once, benilla-wotlk
     # with client/patches/series.txt, the fat-LTO release build, packed into play\ like every build. Then "client" ships it.
     "client-build": ("client/Build browser client.bat", "Build the browser client on this PC (about an hour; then the client step)", False),
+    # only Den Lite's editor tests (gizmo.rs, pick.rs): the quick loop for the mouse and the arrows (owner 4 Nov: "one test at a time")
+    "den-lite-test": ("tools/den-lite/Den Lite editor tests.bat", "Den Lite editor tests only: click to carry, the arrows, the ground, the debug line (a few minutes)", False),
     "den-lite": ("tools/den-lite/Build Den Lite.bat", "Build Den Lite on this PC (the instant Den server, no Docker) for the launcher's Your Den", False),
     # My Den, one click into the world on this PC's own game (tools/den-check/den_check.py): den-check looks (read-only:
     # the game folder, Leyline's login archive, Config.wtf, Den Lite and a sign-in through the exact steps on a Den Lite

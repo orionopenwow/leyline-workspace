@@ -99,6 +99,7 @@ WrathUnleashedUI = {
 }
 local W = WrathUnleashedUI
 
+SlashCmdList = SlashCmdList or {}
 dofile(dir .. "/Gizmo.lua")
 local G = W.Gizmo
 check("loaded and set up", G and named.LeylineGizmo and named.LeylineGizmoAim)
@@ -153,8 +154,8 @@ c = cmds(n)
 check("hover: u 0.5, v -0.5, the screen's aspect, the build distance", c[1] == "hover 0.5000 -0.5000 1.7778 12")
 cursor = { 1450, 270 }
 n = #sent
-tick(0.05)
-check("at most 10 a second", #cmds(n) == 0)
+tick(0.02)
+check("in hand: at most about 30 a second (owner 4 Nov: it keeps up)", #cmds(n) == 0)
 tick(0.1)
 check("then again", (cmds(n)[1] or ""):find("^hover 0%.5104"))
 n = #sent
@@ -415,7 +416,7 @@ local function release(both) mouseHeld.LeftButton = nil; grab:Fire("OnClick", "L
 n = #sent
 press(true); clock = clock + 0.1; release(true)
 c = cmds(n)
-check("a click on it (the hook and the binding both saw it): selected once, at the press point", #c == 1 and c[1] == "click 0.5000 -0.5000 1.7778 12")
+check("a click on it (the hook and the binding both saw it): picked up once, at the press point", #c == 1 and c[1] == "click 0.5000 -0.5000 1.7778 12 carry")
 answer("selected", "5")
 check("selected: Q / E turn it", G.sel == 5 and bindings.Q == "LeylineGizmoTurnQ" and bindings.E == "LeylineGizmoTurnE")
 n = #sent
@@ -519,6 +520,38 @@ check("test: click, and press-move-let-go", c[1] == "click 0.1000 -0.2000 1.7778
     and c[3] == "hover 0.3000 -0.2500 1.7778 12" and c[4] == "commit" and not G.dragging)
 G.TestAction({ "gizmo", "report" })
 check("test: the report says the mouse's state", sent[#sent][2]:find("hovered=%- dragging=0 button1=0 frame=1"))
+
+-- click to carry (owner 4 Nov): the test's own carry click, Den Lite's answer, the hint, and the next click puts it down
+n = #sent
+G.TestAction({ "gizmo", "carry", "0.1", "-0.2" })
+c = cmds(n)
+check("test: a carry click", c[1] == "click 0.1000 -0.2000 1.7778 12 carry")
+answer("aim", "move,5,1543")
+answer("carried", "5")
+check("carried: armed to move, the prop known", G.armed == "move" and G.carried == "5")
+answer("aim", "off")
+check("put down: nothing carried", G.armed == nil and G.carried == nil)
+answer("carried", "axis y")
+check("an arrow clicked: carried along Y", G.carried == "axis y")
+answer("aim", "off")
+
+-- the debug overlay (/wudebug): shown and hidden, asks Den Lite, shows its line split up
+n = #sent
+check("debug: the slash command is there", SlashCmdList and SlashCmdList.LEYLINEBUILDDEBUG ~= nil)
+G.Debug(true)
+c = cmds(n)
+check("debug: shown, Den Lite asked", named.LeylineGizmoDebug and named.LeylineGizmoDebug.shown and has(c, "debug"))
+answer("debug", "armed=off;at=-;cursor=0.100,-0.200;ground=1.00,2.00,3.00;floor=3.00;handle=-;draw_ms=33")
+local txt = tostring(named.LeylineGizmoDebug.fs.text)
+check("debug: its own state and Den Lite's, one per line", txt:find("build=on", 1, true) and txt:find("\nground=1.00,2.00,3.00", 1, true) and txt:find("draw_ms=33", 1, true))
+n = #sent
+tick(0.6)
+check("debug: asked again twice a second", has(cmds(n), "debug"))
+G.Debug(false)
+check("debug: hidden", not named.LeylineGizmoDebug.shown)
+n = #sent
+tick(0.6)
+check("debug: hidden asks nothing", not has(cmds(n), "debug"))
 
 -- leaving build mode: the view back, the frame and every binding gone
 W.DenBar.play = true

@@ -1569,6 +1569,43 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
     rep.ok(held and ev is not None and yd > 0.5, "mouse: press and drag moves it",
            "moved %.2f yd%s%s" % (yd, (", " + pic) if pic else "", (", " + pic2) if pic2 else ""),
            "Held %s, dropped %s, moved %.2f yd: send logs\\den-features-latest.txt and the pictures." % (held, ev is not None, yd))
+    # click to carry (owner 4 Nov: "select with left click, immediately start moving mouse and the object follows the
+    # mouse ... across the terrain, clicking places it"): a click picks it up, the cursor moves it with no button held,
+    # the next click puts it down (one undo); it stays selected with its arrows
+    a = aids()
+    if "draw_ms" not in a:
+        rep.add("INFO", "mouse: click to carry", "this Den Lite is from before carrying (4 Nov): run den-lite, then den-move again")
+        return True
+    sel, uv, at0 = a.get("sel"), a.get("sel_uv"), a.get("sel_at")
+    if sel is None or not uv or not at0:
+        rep.add("SKIP", "mouse: click to carry", "the selection isn't on the screen (%s)" % (uv,))
+        return True
+    u, v = uv
+    t = now_ms()
+    ui("gizmo carry %.4f %.4f" % (u, v))
+    a = aids()
+    carried = str(a.get("armed", "")).startswith("move,") and a.get("grip") is True
+    ui("gizmo moveto %.4f %.4f" % (u - 0.15, v - 0.04))
+    g1 = aids().get("ghost")
+    ui("gizmo moveto %.4f %.4f" % (u - 0.2, v - 0.06))
+    a = aids()
+    g2 = a.get("ghost")
+    pic = shot("mouse-carrying")
+    ui("gizmo commit")
+    ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+    a = aids()
+    pic2 = shot("mouse-carried-down")
+    at1 = a.get("sel_at") or at0
+    yd = math.hypot(at1[0] - at0[0], at1[1] - at0[1])
+    still = a.get("sel") == sel and int(a.get("gizmo") or 0) >= 3
+    rep.ok(carried and g1 and g2 and g1 != g2 and ev is not None and yd > 0.5 and still, "mouse: a click picks it up, it follows, a click puts it down",
+           "moved %.2f yd, still selected with its arrows%s%s" % (yd, (", " + pic) if pic else "", (", " + pic2) if pic2 else ""),
+           "Carried %s, followed %s, put down %s, moved %.2f yd, selected with arrows %s: send logs\\den-move-latest.txt and the pictures."
+           % (carried, bool(g1 and g2 and g1 != g2), ev is not None, yd, still))
+    ui("gizmo debug")
+    dbg = [x for x in ui_lines(den_dir, now_ms() - 5000) if "draw_ms=" in x]
+    rep.add("INFO", "debug: what the editor sees", (dbg[-1][:300] if dbg else "the debug line comes in the game (/wudebug)"))
+    ui("gizmo debug off")
     return True
 
 

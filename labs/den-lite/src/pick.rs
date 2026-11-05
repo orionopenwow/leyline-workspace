@@ -152,6 +152,49 @@ pub fn follow(eye: V3, dir: V3, g: &Grip, reach: f32) -> Option<[f32; 2]> {
     on_plane(eye, dir, g.z, reach).map(|p| [p[0] + g.off[0], p[1] + g.off[1]])
 }
 
+/// Where the cursor's ray first meets the ground (`floor(x, y)`: the ground's height there), within `reach` yards:
+/// the point (x, y, the ground's height). For carrying a prop over hills (owner 4 Nov: "the object follows the mouse
+/// instantly across the terrain"): a level plane is right only on flat ground, so the ray is walked in
+/// [`GROUND_STEP`] steps until it is under the ground, then the crossing is narrowed down. None when it never comes
+/// down to the ground within reach (the sky).
+pub const GROUND_STEP: f32 = 0.5;
+pub fn on_ground<F: Fn(f32, f32) -> f32>(eye: V3, dir: V3, reach: f32, floor: F) -> Option<V3> {
+    if !eye.iter().chain(dir.iter()).all(|v| v.is_finite()) || !reach.is_finite() || reach <= 0.0 {
+        return None;
+    }
+    let above = |t: f32| {
+        let p = add(eye, dir, t);
+        let f = floor(p[0], p[1]);
+        if f.is_finite() { p[2] - f } else { f32::INFINITY }
+    };
+    let mut lo = 0.0f32;
+    if above(lo) <= 0.0 {
+        // the eye itself under the ground: the ground straight under the cursor's start
+        let f = floor(eye[0], eye[1]);
+        return f.is_finite().then_some([eye[0], eye[1], f]);
+    }
+    let mut t = GROUND_STEP;
+    while t <= reach + GROUND_STEP {
+        let tt = t.min(reach);
+        if above(tt) <= 0.0 {
+            let mut hi = tt;
+            for _ in 0..20 {
+                let mid = (lo + hi) / 2.0;
+                if above(mid) > 0.0 { lo = mid } else { hi = mid }
+            }
+            let p = add(eye, dir, hi);
+            let f = floor(p[0], p[1]);
+            return (p[0].is_finite() && p[1].is_finite() && f.is_finite()).then_some([p[0], p[1], f]);
+        }
+        if tt >= reach {
+            break;
+        }
+        lo = tt;
+        t += GROUND_STEP;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,5 +310,50 @@ mod tests {
         assert!((f[0] - 13.0).abs() < 1e-3 && (f[1] - 1.0).abs() < 1e-3, "{f:?}");
         // the cursor up past the horizon: no answer (the prop stays where it last was)
         assert!(follow(eye, unit([1.0, 0.0, 0.2]), &g, 100.0).is_none());
+    }
+
+    #[test]
+    fn the_ray_meets_flat_ground_where_the_plane_says() {
+        let eye = [0.0, 0.0, 10.0];
+        let dir = unit([1.0, 0.0, -1.0]);
+        let p = on_ground(eye, dir, 100.0, |_, _| 0.0).unwrap();
+        assert!((p[0] - 10.0).abs() < 0.01 && p[1].abs() < 1e-4 && p[2] == 0.0, "{p:?}");
+        let q = on_plane(eye, dir, 0.0, 100.0).unwrap();
+        assert!((q[0] - p[0]).abs() < 0.01);
+    }
+
+    #[test]
+    fn the_ray_stops_on_a_hill_in_front_of_where_flat_ground_would_be() {
+        // a hill rising from x = 5: height 0.8 per yard
+        let floor = |x: f32, _y: f32| if x > 5.0 { (x - 5.0) * 0.8 } else { 0.0 };
+        let eye = [0.0, 0.0, 10.0];
+        let dir = unit([1.0, 0.0, -1.0]);
+        let p = on_ground(eye, dir, 100.0, floor).unwrap();
+        // 10 - x = (x - 5) * 0.8  ->  x = 14 / 1.8 = 7.78
+        assert!((p[0] - 7.777).abs() < 0.02 && (p[2] - floor(p[0], 0.0)).abs() < 1e-4, "{p:?}");
+        assert!(p[0] < 10.0, "the hill comes first");
+    }
+
+    #[test]
+    fn a_ray_into_the_sky_or_past_reach_finds_no_ground() {
+        assert!(on_ground([0.0, 0.0, 10.0], unit([1.0, 0.0, 0.2]), 100.0, |_, _| 0.0).is_none());
+        assert!(on_ground([0.0, 0.0, 10.0], unit([1.0, 0.0, -0.05]), 20.0, |_, _| 0.0).is_none());
+        assert!(on_ground([0.0, 0.0, 10.0], [f32::NAN, 0.0, -1.0], 20.0, |_, _| 0.0).is_none());
+    }
+
+    #[test]
+    fn an_eye_under_the_ground_lands_straight_under_it() {
+        let p = on_ground([3.0, 4.0, -1.0], unit([1.0, 0.0, -1.0]), 50.0, |_, _| 2.0).unwrap();
+        assert_eq!(p, [3.0, 4.0, 2.0]);
+    }
+
+    #[test]
+    fn a_thin_ridge_between_steps_is_still_found_on_steep_rays() {
+        // a 0.3-yard-wide wall 3 yards high at x in [6, 6.3]
+        let floor = |x: f32, _y: f32| if (6.0..6.3).contains(&x) { 3.0 } else { 0.0 };
+        let p = on_ground([0.0, 0.0, 4.0], unit([1.0, 0.0, -0.1]), 100.0, floor);
+        // the walk may step over a sliver this thin; whichever it finds, it is on the ground there
+        let p = p.unwrap();
+        assert!((p[2] - floor(p[0], 0.0)).abs() < 1e-4, "{p:?}");
     }
 }

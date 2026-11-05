@@ -51,6 +51,7 @@ G.VIEW_KEEP = 5                 -- the player's own camera is kept in this saved
 G.VIEW_BUILD = 2                -- the build camera starts from this view (reset to the game's default first)
 G.CAM_DIST = 12                 -- yards from the player, the distance Den Lite's ray uses (gizmo.rs Camera.dist)
 G.HOVER_EVERY = 0.1             -- seconds between hovers (about 10 a second)
+G.HOVER_FAST = 0.03             -- while carrying or dragging: about 30 a second, so the prop keeps up (owner 4 Nov)
 G.CLICK_TIME, G.CLICK_MOVE = 0.3, 6   -- a click, not a drag: shorter than this, moved less than this many pixels
 G.AIM_KEY = "G"
 G.ZOOM_STEP = 2                 -- yards a wheel notch zooms (this file zooms, so it knows the distance)
@@ -66,8 +67,10 @@ local PREFIX, MOD = "OVMOD", "wubuild"
 
 local function now() return GetTime and GetTime() or 0 end
 
+local sent = { n = 0, t = 0, rate = 0 }
 local function send(text)
     if not SendAddonMessage or not UnitName then return false end
+    sent.n = sent.n + 1
     pcall(SendAddonMessage, PREFIX, MOD .. "\tcmd\t1/1\t" .. text, "WHISPER", UnitName("player"))
     return true
 end
@@ -122,7 +125,8 @@ end
 function G.Tick(force)
     if not (G.armed or G.dragging or (G.build and G.Picks())) or not overWorld() then return false end
     local t = now()
-    if not force and t - G.lastSend < G.HOVER_EVERY then return false end
+    local every = (G.armed or G.dragging) and G.HOVER_FAST or G.HOVER_EVERY
+    if not force and t - G.lastSend < every then return false end
     local u, v, a = G.Cursor()
     if not u then return false end
     if not force and G.lastU and math.abs(u - G.lastU) < 0.002 and math.abs(v - G.lastV) < 0.002 then
@@ -482,7 +486,10 @@ function G.MouseUp(button)
         elseif menu and menu:IsShown() then
             menu:Hide(); done = true
         elseif G.Picks() and d.u then
-            done = send(string.format("click %.4f %.4f %.4f %d%s", d.u, d.v, d.a or (16 / 9), G.zoom, shift and " add" or ""))
+            -- a click picks the prop up (owner 4 Nov): it follows the cursor over the ground, the next click puts it
+            -- down; a click on an arrow grabs that axis; Shift adds to the selection instead (a Den Lite from before
+            -- carrying reads the word as a plain select)
+            done = send(string.format("click %.4f %.4f %.4f %d%s", d.u, d.v, d.a or (16 / 9), G.zoom, shift and " add" or " carry"))
         elseif not G.OverObject() then
             done = send("selclear")
         end
@@ -598,6 +605,7 @@ function G.OnMessage(prefix, msg, channel, sender)
     if name == "aim" then
         local kind, rest = data:match("^(%a+),?(.*)$")
         G.armed = (kind == "place" or kind == "move" or kind == "axis") and kind or nil
+        if not G.armed then G.carried = nil end
         if kind == "axis" then G.axis = rest:match(",(%a)$") or G.axis end
         if not G.armed then
             local B = W.Builder
@@ -647,6 +655,18 @@ function G.OnMessage(prefix, msg, channel, sender)
             if down.LeftButton then down.LeftButton.prop = nil end
             bindings(); showTag()
         end
+    elseif name == "carried" then
+        -- picked up by a click (`<id>`, or `axis x|y|z` for an arrow): it follows the cursor; a click puts it down
+        G.carried = data
+        local B = W.Builder
+        if B and B.PillNote then
+            B.PillNote(data:find("^axis") and ("Moving along " .. data:sub(6):upper() .. ": click to drop it, Esc puts it back")
+                or "Carrying: click to put it down, Esc puts it back")
+        end
+        bindings(); showTag()
+    elseif name == "debug" then
+        G.dbgLine = data
+        G.DebugDraw()
     elseif name == "ghost" then
         G.ghost = data
     elseif name == "state" then
@@ -654,6 +674,66 @@ function G.OnMessage(prefix, msg, channel, sender)
         G.scale = tonumber(sc) or G.scale
         if data:find("sel=-;", 1, true) then G.sel = nil end
     end
+end
+
+-- ---------------------------------------------------------------- the debug overlay (/wudebug; owner 4 Nov: "with debug ability")
+-- Top left: what this file thinks (build mode, armed, carried, hovered, the selection, BUTTON1 ours, the cursor,
+-- hovers sent a second) and what Den Lite sees (its `debug` line: armed, where the copy is, the cursor's ray and
+-- where it meets the ground, the ground's height, the handle under the cursor, the redraw pace). Asked twice a second
+-- while shown. Nothing here changes the editor.
+local dbg
+function G.DebugDraw()
+    if not dbg or not dbg:IsShown() then return end
+    local u, v = G.Cursor()
+    local lines = {
+        string.format("|cffffd27fLeyline build debug|r  (/wudebug to hide)"),
+        string.format("build=%s armed=%s carried=%s axis=%s sel=%s", G.build and "on" or "off", G.armed or "-", G.carried or "-",
+            G.axis or "-", tostring(G.sel or "-")),
+        string.format("hovered=%s button1=%s dragging=%s zoom=%s far=%s", G.hovered and (tostring(G.hovered.id) .. " " .. (G.hovered.name or "")) or "-",
+            G.b1 and "ours" or "game", G.dragging and "yes" or "no", tostring(G.zoom), G.far and string.format("%.0f", G.far.back) or "-"),
+        string.format("cursor=%s,%s  sent=%d/s  hover every %.0f ms", u and string.format("%.3f", u) or "-", v and string.format("%.3f", v) or "-",
+            sent.rate, ((G.armed or G.dragging) and G.HOVER_FAST or G.HOVER_EVERY) * 1000),
+        "|cff9fd0ffDen Lite|r",
+    }
+    for part in (G.dbgLine or "no answer yet: is Den Lite from 4 Nov or later?"):gmatch("[^;]+") do lines[#lines + 1] = part end
+    dbg.fs:SetText(table.concat(lines, "\n"))
+end
+
+function G.Debug(on)
+    if not dbg and CreateFrame and UIParent then
+        dbg = CreateFrame("Frame", "LeylineGizmoDebug", UIParent)
+        dbg:SetFrameStrata("TOOLTIP")
+        dbg:SetWidth(460); dbg:SetHeight(300)
+        dbg:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 12, -120)
+        if dbg.SetBackdrop then
+            dbg:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", tile = true, tileSize = 16 })
+            if dbg.SetBackdropColor then dbg:SetBackdropColor(0, 0, 0, 0.7) end
+        end
+        if dbg.EnableMouse then dbg:EnableMouse(false) end
+        dbg.fs = dbg.CreateFontString and dbg:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") or { SetText = function() end }
+        if dbg.fs.SetPoint then dbg.fs:SetPoint("TOPLEFT", dbg, "TOPLEFT", 8, -8) end
+        if dbg.fs.SetJustifyH then dbg.fs:SetJustifyH("LEFT") end
+        dbg:Hide()
+    end
+    if not dbg then return false end
+    if on == nil then on = not dbg:IsShown() end
+    if on then dbg:Show(); send("debug") else dbg:Hide() end
+    G.DebugDraw()
+    return on
+end
+
+-- each half second while shown: Den Lite's view again, and the send rate
+function G.DebugTick(el)
+    sent.t = sent.t + (el or 0)
+    if sent.t < 0.5 then return end
+    sent.rate = math.floor(sent.n / sent.t + 0.5)
+    sent.n, sent.t = 0, 0
+    if dbg and dbg:IsShown() then send("debug"); G.DebugDraw() end
+end
+
+if SlashCmdList then
+    SLASH_LEYLINEBUILDDEBUG1 = "/wudebug"
+    SlashCmdList.LEYLINEBUILDDEBUG = function() G.Debug() end
 end
 
 -- ---------------------------------------------------------------- the den-test (DenBar.lua D.TestAction "gizmo ...")
@@ -683,6 +763,13 @@ function G.TestAction(w)
         if not u or not v then return false end
         return send(string.format("click %.4f %.4f %.4f %d%s", u, v, 16 / 9, G.zoom, w[5] == "add" and " add" or ""))
     end
+    if a == "carry" then
+        -- a click that picks the prop (or an arrow) up at (u, v)
+        local u, v = tonumber(w[3]), tonumber(w[4])
+        if not u or not v then return false end
+        return send(string.format("click %.4f %.4f %.4f %d carry", u, v, 16 / 9, G.zoom))
+    end
+    if a == "debug" then G.Debug(w[3] ~= "off"); return send("debug") end
     if a == "press" then
         local u, v = tonumber(w[3]), tonumber(w[4])
         if not u or not v then return false end
@@ -846,6 +933,7 @@ local function setup()
         if G.armed or G.dragging or G.build then G.Tick(false) end
         G.TipUpdate()
         G.PanHeld()
+        G.DebugTick(el)
     end)
     owner:SetScript("OnEvent", function(_, ev, ...)
         if ev == "CHAT_MSG_ADDON" then G.OnMessage(...) end

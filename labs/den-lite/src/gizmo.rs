@@ -1167,9 +1167,30 @@ fn hover_at(d: &Den, sel: &Sel, a: &mut Aids, x: f32, y: f32) {
     a.at_edge = n > r;
     let (x, y) = if n > r { (cx + dx * r / n, cy + dy * r / n) } else { (x, y) };
     let (sx, sy) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
-    let z = d.floor_at(sx, sy) + a.lift;
+    let z = surface_z(d, a, sx, sy);
     if a.at.is_none() || d.inside(sx, sy, z) {
         a.at = Some([sx, sy, z, a.yaw]);
+    }
+}
+
+/// How high over the ground a top may be and still take what is carried onto it (yards): a table, a crate, a low wall,
+/// not a roof (decorating inside a house, the ground point under the cursor is under its roof).
+pub const SURFACE_REACH: f32 = 2.5;
+
+/// Where the foot of what is in hand goes at (x, y): on the ground (plus its own height over the ground, for a moved
+/// prop), or on the top of a prop under it (owner's LANDSCAPE editor, ed-ground.js: "keeps a moved piece sitting on
+/// the terrain or on whatever is under it"): the highest top there within [`SURFACE_REACH`] of the ground, never
+/// the carried prop's own.
+pub fn surface_z(d: &Den, a: &Aids, x: f32, y: f32) -> f32 {
+    let ground = d.floor_at(x, y);
+    let own = match a.armed {
+        Some(Armed::Move(g)) => vec![g],
+        _ => Vec::new(),
+    };
+    let tops = crate::buildtools::tops(d, true, &own);
+    match crate::tools::top_under([x, y], ground + a.lift.max(0.0) + SURFACE_REACH, &tops).filter(|t| *t > ground + 0.05) {
+        Some(t) => t,
+        None => ground + a.lift,
     }
 }
 
@@ -2715,5 +2736,23 @@ mod tests {
         cmd(&mut d, &mut sel, &mut a, here, &format!("cam pitch {lvl}"), true, 9000);
         let Some(FarOut::Glide(f1, t1, _)) = cmd(&mut d, &mut sel, &mut a, here, "cam fly 1 0 0 0", true, 9000).far else { panic!() };
         assert!((t1[2] - f1[2]).abs() < 0.05 && t1[0] > f1[0] + 5.0, "{f1:?} -> {t1:?}");
+    }
+
+    #[test]
+    fn a_carried_prop_sits_on_what_is_under_it_but_never_on_a_roof() {
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        let crate_ = d.spawn(2413, here.x + 6.0, here.y, here.z, 0.0).unwrap();
+        let top = crate::buildtools::tops(&d, true, &[]).iter().find(|t| (t.at[0] - crate_.x).abs() < 0.01).map(|t| t.top).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "preview 2413", true, 0);
+        let ground = d.floor_at(crate_.x, crate_.y);
+        assert!((surface_z(&d, &a, crate_.x, crate_.y) - top).abs() < 0.01, "on its top");
+        assert!((surface_z(&d, &a, crate_.x + 20.0, crate_.y) - d.floor_at(crate_.x + 20.0, crate_.y)).abs() < 0.01, "on the ground");
+        // carrying the prop itself: never on its own top
+        a.armed = Some(Armed::Move(crate_.guid));
+        a.lift = 0.0;
+        assert!((surface_z(&d, &a, crate_.x, crate_.y) - ground).abs() < 0.01);
+        // a top far over the ground (a roof) is left alone
+        assert!(top - ground <= SURFACE_REACH || (surface_z(&d, &Aids::default(), crate_.x, crate_.y) - ground).abs() < 0.01);
     }
 }

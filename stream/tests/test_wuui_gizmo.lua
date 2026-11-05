@@ -139,7 +139,7 @@ check("never a movement key", not (bindings.W or bindings.A or bindings.S or bin
 local n = #sent
 W.Builder.Choose({ id = 2413, name = "Wooden Chair" })
 c = cmds(n)
-check("a gallery pick arms the preview, and the cursor goes at once", c[1] == "preview 2413" and c[2] and c[2]:find("^hover "))
+check("a gallery pick arms the preview, the cursor's place with it (the copy at once: owner 5 Nov)", c[1] == "preview 2413 0.0000 0.0000 1.7778 12" and #c == 1)
 answer("aim", "place,2413,1543")
 check("in hand: Esc, the exact-click key and Q / E (turn it) bound too, nothing else", G.armed == "place" and bindings.ESCAPE == "LeylineGizmoCancel"
     and bindings.G == "LeylineGizmoAim" and bindings.Q == "LeylineGizmoTurnQ" and bindings.E == "LeylineGizmoTurnE" and count(bindings) == 7)
@@ -392,9 +392,10 @@ check("a BUILD frame round the screen", named.LeylineGizmoBuildFrame.shown and n
 check("the hint line", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("Click a prop to pick it up, click again to put it down  ·  Shift adds  ·  Q E or the wheel turn  ·  Del deletes  ·  F7 leaves Build", 1, true)
     and named.LeylineGizmoTag.fs.text:find("WASD walks  ·  wheel out past the end for the far view  ·  K: overview", 1, true))
 answer("cam", "far,14.0,0,0")
-check("the view out: WASD and the arrows pan it, Q / E not yet (nothing selected), BUTTON1 still the game's",
-    bindings.W == "LeylineGizmoPanW" and bindings.A == "LeylineGizmoPanA" and bindings.UP == "LeylineGizmoPanUP" and not bindings.Q and not bindings.BUTTON1)
-check("the tag: how to fly", named.LeylineGizmoTag.fs.text:find("Far view: WASD flies, Space / X up and down  ·  zoom in to come back", 1, true)
+check("the view out: WASD and the arrows pan it, Q / E up and down (nothing selected: Noggit's), BUTTON1 still the game's",
+    bindings.W == "LeylineGizmoPanW" and bindings.A == "LeylineGizmoPanA" and bindings.UP == "LeylineGizmoPanUP" and bindings.Q == "LeylineGizmoPanQ"
+    and bindings.E == "LeylineGizmoPanE" and not bindings.BUTTON1)
+check("the tag: how to fly", named.LeylineGizmoTag.fs.text:find("Far view: WASD flies where you look, Space / X up and down  ·  Shift fast, Alt slow  ·  zoom in to come back", 1, true)
     and not named.LeylineGizmoTag.fs.text:find("WASD walks", 1, true))
 
 -- the hover stream with nothing in hand
@@ -705,6 +706,74 @@ do
     check("off the window: no cursor (nothing sent)", G.Cursor() == nil)
     cursor, UIParent.w, UIParent.h, UIParent.scale = keepC, keepW, keepH, keepS
 end
+
+-- 5 Nov (the owner's live test): the card's copy glides, the Select tool's click picks up, the camera keeps its pitch
+answer("aim", "off")
+G.dragging = nil
+n = #sent
+check("test glide: nothing in hand, the cursor still goes (the glow)", G.TestAction({ "gizmo", "glide", "0.2", "-0.3" }))
+W.Builder.Choose({ id = 2413, name = "Wooden Chair" })
+answer("aim", "place,2413,1543")
+n = #sent
+clock = clock + 1
+G.TestAction({ "gizmo", "glide", "0.1", "-0.2" })
+G.TestAction({ "gizmo", "glide", "0.3", "-0.25" })
+c = cmds(n)
+check("a card in hand: each move of the cursor over the world is a hover (the copy glides)", c[1] == "hover 0.1000 -0.2000 1.7778 " .. G.zoom
+    and c[2] == "hover 0.3000 -0.2500 1.7778 " .. G.zoom)
+n = #sent
+check("a card dragged from the gallery and let go on the ground: put down", G.DropCard() and cmds(n)[#cmds(n)] == "commit")
+answer("aim", "off")
+check("nothing in hand: no drop", not G.DropCard())
+-- the Select tool: a still left click through this file's own press and let-go picks the prop up; right opens its menu
+n = #sent
+G.TestAction({ "gizmo", "mouse", "0.1", "-0.2" })
+c = cmds(n)
+check("a left click on the world (nothing in hand): Den Lite picks up what is under it", c[#c] == "click 0.1000 -0.2000 1.7778 " .. G.zoom .. " carry")
+n = #sent
+G.TestAction({ "gizmo", "mouse", "0.1", "-0.2", "shift" })
+c = cmds(n)
+check("Shift adds instead", c[#c] == "click 0.1000 -0.2000 1.7778 " .. G.zoom .. " add")
+answer("aim", "move,7,1543")
+answer("carried", "7")
+n = #sent
+G.TestAction({ "gizmo", "mouse", "0.2", "-0.2" })
+check("carried: the next click puts it down", cmds(n)[#cmds(n)] == "commit")
+answer("aim", "off")
+n = #sent
+G.TestAction({ "gizmo", "mouse", "0.1", "-0.2", "right" })
+c = cmds(n)
+check("a still right click: its menu (props no longer take the game's right-click)", c[#c] == "click 0.1000 -0.2000 1.7778 " .. G.zoom .. " menu")
+-- the camera's pitch: kept after a drag when the game lets it be read, else the pose's put back
+camera = {}
+G.Pose()
+check("no pitch to read: none kept", G.pitch0 == nil and G.pitchAdj == 0)
+camera = {}
+G.CameraDragged()
+check("a camera drag then puts the pose's pitch back", camera[1] == "set 2")
+cvars.cameraPitchD = "30"
+G.Pose()
+check("the pose's pitch read (and which way is down)", G.pitch0 == 30 and G.pitchSign == 1 and G.pitchSrc == "cameraPitchD")
+cvars.cameraPitchD = "40"
+camera = {}
+n = #sent
+G.CameraDragged()
+check("looked further down and let go: the pitch stays, Den Lite told", cmds(n)[1] == "cam pitch 0.1745" and not has(camera, "set 2"))
+n = #sent
+G.Pose()
+check("the pose again: Den Lite told the pitch is the pose's", has(cmds(n), "cam pitch 0"))
+cvars.cameraPitchD = nil
+G.Pose()
+-- Noggit's flight: Alt slow, Q / E up and down while they turn nothing
+G.far = { back = 14 }
+function IsAltKeyDown() return true end
+n = #sent
+G.PanKey("Q", true)
+c = cmds(n)
+check("Q lifts the view, Alt slow", (c[1] or ""):find("^cam fly 0 0 1 [%-%d%.]+ s$") ~= nil)
+G.PanKey("Q", false)
+IsAltKeyDown = nil
+G.far = nil
 
 -- leaving build mode: the view back, the frame and every binding gone
 W.DenBar.play = true

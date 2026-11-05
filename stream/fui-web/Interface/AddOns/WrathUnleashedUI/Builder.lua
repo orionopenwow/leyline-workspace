@@ -2240,11 +2240,23 @@ local function buildTile(i)
     end)
     t:SetScript("OnLeave", function(self) self.over = nil; paintTile(self); S().EdTip(nil) end)
     -- drag a tile out of the window: placed (in front of you; in edit mode where you click next)
-    t:SetScript("OnDragStart", function(self) B.dragging = self.item; if self.item then setStatus("Let go outside the window to place it.") end end)
+    -- Den Lite's build mode (owner's LANDSCAPE editor, build-tool-core.js: "drag a card from the Build palette and drop
+    -- the piece under your cursor"): the drag picks the card up at once, its copy glides under the cursor over the
+    -- world (Gizmo.lua: over the world while a card is dragged out of the window), and letting go there puts it down
+    -- (one undo) and selects it; let go over the window, it stays in hand (click the ground to place it).
+    local function gizmoDrag(item) local G = W.Gizmo; return G and G.build and item and not item.kind and G.DropCard end
+    t:SetScript("OnDragStart", function(self)
+        B.dragging = self.item
+        if not self.item then return end
+        if gizmoDrag(self.item) then B.Choose(self.item); setStatus("Let go on the ground to put it there.")
+        else setStatus("Let go outside the window to place it.") end
+    end)
     t:SetScript("OnDragStop", function()
         local it = B.dragging
         B.dragging = nil
-        if it and not (win.IsMouseOver and win:IsMouseOver()) then B.Place(it) end
+        local outside = not (win.IsMouseOver and win:IsMouseOver())
+        if it and gizmoDrag(it) then if outside then W.Gizmo.DropCard() end
+        elseif it and outside then B.Place(it) end
     end)
     t:Hide()
     return t

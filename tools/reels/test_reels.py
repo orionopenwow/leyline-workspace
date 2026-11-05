@@ -313,14 +313,16 @@ class Cut(unittest.TestCase):
 
 class GrowthDocs(unittest.TestCase):
     """docs/growth: drafts only; the standing rules for words and links; the guide series as the owner asked for it."""
-    DOCS = ("README.md", "reddit-guides.md", "weekly-posts.md", "discord-onboarding.md", "host-recruiting.md", "seeded-season.md")
+    DOCS = ("README.md", "reddit-guides.md", "weekly-posts.md", "discord-onboarding.md", "host-recruiting.md", "seeded-season.md",
+            "reddit-lessons.md")
+    LEGAL = "Not affiliated with or endorsed by Blizzard Entertainment."
 
     def text(self, name):
         return read("docs/growth/" + name)
 
     def test_words_and_links(self):
         for name in self.DOCS:
-            t = self.text(name).replace('"Log in" not "Sign in"', "")   # the rule itself, quoted
+            t = self.text(name).replace('"Log in" not "Sign in"', "").replace(self.LEGAL, "")   # the rule itself; the legal line
             for bad in (r"(?i)\b(world of warcraft|wow|warcraft|lich king|blizzard|turtle)\b", r"(?i)\bsign(ed)?[ -]in\b|\bsign up\b",
                         r"(?i)patreon|ko-fi|paypal|donat|\btip\b"):
                 m = re.search(bad, t)
@@ -347,6 +349,89 @@ class GrowthDocs(unittest.TestCase):
             self.assertTrue(named or "TODO" in gif, "episode %d names its GIF" % i)
             for g in named:
                 self.assertIn(g, gifs, "episode %d: %s.gif comes from a reel script" % (i, g))
+
+    # The lessons (reddit-lessons.md): stricter than the other docs, because each body is pasted as it is.
+    LESSON_BANNED = (
+        ("a game or publisher name", r"(?i)world of warcraft|warcraft|lich king|blizzard|\bwow|wow\b|turtle"),
+        ("a client version number", r"\b\d+\.\d+\.\d+[a-z]?\b|\b(1\.12|2\.4|3\.3)\b|\b12340\b"),
+        ("money", r"(?i)patreon|ko-?fi|paypal|venmo|cash ?app|donat|\btips?\b|buy me a|support us|bitcoin|crypto|[$\u20ac\u00a3]"),
+        ("the wrong login words", r"(?i)\bsign(ed)?[ -]?(in|up)\b"),
+        ("a client from elsewhere", r"(?i)decompil|leaked|\brepack|wowdecomp|waystone"),
+        ("the publisher's live game", r"(?i)\bforever\b"),
+    )
+    LESSON_LINKS = ("https://leylinelauncher.com", "https://github.com/OWNER/Leyline", "https://discord.gg/RfChVr8J7T")
+
+    def lesson_problems(self, t):
+        """What breaks the lesson rules in t (the whole file or one body), as (what, text around it)."""
+        out = []
+        t = t.replace(self.LEGAL, "")
+        # The sub's own name (a note for the owner, never in a body) and the GitHub owner's name are not words players read.
+        t = re.sub(r"- \*\*Subreddit:\*\*.*?(?=\n- \*\*Title:\*\*)", "", t, flags=re.S)
+        t = t.replace("github.com/orionopenwow/", "github.com/OWNER/")
+        for what, rx in self.LESSON_BANNED:
+            for m in re.finditer(rx, t):
+                out.append((what, t[max(0, m.start() - 30):m.end() + 30]))
+        for url in re.findall(r"https?://[^\s)`>\]]+", t):
+            url = url.rstrip(".,;:")
+            ok = any(url == a or url.startswith(a + "/") or url.startswith(a + "?") or url.startswith(a + "#")
+                     for a in self.LESSON_LINKS)
+            if not ok or url.startswith("https://github.com/OWNER/Leyline-"):
+                out.append(("a link off the list", url))
+        for host in re.findall(r"(?<![\w/.@-])((?:[a-z0-9-]+\.)+(?:com|org|net|io|gg|app|dev|co|me|tv))\b", t):
+            if host not in ("leylinelauncher.com", "github.com", "discord.gg"):
+                out.append(("a site off the list", host))
+        return out
+
+    def lessons(self):
+        t = self.text("reddit-lessons.md")
+        return re.split(r"\n## (?=\d+\. )", t)[1:]
+
+    def test_lessons_follow_the_rules(self):
+        t = self.text("reddit-lessons.md")
+        self.assertEqual(self.lesson_problems(t), [])
+        posts = self.lessons()
+        self.assertTrue(8 <= len(posts) <= 10, len(posts))
+        for p in posts:
+            head = p.split("\n")[0]
+            for field in ("- **Subreddit:**", "- **Title:**", "- **Body:**", "- **Call to action:**", "- **Check before posting:**"):
+                self.assertIn(field, p, "%s: %s" % (head, field))
+            body = p.split("```text\n", 1)[1].split("```", 1)[0]
+            n = len(body.split())
+            self.assertTrue(150 <= n <= 300, "%s: the body is %d words" % (head, n))
+            self.assertTrue(body.lstrip().startswith("TODO(owner):"), head + ": the opening line is the owner's")
+            self.assertEqual(body.rstrip().split("\n")[-1], self.LEGAL, head + ": ends with the legal line")
+            self.assertEqual(body.count("Blizzard"), 1, head + ": the legal line is the only brand word")
+            self.assertIn("https://discord.gg/RfChVr8J7T", body, head)
+            self.assertRegex(body, r"https://leylinelauncher\.com/", head + ": links its full guide")
+            cta = p.split("- **Call to action:**")[1].split("\n")[0].strip()
+            self.assertTrue(cta and "\n" not in cta, head + ": a one-line call to action")
+            checks = re.findall(r"^  - ", p.split("- **Check before posting:**")[1], re.M)
+            self.assertGreaterEqual(len(checks), 3, head + ": things to check live")
+            self.assertIn("rules", p.split("- **Subreddit:**")[1].split("- **Title:**")[0], head + ": the sub's rules risk")
+        titles = " ".join(p.split("\n")[0].lower() + " " + p.split("- **Title:**")[1].split("\n")[0].lower() for p in posts)
+        for topic in ("own realm", "24/7", "friends-only", "be a node", "modding", "den", "llm agents", "scaling",
+                      "browser", "phones", "boss fight"):
+            self.assertIn(topic, titles, "a lesson on " + topic)
+        self.assertIn("when live", posts[-1].split("\n")[0].lower(), "boss fights are marked until they are live")
+        guides = self.text("reddit-guides.md")
+        for p in posts:
+            title = p.split("- **Title:**")[1].split("\n")[0].strip()
+            self.assertNotIn(title, guides, "a lesson is not a copy of a guide episode")
+        self.assertIn("reddit-lessons.md", self.text("README.md"))
+
+    def test_the_lesson_rules_catch_what_they_should(self):
+        bad = ["Our realm for World of Warcraft fans", "a WoW server", "on the 3.3.5a client", "the 1.12 client", "build 12340",
+               "Patreon here", "leave a tip", "costs $5", "sign up today", "Sign in first", "a decompiled client", "a repack",
+               "like Forever", "- **Title:** r/wowservers", "github.com/someone/wow", "https://example.com/x", "see docker.com", "https://github.com/orionopenwow/leyline-workspace",
+               "https://github.com/orionopenwow/Leyline-Launcher", "https://discord.gg/other"]
+        for b in bad:
+            self.assertTrue(self.lesson_problems(b), b)
+        good = ["Not affiliated with or endorsed by Blizzard Entertainment.", "1.5x experience, rested twice as fast",
+                "https://leylinelauncher.com/wrath/docs/play", "https://github.com/orionopenwow/Leyline/releases",
+                "https://discord.gg/RfChVr8J7T", "about 4 GB, 128 connections, 512 KB/s", "Log in with a Hero Key",
+                "- **Subreddit:** r/wowservers (check its rules)\n- **Title:** a lesson"]
+        for g in good:
+            self.assertEqual(self.lesson_problems(g), [], g)
 
     def test_every_weekly_template(self):
         t = self.text("weekly-posts.md")

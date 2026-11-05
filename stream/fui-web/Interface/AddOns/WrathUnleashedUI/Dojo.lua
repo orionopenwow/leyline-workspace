@@ -1,4 +1,5 @@
--- Dojo (3.3.5a API): the Den's training grounds, one small panel with two pages (owner 3 Nov: "the Dojo in the Den
+-- Dojo (3.3.5a API): the Den's training grounds, one small panel with five tabs (Train, Loadout, Practice, Session,
+-- Jaina; 5 Nov, it was two tall pages) (owner 3 Nov: "the Dojo in the Den
 -- ... all built in with clever UI sections"; "spellbook placement loadout instant on bars, gear sets selector ...
 -- better combat and test range dojo features"). The Den's tool rail has a Dojo button (DenBar.lua); it opens this
 -- panel beside the rail, in the editor's look (Style.lua S.Ed*: near-black, gold for what is on). It stays open in
@@ -160,186 +161,220 @@ function J.SaveGear() return J.Cmd("gearset save " .. saveName("set", J.loadout.
 -- ---------------------------------------------------------------- the panel
 local function label(parent, text, ...) return S().EdLabel(parent, text, false, ...) end
 
+-- The panel (owner 5 Nov, live: "the ui is a mess": its title sat over the Train tab, "FULL DEN ONLY" ran under its
+-- row's buttons, the panel covered play mode's corner). Now the right-hand inspector (DenLayout.lua), a header row
+-- (the title, x), the tabs in their own row, then one page: the label column as wide as the longest label (measured),
+-- the buttons after it as wide as their words. Five short pages instead of one tall grid.
+J.TABS = { { "train", "Train", "Dummies, moving, the boss" }, { "loadout", "Loadout", "Class and spec, your bars, gear sets" },
+    { "practice", "Practice", "Practice dummies and the range" }, { "session", "Session", "Timed parses, reset, refill" },
+    { "jaina", "Jaina", "Jaina: her builds, her ideas" } }
+local PAD, ROW, GAP = 12, 34, 4
+
 local function build()
     panel = CreateFrame("Frame", "LeylineDojoPanel", UIParent)
-    panel:SetWidth(318); panel:SetHeight(320)
-    -- right of the Den's tool rail, under the player frame (not over it)
-    panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 80, -118)
+    panel:SetWidth(360); panel:SetHeight(300)
+    panel:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -198, -54)
     panel:SetFrameStrata("MEDIUM")
     panel:EnableMouse(true)
     S().EdPanel(panel, 0.9)
-    panel.head = S().EdLabel(panel, "Dojo", true, "TOPLEFT", 10, -9)
-    panel.close = S().EdChip(panel, "x", 24, function() J.Show(false) end, "TOPRIGHT", -8, -8)
-    -- the two pages: Train and Loadout (tabs beside the title)
+    -- the header row: the title, the close button
+    panel.head = S().EdLabel(panel, "Dojo", true, "TOPLEFT", PAD, -14)
+    panel.close = S().EdChip(panel, "x", 28, function() J.Show(false) end, "TOPRIGHT", -8, -6)
+    panel.close.edLabel = "Close the Dojo"
+    -- the tabs, their own row
     panel.tabs = {}
-    local tx = 64
-    for _, t in ipairs({ { "train", "Train", "dojo", "Dummies, the range, parses and the boss" },
-        { "loadout", "Loadout", "bars", "Class and spec, your bars, gear sets" } }) do
-        local b = S().EdChip(panel, t[2], nil, function() J.Page(t[1]) end, "TOPLEFT", tx, -5)
-        b.edLabel = t[4]; b.page = t[1]
+    local tx = PAD - 2
+    for _, t in ipairs(J.TABS) do
+        local b = S().EdChip(panel, t[2], nil, function() J.Page(t[1]) end, "TOPLEFT", tx, -40)
+        b.edLabel = t[3]; b.page = t[1]
         panel.tabs[t[1]] = b
-        tx = tx + (tonumber((b:GetWidth())) or 60) + 4
+        tx = tx + (tonumber((b:GetWidth())) or 60) + GAP
     end
-    panel.note = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.note:SetPoint("TOPLEFT", 10, -36); panel.note:SetWidth(298); panel.note:SetJustifyH("LEFT")
-    panel.note.styleKeep = true
+    local tabsW = tx - GAP + PAD - 2
+    panel.note = S().EdText(panel, S().ED_SIZE.small)
+    panel.note:SetPoint("TOPLEFT", PAD, -76); panel.note:SetJustifyH("LEFT"); panel.note:SetJustifyV("TOP")
+    local m = S().ED.muted
+    panel.note:SetTextColor(m[1], m[2], m[3])
     panel.pages = {}
-    for _, k in ipairs({ "train", "loadout" }) do
+    for _, t in ipairs(J.TABS) do
         local pg = CreateFrame("Frame", nil, panel)
         pg:SetAllPoints(panel)
-        panel.pages[k] = pg
+        panel.pages[t[1]] = pg
     end
 
-    local widest, lowest = 0, 0
-    -- one page's rows: a label, then chips as wide as their words (nothing cut)
-    local function page(pg)
-        local y = -58
-        local function row(name)
-            local l = label(pg, name, "TOPLEFT", 10, y - 5)
-            local at = y
-            y = y - 34
-            return l, at
+    -- every page's rows first (labels and buttons), placed once the label column's width is known
+    local rows = {}
+    local function row(pg, key, name, list)
+        local r = { pg = pg, label = label(pg, name), chips = {} }
+        panel[key] = r.label
+        for _, c in ipairs(list or {}) do
+            local b = S().EdChip(pg, c[2], nil, c[4])
+            if c[6] then b:SetWidth(math.max(tonumber((b:GetWidth())) or 0, c[6])) end
+            b.edLabel = c[5]
+            if c[1] then panel[c[1]] = b end
+            r.chips[#r.chips + 1] = b
         end
-        local function chips(list, x0, at)
-            local x = x0 or 104
-            for _, c in ipairs(list) do
-                local b = S().EdChip(pg, c[2], nil, c[4], "TOPLEFT", x, at)
-                if c[6] then b:SetWidth(math.max(tonumber((b:GetWidth())) or 0, c[6])) end
-                b.edLabel = c[5]
-                panel[c[1]] = b
-                x = x + (tonumber((b:GetWidth())) or c[3]) + 4
-            end
-            widest = math.max(widest, x)
-            return x
-        end
-        return row, chips, function() lowest = math.min(lowest, y) end
+        rows[#rows + 1] = r
+        return r
     end
+    local function verbs(r, key, list)
+        panel[key] = {}
+        for _, c in ipairs(list) do
+            local b = S().EdChip(r.pg, c[2], nil, function() J.Cmd(c[1]) end)
+            b.edLabel = c[3]; b.verb = c[1]
+            panel[key][#panel[key] + 1] = b
+            r.chips[#r.chips + 1] = b
+        end
+    end
+    local P = panel.pages
 
-    -- ---------------- Train
-    local row, chips, done = page(panel.pages.train)
-    local pg = panel.pages.train
-    local _, at = nil, nil
-    panel.training, at = row("Training")
-    chips({
+    -- Train: the ring and dummies, moving, the full Den's boss (that row only on the full Den)
+    row(P.train, "training", "Training", {
         { "ring", "Ring", 52, function() J.Cmd("ring") end, "A training ring beside you (on Den Lite your companion builds it)" },
         { "dummies", "Dummies", 70, function() J.Cmd("dummies 3") end, "Three training dummies (in the ring when there is one)" },
-        { "clear", "Clear", 52, function() J.Cmd("clear") end, "The dummies and the boss go (the ring too on the full Den)" },
-    }, nil, at)
-    panel.moving, at = row("Moving")
-    local x = chips({ { "fly", "Fly", 52, function() J.Cmd("fly") end, "Fly: jump, then Space to rise and X to sink" } }, nil, at) + 8
+        { "clear", "Clear", 52, function() J.Cmd("clear") end, "The dummies and the boss go (the ring too on the full Den)" } })
+    local mv = row(P.train, "moving", "Moving", {
+        { "fly", "Fly", 52, function() J.Cmd("fly") end, "Fly: jump, then Space to rise and X to sink" } })
     panel.speeds = {}
     for _, n in ipairs(J.SPEEDS) do
-        local b = S().EdChip(pg, n .. "x", nil, function() J.Cmd("speed " .. n) end, "TOPLEFT", x, at)
+        local b = S().EdChip(P.train, n .. "x", nil, function() J.Cmd("speed " .. n) end)
         b.edLabel = n == 1 and "Normal speed" or ("Run and fly " .. n .. " times as fast")
         b.speed = n
         panel.speeds[#panel.speeds + 1] = b
-        x = x + (tonumber((b:GetWidth())) or 34) + 4
+        mv.chips[#mv.chips + 1] = b
     end
-    widest = math.max(widest, x)
-    panel.builds, at = row("Jaina builds")
+    panel.fullRow = row(P.train, "full", "Full Den", {
+        { "bossPick", title(J.Boss()), 78, function() J.NextBoss() end, "Which boss (click for the next)", 96 },
+        { "fight", "Fight", 46, function() J.Cmd("boss " .. J.Boss()) end, "The boss, 12 yards ahead: beat your best time" },
+        { "duel", "Duels", 50, function() J.Cmd("duel " .. (J.line.duel == "1" and "off" or "on")) end, "Duels in the Den become timed spars" },
+        { "look", "Look", 44, function() J.Cmd("look") end, "A new look at the character list" } })
+
+    -- Loadout: class and spec, bars, gear, a name for Save
+    row(P.loadout, "classRow", "Class", {
+        { "classPick", title(J.Class()), 86, function() J.NextClass() end, "Which class (click for the next)", 100 },
+        { "specPick", title(J.Spec()), 96, function() J.NextSpec() end, "Which spec (click for the next)", 124 },
+        { "classBe", "Be", 34, function() J.Cmd("class " .. J.Class() .. " " .. J.Spec()) end, "Become that class and spec at level 80: its spellbook, talents and every bar at once" },
+        { "mounts", "Mounts", 58, function() J.Cmd("mounts") end, "Every mount in your spellbook, on the right bar (flying ones fly with Fly on)" } })
+    row(P.loadout, "barsRow", "Bars", {
+        { "barPick", "No saved bar", 96, function() J.NextBar() end, "Your saved bars for this spec (click for the next)", 110 },
+        { "barUse", "Use", 40, function() if J.Bar() then J.Cmd("bars use " .. J.Bar()) end end, "Put that bar on" },
+        { "barSave", "Save", 44, function() J.SaveBars() end, "Keep your bar as it is now (by the name in the box)" },
+        { "barReset", "Reset", 48, function() J.Cmd("bars reset") end, "The spec's own layout again" } })
+    row(P.loadout, "gearRow", "Gear", {
+        { "gearPick", "No sets", 96, function() J.NextGear() end, "Raid tiers for your class and spec, then your own sets (click for the next)", 110 },
+        { "gearWear", "Wear", 44, function() if J.Gear() then J.Cmd("gearset " .. J.Gear()) end end, "Put that whole look on (everyone in the Den sees it)" },
+        { "gearSave", "Save", 44, function() J.SaveGear() end, "Keep what you wear as a set (by the name in the box)" },
+        { "gearOff", "Off", 40, function() J.Cmd("gearset off") end, "Your own outfit again" } })
+    local nr = row(P.loadout, "nameRow", "Name")
+    panel.nameBox = S().EdInput(P.loadout, 180, 26)
+    panel.nameBox.edLabel = "A name for Save (empty: bar 1, set 1...)"
+    if panel.nameBox.SetMaxLetters then panel.nameBox:SetMaxLetters(24) end
+    nr.chips[1] = panel.nameBox
+
+    -- Practice: the sandbox combat's dummies, the range
+    verbs(row(P.practice, "practice", "Practice"), "practiceChips", J.PRACTICE)
+    local rr = row(P.practice, "rangeRow", "Range")
+    verbs(rr, "rangeChips", J.RANGE)
+    panel.safe = S().EdChip(P.practice, "Safe", nil, function() J.Cmd("invulnerable " .. (J.line.god == "1" and "off" or "on")) end)
+    panel.safe.edLabel = "Nothing hurts you (again: as before)"
+    panel.rangeChips[#panel.rangeChips + 1] = panel.safe
+    rr.chips[#rr.chips + 1] = panel.safe
+
+    -- Session: timed parses, reset, refill, the dummies hitting back
+    local sr = row(P.session, "session", "Session")
+    verbs(sr, "sessionChips", J.SESSION)
+    panel.fightBack = S().EdChip(P.session, "Fight", nil, function() J.Cmd("fight " .. (J.line.fight == "1" and "off" or "on")) end)
+    panel.fightBack.edLabel = "The dummies hit back (lightly)"
+    panel.sessionChips[#panel.sessionChips + 1] = panel.fightBack
+    sr.chips[#sr.chips + 1] = panel.fightBack
+
+    -- Jaina: her builds, her orders, her ideas
+    local br = row(P.jaina, "builds", "Builds")
     panel.stamps = {}
-    x = 104
     for _, s in ipairs(J.STAMPS) do
-        local b = S().EdChip(pg, title(s), nil, function() J.Cmd("build " .. s) end, "TOPLEFT", x, at)
+        local b = S().EdChip(P.jaina, title(s), nil, function() J.Cmd("build " .. s) end)
         b.edLabel = "Jaina builds a " .. s .. " in front of you"
         b.stamp = s
         panel.stamps[#panel.stamps + 1] = b
-        x = x + (tonumber((b:GetWidth())) or 52) + 4
+        br.chips[#br.chips + 1] = b
     end
-    widest = math.max(widest, x)
-    panel.jainaRow, at = row("Jaina")
-    chips({
+    row(P.jaina, "jainaRow", "Orders", {
         { "jFollow", "Follow", 54, function() J.Jaina("follow") end, "She follows you" },
         { "jStay", "Stay", 44, function() J.Jaina("stay") end, "She waits where she is" },
         { "jQuiet", "Quiet", 50, function() J.Jaina(J.jaina.talk == "quiet" and "talk" or "quiet") end,
             "Quiet: she says nothing unasked (gestures only). Again: she chimes in now and then" },
-        { "jPet", "Pet", 40, function() J.Jaina("pet") end, "A small critter by you (three at most; they go when you leave)" },
-    }, nil, at)
-    panel.ideasRow, at = row("Her ideas")
-    chips({
+        { "jPet", "Pet", 40, function() J.Jaina("pet") end, "A small critter by you (three at most; they go when you leave)" } })
+    row(P.jaina, "ideasRow", "Her ideas", {
         { "jIdea", "Idea", 44, function() J.Jaina("idea") end, "She suggests a small set in front of you: a sparkling copy you keep or send away" },
         { "jYes", "Keep", 46, function() J.Jaina("yes") end, "Keep her set (one undo takes it back), or yes to her question" },
         { "jNo", "No", 36, function() J.Jaina("no") end, "Send her set away, or no to her question" },
-        { "jTidy", "Tidy", 44, function() J.Jaina("tidy") end, "She asks first, then takes away only what she put down and you haven't moved" },
-    }, nil, at)
+        { "jTidy", "Tidy", 44, function() J.Jaina("tidy") end, "She asks first, then takes away only what she put down and you haven't moved" } })
     for _, k in ipairs({ "jIdea", "jTidy", "jPet", "jQuiet" }) do panel[k].edLabel0 = panel[k].edLabel end
-    local function verbRow(name, key, list, x0)
-        local l, at2 = row(name)
-        panel[key] = {}
-        local xx = x0 or 92
-        for _, c in ipairs(list) do
-            local b = S().EdChip(pg, c[2], nil, function() J.Cmd(c[1]) end, "TOPLEFT", xx, at2)
-            b.edLabel = c[3]
-            b.verb = c[1]
-            panel[key][#panel[key] + 1] = b
-            xx = xx + (tonumber((b:GetWidth())) or 42) + 4
-        end
-        widest = math.max(widest, xx)
-        return l, at2, xx
+
+    -- the label column: as wide as the longest label on any page (so the pages line up)
+    local labels = {}
+    for _, r in ipairs(rows) do labels[#labels + 1] = r.label end
+    local col = PAD + (W.DenLayout and W.DenLayout.Column(labels, 60, 14) or 110)
+    panel.col = col
+    local widest = tabsW
+    for _, r in ipairs(rows) do
+        local x = col
+        for _, b in ipairs(r.chips) do x = x + (tonumber((b:GetWidth())) or 40) + GAP end
+        r.width = x - GAP + PAD
+        if r.width > widest then widest = r.width end
     end
-    panel.practice = verbRow("Practice", "practiceChips", J.PRACTICE)
-    local rx
-    panel.rangeRow, at, rx = verbRow("Range", "rangeChips", J.RANGE)
-    panel.safe = S().EdChip(pg, "Safe", nil, function() J.Cmd("invulnerable " .. (J.line.god == "1" and "off" or "on")) end, "TOPLEFT", rx, at)
-    panel.safe.edLabel = "Nothing hurts you (again: as before)"
-    widest = math.max(widest, rx + (tonumber((panel.safe:GetWidth())) or 40) + 4)
-    panel.rangeChips[#panel.rangeChips + 1] = panel.safe
-    local sx
-    panel.session, at, sx = verbRow("Session", "sessionChips", J.SESSION)
-    panel.fightBack = S().EdChip(pg, "Fight", nil, function() J.Cmd("fight " .. (J.line.fight == "1" and "off" or "on")) end, "TOPLEFT", sx, at)
-    panel.fightBack.edLabel = "The dummies hit back (lightly)"
-    widest = math.max(widest, sx + (tonumber((panel.fightBack:GetWidth())) or 40) + 4)
-    panel.sessionChips[#panel.sessionChips + 1] = panel.fightBack
-    panel.full, at = row("Full Den")
-    chips({
-        { "bossPick", title(J.Boss()), 78, function() J.NextBoss() end, "Which boss (click for the next)", 96 },
-        { "fight", "Fight", 46, function() J.Cmd("boss " .. J.Boss()) end, "The boss, 12 yards ahead: beat your best time" },
-        { "duel", "Duels", 50, function() J.Cmd("duel " .. (J.line.duel == "1" and "off" or "on")) end, "Duels in the Den become timed spars" },
-        { "look", "Look", 44, function() J.Cmd("look") end, "A new look at the character list" },
-    }, nil, at)
-    done()
-
-    -- ---------------- Loadout
-    row, chips, done = page(panel.pages.loadout)
-    panel.classRow, at = row("Class")
-    chips({
-        { "classPick", title(J.Class()), 86, function() J.NextClass() end, "Which class (click for the next)", 100 },
-        { "specPick", title(J.Spec()), 96, function() J.NextSpec() end, "Which spec (click for the next)", 124 },
-        { "classBe", "Be", 34, function() J.Cmd("class " .. J.Class() .. " " .. J.Spec()) end, "Become that class and spec at level 80: its spellbook, talents and every bar at once" },
-        { "mounts", "Mounts", 58, function() J.Cmd("mounts") end, "Every mount in your spellbook, on the right bar (flying ones fly with Fly on)" },
-    }, nil, at)
-    panel.barsRow, at = row("Bars")
-    chips({
-        { "barPick", "No saved bar", 96, function() J.NextBar() end, "Your saved bars for this spec (click for the next)", 110 },
-        { "barUse", "Use", 40, function() if J.Bar() then J.Cmd("bars use " .. J.Bar()) end end, "Put that bar on" },
-        { "barSave", "Save", 44, function() J.SaveBars() end, "Keep your bar as it is now (by the name in the box)" },
-        { "barReset", "Reset", 48, function() J.Cmd("bars reset") end, "The spec's own layout again" },
-    }, nil, at)
-    panel.gearRow, at = row("Gear")
-    chips({
-        { "gearPick", "No sets", 96, function() J.NextGear() end, "Raid tiers for your class and spec, then your own sets (click for the next)", 110 },
-        { "gearWear", "Wear", 44, function() if J.Gear() then J.Cmd("gearset " .. J.Gear()) end end, "Put that whole look on (everyone in the Den sees it)" },
-        { "gearSave", "Save", 44, function() J.SaveGear() end, "Keep what you wear as a set (by the name in the box)" },
-        { "gearOff", "Off", 40, function() J.Cmd("gearset off") end, "Your own outfit again" },
-    }, nil, at)
-    panel.nameRow, at = row("Name")
-    panel.nameBox = S().EdInput(panel.pages.loadout, 160, 26)
-    panel.nameBox:SetPoint("TOPLEFT", 104, at)
-    panel.nameBox.edLabel = "A name for Save (empty: bar 1, set 1...)"
-    if panel.nameBox.SetMaxLetters then panel.nameBox:SetMaxLetters(24) end
-    widest = math.max(widest, 104 + 164)
-    done()
-
-    panel.readout = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    local pw = math.max(318, widest + 10)
-    panel:SetWidth(pw)
-    panel:SetHeight(-lowest + 46)
-    panel.note:SetWidth(pw - 20)
-    panel.readout:SetPoint("TOPLEFT", 10, lowest - 6); panel.readout:SetWidth(pw - 20); panel.readout:SetJustifyH("LEFT")
-    panel.readout.styleKeep = true
+    panel.rows = rows
+    panel:SetWidth(widest)
+    panel.note:SetWidth(widest - 2 * PAD)
+    panel.readout = S().EdText(panel, S().ED_SIZE.small)
+    panel.readout:SetJustifyH("LEFT"); panel.readout:SetJustifyV("TOP")
+    panel.readout:SetWidth(widest - 2 * PAD)
     panel:Hide()
+    if W.DenLayout then W.DenLayout.Dock(panel, "inspector", { name = "dojo" }) end
     J.Page(J.page)
     J.Paint()
+end
+
+-- The rows of each page placed top down (a row that is hidden takes no room), the note's height measured; the panel
+-- as tall as its page, the readout under it.
+function J.Layout()
+    if not panel then return end
+    local nh
+    -- the note wraps: as many lines as its words need in its width
+    local nw = tonumber((panel.note:GetStringWidth())) or 0
+    local lines = math.max(1, math.ceil(nw / math.max(1, (tonumber((panel.note:GetWidth())) or 300))))
+    if (panel.note:GetText() or "") == "" then lines = 0 end
+    nh = lines * (S().ED_SIZE.small + 3)
+    panel.note:SetHeight(math.max(1, nh))
+    local top = -76 - nh - (lines > 0 and 10 or 0)
+    local ys = {}
+    for _, r in ipairs(panel.rows) do
+        local y = ys[r.pg] or top
+        local on = not r.hidden
+        if on then
+            r.label:ClearAllPoints(); r.label:SetPoint("TOPLEFT", r.pg, "TOPLEFT", PAD, y - 7)
+            local x = panel.col
+            for _, b in ipairs(r.chips) do
+                b:ClearAllPoints(); b:SetPoint("TOPLEFT", r.pg, "TOPLEFT", x, y)
+                x = x + (tonumber((b:GetWidth())) or 40) + GAP
+            end
+            y = y - ROW
+        end
+        if on then r.label:Show() else r.label:Hide() end
+        for _, b in ipairs(r.chips) do if on then b:Show() else b:Hide() end end
+        ys[r.pg] = y
+    end
+    local y = ys[panel.pages[J.page]] or top
+    local text = panel.readout:GetText() or ""
+    local rh = 0
+    if text ~= "" then
+        local rw = tonumber((panel.readout:GetStringWidth())) or 0
+        rh = math.max(1, math.ceil(rw / math.max(1, (tonumber((panel.readout:GetWidth())) or 300)))) * (S().ED_SIZE.small + 3)
+    end
+    panel.readout:ClearAllPoints(); panel.readout:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, y - 6)
+    panel.readout:SetHeight(math.max(1, rh))
+    panel:SetHeight(-y + (rh > 0 and rh + 14 or 0) + 8)
+    if panel:IsShown() and W.DenLayout then W.DenLayout.Layout() end
 end
 
 function J.Panel() if not panel then build() end return panel end
@@ -347,10 +382,13 @@ function J.IsOpen() return panel ~= nil and panel:IsShown() end
 
 -- A page: "train" or "loadout" (the tab lights up).
 function J.Page(which)
-    J.page = (which == "loadout") and "loadout" or "train"
+    local ok = false
+    for _, t in ipairs(J.TABS) do if t[1] == which then ok = true end end
+    J.page = ok and which or "train"
     if not panel then return J.page end
     for k, pg in pairs(panel.pages) do if k == J.page then pg:Show() else pg:Hide() end end
     for k, b in pairs(panel.tabs) do b:SetActive(k == J.page) end
+    J.Paint()
     return J.page
 end
 
@@ -410,7 +448,8 @@ function J.Paint()
         local b = panel[k]
         if lite then b:Disable(); b.edLabel = J.FULL_ONLY else b:Enable() end
     end
-    panel.full:SetText(lite and "FULL DEN ONLY" or "FULL DEN")
+    -- the full Den's row: not shown at all on Den Lite (owner 5 Nov: greyed "FULL DEN ONLY" buttons were clutter)
+    panel.fullRow.hidden = lite
     -- the sandbox combat's rows and the loadout page: on when the server says it has it (Den Lite's combat=1)
     local combat = J.Combat()
     for _, list in ipairs({ panel.practiceChips, panel.rangeChips, panel.sessionChips }) do
@@ -456,6 +495,11 @@ function J.Paint()
     if combat and lo.set and lo.set ~= "-" then parts[#parts + 1] = "Gear: " .. lo.set end
     if combat and l.parse and l.parse ~= "-" then parts[#parts + 1] = l.parse .. " min parse" end
     panel.readout:SetText(#parts > 0 and table.concat(parts, "   ") or ((lite and not combat) and "" or "Hit a dummy: your damage per second shows here."))
+    -- without the sandbox combat: the Practice and Session pages say why their buttons are off
+    if not combat and (J.page == "practice" or J.page == "session" or J.page == "loadout") then
+        panel.note:SetText("These need Den Lite's sandbox combat: update Your Den in the launcher.")
+    end
+    J.Layout()
 end
 
 -- ---------------------------------------------------------------- the server's answers

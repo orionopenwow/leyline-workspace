@@ -176,6 +176,8 @@ local function build()
     panel.signed.styleKeep = true
     panel:SetHeight(218 + (T.ROWS + 3) * 22 + 10)
     panel:Hide()
+    -- the right-hand inspector, as the Dojo (DenLayout.lua; owner 5 Nov: it sat over play mode's corner)
+    if W.DenLayout then W.DenLayout.Dock(panel, "inspector", { name = "arena" }) end
     T.Paint()
 end
 

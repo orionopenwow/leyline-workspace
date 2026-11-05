@@ -155,6 +155,8 @@ local function build()
     win:SetScript("OnShow", function() paint(); if W.DenBar and W.DenBar.Paint then W.DenBar.Paint() end end)
     win:SetScript("OnHide", function() if W.DenBar and W.DenBar.Paint then W.DenBar.Paint() end end)
     win:Hide()
+    -- a big window in the middle, under the top toasts (DenLayout.lua)
+    if W.DenLayout then W.DenLayout.Dock(win, "centre", { name = "guide" }) end
 end
 
 -- Page n (1 .. #G.PAGES, or a page's key), shown.

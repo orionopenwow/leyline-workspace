@@ -183,8 +183,10 @@ local function clipped(F)
             -- on screen
             if e.x < -0.5 or e.y < -0.5 or e.x + e.w > F.screen.w + 0.5 or e.y + e.h > F.screen.h + 0.5 then add(e, "off screen") end
             -- a text fits its box
-            if f.kind == "FontString" and f.text and f.text ~= "" and not e.f.autoW then
-                local tw, size = F.textWidth(f), F.fontSize(f)
+            -- (one line with wrapping off: the game ends it in "..." itself, DenLayout.lua L.OneLine)
+            if f.kind == "FontString" and f.text and f.text ~= "" and not e.f.autoW and f.wrap ~= false then
+                local k = F.effScale(f)
+                local tw, size = F.textWidth(f) * k, F.fontSize(f) * k
                 local lines = math.ceil(tw / math.max(1, e.w) - 1e-6)
                 if e.h < size * 1.9 then
                     if tw > e.w + 0.5 then add(e, string.format("wider than its box (%.0f > %.0f)", tw, e.w)) end

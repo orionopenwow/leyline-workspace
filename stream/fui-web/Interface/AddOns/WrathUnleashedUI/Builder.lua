@@ -174,6 +174,7 @@ local function setStatus(text)
         pill.note:SetText(B.status)
         local m = S().ED.muted
         pill.note:SetTextColor(m[1], m[2], m[3])
+        if refreshPill then refreshPill() end
     end
     if panel then panel.status:SetText(B.status) end
     if files then files.status:SetText(B.status) end
@@ -1219,31 +1220,38 @@ function B.StatusLine()
     return table.concat(parts, " · ")
 end
 
--- The pill: one line at the bottom centre, above the action bars, saying what the editor is doing; over it, for a
--- few seconds, the last thing the realm (Den Lite) said or the hint for what the mouse is on. Every answer goes here,
--- none to the chat (DenBar.lua filters the Den's system lines into it too).
+-- The status line (owner 5 Nov, live: three lines stacked over each other at the bottom: the note over the pill, the
+-- pill, the build hint under it): one bar along the bottom, right of the chat, left of the side bars (DenLayout.lua's
+-- status slot), one row: on the left what was just said (the realm's answer, a toast, the hint for what the mouse is
+-- on; Gizmo.lua's build hint when nothing was said lately), on the right what the editor is doing ("Place · Barrel ·
+-- snap 1 yd · 15° · room 3/800 · Saved 12 s ago"), then the selection boxed in gold. Every answer goes here, none to
+-- the chat (DenBar.lua filters the Den's system lines into it too). Each part one line, ending in "..." when long.
 local NOTE_SECS = 6
+local PILL_H, PILL_MOST = 30, 1100
 local function buildPill()
     pill = CreateFrame("Frame", "LeylineEditorStatus", UIParent)
-    pill:SetWidth(560); pill:SetHeight(30)
+    pill:SetWidth(560); pill:SetHeight(PILL_H)
     pill:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, LAYOUT.pillBottom)
     pill:SetFrameStrata("MEDIUM")
     S().EdPanel(pill, 0.86)
     pill.line = S().EdText(pill, S().ED_SIZE.text)
-    pill.line:SetPoint("CENTER", 0, 0)
+    pill.line:SetPoint("RIGHT", pill, "RIGHT", -12, 0)
+    pill.line:SetJustifyH("RIGHT")
     pill.line:SetHeight(18)   -- one line: a long one ends in "..."
-    pill.note = S().EdText(pill, S().ED_SIZE.text)
-    pill.note:SetPoint("BOTTOM", pill, "TOP", 0, 6)
-    pill.note:SetWidth(720)
-    pill.note.outside = true   -- over the pill, on purpose
+    -- the left part: the last thing said (for a few seconds), else the hint (Gizmo.lua docks its tag here)
+    pill.left = CreateFrame("Frame", nil, pill)
+    pill.left:SetPoint("LEFT", pill, "LEFT", 12, 0)
+    pill.left:SetHeight(18); pill.left:SetWidth(200)
+    pill.note = S().EdText(pill.left, S().ED_SIZE.text)
+    pill.note:SetPoint("LEFT", pill.left, "LEFT", 0, 0)
+    pill.note:SetJustifyH("LEFT")
     local m = S().ED.muted
     pill.note:SetTextColor(m[1], m[2], m[3])
     pill.note:SetText(B.status or "")
-    -- the selection, boxed in gold at the pill's right: its name (and how many)
+    -- the selection, boxed in gold at the bar's right end: its name (and how many)
     pill.sel = CreateFrame("Button", nil, pill)
-    pill.sel:SetHeight(30)
-    pill.sel:SetPoint("LEFT", pill, "RIGHT", 6, 0)
-    pill.sel.outside = true
+    pill.sel:SetHeight(PILL_H - 6)
+    pill.sel:SetPoint("RIGHT", pill, "RIGHT", -3, 0)
     S().EdPanel(pill.sel, 0.9, S().ED.panel2)
     S().EdEdge(pill.sel, S().ED.gold)
     pill.sel.label = S().EdText(pill.sel, S().ED_SIZE.text)
@@ -1254,42 +1262,89 @@ local function buildPill()
     pill.sel.edLabel = "The selection: its panel"
     pill.sel:Hide()
     pill:SetScript("OnUpdate", function()
-        if B.statusAt and now() - B.statusAt > NOTE_SECS and pill.note:GetText() ~= "" then pill.note:SetText("") end
+        if B.statusAt and now() - B.statusAt > NOTE_SECS and pill.note:GetText() ~= "" then pill.note:SetText(""); refreshPill() end
     end)
     pill:Hide()
+    if W.DenLayout then W.DenLayout.Dock(pill, "status", { place = false, keep = true, name = "status" }) end
+end
+-- what shows on the left now: the note while it is fresh, else the hint (Gizmo.lua's tag)
+function B.PillLeft()
+    if not pill then return nil end
+    if (pill.note:GetText() or "") ~= "" then return "note" end
+    if pill.hint and pill.hint:IsShown() then return "hint" end
+    return nil
+end
+-- Gizmo.lua's tag (the build hint) as the bar's left part: inside it, one line, under any fresh note
+function B.DockHint(f)
+    B.Pill()
+    if not f then return end
+    pill.hint = f
+    f:SetParent(pill.left)
+    f:ClearAllPoints()
+    f:SetPoint("LEFT", pill.left, "LEFT", 0, 0)
+    f:SetHeight(18)
+    if f.fs and f.fs.ClearAllPoints then
+        f.fs:ClearAllPoints(); f.fs:SetPoint("LEFT", f, "LEFT", 0, 0); f.fs:SetJustifyH("LEFT")
+        if f.fs.SetFontObject then f.fs:SetFontObject(S().EdFont(S().ED_SIZE.text)) end
+        local m = S().ED.muted
+        f.fs:SetTextColor(m[1], m[2], m[3])
+    end
+    refreshPill()
 end
 refreshPill = function()
     if not pill then return end
+    local L = W.DenLayout
     local line = B.StatusLine()
     local D = W.DenBar
     if D and D.IsActive and D.IsActive() and D.SavedLine then line = line .. "  ·  " .. D.SavedLine() end
-    -- never wider than the room between the chat (its right edge 462 at the stock place) and the screen's middle;
-    -- a line too long loses the "Saved" note first, then ends in "..." (nothing cut mid-letter)
+    -- the bar: the status slot's width (right of the chat, left of the side bars), at most PILL_MOST
     local sw = (GetScreenWidth and tonumber((GetScreenWidth()))) or 1366
-    local most = math.max(360, math.min(900, sw - 2 * 470))
-    pill.line:SetText(line)
-    local w = pill.line.GetStringWidth and tonumber((pill.line:GetStringWidth()))
-    if w and w + 40 > most then
-        line = B.StatusLine()
-        pill.line:SetText(line)
-        w = tonumber((pill.line:GetStringWidth()))
-    end
-    local pw = math.max(math.min(420, most), math.min(most, (w or (#line * 7)) + 40))
+    local a = L and L.Area("status") or { l = 470, r = sw - 96, b = LAYOUT.pillBottom }
+    local pw = math.max(360, math.min(PILL_MOST, a.r - a.l))
     pill:SetWidth(pw)
-    pill.line:SetWidth(pw - 24)
-    if w and w > pw - 24 then S().Elide(pill.line, line, pw - 24) end
-    -- the selection's box, and the pill's edge gold while building in a Den (build mode), the subtle edge elsewhere
+    pill:ClearAllPoints()
+    pill:SetPoint("BOTTOM", UIParent, "BOTTOMLEFT", math.floor((a.l + a.r) / 2), a.b)
+    -- the selection's box at the right end
     local s = B.state
     local name = s.selName and ((s.count or 1) > 1 and (s.count .. " selected: " .. s.selName) or s.selName)
+    local selW = 0
     if name then
         pill.sel.label:SetText(name)
         local tw = pill.sel.label.GetStringWidth and tonumber((pill.sel.label:GetStringWidth())) or (#name * 7)
-        pill.sel:SetWidth(math.min(240, tw + 24))
-        pill.sel.label:SetWidth(math.min(240, tw + 24) - 16)
+        selW = math.min(220, tw + 24)
+        pill.sel:SetWidth(selW)
+        if L then L.OneLine(pill.sel.label, selW - 16, 18) else pill.sel.label:SetWidth(selW - 16) end
         pill.sel:Show()
     else
         pill.sel:Hide()
     end
+    -- the state on the right (before the selection), at most 60% of what is left: the "Saved" note goes first
+    local room = pw - 24 - (selW > 0 and selW + 8 or 0)
+    pill.line:ClearAllPoints()
+    pill.line:SetPoint("RIGHT", pill, "RIGHT", -12 - (selW > 0 and selW + 2 or 0), 0)
+    pill.line:SetWidth(0)
+    pill.line:SetText(line)
+    local w = pill.line.GetStringWidth and tonumber((pill.line:GetStringWidth())) or (#line * 7)
+    local most = math.floor(room * 0.6)
+    if w > most then
+        line = B.StatusLine()
+        pill.line:SetText(line)
+        w = tonumber((pill.line:GetStringWidth())) or (#line * 7)
+    end
+    local lw = math.min(w + 2, most)
+    pill.line:SetWidth(lw)
+    if w > lw then S().Elide(pill.line, line, lw) end
+    -- the left part: what is left, one line each (the note over the hint: only one shows)
+    local leftW = math.max(40, room - lw - 16)
+    pill.left:SetWidth(leftW)
+    if L then L.OneLine(pill.note, leftW, 18) else pill.note:SetWidth(leftW) end
+    local hasNote = (pill.note:GetText() or "") ~= ""
+    if pill.hint then
+        pill.hint:SetWidth(leftW)
+        if pill.hint.fs and L then L.OneLine(pill.hint.fs, leftW, 18) end
+        pill.hint:SetAlpha(hasNote and 0 or 1)
+    end
+    -- the bar's edge gold while building in a Den (build mode), the subtle edge elsewhere
     local building = D and D.IsActive and D.IsActive() and not D.play
     S().EdEdge(pill, building and S().ED.gold or S().ED.edge)
 end
@@ -1301,6 +1356,7 @@ function B.PillNote(text, colour)
     pill.note:SetText(text or "")
     local c = colour or S().ED.muted
     pill.note:SetTextColor(c[1], c[2], c[3])
+    refreshPill()
 end
 function B.ShowPill(show)
     B.Pill()
@@ -2019,6 +2075,9 @@ local function buildPanel()
     panel:SetScript("OnShow", function() B.propsEditing = nil; B.PropsFill(); B.BindKeys(true) end)
     panel:SetScript("OnHide", function() B.BindKeys(false); B.propsAuto = nil end)
     panel:Hide()
+    -- the right-hand inspector (DenLayout.lua): it places itself; the Dojo, the Arena or Den home there put it away
+    -- until they close
+    if W.DenLayout then W.DenLayout.Dock(panel, "inspector", { place = false, name = "selection" }) end
 end
 
 -- The panel's tabs (owner's editor: a row of tabs under the preview): Piece (position, the pad, rotation and size, the
@@ -2142,6 +2201,8 @@ buildFiles = function()
     end)
     files:SetHeight(282)
     files:Hide()
+    -- a big window in the middle, under the top toasts (DenLayout.lua)
+    if W.DenLayout then W.DenLayout.Dock(files, "centre", { name = "files" }) end
 end
 
 function B.Files() if not files then buildFiles() end return files end
@@ -2519,6 +2580,8 @@ local function build()
         chromeRefresh()
     end)
     win:Hide()
+    -- bottom left (DenLayout.lua's gallery slot): it finds its own place round the chat (B.PlaceGallery)
+    if W.DenLayout then W.DenLayout.Dock(win, "gallery", { place = false, name = "gallery" }) end
 end
 
 -- Is any editor piece open (the chrome outside a Den follows this)?

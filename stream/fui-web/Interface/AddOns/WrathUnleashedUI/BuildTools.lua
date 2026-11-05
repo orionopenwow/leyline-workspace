@@ -602,6 +602,8 @@ local function build()
         if #T.pts > 0 then cmd("path hide") end
     end)
     win:Hide()
+    -- the right-hand inspector (DenLayout.lua): the tool's settings where the selection's panel is
+    if W.DenLayout then W.DenLayout.Dock(win, "inspector", { name = "tools" }) end
 end
 
 local function activeIf(c, on) if c and c.SetActive then c:SetActive(on and true or false) end end

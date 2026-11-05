@@ -225,6 +225,7 @@ local function build()
     frame.hint:SetWidth(446); frame.hint:SetJustifyH("LEFT")
     s.Muted(frame.hint)
     frame:Hide()
+    if W.DenLayout then W.DenLayout.Dock(frame, "centre", { name = "teleports" }) end
 end
 
 function T.Frame() if not frame then build() end return frame end

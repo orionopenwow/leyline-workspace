@@ -192,8 +192,16 @@ local p = J.Panel()
 check("it opens the Dojo panel beside the rail", J.IsOpen() and p:IsShown() and p.head:GetText() == "DOJO" and bar.dojo:IsActive())
 check("and asks for the Dojo's line", lastCmd() == "dojo status" and J.line.server == "lite")
 check("Den Lite: its note", p.note:GetText():find("^Den Lite: the ring, dummies"))
-check("the sections: Training, Moving, Jaina builds, Full Den", p.training:GetText() == "TRAINING" and p.moving:GetText() == "MOVING"
-    and p.builds:GetText() == "JAINA BUILDS" and p.full:GetText() == "FULL DEN ONLY")
+check("the sections: Training, Moving, Builds, Full Den", p.training:GetText() == "TRAINING" and p.moving:GetText() == "MOVING"
+    and p.builds:GetText() == "BUILDS" and p.full:GetText() == "FULL DEN")
+-- owner 5 Nov: "FULL DEN ONLY" greyed buttons on Den Lite were clutter; the row is not there at all
+check("Den Lite: the full Den's row hidden, not greyed", not p.full:IsShown() and not p.bossPick:IsShown() and not p.look:IsShown()
+    and p.fullRow.hidden == true)
+check("five tabs in their own row, under the title", (function()
+    local n = 0
+    for _, t in ipairs(J.TABS) do if p.tabs[t[1]] then n = n + 1 end end
+    return n == 5 and p.tabs.jaina:GetText() == "Jaina" and p.tabs.practice:GetText() == "Practice" end)())
+-- (the label column measured: test_wuui_denlayout.lua, whose fake measures text)
 check("on Den Lite what needs combat is off, saying why", p.bossPick.enabled == false and p.fight.enabled == false and p.duel.enabled == false
     and p.look.enabled == false and p.fight.edLabel:find("full Den") and p.ring.enabled ~= false and p.fly.enabled ~= false)
 check("speed 1 is on", p.speeds[1]:IsActive() and not p.speeds[2]:IsActive())
@@ -213,7 +221,7 @@ p.clear:Fire("OnClick")
 check("Clear: dojo clear", lastCmd() == "dojo clear" and not p.dummies:IsActive())
 
 -- Jaina's rows (owner 4 Nov: "the player can talk to her via the Den panel (buttons)")
-check("the Jaina rows", p.jainaRow:GetText() == "JAINA" and p.ideasRow:GetText() == "HER IDEAS"
+check("the Jaina rows", p.jainaRow:GetText() == "ORDERS" and p.ideasRow:GetText() == "HER IDEAS"
     and p.jFollow:GetText() == "Follow" and p.jIdea:GetText() == "Idea" and p.jYes:GetText() == "Keep")
 check("her line came with the Dojo's: following, talking", J.jaina.talk == "normal" and p.jFollow:IsActive() and not p.jStay:IsActive()
     and not p.jQuiet:IsActive())
@@ -269,9 +277,16 @@ check("Mounts: dojo mounts", lastCmd() == "dojo mounts")
 
 -- ---------------------------------------------------------------- 1c. the pages, the range, the loadout (owner 3 Nov:
 -- "spellbook placement loadout instant on bars, gear sets selector ... test range dojo features")
-check("two pages: Train shown, Loadout hidden", p.pages.train:IsShown() and not p.pages.loadout:IsShown()
+check("the tabs: Train shown, Loadout hidden", p.pages.train:IsShown() and not p.pages.loadout:IsShown()
     and p.tabs.train:IsActive() and not p.tabs.loadout:IsActive() and p.tabs.train:GetText() == "Train")
-check("Train's rows are visible, Loadout's are not", p.practiceChips[1]:IsVisible() and not p.classBe:IsVisible())
+check("Train's rows are visible, Practice's and Loadout's are not", p.ring:IsVisible() and not p.practiceChips[1]:IsVisible() and not p.classBe:IsVisible())
+p.tabs.practice:Fire("OnClick")
+check("the Practice tab: the practice dummies and the range", J.page == "practice" and p.practiceChips[1]:IsVisible() and p.safe:IsVisible()
+    and not p.ring:IsVisible() and p.tabs.practice:IsActive())
+p.tabs.session:Fire("OnClick")
+check("the Session tab: the parses", J.page == "session" and p.sessionChips[1]:IsVisible() and p.fightBack:IsVisible() and not p.practiceChips[1]:IsVisible())
+p.tabs.jaina:Fire("OnClick")
+check("the Jaina tab: her builds, orders, ideas", J.page == "jaina" and p.stamps[1]:IsVisible() and p.jFollow:IsVisible() and p.jIdea:IsVisible())
 p.tabs.loadout:Fire("OnClick")
 check("the Loadout tab: its page", J.page == "loadout" and p.pages.loadout:IsShown() and not p.pages.train:IsShown()
     and p.tabs.loadout:IsActive() and p.classBe:IsVisible() and not p.practiceChips[1]:IsVisible())
@@ -332,8 +347,9 @@ J.jaina = {}
 J.Paint()
 check("without her line (the full Den): Follow and Stay only", p.jFollow.enabled ~= false and p.jStay.enabled ~= false and p.jIdea.enabled == false
     and p.jPet.enabled == false and p.jYes.enabled == false and p.jIdea.edLabel:find("Den Lite"))
-check("the full Den: everything on", J.line.server == "full" and p.fight.enabled == true and p.look.enabled == true
-    and p.full:GetText() == "FULL DEN" and p.note:GetText():find("count your damage"))
+J.Page("train")
+check("the full Den: everything on, its row shown", J.line.server == "full" and p.fight.enabled == true and p.look.enabled == true
+    and p.full:GetText() == "FULL DEN" and p.full:IsShown() and p.bossPick:IsShown() and p.note:GetText():find("count your damage"))
 p.fight:Fire("OnClick")
 check("Fight: dojo boss <the pick>", lastCmd() == "dojo boss vancleef")
 p.duel:Fire("OnClick")

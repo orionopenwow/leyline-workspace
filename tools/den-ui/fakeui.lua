@@ -87,16 +87,18 @@ function Frame:SetWidth(w) self.w = w end
 function Frame:SetHeight(h) self.h = h end
 function Frame:SetSize(w, h) self.w, self.h = w, h end
 local function now(self) return F.anyRect(self) end
-function Frame:GetWidth() local r = now(self); return r and r.w or (self.w or 0) end
-function Frame:GetHeight() local r = now(self); return r and r.h or (self.h or 0) end
-function Frame:GetLeft() local r = now(self); return r and r.x end
-function Frame:GetRight() local r = now(self); return r and (r.x + r.w) end
-function Frame:GetTop() local r = now(self); return r and (r.y + r.h) end
-function Frame:GetBottom() local r = now(self); return r and r.y end
-function Frame:GetCenter() local r = now(self); if r then return r.x + r.w / 2, r.y + r.h / 2 end end
+-- the getters answer in the frame's own units (as the game: a frame at scale 0.8 is 100 wide in its units, 80 on
+-- UIParent)
+function Frame:GetWidth() local r = now(self); return r and r.w / F.effScale(self) or (self.w or 0) end
+function Frame:GetHeight() local r = now(self); return r and r.h / F.effScale(self) or (self.h or 0) end
+function Frame:GetLeft() local r = now(self); return r and r.x / F.effScale(self) end
+function Frame:GetRight() local r = now(self); return r and (r.x + r.w) / F.effScale(self) end
+function Frame:GetTop() local r = now(self); return r and (r.y + r.h) / F.effScale(self) end
+function Frame:GetBottom() local r = now(self); return r and r.y / F.effScale(self) end
+function Frame:GetCenter() local r = now(self); if r then local k = F.effScale(self); return (r.x + r.w / 2) / k, (r.y + r.h / 2) / k end end
 function Frame:SetScale(s) self.scale = tonumber(s) or 1 end
 function Frame:GetScale() return self.scale or 1 end
-function Frame:GetEffectiveScale() return 1 end
+function Frame:GetEffectiveScale() return F.effScale(self) end
 function Frame:SetAlpha(a) self.alpha = a end
 function Frame:GetAlpha() return self.alpha end
 function Frame:SetFrameStrata(s) self.strata = s end
@@ -143,6 +145,8 @@ end
 function Frame:SetMaxLetters(n) self.maxLetters = n end
 function Frame:SetMultiLine(m) self.multi = m end
 function Frame:SetWordWrap(m) self.wrap = m end
+function Frame:CanWordWrap() return self.wrap ~= false end
+function Frame:SetNonSpaceWrap() end
 function Frame:GetStringWidth() return F.textWidth(self) end
 function Frame:GetStringHeight() return F.fontSize(self) + 2 end
 function Frame:GetRegions()
@@ -208,11 +212,27 @@ function F.fontSize(fs)
     return 12
 end
 local function plainText(t) return (tostring(t or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "  ")) end
+-- Per letter, as a share of the font's size (owner 5 Nov, live: "FULL DEN ONLY" ran under its row's buttons; the
+-- old flat 0.56 a letter said it fitted). Close to the game's own font: capitals wide (M and W wider), lower case
+-- narrower (i, l, t, f narrower still), a space narrow. F.FLAT = true gives the old flat measure.
+local WIDE = { M = 0.86, W = 0.92, m = 0.82, w = 0.74 }
+local NARROW = { i = 0.26, l = 0.26, j = 0.28, t = 0.34, f = 0.34, r = 0.38, I = 0.32, ["."] = 0.26, [","] = 0.26, [":"] = 0.26,
+    ["'"] = 0.22, ["|"] = 0.24, ["!"] = 0.28, [" "] = 0.28 }
+function F.charWidth(c)
+    if F.FLAT then return 0.56 end
+    if WIDE[c] then return WIDE[c] end
+    if NARROW[c] then return NARROW[c] end
+    if c:match("^%u$") then return 0.68 end
+    if c:match("^%l$") then return 0.53 end
+    if c:match("^%d$") then return 0.56 end
+    if #c > 1 then return 0.62 end   -- a two-byte letter or a sign (°, ·)
+    return 0.42
+end
 function F.textWidth(fs)
     local s = plainText(fs.text)
     local n = 0
-    for _ in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do n = n + 1 end
-    return n * F.fontSize(fs) * 0.56
+    for c in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do n = n + F.charWidth(c) end
+    return n * F.fontSize(fs)
 end
 
 -- ---------------------------------------------------------------- the screen and the stock frames
@@ -355,6 +375,15 @@ local function anchorXY(r, p)
     local y = (p:find("TOP") and r.y + r.h) or (p:find("BOTTOM") and r.y) or (r.y + r.h / 2)
     return x, y
 end
+-- a frame's scale on UIParent: its own and its parents' (a FontString or a Texture: its frame's)
+function F.effScale(f)
+    local k, p = 1, f
+    while p and not p._root do
+        if p.kind ~= "FontString" and p.kind ~= "Texture" then k = k * (p.scale or 1) end
+        p = p.parent
+    end
+    return k
+end
 local cache
 function F.rect(f, depth)
     if not cache then return nil end
@@ -363,6 +392,7 @@ function F.rect(f, depth)
     if depth > 60 then return nil end
     if f._root then cache[f] = { x = 0, y = 0, w = f.w or F.screen.w, h = f.h or F.screen.h }; return cache[f] end
     cache[f] = false
+    local k = F.effScale(f)
     local w, h = f.w, f.h
     if f.kind == "FontString" then
         f.autoW = nil
@@ -386,12 +416,12 @@ function F.rect(f, depth)
         local rr = F.rect(rel, depth + 1)
         if not rr then cache[f] = false; return nil end
         local ax, ay = anchorXY(rr, q.rp)
-        ax, ay = ax + q.x, ay + q.y
+        ax, ay = ax + q.x * k, ay + q.y * k
         local p = q.p
         if p:find("LEFT") then left = ax elseif p:find("RIGHT") then right = ax else cx = ax end
         if p:find("TOP") then top = ay elseif p:find("BOTTOM") then bottom = ay else cy = ay end
     end
-    w, h = w or 0, h or 0
+    w, h = (w or 0) * k, (h or 0) * k
     local x, y
     if left and right then f.autoW = nil end
     if left and right then x, w = left, right - left elseif left then x = left elseif right then x = right - w else x = (cx or 0) - w / 2 end

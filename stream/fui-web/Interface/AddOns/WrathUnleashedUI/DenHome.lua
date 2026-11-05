@@ -345,6 +345,8 @@ local function build()
     button(panel, "Close", 70, function() panel:Hide() end, "BOTTOMRIGHT", -12, 10)
     if UISpecialFrames then tinsert(UISpecialFrames, "LeylineDenHomePanel") end
     panel:Hide()
+    -- the right-hand inspector (DenLayout.lua): one panel there at a time
+    if W.DenLayout then W.DenLayout.Dock(panel, "inspector", { name = "denhome" }) end
 end
 
 function H.Show(show)

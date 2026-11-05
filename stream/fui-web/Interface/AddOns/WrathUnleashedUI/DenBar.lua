@@ -498,13 +498,14 @@ local function buildBar()
         px = px + (tonumber((c:GetWidth())) or 60) + 6
     end
     local bw = tonumber((pill.back:GetWidth())) or 180
-    pill:SetWidth(math.max(px + 2, bw + 16))
-    pill:SetHeight(2 * S().ED_SIZE.chip + 22)
-    -- the toasts' line (kept for callers; play mode's toasts show as the mode's banner)
+    local pw = math.max(px + 2, bw + 16)
+    pill:SetWidth(pw)
+    -- the toasts' line ("Saved 34 s ago"): its own row inside the corner (owner 5 Nov: under it, the Dojo covered it)
     pill.line = S().EdText(pill, S().ED_SIZE.text)
-    pill.line:SetPoint("TOPLEFT", pill, "BOTTOMLEFT", 4, -6)
-    pill.line:SetWidth(math.max(px + 2, bw + 16) - 8); pill.line:SetJustifyH("LEFT")
-    pill.line.outside = true
+    pill.line:SetPoint("TOPLEFT", pill, "TOPLEFT", 10, -8 - 2 * (S().ED_SIZE.chip + 6))
+    pill.line:SetJustifyH("LEFT")
+    if W.DenLayout then W.DenLayout.OneLine(pill.line, pw - 20, 16) else pill.line:SetWidth(pw - 20) end
+    pill:SetHeight(2 * S().ED_SIZE.chip + 22 + 22)
     pill:Hide()
     bar.pill = pill
 
@@ -554,11 +555,12 @@ local function buildBar()
     banner:Hide()
     bar.banner = banner
 
-    -- the drawer under the strip: a name for Save, or the invite link to copy (a small card, not a bar)
-    drawer = CreateFrame("Frame", "LeylineDenDrawer", bar)
+    -- the drawer under the strip: a name for Save, or the invite link to copy (a small card, not a bar); its own
+    -- window in the top middle (DenLayout.lua's toasts), so play mode's Invite shows it too
+    drawer = CreateFrame("Frame", "LeylineDenDrawer", UIParent)
     drawer:SetWidth(470); drawer:SetHeight(64)
     drawer:SetPoint("TOP", bar, "BOTTOM", 0, -8)
-    drawer.outside = true
+    drawer:SetFrameStrata("MEDIUM")
     drawer:EnableMouse(true)
     S().EdPanel(drawer, 0.95, ED().panel2)
     drawer.label = S().EdLabel(drawer, "", true, "TOPLEFT", 12, -9)
@@ -582,6 +584,16 @@ local function buildBar()
     drawer:Hide()
 
     bar:Hide()
+    -- the slots (DenLayout.lua): the strip, the rail and play mode's corner place themselves and are never put away;
+    -- the mode's banner and the save / invite card stack in the top middle
+    local L = W.DenLayout
+    if L then
+        L.Dock(bar, "top", { place = false, keep = true, name = "strip" })
+        L.Dock(rail, "left", { place = false, keep = true, name = "rail" })
+        L.Dock(pill, "left", { place = false, keep = true, name = "playcorner" })
+        L.Dock(banner, "toast", { name = "banner" })
+        L.Dock(drawer, "toast", { name = "drawer" })
+    end
     D.Labels()
 end
 function D.Bar() if not bar then buildBar() end return bar end
@@ -641,7 +653,7 @@ function D.Dock(toWorld)
     local b = B()
     if not (b and b.Dock) then return end
     D.Bar()
-    for _, f in ipairs({ bar, rail, bar.pill }) do b.Dock(f, toWorld) end
+    for _, f in ipairs({ bar, rail, bar.pill, drawer }) do b.Dock(f, toWorld) end
 end
 
 function D.OpenDrawer(kind)
@@ -939,6 +951,8 @@ function D.Refresh()
     D.LayoutRail()
     D.LayoutBar()
     if want then bar:Show(); rail:Show() else bar:Hide(); rail:Hide(); closeMenus() end
+    -- the save / invite card is its own window now: it goes when neither the editor nor play mode is up
+    if not want and not (D.active and D.play) then D.CloseDrawer() end
     if D.active and D.play then bar.pill:Show() else bar.pill:Hide() end
     -- build mode in a Den: the gold edge round the screen
     if D.active and not D.play then bar.edge:Show() else bar.edge:Hide() end
@@ -1052,7 +1066,8 @@ local function frameRect(f)
     return { x = l * k, y = b * k, w = w * k, h = h * k }
 end
 D.EDITOR_FRAMES = { "LeylineDenBar", "LeylineDenRail", "WrathUnleashedBuilderFrame", "LeylineEditorStatus", "WrathUnleashedPropsFrame",
-    "WrathUnleashedFilesFrame", "LeylineDenMenu", "LeylineDenDrawer", "LeylineDenGuide" }
+    "WrathUnleashedFilesFrame", "LeylineDenMenu", "LeylineDenDrawer", "LeylineDenGuide", "LeylineDenPlayPill", "LeylineDojoPanel",
+    "LeylineTourneyPanel", "LeylineDenHomePanel", "WrathUnleashedToolsFrame" }
 D.GAME_FRAMES = { "MinimapCluster", "ChatFrame1", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
     "MultiBarLeft", "PlayerFrame" }
 -- Which shown editor windows overlap which shown game frames (by more than 2 UI units): { "A/B", ... }
@@ -1071,6 +1086,8 @@ function D.Overlaps()
             end
         end
     end
+    -- and the Den's own windows on each other (DenLayout.lua's slots: "dojo/strip")
+    if W.DenLayout then for _, l in ipairs(W.DenLayout.Overlaps()) do out[#out + 1] = l end end
     return out
 end
 D.FrameRect = frameRect

@@ -1174,6 +1174,9 @@ local function setup()
     tag.fs = tag.CreateFontString and tag:CreateFontString(nil, "OVERLAY", "GameFontHighlight") or { SetText = function() end }
     if tag.fs.SetPoint then tag.fs:SetPoint("CENTER", tag, "CENTER", 0, 0) end
     tag:Hide()
+    -- inside the status line, as its left part (owner 5 Nov, live: the tag sat under the pill, both lines over each
+    -- other): Builder.lua B.DockHint; one line, ending in "..." when the bar is short
+    if W.Builder and W.Builder.DockHint then pcall(W.Builder.DockHint, tag) end
     -- the clicks on the world (the hook never takes a click from the game: camera drags and movement go on)
     if WorldFrame and WorldFrame.HookScript then
         pcall(WorldFrame.HookScript, WorldFrame, "OnMouseDown", function(_, b) G.MouseDown(b) end)

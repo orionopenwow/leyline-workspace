@@ -34,8 +34,10 @@ let browser;
 test.before(async () => { browser = await chromium.launch(); });
 test.after(async () => { await browser.close(); });
 
-async function open(w, h, state) {
+async function open(w, h, state, ls = {}) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  // Menu > Controls settings, as the player left them (ow:touch-preset, ow:lefty)
+  await ctx.addInitScript((kv) => { for (const [k, v] of Object.entries(kv)) localStorage.setItem(k, v); }, ls);
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(String(e)));
@@ -65,9 +67,12 @@ function gap(a, b) {
   return Math.max(Math.max(a.l, b.l) - Math.min(a.r, b.r), Math.max(a.t, b.t) - Math.min(a.b, b.b));
 }
 
-for (const [w, h, name] of SIZES) {
-  test(`in the world, ${name} (${w}x${h}): every control on screen, 6 px or more apart, the keys evenly on one ring`, async () => {
-    const { ctx, p, errors } = await open(w, h, 'inworld');
+// Phone and Tablet presets (Menu > Controls > Layout), each right- and left-handed, at every size: the same rules
+const VARIANTS = [['auto', {}], ['Phone', { 'ow:touch-preset': 'phone' }], ['Tablet', { 'ow:touch-preset': 'tablet' }],
+  ['Phone, left-handed', { 'ow:touch-preset': 'phone', 'ow:lefty': 'on' }], ['Tablet, left-handed', { 'ow:touch-preset': 'tablet', 'ow:lefty': 'on' }]];
+for (const [w, h, name] of SIZES) for (const [vname, ls] of VARIANTS) {
+  test(`in the world, ${name} (${w}x${h}), ${vname}: every control on screen, 6 px or more apart, the keys evenly on one ring`, async () => {
+    const { ctx, p, errors } = await open(w, h, 'inworld', ls);
     const items = await p.evaluate(() => {
       const out = [];
       for (const s of ['.stick', '.attack', '.target', '.key', '.jump', '.dots', '.tray', '.flip']) {
@@ -96,8 +101,15 @@ for (const [w, h, name] of SIZES) {
     const rad = keys.map(([x, y]) => Math.hypot(x - ax, y - ay));
     const ang = keys.map(([x, y]) => Math.atan2(ay - y, x - ax) * 180 / Math.PI);
     assert.ok(Math.max(...rad) - Math.min(...rad) <= 2, `one ring: ${rad.map(Math.round)}`);
-    const steps = [ang[1] - ang[0], ang[2] - ang[1], (ang[3] - ang[2] + 360) % 360];
+    // (mirrored: the keys go round the other way)
+    const norm = (a) => ((a % 360) + 360) % 360;
+    const steps = [ang[1] - ang[0], ang[2] - ang[1], ang[3] - ang[2]].map((x) => Math.abs(((norm(x) + 180) % 360) - 180));
     assert.ok(Math.max(...steps) - Math.min(...steps) <= 2, `evenly apart: ${steps.map(Math.round)}`);
+    const st = c(items.find((i) => i.k === '.stick'));
+    if (ls['ow:lefty']) assert.ok(st[0] > w / 2 && ax < w / 2, 'left-handed: the stick on the right, the ring on the left');
+    else assert.ok(st[0] < w / 2 && ax > w / 2, 'the stick on the left, the ring on the right');
+    const L = await p.evaluate(() => window.T.layout);
+    assert.equal(L.preset, ls['ow:touch-preset'] || (Math.min(w, h) >= 600 ? 'tablet' : 'phone'));
     assert.deepEqual(errors, []);
     await ctx.close();
   });

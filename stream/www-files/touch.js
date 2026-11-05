@@ -918,9 +918,9 @@ export function installTouch(bridge) {
     const sl = mir ? SAFE.r : SAFE.l, sr = mir ? SAFE.l : SAFE.r;   // right-handed insets
     const X = (x) => Math.round(mir ? W - x : x);
     const pname = presetNow(), pre = PRESETS[pname];
-    const lift = custom ? 0 : Math.round(pre.lift * H);
+    const stickLift = custom ? 0 : Math.round(pre.lift * H);
     // the stick's home (where it rests; a touch in its zone moves it under the thumb)
-    let hx = sl + STICK_HOME.left + 60, hy = H - SAFE.b - STICK_HOME.bottom - 60 - lift;
+    let hx = sl + STICK_HOME.left + 60, hy = H - SAFE.b - STICK_HOME.bottom - 60 - stickLift;
     if (custom) { hx = custom.s[0] * W; hy = custom.s[1] * H; }
     hx = clampN(hx, sl + 64, W - sr - 64); hy = clampN(hy, SAFE.t + 64, H - SAFE.b - 64);
     CENTRES.s = [hx, hy];
@@ -935,35 +935,46 @@ export function installTouch(bridge) {
     // worked out from the ring's radius so neighbours keep GAP px between them (Material's 48 + 8 rule), and the
     // whole cluster kept inside the safe area: the reticle on the ring up and right, the four keys on it to the
     // left, Jump under Attack with its own gap, the page dots centred over the reticle. s scales it all.
-    const s = Math.round(clampN(custom ? custom.z : pre.scale, ZMIN, ZMAX) * 100) / 100;
-    const GAP = 8, EDGE = 8, RA = 48 * s, RK = 24 * s, RT = 23 * s, JH = 30 * s, JW = 32 * s;
-    const TA = 62;                                                // the reticle's angle (up and right)
-    // the smallest ring on which the four keys fit between the reticle and the lowest angle a key may take (no key
-    // lower than Attack's bottom edge: Jump sits under it), each two the same angle apart with GAP px between them
-    const deg = (r) => r * 180 / Math.PI;
-    let R = RA + GAP + RK + 4, step = 0;
-    for (; R < 260; R += 2) {
-      step = deg(2 * Math.asin((RK + GAP / 2) / R)) + 1;
-      if (TA + 4 * step <= 180 + deg(Math.asin((RA - RK) / R))) break;
-    }
-    const off = (dg, r) => { const a = dg * Math.PI / 180; return [r * Math.cos(a), -r * Math.sin(a)]; };
-    const ANG = [0, 1, 2, 3].map((i) => TA + step * (i + 1));
+    const GAP = 8, EDGE = 8, TA = 62;                             // TA: the reticle's angle (up and right)
     const d = $('.dots');
-    const dw = (d.offsetWidth || 52) * s;
-    const [tox, toy] = off(TA, R);
-    const doy = toy - RT - GAP - 14 * s;
+    const deg = (r) => r * 180 / Math.PI;
+    const off = (dg, r) => { const a = dg * Math.PI / 180; return [r * Math.cos(a), -r * Math.sin(a)]; };
     const jumpOn = !(custom && custom.j);
-    // the ring's extent round Attack's centre ([dx, dy, half width, half height]), to keep it on screen
-    const parts = [[0, 0, RA, RA], [tox, toy, RT, RT], ...ANG.map((a) => [...off(a, R), RK, RK]), [tox, doy, 0, 9 * s]];
-    if (jumpOn) parts.push([0, RA + GAP + JH / 2, JW, JH / 2]);
-    const ext = (f) => parts.reduce((m, p) => f(m, p), null);
-    const minX = ext((m, p) => Math.min(m ?? Infinity, p[0] - p[2])), maxX = ext((m, p) => Math.max(m ?? -Infinity, p[0] + p[2]));
-    const minY = ext((m, p) => Math.min(m ?? Infinity, p[1] - p[3])), maxY = ext((m, p) => Math.max(m ?? -Infinity, p[1] + p[3]));
-    let ax = W - sr - EDGE - Math.max(RA, tox + RT);
-    let ay = H - SAFE.b - EDGE - (jumpOn ? JH + GAP : 0) - RA - lift;
-    if (custom) { ax = custom.r[0] * W; ay = custom.r[1] * H; }
-    ax = Math.round(clampN(ax, sl + EDGE - minX, W - sr - EDGE - maxX));
-    ay = Math.round(clampN(ay, SAFE.t + EDGE - minY, H - SAFE.b - EDGE - maxY));
+    // the ring at size s, lifted by lift px: its geometry and where Attack's centre goes
+    function geo(s, lift) {
+      const RA = 48 * s, RK = 24 * s, RT = 23 * s, JH = 30 * s, JW = 32 * s;
+      // the smallest ring on which the four keys fit between the reticle and the lowest angle a key may take (no key
+      // lower than Attack's bottom edge: Jump sits under it), each two the same angle apart with GAP px between them
+      let R = RA + GAP + RK + 4, step = 0;
+      for (; R < 260; R += 2) {
+        step = deg(2 * Math.asin((RK + GAP / 2) / R)) + 1;
+        if (TA + 4 * step <= 180 + deg(Math.asin((RA - RK) / R))) break;
+      }
+      const ANG = [0, 1, 2, 3].map((i) => TA + step * (i + 1));
+      const dw = (d.offsetWidth || 52) * s;
+      const [tox, toy] = off(TA, R);
+      const doy = toy - RT - GAP - 14 * s;
+      // the ring's extent round Attack's centre ([dx, dy, half width, half height]), to keep it on screen
+      const parts = [[0, 0, RA, RA], [tox, toy, RT, RT], ...ANG.map((a) => [...off(a, R), RK, RK]), [tox, doy, 0, 11 * s]];
+      if (jumpOn) parts.push([0, RA + GAP + JH / 2, JW, JH / 2]);
+      const minX = Math.min(...parts.map((q) => q[0] - q[2])), maxX = Math.max(...parts.map((q) => q[0] + q[2]));
+      const minY = Math.min(...parts.map((q) => q[1] - q[3])), maxY = Math.max(...parts.map((q) => q[1] + q[3]));
+      let ax = W - sr - EDGE - Math.max(RA, tox + RT);
+      let ay = H - SAFE.b - EDGE - (jumpOn ? JH + GAP : 0) - RA - lift;
+      if (custom) { ax = custom.r[0] * W; ay = custom.r[1] * H; }
+      ax = Math.round(clampN(ax, sl + EDGE - minX, W - sr - EDGE - maxX));
+      ay = Math.round(clampN(ay, SAFE.t + EDGE - minY, H - SAFE.b - EDGE - maxY));
+      return { s, RA, RK, RT, JH, JW, R, step, ANG, dw, tox, toy, doy, ax, ay, top: ay + minY };
+    }
+    // a preset gives back its lift, then its size, until the ring clears the tray (top right) on a short screen
+    let s = Math.round(clampN(custom ? custom.z : pre.scale, ZMIN, ZMAX) * 100) / 100, lift = custom ? 0 : Math.round(pre.lift * H);
+    let g = geo(s, lift);
+    const trayBottom = SAFE.t + 10 + 36 + GAP;
+    while (!custom && !mir && g.top < trayBottom && (lift > 0 || s > 1)) {
+      if (lift > 0) lift = Math.max(0, lift - 10); else s = Math.max(1, Math.round((s - 0.05) * 100) / 100);
+      g = geo(s, lift);
+    }
+    const { RA, RK, RT, JH, JW, R, step, ANG, dw, tox, toy, doy, ax, ay } = g;
     CENTRES.r = [ax, ay]; CENTRES.z = s;
     const put = (el, x, y) => { el.style.left = X(x) + 'px'; el.style.top = Math.round(y) + 'px'; el.style.scale = s === 1 ? '' : String(s); };
     put(attack, ax, ay);
@@ -976,7 +987,7 @@ export function installTouch(bridge) {
     CENTRES.j = [jx, jy];
     put($('.jump'), jx, jy);
     // the cast bar: over the ring, clear of the dots and keys
-    const top = Math.min(ay + doy - 9 * s, ...ANG.map((a) => ay + off(a, R)[1] - RK), ty - RT);
+    const top = Math.min(ay + doy - 11 * s, ...ANG.map((a) => ay + off(a, R)[1] - RK), ty - RT);
     const cb = $('.castbar');
     cb.style.left = Math.round(clampN(X(ax - R / 2), 84 + EDGE + SAFE.l, W - 84 - EDGE - SAFE.r)) + 'px';
     cb.style.top = Math.round(Math.max(SAFE.t + EDGE + 8, top - GAP - 8)) + 'px';
@@ -2700,7 +2711,7 @@ return "yes"`);
     document.body.classList.remove('ow-touch-on', 'ow-touch-world');
   }
   // the Lua this layer sends, for the tests (tests/lua_chunks.mjs runs them under luac / a stub)
-  status.luaChunks = () => ({ action: ACTION_LUA, tip: TIP_LUA(1), layoutOn: gameLayoutLua(true), layoutOff: gameLayoutLua(false) });
+  status.luaChunks = () => ({ action: ACTION_LUA, tip: TIP_LUA(1), layoutOn: gameLayoutLua(true), layoutOff: gameLayoutLua(false), cursor: CURSOR_LUA, focus: FOCUS_LUA });
   status.turnOn = () => { LS('ow:touch', 'on'); turnOn(); };
   status.turnOff = () => { LS('ow:touch', 'off'); turnOff(); };
 

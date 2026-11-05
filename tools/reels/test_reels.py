@@ -311,6 +311,50 @@ class Cut(unittest.TestCase):
         self.assertFalse(os.path.isdir(os.path.join(self.out, "t-none")) and os.listdir(os.path.join(self.out, "t-none")))
 
 
+class GrowthDocs(unittest.TestCase):
+    """docs/growth: drafts only; the standing rules for words and links; the guide series as the owner asked for it."""
+    DOCS = ("README.md", "reddit-guides.md", "weekly-posts.md", "discord-onboarding.md", "host-recruiting.md", "seeded-season.md")
+
+    def text(self, name):
+        return read("docs/growth/" + name)
+
+    def test_words_and_links(self):
+        for name in self.DOCS:
+            t = self.text(name).replace('"Log in" not "Sign in"', "")   # the rule itself, quoted
+            for bad in (r"(?i)\b(world of warcraft|wow|warcraft|lich king|blizzard|turtle)\b", r"(?i)\bsign(ed)?[ -]in\b|\bsign up\b",
+                        r"(?i)patreon|ko-fi|paypal|donat|\btip\b"):
+                m = re.search(bad, t)
+                self.assertIsNone(m, "%s: %r" % (name, m and t[max(0, m.start() - 40):m.end() + 40]))
+            for url in re.findall(r"https?://[^\s)`>\]]+", t):
+                host = re.match(r"https?://([^/]+)", url).group(1)
+                self.assertIn(host, ("leylinelauncher.com", "discord.gg", "www.reddit.com", "reddit.com", "projectreforged.github.io"),
+                              "%s: %s" % (name, url))
+            self.assertIn("TODO(owner)", t, name + ": the owner's words are his")
+
+    def test_twelve_guides_of_five_steps(self):
+        t = self.text("reddit-guides.md")
+        eps = re.split(r"\n## \d+\. ", t)[1:]
+        self.assertEqual(len(eps), 12)
+        gifs = {os.path.splitext(n)[0] for n in os.listdir(os.path.join(HERE, "scripts"))}
+        for i, ep in enumerate(eps, 1):
+            steps = re.findall(r"^([1-9])\. ", ep, re.M)
+            self.assertEqual(steps, ["1", "2", "3", "4", "5"], "episode %d" % i)
+            self.assertIn("**Stuck?**", ep, "episode %d" % i)
+            self.assertIn("- **Title:**", ep)
+            self.assertIn("TODO(owner)", ep.split("- **Intro:**")[1].split("\n")[0], "episode %d: the intro is his" % i)
+            gif = ep.split("- **GIF:**")[1].split("\n")[0]
+            named = re.findall(r"`([a-z0-9-]+)\.gif`", gif)
+            self.assertTrue(named or "TODO" in gif, "episode %d names its GIF" % i)
+            for g in named:
+                self.assertIn(g, gifs, "episode %d: %s.gif comes from a reel script" % (i, g))
+
+    def test_every_weekly_template(self):
+        t = self.text("weekly-posts.md")
+        for h in ("## 1. Patch notes", "## 2. Feature reel", "## 3. Guide", "## 4. Den or host spotlight", "## 5. State of Leyline"):
+            self.assertIn(h, t)
+        self.assertIn("never the", t.lower().replace("never\nthe", "never the").replace("**never**", "never"))
+
+
 class Main(unittest.TestCase):
     def test_check_and_list(self):
         self.assertEqual(edit.main(["--check"]), 0)

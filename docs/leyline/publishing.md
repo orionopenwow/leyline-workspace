@@ -17,7 +17,7 @@ python3 wu-mod.py pack my-mod -o dist
 
 ## 2. Submit a link
 
-Use one path: **Add your project** on the Workshop, at [/wrath/mods/submit](https://leylinelauncher.com/wrath/mods/submit). Sign in, paste your project's public repo link (GitHub, GitLab or Codeberg), pick a category and the client it works with, and write one line about it.
+Use one path: **Add your project** on the Workshop, at [/wrath/mods/submit](https://leylinelauncher.com/wrath/mods/submit). Log in, paste your project's public repo link (GitHub, GitLab or Codeberg), pick a category and the client it works with, and write one line about it.
 
 - Most links are listed straight away, credited to you and to the repo's author.
 - A link goes to a person's review queue instead of the list when its repo has no open licence, when its text names the game or its publisher, or when it looks like decompiled, leaked, repack or cheat material. You hear nothing more until it is checked; nothing of yours is lost.

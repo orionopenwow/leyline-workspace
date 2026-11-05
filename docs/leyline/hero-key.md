@@ -1,18 +1,18 @@
 # Hero Key
 
-A Hero Key is a way to sign in to the website without a password. It is one of the two sign-in options at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath). The other is Google.
+A Hero Key is a way to log in to the website without a password. It is one of the two ways to log in at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath). The other is Google.
 
 The website's sign-in, Hero Keys included, is run by the Leyline Launcher realm service on leylinelauncher.com. That service is a sibling project and is not in this repo. This page says what this repo shows and marks the rest "to confirm".
 
 ## What you can do with it today
 
-- **Sign in.** Use your Hero Key on the sign-in page. The site then shows your game account for Wrath, and makes it on the realm if needed. There are no separate Wrath accounts.
+- **Log in.** Use your Hero Key on the Log in page. The site then shows your game account for Wrath, and makes it on the realm if needed. There are no separate Wrath accounts.
 - **Get one.** New here? **Get your Hero Key** at `/wrath/key` (or in the launcher: the profile chip, then Get your Hero Key)
   makes your free account with a name made for you, and shows your key once: hidden until you press Show, with
   Download as a text file and Copy. Change the name later; set a password if you want one (it signs you in to the launcher).
 - **See your key.** Signed in, **Your Hero Key** at `/wrath/key` (in the launcher: Manage account) says when it was made
   and last used. A key is shown only when it is new: lost it? **Make a new key** (the old one stops working at once).
-- **Sign in with it in the launcher.** Paste it in the launcher's sign-in: no browser needed.
+- **Log in with it in the launcher.** Paste it in the launcher's Log in: no browser needed.
 - **Save it in your browser.** "Save in this browser" on the realm site stores the key with your browser's password manager. The next time you open `/wrath` signed out, the page reads the saved key and signs you in by itself.
 
 How the automatic sign-in works, from `stream/wrath_portal.py`:
@@ -53,4 +53,4 @@ These are in the Leyline Launcher repo, not here, so this page can't check them:
 
 ## Keep it safe
 
-Treat your Hero Key like a password. Anyone who has it can sign in as you and see your game login.
+Treat your Hero Key like a password. Anyone who has it can log in as you and see your game login.

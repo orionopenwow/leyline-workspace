@@ -176,7 +176,10 @@ for label, cookie in (("signed out", ""), ("signed in", "wr_session=good")):
         for m in re.finditer(r"\bSign in\b", v):
             signin[p.split("?")[0]] += 1
         if p.startswith("/wrath/docs"):
-            for m in VERSIONS.finditer(v):
+            # a version chip (docs.py VERSION_CHIP, {{v:...}}) and code spans are the allowed badges and data fields;
+            # only a number left in the sentence itself counts (fix round 4 Nov: the chips were counted too)
+            prose = visible(re.sub(r'<span class="ver"[^>]*>[^<]*</span>|<code>[^<]*</code>|<pre\b.*?</pre>', " ", s, flags=re.S))
+            for m in VERSIONS.finditer(prose):
                 vers[p] += 1
     check(f"{label}: no game-brand word outside the legal line", not brand, brand[:5])
     check(f"{label}: no money, tip or donation links", not money, money[:5])
@@ -184,11 +187,11 @@ for label, cookie in (("signed out", ""), ("signed in", "wr_session=good")):
     check(f"{label}: outside links only to the hosts the site means to link", not odd, odd)
     check(f"{label}: no link to the hub's old preview address (each one a 301)", not preview, preview)
     known_fail(f"{label}: every page title ends with Leyline (some say the realm's name)", not titles, sorted(set(t for t in titles if "/wrath/b/" not in t))[:12] + sorted(set(titles))[:2])
-    known_fail(f"{label}: the sign-in words are \"Log in\" (owner 2 Nov), not \"Sign in\"", not signin,
+    check(f"{label}: the sign-in words are \"Log in\" (owner 2 Nov), not \"Sign in\"", not signin,
                f"{sum(signin.values())} on {len(signin)} pages: " + ", ".join(sorted(signin)[:12]))
     if label == "signed out":
         known_fail("docs: the game's archive name (lichking.MPQ) is shown to players: allowed as a file name?", not mpq, sorted(mpq))
-        known_fail("docs: no client version numbers in sentences (rule: data fields and badges only)", not vers,
+        check("docs: no client version numbers in sentences (rule: data fields and badges only)", not vers,
                    ", ".join(f"{p} ({n})" for p, n in sorted(vers.items())))
         crawled = [p for p, v in html_pages.items() if v[0] == 200]
 

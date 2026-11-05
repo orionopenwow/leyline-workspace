@@ -317,7 +317,7 @@ class Demo:
     def page(self, title: str, body: str) -> bytes:
         return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
-                f'<title>{html.escape(title)}</title><style>{self.base_css()}{SECTION_CSS}</style></head>'
+                f'<title>{html.escape(title if title.endswith("Leyline") else title + " · Leyline")}</title><style>{self.base_css()}{SECTION_CSS}</style></head>'
                 f'<body class="ly"><div class="ly-wrap">{body}</div></body></html>').encode("utf-8")
 
     def notice(self, title: str, text: str) -> bytes:

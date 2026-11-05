@@ -1547,6 +1547,7 @@ $("play-form").addEventListener("submit", async (ev) => {
   const realm = chosenRealm();
   if (!realm) { show("realms"); $("play-custom").focus(); return say("play-status", "Type a realm address.", "bad"); }
   $("play-go").disabled = true;
+  let played = false;
   try {
     // the realm's mods (gamemods.js): one offer for the client mods it uses that this game lacks; Cancel stops PLAY
     const rr = isOfficial() ? realmsCache.find((x) => x.official) : realmAt(realm);
@@ -1560,13 +1561,24 @@ $("play-form").addEventListener("submit", async (ev) => {
     say("play-status", playLine(started, c), "ok");
     $("play-status").title = String(started);   // the whole of it on hover
     statusFor = playKey();
+    played = true;
     state = tidyState(await invoke("get_state"));
   } catch (e) {
     sayErr("play-status", e);
   } finally {
-    $("play-go").disabled = false;
+    holdPlay($("play-go"), played);
   }
 });
+
+// A game just started: PLAY stays off a moment, so a double click (or an impatient second press) never starts a second
+// game (review 4 Nov: the core answers as soon as the game is spawned, and PLAY was on again at once).
+const PLAY_HOLD_MS = 2500;
+function holdPlay(btn, started) {
+  if (!btn) return;
+  if (!started) { btn.disabled = false; return; }
+  btn.disabled = true;
+  setTimeout(() => { btn.disabled = false; }, PLAY_HOLD_MS);
+}
 
 // ------------------------------------------------------------------ clients
 function renderClients() {

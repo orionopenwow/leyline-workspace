@@ -138,6 +138,8 @@
     return b;
   };
   function say(text, kind) {
+    // never a raw error (review 4 Nov: "unknown themes_list" showed under Themes); friendly.js loads after this file
+    if (kind === "bad" && text && window.LeylineFriendly) text = window.LeylineFriendly(text, "Themes didn't load. Try again, or restart Leyline.");
     for (const s of document.querySelectorAll(".themes-status")) {
       s.textContent = text || "";
       s.className = "status themes-status" + (kind ? " " + kind : "");

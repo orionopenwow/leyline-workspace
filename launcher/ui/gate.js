@@ -138,6 +138,12 @@
   }
   // Create a guest account: made, signed in, a password set; the login kept for Manage account › Your login
   const GUEST = "leyline.guestLogin";
+  function keptGuest() {
+    try {
+      const g = JSON.parse(localStorage.getItem(GUEST) || "null");
+      return g && typeof g.key === "string" && /^ovk1\./.test(g.key) ? g : null;
+    } catch (_) { return null; }
+  }
   async function createGuest() {
     here = false; note = "";
     phase = "making"; render();
@@ -242,7 +248,8 @@
     if (why) { const w = el("p", "gate-why", why); w.id = "gate-why"; card.append(w); }
     const pane = el("div", "gate-pane"); pane.id = "gate-pane";
     card.append(pane);
-    const err = (f.stage === "error" && f.note) || note;
+    const raw = (f.stage === "error" && f.note) || note;
+    const err = raw && window.LeylineFriendly ? window.LeylineFriendly(raw, "That didn't work. Try again, or use another way below.") : raw;
     if (err) { const p = el("p", "sf-err", err); p.id = "gate-err"; p.setAttribute("role", "alert"); pane.append(p); }
     if (down()) {
       const d = el("div", "gate-down"); d.id = "gate-down";
@@ -269,7 +276,17 @@
       again.onclick = () => go(() => s.keyFileSignIn(() => tauri("social_key_file", { path })));
       ways.append(again, el("p", "sf-fine gate-under", `With ${FILE} from your Downloads.`));
     }
-    const br = el("button", known ? "btn gate-big" : "btn primary gate-big", "Log in with your browser"); br.type = "button"; br.id = "gate-browser";
+    // a guest account made on this PC whose login was never saved (gate.js createGuest, account.js): after a Log out it
+    // was out of reach (its key sat in localStorage, shown nowhere signed out; review 4 Nov). Its own key, one click.
+    const guest = keptGuest();
+    if (guest && !known) {
+      const g = el("button", "btn primary gate-big gate-again", guest.name ? `Log in as ${guest.name}` : "Log in to your guest account");
+      g.type = "button"; g.id = "gate-guest-again";
+      g.onclick = () => go(() => s.keySignIn(guest.key));
+      ways.append(g, el("p", "sf-fine gate-under", "Your guest account on this PC. Save its login in Manage account once you're in."));
+    }
+    const first = known || (guest && !known);
+    const br = el("button", first ? "btn gate-big" : "btn primary gate-big", "Log in with your browser"); br.type = "button"; br.id = "gate-browser";
     br.onclick = () => go(() => s.signIn(""));
     ways.append(br, el("p", "sf-fine gate-under", "Instant launcher recognition: logged in on leylinelauncher.com? Approve once and you're in."));
     if (googleOn()) ways.append(way("sf-google", "Continue with Google", svg(IC.google), () => go(() => s.signIn("google")), "gate-google"));
@@ -335,7 +352,11 @@
   }
 
   // ---------------------------------------------------------------- in and out
-  function skip() { then = null; why = ""; phase = "in"; setOpen(false); }
+  // Continue without logging in (the website down): the PLAY that opened the dialog goes on (the core starts the game at
+  // its login screen and says why), and PLAY doesn't open this dialog again until the launcher restarts or a Log in
+  // (review 4 Nov: the second PLAY opened the same dialog again, so the player could never play)
+  let skipped = false;
+  function skip() { skipped = true; const run = then; then = null; why = ""; phase = "in"; setOpen(false); if (run) setTimeout(run, 0); }
   // Not now, Esc, a click beside the card: closed; a PLAY that waited for it doesn't start
   function close() {
     then = null; why = ""; phase = "in"; here = false;
@@ -359,7 +380,7 @@
     if (S() && !S().ways()) S().loadWays();
     render();
     findKeyFile();   // at once, not in a few seconds: the "Log in as …" of a key file kept from before
-    setTimeout(() => { const b = $("gate-again") || $("gate-browser"); if (b) b.focus(); }, 0);
+    setTimeout(() => { const b = $("gate-again") || $("gate-guest-again") || $("gate-browser"); if (b) b.focus(); }, 0);
   }
   function signedInNow() {
     const s = S();
@@ -396,7 +417,7 @@
   wb("gate-close", (w) => w.close());
 
   // PLAY on the official realm: signed in first (or no way to tell): run now; else this dialog, then it
-  const ready = () => { const s = S(); return !s || !s.known() || s.signedIn(); };
+  const ready = () => { const s = S(); return !s || !s.known() || s.signedIn() || skipped; };
   function need(reason, next) {
     if (ready()) { next(); return true; }
     show(reason, next);

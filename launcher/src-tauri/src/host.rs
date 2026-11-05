@@ -245,7 +245,7 @@ pub fn plan(kit: &Path, seed: Option<&str>, os: HostOs, has: impl Fn(&str) -> bo
             if chosen.as_deref() == Some("vanillaplus") {
                 cmd.push("--always-on".into());
             }
-            // A Den and Solo leveling are private (docs/DEN.md: leyline host --ruleset den --private; the ruleset comes in the env).
+            // A Den and Single player are private (docs/DEN.md: leyline host --ruleset den --private; the ruleset comes in the env).
             if chosen.as_deref().is_some_and(profiles::private_profile) {
                 cmd.push("--private".into());
             }
@@ -958,7 +958,7 @@ mod tests {
         let w = plan(k.path(), None, HostOs::Windows, |_| false).unwrap();
         assert!(w.env.contains(&("WU_PROFILE".into(), "den".into())) && w.env.contains(&("WU_VISIBILITY".into(), "private".into())));
         assert!(!plan(k.path(), Some(&seed), HostOs::Linux, |t| t == "konsole").unwrap().args.contains(&"--private".to_string()), "a seed has its own answers");
-        // Solo leveling: private too
+        // Single player: private too
         profiles::choose(k.path(), "solo", None).unwrap();
         let s = plan(k.path(), None, HostOs::Linux, |t| t == "konsole").unwrap();
         assert_eq!(&s.args[s.args.len() - 4..], &["bash", "leyline", "host", "--private"]);

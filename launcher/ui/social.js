@@ -301,7 +301,7 @@
   }
   const go = (fn) => () => { closePanel(false); fn(); };
   const nav = (page) => () => { if (window.LeylineNav) window.LeylineNav.show(page); };
-  // no Den or Solo leveling here (owner 1 Nov: one way in): Your Den is in the side menu and the play bar
+  // no Den or Single player here (owner 1 Nov: one way in): Your Den is in the side menu and the play bar
 
   function menuItem(ic, label, line, fn, cls) {
     const b = el("button", "ap-item" + (cls ? " " + cls : "")); b.type = "button"; b.setAttribute("role", "menuitem");

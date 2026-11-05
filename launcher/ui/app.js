@@ -251,6 +251,7 @@ async function refresh() {
   renderClients();
   renderSettings();
   renderClientPickers();
+  document.dispatchEvent(new CustomEvent("leyline:state"));   // single.js: the game folders may have changed
 }
 
 // ------------------------------------------------------------------ realm: the chosen realm, the rows, live status
@@ -300,7 +301,7 @@ function hiddenRealm(r) {
 function realmLabel() {
   if (isOfficial()) return officialName();
   const a = chosenRealm();
-  if (localAt(a)) return localAt(a).name;   // My Den or Solo leveling
+  if (localAt(a)) return localAt(a).name;   // My Den or Single player
   if (a === DEN_LITE) return DEN.name;      // Your Den on Den Lite (host/lite.rs ADDRESS)
   const r = realmsCache.find((x) => x.address === a);
   return r ? r.name : (a || "Another realm");
@@ -360,7 +361,7 @@ function renderRealmRows() {
   const custom = !isOfficial() ? chosenRealm() : (saved && !isOfficialAddr(saved) ? saved : "");
   if (custom) {
     const beacon = realmsCache.find((x) => x.address === custom);
-    if (localAt(custom)) add(localAt(custom).name, false, localAt(custom).build);   // this PC's Den or Solo leveling (the play bar's rows)
+    if (localAt(custom)) add(localAt(custom).name, false, localAt(custom).build);   // this PC's Den or Single player (the play bar's rows)
     else add(beacon ? beacon.name : custom, false, realmVersion(beacon));
   }
 }
@@ -769,7 +770,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("cimp
 // Where a drop adds a game client: the client button, its open list, this panel, and the whole Find your game files page.
 function clientDropAt(x, y) {
   if (currentPage === "findfiles") return true;
-  return [$("pb-client"), menuOpen && $("pb-menu"), !$("cimp").hidden && $("cimp")].some((n) => {
+  return [$("pb-client"), menuOpen && $("pb-menu"), !$("cimp").hidden && $("cimp"), currentPage === "single" && $("sp-drop")].some((n) => {
     if (!n) return false;
     const r = n.getBoundingClientRect();
     return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
@@ -965,7 +966,7 @@ async function bimpPoll() {
   else bimpError(p.message);
 }
 // The new client for every realm of its version, and a realm of that version in the bar: the official realm when it
-// fits (Wrath Unleashed), else the first realm of the list, My Den or Solo leveling of that version. Returns the
+// fits (Wrath Unleashed), else the first realm of the list, My Den or Single player of that version. Returns the
 // realm's name, or null when none fits.
 function autoConnect(id) {
   const c = state && state.settings.clients.find((x) => x.id === id);
@@ -1066,9 +1067,9 @@ loadTesting();
 // (owner 2026-10-30: the ONLINE / SOLO / BROWSER switch gave way to it; owner 1 Nov: kept short, renderRealmMenu.)
 // Picking a realm selects it the way the side bar's Your realms does, with a client of the version it needs. The same
 // keys as the client list.
-// Your Den (docs/DEN.md, owner 2026-10-30) and Solo leveling (owner 2026-10-31: "add solo leveling"): the realms made
+// Your Den (docs/DEN.md, owner 2026-10-30) and Single player (owner 2026-10-31: "add solo leveling"; renamed 4 Nov): the realms made
 // for this PC, hosted by the host kit (its state/host.json profile "den" or "solo", read by host_info). One kit runs
-// one realm (one state/host.json, one compose project), so the two take turns: the row of the one not running (Solo leveling: under Your realms once hosted) offers
+// one realm (one state/host.json, one compose project), so the two take turns: the row of the one not running (Single player: its own row under Your Den) offers
 // to switch (hostconsole.js asks, then runs it on the same realm, its accounts and characters kept). Each row says its
 // next step: Needs your game folder (the add flow; setup goes on by itself once a folder of its build is in), Make your
 // Den / Set it up once (the Host page with that ruleset picked: Host pack and Docker steps, then Start), Switch from
@@ -1077,8 +1078,10 @@ loadTesting();
 const LOCAL = {
   den: { name: "Your Den", profile: "den", build: "3.3.5a", key: "leyline.den", mark: "den", setup: "Make your Den",
     title: "A private room to build in: you and the friends you invite" },
-  solo: { name: "Solo leveling", profile: "solo", build: "3.3.5a", key: "leyline.solo", mark: "solo", setup: "Set it up once",
-    title: "A private realm on this PC for levelling alone: helper bots fill your group, dungeons scale to you" },
+  // Single player (owner 4 Nov: the flagship, "Solo leveling" before; the ruleset id stays "solo"): its own page,
+  // single.js, sets it up in three steps. TODO(owner): the final marketing line, his words
+  solo: { name: "Single player", profile: "solo", build: "3.3.5a", key: "leyline.solo", mark: "solo", setup: "Set it up once",
+    title: "Just you and your bot companions, on this PC: dungeons and raids with helper bots, levelling at your pace" },
 };
 const DEN = LOCAL.den;
 const DEN_LITE = "127.0.0.1";   // where Den Lite plays (host/lite.rs ADDRESS)
@@ -1090,12 +1093,12 @@ function localAddress(L) {
 function denAddress() { return localAddress(DEN); }
 // the local realm the address its invite gave belongs to (the two share one realm, so the last one played keeps it)
 const localAt = (addr) => (addr ? Object.values(LOCAL).find((L) => localAddress(L) === addr) || null : null);
-// the kit as it is now (the realm picker asks each time it opens: a Den or Solo leveling may have been made since)
+// the kit as it is now (the realm picker asks each time it opens: a Den or Single player may have been made since)
 async function readKit() {
   try { kit = await invoke("host_info"); } catch (_) { /* a preview page, or no kit */ }
   return kit;
 }
-// marks for the rows that are not a realm on the list: a house for My Den, a sword for Solo leveling, a globe for
+// marks for the rows that are not a realm on the list: a house for My Den, a sword for Single player, a globe for
 // browser play
 const MARKS = {
   den: '<svg viewBox="0 0 16 16" width="14" height="14" focusable="false"><path d="M2.5 7.4 8 2.8l5.5 4.6M4 6.3v6.9h8V6.3M6.6 13.2V9.6h2.8v3.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -1202,6 +1205,12 @@ function localGo(L) {
     return;
   }
   if (step === "play") { playLocal(L); return; }
+  // Single player not on this PC yet: its own page (single.js: game folder, engine, Start), not the Host page
+  if (L === LOCAL.solo && $("page-single")) {
+    pendingLocal = null;
+    show("single");
+    return;
+  }
   if (step === "folder") {
     pendingLocal = L.profile;
     addGameFolder(`${L.name} plays with your own game folder. Add it, and setup goes on from there.`, L.build);
@@ -1288,7 +1297,7 @@ function localHint() {
   return { head: "READY TO PLAY", detail: "On this PC", warn: false };
 }
 // the realm the Host pack runs on this PC, whatever its ruleset (solo.js Play solo on a mode package): knocked and
-// played as Your Den and Solo leveling are
+// played as Your Den and Single player are
 function hostedLocal() {
   if (!(kit && kit.realm)) return null;
   const L = Object.values(LOCAL).find(localHosted);
@@ -1296,6 +1305,11 @@ function hostedLocal() {
   return L || { name: kit.realm.name || "Your realm", profile: kit.realm.profile, build: ver ? ver[1] : "3.3.5a", key: "leyline.hosted", mark: "solo" };
 }
 window.LeylineLocal = { play: (id) => (LOCAL[id] ? playLocal(LOCAL[id]) : null), names: () => Object.fromEntries(Object.values(LOCAL).map((L) => [L.profile, L.name])),
+  // single.js: the next step of a local realm, and the add flow for its game folder (it goes on to that realm once in)
+  step: (id) => (LOCAL[id] ? localStep(LOCAL[id]) : null), info: (id) => LOCAL[id] || null, readKit,
+  addFolder: (id, why) => { const L = LOCAL[id]; if (!L) return; pendingLocal = L.profile; addGameFolder(why || `${L.name} plays with your own game folder. Add it, and setup goes on from there.`, L.build); },
+  useClient: (id, c) => { const L = LOCAL[id]; if (L && c) rememberClient(L.profile, c); },
+  clientFor: (id) => (LOCAL[id] ? clientForRealm(LOCAL[id].profile, LOCAL[id].build) : null),
   playHosted: async () => { await readKit(); const L = hostedLocal(); if (L) return playLocal(L); show("host"); return null; } };
 let rmenuOpen = false;
 const realmRowsOf = (m) => [...m.querySelectorAll(".pb-opt")];
@@ -1351,10 +1365,11 @@ function renderRealmMenu() {
   // Wrath Unleashed (HANGOUT) labelled, the lineup when its record is on the list, then Your Den
   const off = (realmsCache || []).find((x) => x.official) || { official: true, name: officialName(), state: "live", players: null };
   const lineup = (realmsCache || []).filter((r) => inLineup(r) && r.address && !hiddenBuild(r.build));
-  const top = [realmRow(off), ...lineup.map(realmRow), localRow(DEN)];
-  // Your realms: the one this PC hosts (not the Den: it has its row) and the community realm you picked
+  // Single player (owner 4 Nov: the flagship) has its own row right under Your Den, hosted here or not
+  const top = [realmRow(off), ...lineup.map(realmRow), localRow(DEN), localRow(LOCAL.solo)];
+  // Your realms: the one this PC hosts (not the Den or Single player: they have their rows) and the community realm you picked
   const mine = [];
-  const hosted = kit && kit.realm && kit.realm.profile !== DEN.profile ? kit.realm : null;
+  const hosted = kit && kit.realm && kit.realm.profile !== DEN.profile && kit.realm.profile !== LOCAL.solo.profile ? kit.realm : null;
   const hostedLocal = hosted ? Object.values(LOCAL).find((L) => L.profile === hosted.profile) : null;
   const hostedListed = hosted && hosted.realm_id ? (realmsCache || []).find((r) => r.realm_id === hosted.realm_id && r.address) : null;
   if (hostedLocal) mine.push(localRow(hostedLocal));
@@ -1366,7 +1381,7 @@ function renderRealmMenu() {
   for (const addr of [...new Set([saved, ...joinedRealms()].filter(Boolean))]) {
     const r = realmAt(addr);
     const L = localAt(addr);
-    if (L) { if (L !== DEN && L !== hostedLocal) mine.push(localRow(L)); }
+    if (L) { if (L !== DEN && L !== LOCAL.solo && L !== hostedLocal) mine.push(localRow(L)); }
     else if (r) { if (!inLineup(r) && r !== hostedListed && !hiddenRealm(r) && !r.official) mine.push(realmRow(r)); }
     else if (!isOfficialAddr(addr)) mine.push(row("pb-realm-opt", addr, { icon: realmIcon(addr, false, "sm"), selected: online && !isOfficial() && addr === here, sub: "Your address",
       run: () => pickRealm({ official: false, address: addr }) }));
@@ -1428,7 +1443,7 @@ function openRealmMenu() {
     if (at) at.focus();
   };
   focusPicked();
-  // Your Den and Solo leveling: hosted on this PC or not, as the kit says now, and where Your Den runs (den.js, read
+  // Your Den and Single player: hosted on this PC or not, as the kit says now, and where Your Den runs (den.js, read
   // once): the rows change only when that changed
   const hosted = () => (kit && kit.realm ? kit.realm.profile : "") + "|" + denSub();
   const had = hosted();
@@ -1500,7 +1515,7 @@ function renderPlayBar() {
     head = `BUSY · QUEUE ${queueN()}`; warn = true;
     detail = mode === "browser" && officialQueue.wait ? `About ${officialQueue.wait} min · or skip the line` : "Or skip the line";
   }
-  const lh = mode === "browser" ? null : localHint();   // My Den / Solo leveling: their own next step
+  const lh = mode === "browser" ? null : localHint();   // My Den / Single player: their own next step
   if (lh) ({ head, detail, warn } = lh);
   $("play-headline").textContent = head;
   bar.classList.toggle("warn", warn);
@@ -1538,7 +1553,7 @@ $("play-form").addEventListener("submit", async (ev) => {
     catch (e) { sayErr("play-status", e); }
     return;
   }
-  if (await localBeforePlay()) return;   // My Den / Solo leveling: knocked again first, or its next step
+  if (await localBeforePlay()) return;   // My Den / Single player: knocked again first, or its next step
   const c = currentClient();
   if (!c) { openFindFiles(); return; }   // no game folder yet: where to find one (and browser play)
   // the official realm signs in by itself with your Leyline account, so never a start signed out (it opened at the

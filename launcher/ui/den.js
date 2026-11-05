@@ -91,10 +91,10 @@
     try { net = await call("den_net_state"); } catch (_) { net = null; }
     if (net && net.running) { paint(); followNet(); }
     try { models = await call("den_models"); paint(); } catch (_) { models = null; }
-    // Docker on this PC: Solo leveling is offered as the bigger way to play alone (never waited for)
+    // Docker on this PC: Single player is offered as the bigger way to play alone (never waited for)
     if (!dock) call("docker_info").then((d) => { dock = d; paint(); }).catch(() => { /* no Docker: not offered */ });
   }
-  // Solo leveling (app.js LOCAL.solo, the Host kit's "solo" ruleset): the Host page with it picked, or played when hosted
+  // Single player (app.js LOCAL.solo, the Host kit's "solo" ruleset): its own page (single.js) until it is set up, then played
   function soloLeveling() {
     if (typeof localGo === "function" && typeof LOCAL !== "undefined" && LOCAL.solo) localGo(LOCAL.solo);
     else if (window.LeylineNav) window.LeylineNav.show("host");
@@ -664,16 +664,16 @@
       root.append(nl);
     }
     if (invited && where() === "lite") root.append(waysBox());
-    // the bigger way to play alone, only where Docker runs (or Solo leveling is already hosted here)
+    // the bigger way to play alone, only where Docker runs (or Single player is already hosted here)
     const soloHosted = typeof kit !== "undefined" && kit && kit.realm && kit.realm.profile === "solo";
     if (soloHosted || (dock && dock.state === "ready")) {
       const sl = mk("div", "yd-row yd-solo");
       sl.id = "yd-solo";
-      const b = btn(soloHosted ? "Play Solo leveling" : "Solo leveling", "btn small", soloLeveling);
+      const b = btn(soloHosted ? "Play Single player" : "Single player", "btn small", soloLeveling);
       b.id = "yd-solo-go";
       // TODO(owner): the words
       sl.append(mk("span", "yd-hint", soloHosted ? "Level from 1 on your own realm on this PC, with helper bots."
-        : "Want to level from 1 instead? Solo leveling is a full realm on this PC with helper bots and dungeons sized for you. It uses Docker; the first start takes 5 to 20 minutes."), b);
+        : "Want to level from 1 instead? Single player is a full realm on this PC with helper bots and dungeons sized for you. It uses Docker; the first start takes 5 to 20 minutes."), b);
       root.append(sl);
     }
     const grid = mk("div", "yd-grid");

@@ -225,7 +225,7 @@
     loadReady();
   });
 
-  // the play bar's My Den / Solo leveling asks the Host page for its ruleset (hostconsole.js applyWant): the ruleset
+  // the play bar's My Den / Single player asks the Host page for its ruleset (hostconsole.js applyWant): the ruleset
   // picker shows it with its own facts, so this flow steps aside
   document.addEventListener("leyline:host-ruleset", () => {
     if (!(kit && kit.realm) && view === "flow") away(() => window.LeylineHostModes && window.LeylineHostModes.rulesets());

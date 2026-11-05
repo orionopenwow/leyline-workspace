@@ -326,6 +326,56 @@ STEPS = {
     "commons-check": ("tools/commons/Commons check.bat", "Commons kit check: the directory and Make my own Leyline's tests (read-only, a temp folder)", False),
 }
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
+# How long a step may run before Control stops it (review 4 Nov: a step waiting on a question, such as an ssh asking
+# about a host key, blocked every later step and Autopilot until the window was closed). Minutes; the long builds,
+# exports and uploads get more, and LEYLINE_STEP_TIMEOUT_MIN changes the default.
+STEP_TIMEOUT_MIN = {"client-build": 360, "slice": 360, "slice-sampler": 360, "sampler": 240, "sv-record": 180,
+                    "sv-export": 240, "client": 120, "ship": 120, "ship-again": 120, "leyline": 120,
+                    "leyline-launcher": 120, "release-mirror": 180, "audit": 60, "den-test-variants": 120,
+                    "fresh-test": 180, "fresh-sandbox": 180, "first-run-test": 180, "mods-daily": 180, "thumbs": 120,
+                    "addons-curate": 120, "ov112-data-remove": 120, "foreverui": 120}
+
+
+def step_timeout_s(step: str) -> int:
+    try:
+        default = int(os.environ.get("LEYLINE_STEP_TIMEOUT_MIN") or 90)
+    except ValueError:
+        default = 90
+    return max(1, STEP_TIMEOUT_MIN.get(step, default)) * 60
+
+
+def kill_tree(p) -> None:
+    """Stop a step's process and everything it started (cmd -> bat -> ssh, python, ...)."""
+    pid = getattr(p, "pid", None)
+    if os.name == "nt" and pid:
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        p.kill()
+    except (OSError, AttributeError):
+        pass
+
+
+def watch_step(p, step: str, why: dict) -> threading.Event:
+    """A watchdog for one running step: it stops the step at its time limit, or when Stop is pressed
+    (state["stop"]); `why` says which. Set the returned event when the step ends by itself."""
+    done = threading.Event()
+    limit = time.monotonic() + step_timeout_s(step)
+
+    def watch():
+        while not done.wait(1.0):
+            if state.get("stop"):
+                why["reason"] = "stopped"
+            elif time.monotonic() > limit:
+                why["reason"] = "timeout"
+            else:
+                continue
+            kill_tree(p)
+            return
+    threading.Thread(target=watch, daemon=True).start()
+    return done
+
+
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
@@ -510,11 +560,15 @@ except OSError:
 
 def restart_if_updated() -> None:
     """When Claude ships a new control.py, the window restarts itself (minimised, Autopilot as it was) once idle."""
-    try:
-        if SELF.stat().st_mtime == SELF_MTIME or state["running"]:
+    # checked and claimed under the lock that start_run takes, so a step starting in the same second is never killed by
+    # the restart (review 4 Nov): once claimed, "running" says restarting and nothing else can start
+    with lock:
+        try:
+            if SELF.stat().st_mtime == SELF_MTIME or state["running"]:
+                return
+        except OSError:
             return
-    except OSError:
-        return
+        state["running"] = {"id": "", "step": "restarting", "title": "Restarting Leyline Control"}
     emit("line", "== The control window was updated: restarting it (a few seconds).")
     flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
     subprocess.Popen([sys.executable, str(SELF), "--quiet", "--wait-port"], cwd=str(ROOT), creationflags=flags)
@@ -642,13 +696,26 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                     p.stdin.close()
                 except OSError:
                     pass
-                for raw in iter(p.stdout.readline, b""):
-                    line = scrub(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
-                    if line.strip().lower().startswith("press any key"):
-                        continue
-                    lf.write(line + "\n")
-                    emit("line", line)
-                rc = p.wait()
+                why = {}
+                state["stop"] = False
+                ended = watch_step(p, item["step"], why)
+                try:
+                    for raw in iter(p.stdout.readline, b""):
+                        line = scrub(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+                        if line.strip().lower().startswith("press any key"):
+                            continue
+                        lf.write(line + "\n")
+                        emit("line", line)
+                    rc = p.wait()
+                finally:
+                    ended.set()
+                if why.get("reason"):
+                    rc = rc or 1
+                    msg = ("!! Stopped by you." if why["reason"] == "stopped" else
+                           f"!! Stopped: it ran past its {step_timeout_s(item['step']) // 60} minutes (it may be waiting "
+                           "on a question, such as ssh asking about a host key). Run it by hand to see, or ask Claude.")
+                    lf.write(msg + "\n")
+                    emit("line", msg)
             if item["step"] == "check":
                 write_last_check(item["id"], rc == 0)
             if item["step"].startswith("discord-"):
@@ -1437,6 +1504,12 @@ class H(http.server.BaseHTTPRequestHandler):
             if not start_run(msg):
                 return self._send(409, '{"error":"already running"}')
             return self._send(200, '{"ok":true}')
+        if self.path == "/api/stop":   # the Stop button: the running step is stopped (its whole process tree)
+            if not state.get("running"):
+                return self._send(409, '{"error":"nothing is running"}')
+            state["stop"] = True
+            emit("line", "== Stopping the running step...")
+            return self._send(200, '{"ok":true}')
         if self.path == "/api/confirm":
             set_autopilot(confirm=bool(body.get("on")))
             emit("state", {})
@@ -1811,7 +1884,7 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
     <div class="sub" id="kswhy"></div><div class="dsum" id="kslast"></div></details></section>
 </div>
 <div class="stack">
-  <section class="card"><h2>Live output</h2><div class="status" id="run"></div><div class="console" id="con"></div></section>
+  <section class="card"><h2>Live output</h2><div class="status" id="run"></div><button id="stop" hidden title="Stops the running step and everything it started">Stop</button><div class="console" id="con"></div></section>
 </div></main>
 <script>
 const T="__TOKEN__",H={"X-Token":T};
@@ -1855,7 +1928,7 @@ $("cupd").textContent=c.updated?`Updated ${c.updated}`:"";
 list($("pending"),(s.pending||[]).map(p=>({tag:p.step,text:p.title,detail:p.note})),"","Nothing to launch. You're up to date.");
 const a=$("auto");a.textContent=s.autopilot?"Autopilot: ON":"Autopilot: OFF";a.className=s.autopilot?"primary":"";a.dataset.on=s.autopilot?"1":"";
 const q=$("ask");q.textContent=s.confirm?"Ask before deploys: ON":"Ask before deploys: OFF";q.dataset.on=s.confirm?"1":"";
-$("go").disabled=!!s.running||!(s.pending||[]).length;$("audit").disabled=!!s.running;
+$("go").disabled=!!s.running||!(s.pending||[]).length;$("stop").hidden=!s.running||s.running.step==="restarting";$("audit").disabled=!!s.running;
 const ar=$("areport");if(s.audit){ar.hidden=false;ar.href=`/audit?t=${T}`;ar.textContent=`Last audit ${s.audit.at}: ${s.audit.green?"all green":s.audit.result}`;ar.style.color=s.audit.green?"var(--ok)":"var(--bad)"}else ar.hidden=true;
 $("run").innerHTML=s.running?`<span class="spinner"></span>${esc(s.running.title||"Running")}…`:'<span class="sub">Idle</span>';
 $("hist").innerHTML=(s.history||[]).map(x=>`<div class="item fin"><span class="tag">${esc(x.step)}</span><div>${esc(x.note||x.id)} ${x.log?`<a href="/api/log?t=${T}&name=${encodeURIComponent(x.log)}" target="_blank">log</a>`:""}</div></div>`).join("")||'<div class="empty">No runs yet.</div>';
@@ -1946,6 +2019,7 @@ $("ksdo").onclick=async()=>{const k=(last&&last.killswitch)||{},p=k.preview;if(!
 if(await dpost("/api/killswitch/go",{stage:p.stage,preview:p.id,phrase:$("ksphrase").value.trim()}))$("ksphrase").value=""};
 $("go").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/launch",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({message:$("msg").value})});if(!r.ok)alert("Couldn't start: "+(await r.text()));refresh()};
 $("audit").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/audit",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};
+$("stop").onclick=async()=>{if(!confirm("Stop the running step? It is marked failed and Autopilot pauses."))return;const r=await fetch("/api/stop",{method:"POST",headers:H});if(!r.ok)alert("Couldn't: "+(await r.text()));refresh()};
 $("check").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/check",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};
 $("auto").onclick=async()=>{await fetch("/api/autopilot",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({on:!$("auto").dataset.on})});refresh()};
 $("gmc").onclick=async()=>{const r=await fetch("/api/gm-console",{method:"POST",headers:H});if(!r.ok)alert("Couldn't open it: "+(await r.text()))};

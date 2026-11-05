@@ -62,6 +62,7 @@ let calls = [], plan = [];
 global.fetch = async (u) => {
   calls.push(String(u));
   const s = plan.shift();
+  if (s === 'drop') throw new DOMException('aborted', 'AbortError');   // no answer in time (a slow line)
   return { status: s, ok: s >= 200 && s < 300, headers: { get: () => 'application/json' }, json: async () => ({}) };
 };
 class FakeXHR { open(m, u) { this.u = u; } send() { calls.push(this.u); this.status = plan.shift(); this.responseText = ''; } getResponseHeader() { return ''; } getAllResponseHeaders() { return ''; } overrideMimeType() {} }
@@ -98,6 +99,16 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok((await of.hostServesData()) === false && calls[0] === '/data/__index', 'ownfiles: /data/__index 410 -> no host data (own folder)');
   plan = [200]; calls = [];
   ok((await of.hostServesData()) === true, 'ownfiles: /data/__index 200 JSON -> host data (streaming as before)');
+  // 4 Nov: a slow line made the 8 s probe give up and phones were asked for a game folder. No answer is not a "no".
+  plan = ['drop', 200]; calls = [];
+  ok((await of.hostServesData()) === true && calls.length === 2, 'ownfiles: no answer, then 200 -> tried again, host data');
+  plan = ['drop', 'drop', 'drop']; calls = []; window.__wenilla_env = { mode: 'stream' };
+  ok((await of.hostServesData()) === true && calls.length === 3, 'ownfiles: never answers on a streamed session -> keeps streaming');
+  plan = ['drop', 'drop', 'drop']; calls = []; window.__wenilla_env = { mode: 'own' };
+  ok((await of.hostServesData()) === false, 'ownfiles: never answers on an own-files session -> the folder card');
+  plan = ['drop', 404]; calls = []; window.__wenilla_env = { mode: 'stream' };
+  ok((await of.hostServesData()) === false, 'ownfiles: a real 404 after a slow try -> no host data');
+  delete window.__wenilla_env;
   ok(of.gamedataOff() === false, 'ownfiles: gamedataOff() false by default');
   window.WU_GAMEDATA_OFF = true;
   ok(of.gamedataOff() === true, 'ownfiles: gamedataOff() from the page env');

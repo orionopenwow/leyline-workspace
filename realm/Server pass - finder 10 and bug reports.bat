@@ -27,6 +27,8 @@ rem The Leyline realm list for the in-game Leyline window (WULY addon messages) 
 if exist "custom\lua_scripts\ov_leyline.lua" copy /y "custom\lua_scripts\ov_leyline.lua" "%T%\" >nul
 rem Companions (.recruit, .buddy, .dismiss) ride along too.
 if exist "custom\lua_scripts\ov_companions.lua" copy /y "custom\lua_scripts\ov_companions.lua" "%T%\" >nul
+rem The dungeon list of the Bots window (its Dungeons tab) rides with it.
+if exist "custom\lua_scripts\ov_companions_dungeons.lua" copy /y "custom\lua_scripts\ov_companions_dungeons.lua" "%T%\" >nul
 rem The Goldshire Inn guest pass (inert until the website hands out passes) and the Discord World chat bridge
 rem (inert until the bridge daemon is switched on) ride along too.
 if exist "custom\lua_scripts\ov_demo.lua" copy /y "custom\lua_scripts\ov_demo.lua" "%T%\" >nul

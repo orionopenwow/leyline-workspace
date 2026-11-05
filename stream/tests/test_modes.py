@@ -256,6 +256,20 @@ check("ov_go.lua carries the current table (python3 stream/modes_data.py --write
 check("ov_go.lua: one place per Go link", lua.count('what = "') == len(M.PLACES))
 bat = open(os.path.join(REPO, "realm", "Server pass - finder 10 and bug reports.bat"), "rb").read()
 check("server pass .bat copies ov_go.lua", b'copy /y "custom\\lua_scripts\\ov_go.lua" "%T%\\" >nul' in bat)
+check("server pass .bat copies ov_companions_dungeons.lua (the Bots window's dungeon list)",
+      b'copy /y "custom\\lua_scripts\\ov_companions_dungeons.lua" "%T%\\" >nul' in bat)
+CD_SERVER = os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_companions_dungeons.lua")
+CD_UI = os.path.join(REPO, "stream", "fui-web", "Interface", "AddOns", "WrathUnleashedUI", "CompanionsData.lua")
+check("ov_companions_dungeons.lua is current (python3 stream/modes_data.py --companions ...)",
+      open(CD_SERVER, encoding="utf-8", newline="").read() == D.companions_server_lua())
+check("CompanionsData.lua is current (python3 stream/modes_data.py --companions ...)",
+      open(CD_UI, encoding="utf-8", newline="").read() == D.companions_ui_lua())
+cd = D.companions_dungeons()
+check("dungeon buddies: every 5-player dungeon once, in level order, each with a door and an icon",
+      len(cd) == len(D.DUNGEONS) and len({d["id"] for d in cd}) == len(cd)
+      and [d["min"] for d in cd] == sorted(d["min"] for d in cd) and all(d["pos"] and d["icon"] for d in cd))
+check("dungeon buddies: no brand words in the names",
+      not any(w in d["name"].lower() for d in cd for w in ("warcraft", "blizzard", "lich king")))
 check("server pass .bat line endings unchanged (one style)", (b"\r\n" in bat) == (bat.count(b"\n") == bat.count(b"\r\n")))
 
 shutil.rmtree(ART, ignore_errors=True)

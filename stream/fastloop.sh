@@ -479,45 +479,72 @@ fi
 
 echo "== check"
 sleep 2
-c1=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://wrath.openvanilla.app/warm.html || true)
-c2=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://wrath.openvanilla.app/data/__index || true)
-c3=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath || true)
-c4=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/art/wu-card.webp || true)
-c5=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/q/258 || true)
+# The checks ask the names players use now (review 4 Nov: they still asked the old ones). The old names still answer;
+# one old-name line below keeps an eye on that. WU_SITE_NAME / WU_GAME_NAME override them for a test box.
+SITE_NAME="${WU_SITE_NAME:-leylinelauncher.com}"
+GAME_NAME="${WU_GAME_NAME:-play.leylinelauncher.com}"
+c1=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$GAME_NAME/warm.html || true)
+c2=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$GAME_NAME/data/__index || true)
+c3=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath || true)
+c4=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/art/wu-card.webp || true)
+c5=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/q/258 || true)
 echo "  /wrath/q/258 share link (200 = links on): $c5"
-c6=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/armory || true)
+c6=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/armory || true)
 echo "  /wrath/armory (200 = the armory is on): $c6"
-c7=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/mods || true)
+c7=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/mods || true)
 echo "  /wrath/mods Workshop (200 = on): $c7"
-c7m=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/modes.json || true)
+c7m=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/modes.json || true)
 echo "  /wrath/modes.json game modes (200 = on): $c7m"
-c8=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/docs || true)
-c8w=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/workshop || true)
+c8=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/docs || true)
+c8w=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/workshop || true)
 echo "  /wrath/workshop player creations (200 = on): $c8w"
 echo "  /wrath/docs Leyline docs (200 = on): $c8"
-c9=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/host || true)
+c9=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/host || true)
 echo "  /wrath/host + Your server (302 to sign-in = on): $c9"
-c10=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/api/social/me || true)
+c10=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/api/social/me || true)
 echo "  /wrath/api/social/me Leyline friends (401 signed out = on): $c10"
-c10f=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/forum/api/categories || true)
+c10f=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/forum/api/categories || true)
 echo "  /wrath/forum/api/categories the Leyline forum (200 = on): $c10f"
-c11p=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/avatar/p/star.svg || true)
+c11p=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/avatar/p/star.svg || true)
 echo "  /wrath/avatar/p/star.svg    Leyline profiles and sign-in (200 = on): $c11p"
-c11=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/admin || true)
+c11=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/admin || true)
 echo "  /wrath/admin Admin Console (302 to sign-in = on): $c11"
-c11k=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://play.openvanilla.app/account/key || true)
+c11k=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://$SITE_NAME/account/key || true)
 echo "  /account/key (302 to /wrath/key = the Leyline Hero Key page): $c11k"
-c11l=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://play.openvanilla.app/login || true)
+c11l=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://$SITE_NAME/login || true)
 echo "  /login (302 to /wrath/signin = the old sign-in page pruned): $c11l"
-c12=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/leyline-preview || true)
+c12=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/leyline-preview || true)
 echo "  /wrath/leyline-preview hidden hub (200 = on): $c12"
 echo "  warm.html (public): $c1   /data (must stay gated, 302/401/403): $c2   /wrath signed out (200 = saved-key page): $c3"
 echo "  /wrath/art/wu-card.webp (200 = the art is served): $c4"
+c3o=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath || true)
+c2o=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://wrath.openvanilla.app/data/__index || true)
+echo "  old names: play.openvanilla.app/wrath $c3o (200 = still answers)   wrath.openvanilla.app/data $c2o (must stay gated)"
 echo "  backups: $BK"
 # review 4 Nov: the game data must stay behind the sign-in gate (a 200 here means anyone can download it); the step
 # fails loudly instead of printing FASTLOOP OK under it. Nothing is rolled back by this check: look at the Caddyfile.
-if [ "$c2" = 200 ]; then
+if [ "$c2" = 200 ] || [ "$c2o" = 200 ]; then
   echo "ERROR: /data/__index answered 200 signed out: the game data is not behind the sign-in gate. Check the Caddyfile's streaming block." >&2
   exit 1
 fi
-echo "FASTLOOP OK"
+# Review 4 Nov (ops 7, suggestion 3): the other checks say something too. The site's own page must answer signed out,
+# and the Admin Console must never answer 200 to a visitor who isn't signed in.
+if [ "$c3" != 200 ] && [ "$c3o" != 200 ]; then
+  echo "ERROR: /wrath answered $c3 ($SITE_NAME) and $c3o (old name) signed out, not 200: the site is not answering." >&2
+  exit 1
+fi
+if [ "$c11" = 200 ]; then
+  echo "ERROR: /wrath/admin answered 200 signed out: the Admin Console must be hidden from visitors." >&2
+  exit 1
+fi
+# The kill switch for game data (stream/server/gamedata-switch.sh): while its flag is there, /data must answer 410.
+if [ -f "${WU_GAMEDATA_FLAG_HOST:-$WU/portal/gamedata-off}" ] && [ "$c2" != 410 ]; then
+  echo "ERROR: game data is switched off (the gamedata-off flag is there) but /data/__index answered $c2, not 410." >&2
+  exit 1
+fi
+# HTTP/3 through Docker crawled at 20-40 KB/s (4 Nov; tools/security/h3-off.sh). A Caddyfile rewrite can bring it back
+# without a word, so say so here (a warning, not a failure: h3-on is a choice the owner can make).
+if [ -f "$CF" ] && ! grep -qE '^\s*protocols\s+h1\s+h2\s*$' "$CF"; then
+  echo "WARN: HTTP/3 is on (the Caddyfile has no 'protocols h1 h2'). If that wasn't meant, queue the h3-off step."
+fi
+echo "FASTLOOP OK (site: https://$SITE_NAME/wrath)"

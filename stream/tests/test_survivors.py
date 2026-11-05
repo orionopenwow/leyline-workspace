@@ -155,7 +155,7 @@ sv_ck = ck.split(";")[0]
 for uri in ("/", "/wenilla_bg.wasm", "/data/__index", "/data/DBFilesClient%5CMap.dbc", "/boot-manifest.json"):
     check(f"auth with the session: {uri} -> 200", auth(uri, sv_ck)[0] == 200)
 st, h, _ = auth("/")
-check("auth without a session: the page -> 302 to Play", st == 302 and h.get("location") == "https://play.openvanilla.app/wrath/survivors/play")
+check("auth without a session: the page -> 302 to Play on the new site name (PUBLIC_HOST still old)", st == 302 and h.get("location") == "https://leylinelauncher.com/wrath/survivors/play")
 check("auth without a session: /data -> 403", auth("/data/__index")[0] == 403)
 check("auth with a junk cookie: /data -> 403", auth("/data/__index", "wu_play=nope")[0] == 403)
 sess = wp.sessions.get(sv_ck.split("=", 1)[1])
@@ -182,7 +182,7 @@ for uri in ("/data/__index", "/data", "/data/DBFilesClient%5CMap.dbc", "/boot-ma
         st, h, b = auth(uri, c)
         check(f"off: {uri} ({who}) -> 410 JSON", st == 410 and json.loads(b)["error"] == "gamedata_off")
 st, h, _ = auth("/", sv_ck)
-check("off: the page sends even a session to the resting page", st == 302 and h.get("location") == "https://play.openvanilla.app/wrath/survivors")
+check("off: the page sends even a session to the resting page", st == 302 and h.get("location") == "https://leylinelauncher.com/wrath/survivors")
 st, _, b = get("/wrath/survivors")
 check("off: the page says Resting, no Play", "Resting" in text(b) and 'href="/wrath/survivors/play"' not in b.decode()
       and "licenses/" not in b.decode())

@@ -186,6 +186,8 @@ background:var(--lp-acc);color:var(--lp-on)!important;font:650 15px/1.15 system-
 .lp-ph{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:100%;border-radius:var(--lp-r);
 border:1px dashed var(--lp-line);color:var(--lp-dim);font:600 13px/1.2 system-ui,sans-serif;letter-spacing:.04em;
 background:radial-gradient(60% 80% at 30% 20%,rgba(120,110,255,.18),transparent 70%),radial-gradient(50% 70% at 80% 70%,rgba(60,190,255,.14),transparent 70%),var(--lp-card2)}
+.lp-ph span{text-align:center;padding:0 8px}
+.lp-ep .lp-ph{font-size:12px;gap:4px}.lp-ep .lp-ph svg{width:26px;height:26px}
 .lp-ph svg{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;opacity:.8}
 .lp-soon{display:inline-block;margin-left:6px;padding:2px 8px;border:1px solid var(--lp-line);border-radius:999px;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
 .lp-points{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(290px,100%),1fr));gap:12px;margin:0;padding:0;list-style:none}
@@ -726,7 +728,7 @@ def _poster(g: dict) -> list[str]:
 def guides_body() -> str:
     cards = "".join(
         f'<li><a class="lp-ep" href="{GUIDES}/{_e(g["slug"])}">'
-        + slot(_poster(g), f"Episode {g['n']}: {g['title']}", g["title"])
+        + slot(_poster(g), f"Episode {g['n']}: {g['title']}", g["title"]).replace("Picture coming soon", "Video coming soon")
         + f'<span class="lp-n">Episode {g["n"]}</span><b>{_e(g["title"])}</b><span>{_e(g["line"])}</span></a></li>'
         for g in guides())
     # TODO(owner): the guide series' opening line, your words (draft below)

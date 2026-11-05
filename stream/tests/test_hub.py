@@ -944,8 +944,8 @@ check("gallery: the first tiles are in game, mods and launcher taken in turn", l
       and kinds[:6] == ["game", "mods", "launcher"] * 2 and {"game", "mods", "launcher"} <= set(kinds), kinds)
 check("gallery: the first tile is the big featured modpack shot, with its authors' credit and a link out (no Install)",
       tiles and "big" in tiles[0][0] and tiles[0][2] == "g-coa-ultrahd"
-      and 'src="/wrath/art/leyline-shot-coa-ultrahd.webp"' in tiles[0][3] and "<i>Screenshot: the modpack&#x27;s authors</i>" in tiles[0][3]
-      and f'<a class="hb-gt-i" href="{html.escape(HB.FEATURED_MOD["url"])}" rel="noopener nofollow ugc" target="_blank">See the modpack</a>' in tiles[0][3]
+      and 'src="/wrath/art/leyline-shot-coa-ultrahd.webp"' in tiles[0][3] and "<i>Screenshot: Project Reforged</i>" in tiles[0][3]
+      and f'<a class="hb-gt-i" href="{html.escape(HB.FEATURED_MOD["url"])}" rel="noopener nofollow ugc" target="_blank">See Project Reforged</a>' in tiles[0][3]
       and "Install" not in tiles[0][3] and "<small>Featured mod</small>" in tiles[0][3], tiles[0][:3] if tiles else "")
 check("gallery: then the in-game shots, the hangout first", [t[2] for t in tiles if t[1] == "game"][:2] == ["g-coa-ultrahd", "g-dalaran"])
 mt = [t for t in tiles if t[1] == "mods"]
@@ -1048,20 +1048,20 @@ check("featured mod: on the front page right under how it works, before the feat
       and fp[fp.find('class="hb-how'):fp.find('id="featured-mod"')].count("<section") == 1)
 coa = coa.group(0) if coa else ""
 check("featured mod: label, title, the screenshot (served, sized, alt), a TODO for the owner's copy",
-      '<p class="hb-coa-k"><span aria-hidden="true"></span>Featured mod</p>' in coa and "Conquest of Azeroth: UltraHD</h2>" in coa
+      '<p class="hb-coa-k"><span aria-hidden="true"></span>Featured mod</p>' in coa and "Project Reforged</h2>" in coa and "Conquest" not in coa
       and re.search(r'<img src="/wrath/art/leyline-shot-coa-ultrahd\.webp" alt="[^"]{30,}" width="845" height="577" loading="lazy"', coa)
       and "leyline-shot-coa-ultrahd.webp" in wp.ART_TYPES and "leyline-shot-coa-ultrahd.webp" in wp.GAMEDATA_ART
       and os.path.isfile(os.path.join(HERE, "www-files", "art", "leyline-shot-coa-ultrahd.webp")) and "TODO(owner)" in coa)
 check("featured mod: the external note and the credit, word for word",
-      '<p class="hb-coa-n">External download, made and hosted by its authors; not checked or hosted by Leyline</p>' in coa
-      and '<p class="hb-coa-cr">Screenshot: the modpack&#x27;s authors</p>' in coa)
+      '<p class="hb-coa-n">External download, made and hosted by Project Reforged; not checked or hosted by Leyline</p>' in coa
+      and '<p class="hb-coa-cr">Screenshot: Project Reforged</p>' in coa)
 # a slider since 2026-10-30 ("a sliding preview too of the best latest mods"): the modpack is the first slide
 coa_slides = re.split(r'<div class="hb-coa-s(?: mod)?"', coa)[1:]
 coa1 = coa_slides[0] if coa_slides else ""
 links = re.findall(r'<a ([^>]*)>(.*?)</a>', coa1, re.S)
-check("featured mod: the first slide has one link out, See the modpack (noopener nofollow ugc, a new tab), no Install, nothing hosted here",
+check("featured mod: the first slide has one link out, See Project Reforged (noopener nofollow ugc, a new tab), no Install, nothing hosted here",
       len(links) == 1 and f'href="{html.escape(HB.FEATURED_MOD["url"])}"' in links[0][0] and 'rel="noopener nofollow ugc"' in links[0][0]
-      and 'target="_blank"' in links[0][0] and links[0][1].startswith("See the modpack")
+      and 'target="_blank"' in links[0][0] and links[0][1].startswith("See Project Reforged")
       and not re.search(r"(?i)install|leyline://|download\"", coa1.replace("External download", "")) and "/wrath/mods/" not in coa1)
 more = coa_slides[1:]
 check("featured slider: then up to five of the best mods with a picture, each a link to its own page here (no Install, no link out)",

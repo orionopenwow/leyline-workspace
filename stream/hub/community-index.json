@@ -3854,18 +3854,18 @@
  "external": [
   {
    "id": "ext:994b561c9db9",
-   "name": "UltraHD Graphics Modpack",
-   "author": "",
-   "url": "https://www.reddit.com/r/wowservers/comments/1xiqhdg/conquest_of_azeroth_ultrahd_graphics_modpack/",
+   "name": "Project Reforged",
+   "author": "Project Reforged",
+   "url": "https://projectreforged.github.io/",
    "category": "graphics",
    "type": "external-pack",
    "builds": [
     "3.3.5a"
    ],
-   "summary": "A high-resolution texture and model pack announced for the Conquest community client. Downloaded from its authors' own page.",
+   "summary": "High-definition textures, models and lighting for the classic and third-era clients, made by Project Reforged. Downloaded from their own site.",
    "external": true,
    "note": "External download, made and hosted by its authors; not checked or hosted by Leyline",
-   "source_thread": "https://www.reddit.com/r/wowservers/comments/1xiqhdg/conquest_of_azeroth_ultrahd_graphics_modpack/",
+   "source_thread": "https://projectreforged.github.io/",
    "added": "2026-10-30"
   }
  ]

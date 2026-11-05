@@ -5078,22 +5078,23 @@ KIND_WORDS = {"addon": ("Addon", "an addon", "addons"), "mod": ("Mod", "a mod", 
               "theme": ("Theme", "a theme", "creators")}
 GALLERY_FILTERS = (("", "All"), ("game", "In game"), ("mods", "Mods"), ("launcher", "Launcher"))
 
-# The front page's featured mod (owner 2026-10-30: "under this show a screenshot ... the CoA ultra hd modpack feature"): a
-# community graphics modpack, linked out only (never hosted or checked by us). Its screenshot is the authors' (banner
-# cropped, a player name removed), a game picture: behind the game data killswitch like the other leyline-shot- files.
+# The front page's featured mod (owner 2026-10-30: "the ultra hd modpack feature"; 4 Nov: credited as Project Reforged,
+# the original, linked to https://projectreforged.github.io/): a community graphics pack, linked out only (never hosted
+# or checked by us). Its screenshot is the authors' (banner cropped, a player name removed), a game picture: behind
+# the game data killswitch like the other leyline-shot- files.
 # The link is only an href; the words on the page never name the game.
 FEATURED_MOD = {
-    "key": "coa-ultrahd", "w": 845, "h": 577, "label": "Featured mod", "title": "Conquest of Azeroth: UltraHD",
+    "key": "coa-ultrahd", "w": 845, "h": 577, "label": "Featured mod", "title": "Project Reforged",
     # TODO(owner): the final wording for the featured modpack
-    "line": "A community graphics modpack for the classic client: higher-resolution textures, richer lighting and "
+    "line": "High-definition textures, models and lighting for the classic and third-era clients: richer light and "
             "denser foliage, from the same game folder you already play with.",
-    "short": "Higher-resolution textures, lighting and foliage for the classic client.",
-    "alt": "Screenshot from the Conquest of Azeroth UltraHD modpack: characters on a flowered lawn in front of a stone "
+    "short": "High-definition textures, models and lighting, by Project Reforged.",
+    "alt": "Screenshot from Project Reforged's high-definition pack: characters on a flowered lawn in front of a stone "
            "chapel, under tall trees in warm light.",
-    "note": "External download, made and hosted by its authors; not checked or hosted by Leyline",
-    "credit": "Screenshot: the modpack's authors",
-    "url": "https://www.reddit.com/r/wowservers/comments/1xiqhdg/conquest_of_azeroth_ultrahd_graphics_modpack/",
-    "button": "See the modpack",
+    "note": "External download, made and hosted by Project Reforged; not checked or hosted by Leyline",
+    "credit": "Screenshot: Project Reforged",
+    "url": "https://projectreforged.github.io/",
+    "button": "See Project Reforged",
 }
 FEATURED_REL = "noopener nofollow ugc"
 

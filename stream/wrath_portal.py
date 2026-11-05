@@ -1440,7 +1440,7 @@ ART_TYPES = {
     "leyline-emblem.webp": "image/webp", "leyline-bg.webp": "image/webp",   # the Leyline page (owner's art)
     "leyline-shot-dalaran.webp": "image/webp", "leyline-shot-start.webp": "image/webp",   # gallery (live client shots)
     "leyline-shot-city.webp": "image/webp", "leyline-shot-durotar.webp": "image/webp",
-    "leyline-shot-coa-ultrahd.webp": "image/webp",   # the front page's featured modpack (its authors' screenshot)
+    "leyline-shot-coa-ultrahd.webp": "image/webp",   # the front page's featured mod (Project Reforged's screenshot)
     # the owner's Minigolf recording for the Game modes section: a short muted loop and its poster
     "leyline-shot-minigolf.mp4": "video/mp4", "leyline-shot-minigolf.webm": "video/webm", "leyline-shot-minigolf.webp": "image/webp",
     "leyline-mode-azeroth-survivors.webp": "image/webp", "leyline-mode-azeroth-survivors-play.webp": "image/webp",   # the mode's key art (the owner's; crest cropped out)

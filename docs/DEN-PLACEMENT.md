@@ -36,6 +36,19 @@ den_check.py: hover calibration fits fov, pivot, pitch from exact clicks (G + Fl
 | 12 | Core | One panic while a lock was held poisoned it, and every `lock().unwrap()` then stopped the Den for everyone | Poison-tolerant `lk()` everywhere in world/login/lib; a `panic` line in den-lite.events | lib.rs `Lock`, `note_panics` |
 | 13 | Bags | The bags question ("How would you like your bags?") came up over the editor on the first Den visit | Never in Your Den; it waits for a real realm | LooseBags Choice.lua |
 
+## 5 Nov: the owner's live test
+
+See **DEN-EDITOR-PARITY.md** for the details:
+
+- **Props never take the game's click in build mode.** They are sent with `GO_FLAG_NOT_SELECTABLE`; the game had said
+  "You are too far away." A click on a prop picks it up into the glide, and a still right click opens its menu.
+- **A picked card's copy appears at once**, and a card can be dragged out of the gallery and dropped.
+- **The cursor's ring** shows where a click lands and what it does (place, grab or nothing).
+- **Carried props sit on what is under them.** Q / E turn the prop under the cursor, and the turn carries to the next
+  card.
+- **The far view flies like Noggit:** forward along the view's pitch, Alt slow, Q / E up and down. The camera's pitch
+  stays after a drag where the game lets the addon read it.
+
 ## Checked and fine
 
 - **UI scale and aspect.** `G.Cursor` divides by UIParent's effective scale and size, so u, v are right at any UI

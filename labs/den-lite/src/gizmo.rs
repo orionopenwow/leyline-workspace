@@ -27,9 +27,10 @@
 //! * **The gizmo**: around the selected prop three small flags (red X, green Y, blue Z: [`GIZMO`]); a right click on
 //!   one (CMSG_GAMEOBJ_USE) picks that axis; the mouse wheel (Gizmo.lua's override bindings, only while an axis is
 //!   picked) then sends the Builder's own `move <axis> <step>`. They follow the prop and go with the selection.
-//! * **Select mode**: `mode build` shows every prop as a goober (GAMEOBJECT_BYTES_1's type byte), which the client
-//!   highlights under the mouse and lets you right-click (CMSG_GAMEOBJ_USE: the prop is selected, the gizmo comes
-//!   up, the addon opens its menu at the cursor: `wubuild picked <id>`). `mode play` shows them as they are (a chair
+//! * **Select mode**: `mode build` shows every prop under its build twin, NOT selectable (5 Nov: the game took a click
+//!   on a chair as a use and said "You are too far away."): every click on the world is the addon's, and Den Lite
+//!   picks with its own ray (`click ... carry` picks up, `click ... menu` opens the menu: `wubuild picked <id>`); a
+//!   use that still comes picks the prop up ([`carry_prop`]). `mode play` shows them as they are (a chair
 //!   sits, decor does nothing). The client keeps each entry's query answer (its type among it) and goes by that,
 //!   not by the type byte alone, so in build mode a prop is shown under its build twin's entry ([`twin`]: the entry
 //!   with [`BUILD_TWIN`] set), whose query answer is the same model, name and size as a goober. The client asks

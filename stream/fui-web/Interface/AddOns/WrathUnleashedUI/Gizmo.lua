@@ -915,6 +915,8 @@ function G.DebugDraw()
         string.format("flight: keys %d %d %d  facing %.2f  %s", G.FlyVector and select(1, G.FlyVector()) or 0,
             G.FlyVector and select(2, G.FlyVector()) or 0, G.FlyVector and select(3, G.FlyVector()) or 0,
             (GetPlayerFacing and GetPlayerFacing()) or 0, fly and fly.moving and "flying" or "still"),
+        string.format("camera pitch: %s  (pose %s, past it %.3f rad)  ring=%s", G.pitchSrc or "not readable (put back after a drag)",
+            tostring(G.pitch0 or "-"), G.pitchAdj or 0, G.ring or "-"),
         "|cff9fd0ffDen Lite|r",
     }
     for part in (G.dbgLine or "no answer yet: is Den Lite from 4 Nov or later?"):gmatch("[^;]+") do lines[#lines + 1] = part end

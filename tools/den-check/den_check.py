@@ -1709,6 +1709,13 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
             # go, the camera and its zoom, the far view
             rep.add("INFO", "follow: what Den Lite saw", "cursor %s, armed %s, at %s, cam %s, zoom %s, far %s, build %s, draw %s ms" % (
                 a.get("cursor"), a.get("armed"), a.get("at"), a.get("cam"), a.get("zoom"), a.get("far_at"), a.get("build"), a.get("draw_ms")))
+            camf = den_dir / "den-lite.camera.json"
+            try:
+                cam_text = camf.read_text(encoding="utf-8")[:300] if camf.is_file() else "none (Den Lite's first guesses)"
+            except OSError as e:
+                cam_text = "unreadable (%s)" % e
+            rep.add("INFO", "follow: the calibrated camera", "%s: %s" % (camf.name, cam_text))
+            rep.add("INFO", "follow: Den Lite's whole state", json.dumps(a, sort_keys=True)[:900])
         # 3. one click: placed and selected at once (glow, handles, halo), placing over
         p0 = props() or 0
         t = now_ms()

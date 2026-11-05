@@ -133,6 +133,7 @@ Settings (environment, /srv/wrath/portal.env):
   WU_PLAY_CAPACITY       streamed browser seats (default 100 for launch, owner 4 Nov; 0 = no line). Past it /wrath/play
                          shows the browser queue (docs/QUEUE.md); own game files need no seat
   WU_PLAY_IDLE           seconds without game traffic before a seat counts free (600)
+  WU_PLAY_PENDING        seconds a seat just handed out counts as taken before its game first asks the stream site (90)
   WU_QUEUE_MAX, WU_QUEUE_PER_IP, WU_QUEUE_BEAT, WU_QUEUE_HOLD, WU_QUEUE_SEAT_MIN   the line: its length (500), places per
                          address (4), seconds a silent place is kept (180: the reconnect grace), seconds a freed seat waits for the first in
                          line (120), minutes per seat for the first wait guess (30). docs/QUEUE.md
@@ -987,6 +988,10 @@ QUEUE_BEAT = _env_int("WU_QUEUE_BEAT", 180, 30, 900)           # the reconnect g
 QUEUE_HOLD = _env_int("WU_QUEUE_HOLD", 120, 30, 900)           # a freed seat waits this long for the first in line
 QUEUE_PER_IP = _env_int("WU_QUEUE_PER_IP", 4, 1, 100)          # places per address (/64): households share one
 QUEUE_SEAT_MIN = _env_int("WU_QUEUE_SEAT_MIN", 30, 1, 720)     # the wait guess before any seat was seen to free
+# A seat handed out ("go") counts as taken until that game's first request reaches the stream site (then it is in
+# Sessions.seated) or this many seconds pass: without it, everyone arriving in the few seconds between /wrath/play and
+# their page's first /__auth saw the same free seats, so a full server took up to WU_PLAY_LOADING players too many.
+PLAY_PENDING = _env_int("WU_PLAY_PENDING", 90, 10, 900)
 QUEUE_COOKIE = "wu_q"
 QUEUE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{20,40}$")
 
@@ -1006,6 +1011,19 @@ class PlayQueue:
         self.line: list[dict] = []          # FIFO: {token, user, ip, slug, go, joined, beat, ready_until}
         self.freed: collections.deque = collections.deque(maxlen=64)   # when seats were taken by the line (the wait guess)
         self.started: collections.deque = collections.deque(maxlen=20000)   # when new seats were handed out (loading)
+        self.pending: dict[str, float] = {}   # account -> when it was let in, until its game is seen (PLAY_PENDING)
+
+    def _in_use(self, seated, now: float) -> int:
+        """Seats in use: the seated accounts (a set, or just their number) plus the ones let in whose game has not
+        asked for anything yet. A seated account is no longer pending."""
+        for u, at in list(self.pending.items()):
+            if at <= now - PLAY_PENDING or (not isinstance(seated, int) and u in seated):
+                del self.pending[u]
+        return (seated if isinstance(seated, int) else len(seated)) + len(self.pending)
+
+    def _let_in(self, user: str, now: float) -> None:
+        self.started.append(now)
+        self.pending[user] = now
 
     def _loading(self, now: float) -> int:
         """New seats handed out in the last PLAY_LOAD_S seconds: players still pulling the client and their zone."""
@@ -1061,18 +1079,19 @@ class PlayQueue:
             self._sweep(now)
             cap = self.capacity()
             mine = next((t for t in self.line if t["user"] == user), None)
-            if cap <= 0 or user in seated:   # no line set, or this account already holds a seat (another tab, a reload)
+            in_use = self._in_use(seated, now)
+            if cap <= 0 or user in seated or user in self.pending:   # no line, or a seat already (a tab, a reload)
                 if mine:
                     self.line.remove(mine)
                 return {"state": "go", "used": mine["token"] if mine else ""}
-            self._promote(len(seated), now)
+            self._promote(in_use, now)
             if mine and mine["ready_until"]:
                 self.line.remove(mine)
                 self.freed.append(now)
-                self.started.append(now)
+                self._let_in(user, now)
                 return {"state": "go", "used": mine["token"]}
-            if not mine and not self.line and len(seated) < cap and self._can_load(now) > 0:
-                self.started.append(now)
+            if not mine and not self.line and in_use < cap and self._can_load(now) > 0:
+                self._let_in(user, now)
                 return {"state": "go", "used": ""}
             if mine:
                 mine["beat"] = now
@@ -1085,16 +1104,17 @@ class PlayQueue:
             t = {"token": secrets.token_urlsafe(24), "user": user, "ip": ip, "slug": slug, "go": go,
                  "joined": now, "beat": now, "ready_until": 0.0}
             self.line.append(t)
-            self._promote(len(seated), now)
+            self._promote(in_use, now)
             if t["ready_until"]:   # a seat was free for it at once (the ones ahead hold theirs): no page in between
                 self.line.remove(t)
                 self.freed.append(now)
-                self.started.append(now)
+                self._let_in(user, now)
                 return {"state": "go", "used": ""}
             return {**self._view(t, now), "token": t["token"]}
 
-    def poll(self, token: str, in_use: int, now: float | None = None) -> dict | None:
-        """The queue page's heartbeat: this place now (None: no such place, or it was dropped)."""
+    def poll(self, token: str, in_use, now: float | None = None) -> dict | None:
+        """The queue page's heartbeat: this place now (None: no such place, or it was dropped). `in_use`: the
+        seated accounts (or their number)."""
         now = time.time() if now is None else now
         with self.lock:
             self._sweep(now)
@@ -1102,7 +1122,7 @@ class PlayQueue:
             if not t:
                 return None
             t["beat"] = now
-            self._promote(in_use, now)
+            self._promote(self._in_use(in_use, now), now)
             return self._view(t, now)
 
     def leave(self, token: str) -> bool:
@@ -1114,13 +1134,15 @@ class PlayQueue:
     def drop_user(self, user: str) -> None:
         with self.lock:
             self.line = [t for t in self.line if t["user"] != user.upper()]
+            self.pending.pop(user.upper(), None)
 
-    def status(self, in_use: int, now: float | None = None) -> dict:
+    def status(self, in_use, now: float | None = None) -> dict:
         """The numbers: {capacity, in_use, waiting, wait_min} (capacity 0: no line here). Internal: the public ones
         (queue_public) leave the seat numbers out (owner 4 Nov: "don't tell how many seats there are")."""
         now = time.time() if now is None else now
         with self.lock:
             self._sweep(now)
+            in_use = self._in_use(in_use, now)
             self._promote(in_use, now)
             waiting = len(self.line)
             cap = self.capacity()
@@ -1136,7 +1158,7 @@ def seated_now() -> set:
 
 
 def queue_status() -> dict:
-    return play_queue.status(len(seated_now()))
+    return play_queue.status(seated_now())
 
 
 def queue_public() -> dict:
@@ -3253,10 +3275,10 @@ def queue_page(v: dict, nonce: str, retry: str) -> bytes:
 def queue_json(token: str | None) -> dict:
     """GET /wrath/api/queue: the public numbers, and with ?me=1 and a place's cookie, that place ("you")."""
     seated = seated_now()
-    st = play_queue.status(len(seated))
+    st = play_queue.status(seated)
     doc = {"waiting": int(st["waiting"]), "wait_min": int(st["wait_min"]), "line": bool(st["waiting"])}   # no seat numbers
     if token is not None:
-        doc["you"] = play_queue.poll(token, len(seated)) if token else None
+        doc["you"] = play_queue.poll(token, seated) if token else None
     return doc
 
 

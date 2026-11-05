@@ -1076,7 +1076,10 @@ end
 -- Esc: nothing selected, the panel closed, a waiting pick let go.
 function B.Deselect()
     B.Arm(nil)
-    if B.state.selId then B.Command("selclear") end
+    if B.state.selId then
+        if W.NoteSel then W.NoteSel("builder_deselect") end
+        B.Command("selclear")
+    end
     B.ShowProps(false)
     setStatus("Nothing selected.")
     return true

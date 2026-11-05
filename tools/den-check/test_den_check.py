@@ -1095,6 +1095,12 @@ class FakeAids:
                 self.ev("den_change", "+1 -0")
                 if "glow" not in self.broken:
                     self.aids.update(sel=9, glow=9, gizmo=4)
+                if "lost" in self.broken and not getattr(self, "lost_once", False):
+                    # 5 Nov den-move: placed and selected, then cleared a moment later by a click the UI sent
+                    self.lost_once = True
+                    self.ev("addon", "wubuild cmd click 0.10 0.95")
+                    self.ev("sel", "9 -> -: click 0.1000 0.9500 1.7778 12 carry")
+                    self.aids.update(sel=None, glow=None, gizmo=0, sel_by="9 -> -: click 0.1000 0.9500 1.7778 12 carry")
             self.aids.update(armed="off", ghost=None, cursor=None)
         elif act == "grab":
             self.aids.update(armed="axis,%s,%s" % (self.aids["sel"], a[2]), drag=0.0)
@@ -1155,6 +1161,10 @@ class FakeAids:
                     self.draw()
         elif act in ("click", "press", "moveto", "release"):
             self.mouse(act, a)
+        elif act == "report":
+            with open(self.dens / den_check.UI_REPORT, "a", encoding="utf-8") as f:
+                for line in ("seltrace 104.2:mouse_click_world_0.10,0.95", "gizmo build=1 armed=- sel=-"):
+                    f.write(json.dumps({"t": den_check.now_ms(), "report": line}) + "\n")
         elif act == "menu" and a[2] == "2":
             self.props += 1
             self.ev("den_change", "+1 -0")
@@ -1421,6 +1431,19 @@ class PlacementAids(unittest.TestCase):
             self.assertEqual(rows[0][0], "INFO", kind)
             self.assertIn("updated launcher" if kind == "none" else "from before the glide", rows[0][2])
             self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [], kind)
+
+    def test_a_selection_lost_after_placing_says_what_cleared_it(self):
+        # 5 Nov den-move step 3: "prop None, glow on None, 0 handles": the report now names the sender from both sides
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"lost"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3, only_move=True)
+        rows = {r[1]: r for r in rep.rows}
+        self.assertEqual(rows["click: placed, and selected at once (it glows, its handles)"][0], "FAIL")
+        self.assertIn("click 0.1000 0.9500", rows["click: what changed the selection (Den Lite)"][2])
+        story = rows["click: Den Lite's events since"][2]
+        self.assertIn("sel 9 -> -: click", story)
+        self.assertIn("addon wubuild cmd click", story)
+        self.assertIn("seltrace 104.2:mouse_click_world", rows["click: what the UI says"][2])
 
     def test_hover_calibration_fits_and_saves_the_camera(self):
         true = {"fov": 1.25, "pivot": 1.7, "dist": 10.0, "pitch": 0.45}

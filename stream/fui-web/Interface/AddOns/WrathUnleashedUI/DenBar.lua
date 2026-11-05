@@ -818,7 +818,10 @@ function D.SetPlay(on)
         D.CloseDrawer()
         closeMenus()
         -- no handles on a selected prop while you walk
-        if B and B.state and B.state.selId and B.Command then B.Command("selclear") end
+        if B and B.state and B.state.selId and B.Command then
+            if W.NoteSel then W.NoteSel("play_mode") end
+            B.Command("selclear")
+        end
         if LeylineEdit then pcall(LeylineEdit, "group") end
         local k = D.keys.build or D.keys.play
         D.Toast("info", "Play mode: just you and your Den. " .. (k and (k:gsub("CTRL%-", "Ctrl+") .. " or ") or "") .. "Esc > Back to building.", true)

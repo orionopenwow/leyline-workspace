@@ -462,6 +462,9 @@ pub struct Aids {
     /// moves): den-check's den-move reads them (`aid_view`) to prove nothing flickers while an M2 prop is carried.
     pub copies_made: u64,
     pub copies_glided: u64,
+    /// What last changed the selection (`<was> -> <now>: <cause>`, world.rs `sel_changed`): den-move says it when
+    /// a prop placed and selected is no longer selected a moment later.
+    pub sel_by: Option<String>,
 }
 
 /// The copy in hand as a creature (glide.rs), and its glide under way: from, to (x, y, z, facing), when it started
@@ -607,6 +610,24 @@ fn snap(g: f64, v: f32, mid: f32) -> f32 {
 pub fn is_aid(text: &str) -> bool {
     let v = text.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
     matches!(v.as_str(), "preview" | "hover" | "follow" | "commit" | "axis" | "grab" | "gizmo" | "mode" | "where" | "cam" | "click" | "drag" | "debug" | "yaw" | "turnat")
+}
+
+/// What an addon message is, for [`Aids::sel_by`]: the Builder's or the aids' verb and its first word
+/// (`wubuild cmd click 0.1 ...` -> "click 0.1"; `commit`), else the message's module and name.
+pub fn sel_cause(text: &str) -> String {
+    let mut it = text.splitn(4, '\t');
+    let (m, n, _, data) = (it.next().unwrap_or(""), it.next().unwrap_or(""), it.next(), it.next().unwrap_or(""));
+    if m == "wubuild" && n == "cmd" {
+        let w: Vec<&str> = data.split_whitespace().take(2).collect();
+        if !w.is_empty() {
+            // a click says where it was and how (`carry`, `add`, `menu`), the rest their verb and first word
+            if w[0].eq_ignore_ascii_case("click") {
+                return format!("click {}", data.split_whitespace().skip(1).collect::<Vec<_>>().join(" "));
+            }
+            return w.join(" ");
+        }
+    }
+    format!("{m} {n}")
 }
 
 /// The addon's `aim` line: what is armed (`place,<entry>`, `move,<prop id>`, `axis,<prop id>,<x|y|z>` or `off`)
@@ -2088,6 +2109,7 @@ pub fn view(a: &Aids, sel: &Sel, build: bool) -> serde_json::Value {
         "copies_made": a.copies_made, "copies_glided": a.copies_glided,
         "glide": if a.glide_off { "off" } else if a.creature_models.as_ref().is_some_and(|c| !c.is_empty()) { "on" } else { "none" },
         "hover_light": a.hover_halo.map(|h| h.1 & 0xFF_FFFF),
+        "sel_by": a.sel_by,
     })
 }
 
@@ -3313,5 +3335,43 @@ mod tests {
         assert!(clear(&mut a.clone()).contains(&lit));
         let out = cmd(&mut d, &mut sel, &mut a, here, &format!("click {} carry", line(p1[0], p1[1])), true, 2000);
         assert!(out.destroy.contains(&lit) && a.hover_halo.is_none());
+    }
+
+    // ---- den-live2 5 Nov evening: den-move step 3 ("prop None, glow on None, 0 handles" after a placed card)
+
+    #[test]
+    fn a_card_placed_without_the_gallery_stays_selected_through_what_the_ui_sends_after() {
+        // `gizmo arm` (no gallery), two hovers, commit: placed and selected (glow, three arrows and the halo); then what
+        // the UI sends on its own afterwards (its frame tick's hovers wherever the real cursor is, build mode said
+        // again, the build view, the ring, debug): the selection stays. Only a click on empty ground or `selclear`
+        // clears it, and Den Lite says which (world.rs `sel_changed`, `sel_by` in the view).
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        for v in ["mode build", "gizmo on", "gizmo ring on", "cam build", "preview 2413", "hover 0.25 -0.35 1.7778 12", "hover 0.1 -0.3 1.7778 12"] {
+            cmd(&mut d, &mut sel, &mut a, here, v, true, 100);
+        }
+        let out = cmd(&mut d, &mut sel, &mut a, here, "commit", true, 200);
+        let made = out.change.clone().unwrap().created[0].guid;
+        assert_eq!(sel.guid, Some(made));
+        let v = view(&a, &sel, true);
+        assert_eq!(v["sel"].as_u64(), Some(made & 0xFF_FFFF));
+        assert_eq!(v["glow"].as_u64(), Some(made & 0xFF_FFFF));
+        assert!(v["gizmo"].as_u64().unwrap() >= 4, "three arrows and the halo: {v}");
+        assert_eq!(v["armed"].as_str(), Some("off"));
+        let mut t = 300;
+        for v in ["hover 0.9 0.9 1.7778 12", "hover -0.5 0.2 1.7778 12", "mode build", "gizmo on", "gizmo ring on", "cam build", "debug", "axis off", "hover 0.0 -0.2 1.7778 12"] {
+            t += 150;
+            cmd(&mut d, &mut sel, &mut a, here, v, true, t);
+            assert_eq!(sel.guid, Some(made), "after {v}");
+        }
+        let v = view(&a, &sel, true);
+        assert_eq!((v["sel"].as_u64(), v["glow"].as_u64()), (Some(made & 0xFF_FFFF), Some(made & 0xFF_FFFF)));
+        assert!(v["gizmo"].as_u64().unwrap() >= 4);
+        // a click on the sky clears it: the cause the den-test names
+        cmd(&mut d, &mut sel, &mut a, here, "click 0.0 0.95 1.7778 12 carry", true, t + 200);
+        assert_eq!(sel.guid, None);
+        assert_eq!(sel_cause("wubuild\tcmd\t1/1\tclick 0.0000 0.9500 1.7778 12 carry"), "click 0.0000 0.9500 1.7778 12 carry");
+        assert_eq!(sel_cause("wubuild\tcmd\t1/1\tselclear"), "selclear");
+        assert_eq!(sel_cause("wuden\thello\t1/1\tx"), "wuden hello");
     }
 }

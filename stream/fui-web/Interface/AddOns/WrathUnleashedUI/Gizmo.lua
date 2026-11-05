@@ -94,6 +94,16 @@ local function send(text)
 end
 G.Send = send
 
+-- What last asked Den Lite to change the selection from this side (a click, Esc, Play): `gizmo report` says it, so a
+-- selection lost with nobody at the mouse names its sender (5 Nov den-move: placed and selected, then "sel None").
+G.selTrace = {}
+function G.NoteSel(why)
+    local t = G.selTrace
+    t[#t + 1] = string.format("%.1f:%s", (GetTime and GetTime()) or 0, tostring(why):gsub("[%s;]", "_"))
+    while #t > 6 do table.remove(t, 1) end
+end
+W.NoteSel = G.NoteSel
+
 local function report(text)
     if not SendAddonMessage or not UnitName then return end
     pcall(SendAddonMessage, PREFIX, "wuden\treport\t1/1\t" .. text, "WHISPER", UnitName("player"))
@@ -671,10 +681,10 @@ end
 
 -- A button pressed on the world (WorldFrame's hook, or BUTTON1's own binding over a prop; the second of the two is
 -- left out). A left press over a prop may become a drag.
-function G.MouseDown(button)
+function G.MouseDown(button, src)
     if down[button] then return false end
     local x, y, u, v, a = at()
-    down[button] = { t = now(), x = x, y = y, u = u, v = v, a = a, prop = G.hovered and G.hovered.id or nil,
+    down[button] = { t = now(), x = x, y = y, u = u, v = v, a = a, prop = G.hovered and G.hovered.id or nil, src = src or "world",
         facing = GetPlayerFacing and GetPlayerFacing() or nil }
     return true
 end
@@ -756,8 +766,10 @@ function G.MouseUp(button)
             -- a click picks the prop up (owner 4 Nov): it follows the cursor over the ground, the next click puts it
             -- down; a click on an arrow grabs that axis; Shift adds to the selection instead (a Den Lite from before
             -- carrying reads the word as a plain select)
+            G.NoteSel(string.format("mouse_click_%s_%.2f,%.2f", d.src, d.u, d.v))
             done = send(string.format("click %.4f %.4f %.4f %d%s", d.u, d.v, d.a or (16 / 9), G.zoom, shift and " add" or " carry"))
         elseif not G.OverObject() then
+            G.NoteSel("mouse_click_empty")
             done = send("selclear")
         end
     elseif button == "RightButton" then
@@ -1121,7 +1133,7 @@ function G.TestAction(w)
         G.fake = { u, v, 16 / 9 }
         local was = IsShiftKeyDown
         if w[5] == "shift" then IsShiftKeyDown = function() return true end end
-        G.MouseDown(button)
+        G.MouseDown(button, "test")
         local ok, done = pcall(G.MouseUp, button)
         IsShiftKeyDown = was
         G.fake = nil
@@ -1193,6 +1205,7 @@ function G.TestAction(w)
         report(string.format("why wanted=%d active=%d play=%d lite=%s denrealm=%d",
             G.Wanted() and 1 or 0, (D and D.active) and 1 or 0, (D and D.play) and 1 or 0,
             tostring(B and B.state and B.state.lite or "-"), (W.InDen and W.InDen()) and 1 or 0))
+        report("seltrace " .. (#G.selTrace > 0 and table.concat(G.selTrace, " ") or "-"))
         report(string.format("gizmo build=%d armed=%s axis=%s sel=%s camera=%d menu=%d cursor=%s,%s,%s ghost=%s zoom=%d far=%s snapkey=%s moved=%s hovered=%s dragging=%d button1=%d frame=%d",
             G.build and 1 or 0, G.armed or "-", G.axis or "-", tostring(G.sel or "-"), G.camera and 1 or 0,
             (menu and menu:IsShown()) and 1 or 0, u and string.format("%.3f", u) or "-", v and string.format("%.3f", v) or "-",
@@ -1254,7 +1267,7 @@ local function setup()
     grabBtn = CreateFrame("Button", "LeylineGizmoGrab", UIParent)
     if grabBtn.RegisterForClicks then grabBtn:RegisterForClicks("AnyDown", "AnyUp") end
     grabBtn:SetScript("OnClick", function(_, _, isDown)
-        if isDown == false then G.MouseUp("LeftButton") else G.MouseDown("LeftButton") end
+        if isDown == false then G.MouseUp("LeftButton") else G.MouseDown("LeftButton", "button1") end
     end)
     grabBtn:Hide()
     -- the prop's name by the cursor

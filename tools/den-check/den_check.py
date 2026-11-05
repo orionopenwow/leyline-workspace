@@ -1681,6 +1681,8 @@ def owner_flow_steps(rep, ui, aids, size, shot, with_pic, den_dir, wait):
     rep.ok(placed and a.get("armed") == "off" and a.get("sel") is not None and a.get("glow") == a.get("sel"), "card: a click puts it down, selected",
            with_pic("prop %s, glowing %s" % (a.get("sel"), a.get("glow")), pic),
            "Placed %s, in hand %s, selected %s, glow %s: send logs\\den-move-latest.txt and the picture." % (placed, a.get("armed"), a.get("sel"), a.get("glow")))
+    if placed and (a.get("sel") is None or a.get("glow") != a.get("sel")):
+        why_unselected(rep, ui, den_dir, t, a, "card")
     # 2. nothing in hand (the Select tool): a click on the placed prop picks it up, it glides, the next click puts it down
     # (5 Nov: when step 1 left something in hand, this click put it down instead: each step starts empty-handed)
     if aids().get("armed") not in (None, "off"):
@@ -1711,6 +1713,37 @@ def owner_flow_steps(rep, ui, aids, size, shot, with_pic, den_dir, wait):
            with_pic("moved %.2f yd" % yd, pic),
            "Picked up %s, glided %s, put down %s, moved %.2f yd: send logs\\den-move-latest.txt and the picture." % (carried, bool(g1), ev is not None, yd))
     return True
+
+
+# what Den Lite writes when the editor's commands come (world.rs): the verbs, the selection's changes, the modes
+SEL_EVENTS = ("sel", "build_mode", "test_cmd", "aid_use", "aid_click", "panic")
+
+
+def sel_story(den_dir, since, limit=14):
+    """Den Lite's events since `since` that bear on the selection (the aids' verbs, the Builder's commands, `sel`
+    changes and their cause, the modes), oldest first, as one short line each; hovers are never written."""
+    out = []
+    for e in events(Path(den_dir), since):
+        ev, det = e.get("ev"), str(e.get("detail", ""))
+        if ev in SEL_EVENTS or (ev == "addon" and det.startswith("wubuild")):
+            if ev == "test_cmd" and det.startswith(".den size"):
+                continue
+            out.append("%s %s" % (ev, det[:80]))
+    return out[-limit:]
+
+
+def why_unselected(rep, ui, den_dir, since, aids_now, label, wait=4.0):
+    """A prop placed and selected that isn't selected a moment later (5 Nov den-move, step 3: "prop None"): what
+    cleared it, from both sides. Den Lite: `sel_by` (the verb that last changed the selection: world.rs
+    `sel_changed`) and its events since `since`; the Leyline UI: `gizmo report` (its `seltrace`: a click on the
+    world, Esc, Play, each with the time)."""
+    rep.add("INFO", "%s: what changed the selection (Den Lite)" % label, str((aids_now or {}).get("sel_by") or "nothing said (a Den Lite from before 5 Nov evening)"))
+    story = sel_story(den_dir, since)
+    rep.add("INFO", "%s: Den Lite's events since" % label, "; ".join(story) or "none")
+    t = now_ms()
+    ui("gizmo report")
+    lines = wait_for(lambda: [x for x in ui_lines(den_dir, t) if x.startswith("seltrace") or x.startswith("gizmo ")], wait, 0.2) or []
+    rep.add("INFO", "%s: what the UI says" % label, "; ".join(x[:240] for x in lines) or "no report from the UI")
 
 
 def glide_check(rep, before, after, label):
@@ -1883,6 +1916,8 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
             rep.ok(ok, "click: placed, and selected at once (it glows, its handles)",
                    with_pic("prop %s, glow on %s, %s handles and the halo, placing over (%s)" % (a.get("sel"), a.get("glow"), max(0, int(a.get("gizmo") or 0) - 1), a.get("armed")), pic),
                    "Placed %s; armed %s, glow %s, gizmo %s: send logs\\den-features-latest.txt and the picture." % (placed, a.get("armed"), a.get("glow"), a.get("gizmo")))
+            if placed and not ok:
+                why_unselected(rep, ui, den_dir, t, a, "click")
         else:
             rep.ok(placed, "click: placed there", (ev or {}).get("detail", "nothing placed"), "Den Lite didn't place the prop: send logs\\den-features-latest.txt.")
             ui("gizmo cancel")

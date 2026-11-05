@@ -534,13 +534,18 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
         // the editor's exact click (the ground-target cursor's cast) and a right-click on a prop or a gizmo flag
         // (gizmo.rs); a cast of any other spell goes on as before
         if pos.is_some() && (op == gizmo::CMSG_CAST_SPELL || op == gizmo::CMSG_GAMEOBJ_USE || op == gizmo::CMSG_GAMEOBJ_REPORT_USE) {
-            if aid_packet(&c.w, shared, &sess, pos, &mut sel, &mut aids, op, &body)? {
+            let was = sel.guid;
+            let took = aid_packet(&c.w, shared, &sess, pos, &mut sel, &mut aids, op, &body)?;
+            sel_changed(shared, &sess, &sel, &mut aids, was, if op == gizmo::CMSG_CAST_SPELL { "the exact click (cast)" } else { "the game's use of an object" });
+            if took {
                 continue;
             }
         }
         if op == ovmod::CMSG_MESSAGECHAT {
             if let Some(m) = ovmod::parse_addon(&body) {
+                let was = sel.guid;
                 addon(&c.w, shared, &sess, pos, &mut sel, &mut aids, &mut ready, &m)?;
+                sel_changed(shared, &sess, &sel, &mut aids, was, &gizmo::sel_cause(&m.text));
                 continue;
             }
         }
@@ -768,7 +773,11 @@ fn addon(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut o
             return quietly(c, shared, sess.id, sess.me.guid, || aid_send(c, shared, sess, sel, aids, out));
         }
     }
-    let label: String = m.text.split('\t').take(2).collect::<Vec<_>>().join(" ");
+    // the Builder's command with its verb (5 Nov: "wubuild cmd" alone didn't say a `selclear` came)
+    let label: String = match ovmod::split(&m.text) {
+        Some(("wubuild", "cmd", data)) => format!("wubuild cmd {}", data.split_whitespace().take(2).collect::<Vec<_>>().join(" ")),
+        _ => m.text.split('\t').take(2).collect::<Vec<_>>().join(" "),
+    };
     shared.event("addon", &sess.me.name, &label);
     let (outs, follow) = {
         let mut d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
@@ -834,6 +843,21 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
         *shared.aid_view.lock().unwrap_or_else(|e| e.into_inner()) = gizmo::view(aids, sel, shared.build_look.load(Ordering::Relaxed));
     }
     Ok(())
+}
+
+/// The selection changed (or was cleared) by `cause`: kept in the aids (`sel_by`, the den-test reads it: 5 Nov
+/// den-move, a prop placed and selected read "sel None" a moment later and nothing said what cleared it) and an event.
+fn sel_changed(shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &mut gizmo::Aids, was: Option<u64>, cause: &str) {
+    if sel.guid == was {
+        return;
+    }
+    let line = format!("{} -> {}: {cause}", was.map_or("-".to_string(), |g| (g & 0xFF_FFFF).to_string()), sel.guid.map_or("-".to_string(), |g| (g & 0xFF_FFFF).to_string()));
+    shared.event("sel", &sess.me.name, &line);
+    aids.sel_by = Some(line);
+    if sess.me.host {
+        let build = shared.build_look.load(Ordering::Relaxed);
+        *shared.aid_view.lock().unwrap_or_else(|e| e.into_inner()) = gizmo::view(aids, sel, build);
+    }
 }
 
 /// The copy in hand as a creature (glide.rs, gizmo.rs `Glide`).

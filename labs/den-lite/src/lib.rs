@@ -20,6 +20,7 @@ pub mod flight;
 pub mod gear;
 pub mod gearsets;
 pub mod guests;
+pub mod jaina;
 pub mod ovmod;
 pub mod login;
 pub mod models;

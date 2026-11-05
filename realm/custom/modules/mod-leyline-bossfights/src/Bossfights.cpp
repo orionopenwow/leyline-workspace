@@ -81,7 +81,7 @@ namespace
     constexpr char const* TAG = "|cff9fd8ff[Boss fights]|r ";
     constexpr uint32 SPELL_TICK_MS = 250;
 
-    struct Settings
+    struct BfSettings
     {
         bool enable = true;
         bool bots = true;              // LeylineBossfight.Bots / LEYLINE_BOSSFIGHT_BOTS
@@ -95,9 +95,9 @@ namespace
         std::vector<Seat> seats = DefaultSeats();
     };
 
-    enum class Phase { Forming, PortLeader, Prepare, Ready, Engaged, Wiped, Cleared };
+    enum class BfPhase { Forming, PortLeader, Prepare, Ready, Engaged, Wiped, Cleared };
 
-    struct Member
+    struct BfMember
     {
         ObjectGuid guid;
         std::string name;
@@ -112,7 +112,7 @@ namespace
         float retX = 0, retY = 0, retZ = 0, retO = 0;
     };
 
-    struct Run
+    struct BfRun
     {
         uint32 id = 0;
         BossDef const* boss = nullptr;
@@ -120,9 +120,9 @@ namespace
         int mode = MODE_BOTS;
         ObjectGuid leader;
         ObjectGuid groupGuid;
-        std::vector<Member> members;
+        std::vector<BfMember> members;
         std::vector<Seat> wantBots;        // seats still to fill
-        Phase phase = Phase::Forming;
+        BfPhase phase = BfPhase::Forming;
         uint64 phaseSince = 0;             // steady ms
         uint32 instanceId = 0;
         uint64 engageMs = 0;               // steady ms of the boss's IN_PROGRESS
@@ -147,16 +147,16 @@ namespace
 
     enum EventType { EV_ENGAGE, EV_WIPE, EV_DONE, EV_CLEAR, EV_REASSERT };
 
-    struct Event
+    struct BfEvent
     {
         EventType type;
         uint32 instanceId;
         uint64 ms;
     };
 
-    Settings g_cfg;
+    BfSettings g_cfg;
     uint32 g_nextRunId = 1;
-    std::map<uint32, Run> g_runs;                          // run id -> run
+    std::map<uint32, BfRun> g_runs;                          // run id -> run
     std::unordered_map<ObjectGuid, uint32> g_memberRun;    // member (player or bot) -> run id
     std::unordered_map<uint32, uint32> g_instanceRun;      // instance id -> run id
     std::unordered_set<uint32> g_knownInstances;           // every instance this module ever made (persisted)
@@ -168,7 +168,7 @@ namespace
 
     // shared with the map threads
     std::mutex g_eventLock;
-    std::vector<Event> g_events;
+    std::vector<BfEvent> g_events;
     std::unordered_set<uint32> g_liveInstances;            // instances with a run (copy of g_instanceRun's keys)
 
     uint64 NowMs()
@@ -204,7 +204,7 @@ namespace
 
     void LoadSettings()
     {
-        Settings s;
+        BfSettings s;
         s.enable = sConfigMgr->GetOption<bool>("LeylineBossfight.Enable", true, false);
         s.bots = sConfigMgr->GetOption<bool>("LeylineBossfight.Bots", true, false);
         if (char const* env = std::getenv("LEYLINE_BOSSFIGHT_BOTS"))
@@ -259,7 +259,7 @@ namespace
 #if LEYLINE_BF_PLAYERBOTS
         if (!p)
             return false;
-        PlayerbotAI* ai = GET_PLAYERBOT_AI(p);
+        PlayerbotAI* ai = sPlayerbotsMgr.GetPlayerbotAI(p);
         return ai && !IsRealPlayer(p);
 #else
         (void)p;
@@ -267,7 +267,7 @@ namespace
 #endif
     }
 
-    Run* RunOf(ObjectGuid guid)
+    BfRun* RunOf(ObjectGuid guid)
     {
         auto it = g_memberRun.find(guid);
         if (it == g_memberRun.end())
@@ -276,34 +276,34 @@ namespace
         return r == g_runs.end() ? nullptr : &r->second;
     }
 
-    Member* MemberOf(Run& run, ObjectGuid guid)
+    BfMember* MemberOf(BfRun& run, ObjectGuid guid)
     {
-        for (Member& m : run.members)
+        for (BfMember& m : run.members)
             if (m.guid == guid)
                 return &m;
         return nullptr;
     }
 
-    void ForHumans(Run& run, std::function<void(Player*, Member&)> fn)
+    void ForHumans(BfRun& run, std::function<void(Player*, BfMember&)> fn)
     {
-        for (Member& m : run.members)
+        for (BfMember& m : run.members)
             if (!m.bot)
                 if (Player* p = ObjectAccessor::FindConnectedPlayer(m.guid))
                     if (p->IsInWorld())
                         fn(p, m);
     }
 
-    void AddonRun(Run& run, std::string const& payload)
+    void AddonRun(BfRun& run, std::string const& payload)
     {
-        ForHumans(run, [&payload](Player* p, Member&) { Addon(p, payload); });
+        ForHumans(run, [&payload](Player* p, BfMember&) { Addon(p, payload); });
     }
 
-    void SayRun(Run& run, std::string const& text)
+    void SayRun(BfRun& run, std::string const& text)
     {
-        ForHumans(run, [&text](Player* p, Member&) { Say(p, text); });
+        ForHumans(run, [&text](Player* p, BfMember&) { Say(p, text); });
     }
 
-    InstanceScript* ScriptOf(Run const& run)
+    InstanceScript* ScriptOf(BfRun const& run)
     {
         if (!run.instanceId || !run.boss)
             return nullptr;
@@ -317,7 +317,7 @@ namespace
     // chests, no weekly quest, and the heroic "final fight available" flag left alone). A boss still at
     // TO_BE_DECIDED (its creature never loaded) takes NOT_STARTED first, since the first set from that state is
     // silent. Called at the start, each tick while the raid is not fighting, and when a boss's AI resets it.
-    void EnsurePrereqs(Run& run)
+    void EnsurePrereqs(BfRun& run)
     {
         InstanceScript* script = ScriptOf(run);
         if (!script)
@@ -358,7 +358,7 @@ namespace
         g_pendingUnbind.erase(p->GetGUID());
     }
 
-    void SendHome(Player* p, Member const* m)
+    void SendHome(Player* p, BfMember const* m)
     {
         if (!p)
             return;
@@ -374,7 +374,7 @@ namespace
         g_pendingUnbind.insert(p->GetGUID());
     }
 
-    void Arrive(Player* p, Run const& run, uint32 n)
+    void Arrive(Player* p, BfRun const& run, uint32 n)
     {
         // a little spread so ten players don't stand in one spot
         float dx = float(n % 3) * 2.5f, dy = (float(n / 3) - 1.5f) * 2.5f;
@@ -387,12 +387,12 @@ namespace
 
     // ---- bots -------------------------------------------------------------------------------------------------
 
-    void RequestBots(Run& run, Player* leader)
+    void RequestBots(BfRun& run, Player* leader)
     {
 #if LEYLINE_BF_PLAYERBOTS
         if (run.wantBots.empty() || !leader)
             return;
-        PlayerbotMgr* mgr = GET_PLAYERBOT_MGR(leader);
+        PlayerbotMgr* mgr = sPlayerbotsMgr.GetPlayerbotMgr(leader);
         if (!mgr)
         {
             Say(leader, "Bots can't join you right now; the fight starts with the players there are.");
@@ -422,7 +422,7 @@ namespace
                 left.push_back(seat);
                 continue;
             }
-            Member m;
+            BfMember m;
             m.guid = pick;
             m.bot = true;
             m.cls = seat.cls;
@@ -444,7 +444,7 @@ namespace
 
     // The seat's premade talents (realm/playerbots-specs.env), then gear of one fixed item level, every time:
     // bots in one board fight with the same kit whoever brings them.
-    void PrepareBot(Player* bot, Member& m)
+    void PrepareBot(Player* bot, BfMember& m)
     {
 #if LEYLINE_BF_PLAYERBOTS
         if (m.geared)
@@ -454,7 +454,7 @@ namespace
         PlayerbotFactory::DestroyEquippedGear(bot);
         PlayerbotFactory::AutoGear(bot, ITEM_QUALITY_EPIC, g_cfg.botGearLevel, false, false, true);
         bot->SetFullHealth();
-        if (PlayerbotAI* ai = GET_PLAYERBOT_AI(bot))
+        if (PlayerbotAI* ai = sPlayerbotsMgr.GetPlayerbotAI(bot))
             ai->ResetStrategies();
 #else
         (void)bot;
@@ -462,16 +462,16 @@ namespace
 #endif
     }
 
-    void DismissBots(Run& run)
+    void DismissBots(BfRun& run)
     {
         if (run.botsDismissed)
             return;
         run.botsDismissed = true;
 #if LEYLINE_BF_PLAYERBOTS
         Player* leader = ObjectAccessor::FindConnectedPlayer(run.leader);
-        PlayerbotMgr* mgr = leader && !g_inLogout ? GET_PLAYERBOT_MGR(leader) : nullptr;
+        PlayerbotMgr* mgr = leader && !g_inLogout ? sPlayerbotsMgr.GetPlayerbotMgr(leader) : nullptr;
         Group* group = sGroupMgr->GetGroupByGUID(run.groupGuid.GetCounter());
-        for (Member const& m : run.members)
+        for (BfMember const& m : run.members)
         {
             if (!m.bot)
                 continue;
@@ -482,17 +482,17 @@ namespace
                 mgr->LogoutPlayerBot(m.guid);
         }
 #endif
-        run.members.erase(std::remove_if(run.members.begin(), run.members.end(), [](Member const& m) { return m.bot; }),
+        run.members.erase(std::remove_if(run.members.begin(), run.members.end(), [](BfMember const& m) { return m.bot; }),
             run.members.end());
     }
 
     // ---- records ----------------------------------------------------------------------------------------------
 
-    void SnapshotRoster(Run& run)
+    void SnapshotRoster(BfRun& run)
     {
         std::vector<RosterEntry> roster;
         uint32 bots = 0;
-        for (Member& m : run.members)
+        for (BfMember& m : run.members)
         {
             Player* p = ObjectAccessor::FindConnectedPlayer(m.guid);
             if (!p || !p->IsInWorld() || p->GetMapId() != run.boss->mapId || p->GetInstanceId() != run.instanceId)
@@ -506,7 +506,7 @@ namespace
     }
 
     // The place this time would take on its board (clears of the same boss, difficulty and kind, GM runs left out).
-    long long RankHint(Run const& run, uint64 ms)
+    long long RankHint(BfRun const& run, uint64 ms)
     {
         if (run.gm)
             return 0;
@@ -516,7 +516,7 @@ namespace
         return r ? (long long)(*r)[0].Get<uint64>() + 1 : 0;
     }
 
-    void Record(Run& run, char const* result, uint64 ms)
+    void Record(BfRun& run, char const* result, uint64 ms)
     {
         std::string roster = run.roster;
         CharacterDatabase.EscapeString(roster);
@@ -530,7 +530,7 @@ namespace
 
     // ---- ending -----------------------------------------------------------------------------------------------
 
-    void SetPhase(Run& run, Phase p)
+    void SetPhase(BfRun& run, BfPhase p)
     {
         run.phase = p;
         run.phaseSince = NowMs();
@@ -541,11 +541,11 @@ namespace
         auto it = g_runs.find(runId);
         if (it == g_runs.end())
             return;
-        Run& run = it->second;
-        if (run.phase == Phase::Engaged)
+        BfRun& run = it->second;
+        if (run.phase == BfPhase::Engaged)
             Record(run, "abandon", NowMs() - run.engageMs);
         DismissBots(run);
-        ForHumans(run, [&](Player* p, Member& m)
+        ForHumans(run, [&](Player* p, BfMember& m)
         {
             Addon(p, MsgLeft());
             if (!why.empty())
@@ -555,7 +555,7 @@ namespace
             else
                 Unbind(p);
         });
-        for (Member const& m : run.members)
+        for (BfMember const& m : run.members)
         {
             g_memberRun.erase(m.guid);
             if (!m.bot)
@@ -572,7 +572,7 @@ namespace
     // One player leaves (.bossfight leave, logout, left the group or the instance). The leader leaving ends it.
     void LeaveRun(Player* p, ObjectGuid guid, bool sendHome, std::string const& why)
     {
-        Run* run = RunOf(guid);
+        BfRun* run = RunOf(guid);
         if (!run)
             return;
         if (run->leader == guid)
@@ -580,10 +580,10 @@ namespace
             EndRun(run->id, why.empty() ? "The raid's leader left: the boss fight is over." : why, true);
             return;
         }
-        Member* m = MemberOf(*run, guid);
-        Member copy = m ? *m : Member();
+        BfMember* m = MemberOf(*run, guid);
+        BfMember copy = m ? *m : BfMember();
         g_memberRun.erase(guid);
-        run->members.erase(std::remove_if(run->members.begin(), run->members.end(), [guid](Member const& x) { return x.guid == guid; }),
+        run->members.erase(std::remove_if(run->members.begin(), run->members.end(), [guid](BfMember const& x) { return x.guid == guid; }),
             run->members.end());
         if (p)
         {
@@ -646,14 +646,14 @@ namespace
         if (humans.empty() || !boss)
             return 0;
         Player* leader = humans[0];
-        Run run;
+        BfRun run;
         run.id = g_nextRunId++;
         run.boss = boss;
         run.diff = diff;
         run.mode = mode;
         run.leader = leader->GetGUID();
         run.gm = gm;
-        SetPhase(run, Phase::Forming);
+        SetPhase(run, BfPhase::Forming);
 
         // the raid group: the leader's own (a premade), else a new one
         Group* group = leader->GetGroup();
@@ -683,7 +683,7 @@ namespace
                     continue;
                 }
             }
-            Member m;
+            BfMember m;
             m.guid = p->GetGUID();
             m.name = p->GetName();
             m.cls = p->getClass();
@@ -708,7 +708,7 @@ namespace
             run.wantBots = BotSeats(g_cfg.seats, roles, boss->size);
 
         uint32 id = run.id;
-        Run& stored = g_runs.emplace(id, std::move(run)).first->second;
+        BfRun& stored = g_runs.emplace(id, std::move(run)).first->second;
         AddonRun(stored, MsgStarting(boss->key, diff));
         SayRun(stored, std::string("Starting ") + boss->title + " (" + DifficultyName(diff) + ")" +
             (stored.wantBots.empty() ? "" : ", with " + std::to_string(stored.wantBots.size()) + " bots") + "...");
@@ -717,11 +717,11 @@ namespace
     }
 
     // After a wipe (or to line up again): everyone back on the platform, alive, in this instance.
-    void Restart(Run& run)
+    void Restart(BfRun& run)
     {
         EnsurePrereqs(run);
         uint32 n = 0;
-        for (Member& m : run.members)
+        for (BfMember& m : run.members)
         {
             Player* p = ObjectAccessor::FindConnectedPlayer(m.guid);
             if (!p || !p->IsInWorld())
@@ -734,14 +734,14 @@ namespace
             p->SetFullHealth();
             Arrive(p, run, n++);
         }
-        SetPhase(run, Phase::Ready);
+        SetPhase(run, BfPhase::Ready);
         AddonRun(run, MsgStarting(run.boss->key, run.diff));
         SayRun(run, "Ready again. Speak to the paladin in front of the throne to begin.");
     }
 
     // ---- events from the map threads --------------------------------------------------------------------------
 
-    void HandleEvent(Event const& ev)
+    void HandleEvent(BfEvent const& ev)
     {
         auto ir = g_instanceRun.find(ev.instanceId);
         if (ir == g_instanceRun.end())
@@ -749,17 +749,17 @@ namespace
         auto rr = g_runs.find(ir->second);
         if (rr == g_runs.end())
             return;
-        Run& run = rr->second;
+        BfRun& run = rr->second;
         switch (ev.type)
         {
             case EV_REASSERT:
-                if (run.phase != Phase::Engaged)
+                if (run.phase != BfPhase::Engaged)
                     EnsurePrereqs(run);
                 break;
             case EV_ENGAGE:
-                if (run.phase == Phase::Ready || run.phase == Phase::Wiped || run.phase == Phase::Prepare)
+                if (run.phase == BfPhase::Ready || run.phase == BfPhase::Wiped || run.phase == BfPhase::Prepare)
                 {
-                    SetPhase(run, Phase::Engaged);
+                    SetPhase(run, BfPhase::Engaged);
                     run.engageMs = ev.ms;
                     run.engageUnix = NowUnix();
                     run.lastTickMs = ev.ms;
@@ -770,12 +770,12 @@ namespace
                 break;
             case EV_CLEAR:
             case EV_DONE:
-                if (run.phase == Phase::Engaged)
+                if (run.phase == BfPhase::Engaged)
                 {
                     uint64 ms = ev.ms > run.engageMs ? ev.ms - run.engageMs : 0;
                     long long rank = RankHint(run, ms);
                     Record(run, "clear", ms);
-                    SetPhase(run, Phase::Cleared);
+                    SetPhase(run, BfPhase::Cleared);
                     AddonRun(run, MsgResult(true, ms, rank));
                     SayRun(run, std::string("Cleared in ") + FormatMs(ms) + (rank > 0 ? " (#" + std::to_string(rank) + " on its board)" : "") +
                         (run.gm ? ". A GM was in this raid, so it won't go on the boards." : ".") +
@@ -783,12 +783,12 @@ namespace
                 }
                 break;
             case EV_WIPE:
-                if (run.phase == Phase::Engaged)
+                if (run.phase == BfPhase::Engaged)
                 {
                     uint64 ms = ev.ms > run.engageMs ? ev.ms - run.engageMs : 0;
                     Record(run, "wipe", ms);
                     ++run.wipes;
-                    SetPhase(run, Phase::Wiped);
+                    SetPhase(run, BfPhase::Wiped);
                     AddonRun(run, MsgResult(false, ms, 0));
                     SayRun(run, "Wiped at " + FormatMs(ms) + ". Try again: .bossfight join " + run.boss->key + " " +
                         DifficultyName(run.diff) + " " + ModeName(run.mode) + " (or .bossfight leave).");
@@ -799,7 +799,7 @@ namespace
 
     // ---- the tick -------------------------------------------------------------------------------------------
 
-    void TickRun(Run& run)
+    void TickRun(BfRun& run)
     {
         uint64 now = NowMs();
         Player* leader = ObjectAccessor::FindConnectedPlayer(run.leader);
@@ -811,17 +811,17 @@ namespace
         BossDef const& b = *run.boss;
 
         // GMs: a member who is (or turns into) a GM marks the run; it never reaches the boards
-        ForHumans(run, [&run](Player* p, Member&)
+        ForHumans(run, [&run](Player* p, BfMember&)
         {
             if (p->GetSession()->GetSecurity() > SEC_PLAYER || p->IsGameMaster())
                 run.gm = true;
         });
 
         // members who left the raid group or the instance (after they were in it) are out
-        if (run.phase >= Phase::Ready)
+        if (run.phase >= BfPhase::Ready)
         {
             std::vector<ObjectGuid> gone;
-            for (Member& m : run.members)
+            for (BfMember& m : run.members)
             {
                 if (m.bot)
                     continue;
@@ -850,10 +850,10 @@ namespace
 
         switch (run.phase)
         {
-            case Phase::Forming:
+            case BfPhase::Forming:
             {
                 bool allIn = true;
-                for (Member const& m : run.members)
+                for (BfMember const& m : run.members)
                 {
                     if (!m.bot)
                         continue;
@@ -868,7 +868,7 @@ namespace
                 {
                     // the bots that never came are dropped (and logged out if they did log in)
                     std::vector<ObjectGuid> late;
-                    for (Member const& m : run.members)
+                    for (BfMember const& m : run.members)
                     {
                         if (!m.bot)
                             continue;
@@ -878,7 +878,7 @@ namespace
                             late.push_back(m.guid);
                     }
 #if LEYLINE_BF_PLAYERBOTS
-                    if (PlayerbotMgr* mgr = GET_PLAYERBOT_MGR(leader))
+                    if (PlayerbotMgr* mgr = sPlayerbotsMgr.GetPlayerbotMgr(leader))
                         for (ObjectGuid g : late)
                             if (mgr->GetPlayerBot(g))
                                 mgr->LogoutPlayerBot(g);
@@ -886,7 +886,7 @@ namespace
                     for (ObjectGuid g : late)
                     {
                         g_memberRun.erase(g);
-                        run.members.erase(std::remove_if(run.members.begin(), run.members.end(), [g](Member const& x) { return x.guid == g; }),
+                        run.members.erase(std::remove_if(run.members.begin(), run.members.end(), [g](BfMember const& x) { return x.guid == g; }),
                             run.members.end());
                     }
                     Say(leader, std::to_string(late.size()) + " bot(s) didn't arrive in time; starting without them.");
@@ -900,10 +900,10 @@ namespace
                     return;
                 }
                 Arrive(leader, run, 0);
-                SetPhase(run, Phase::PortLeader);
+                SetPhase(run, BfPhase::PortLeader);
                 break;
             }
-            case Phase::PortLeader:
+            case BfPhase::PortLeader:
             {
                 if (leader->IsInWorld() && !leader->IsBeingTeleported() && leader->GetMapId() == b.mapId && leader->GetInstanceId())
                 {
@@ -920,7 +920,7 @@ namespace
                         run.instanceId, b.key, NowUnix());
                     if (MemberOf(run, run.leader))
                         MemberOf(run, run.leader)->present = true;
-                    SetPhase(run, Phase::Prepare);
+                    SetPhase(run, BfPhase::Prepare);
                 }
                 else if (now - run.phaseSince > 30000)
                 {
@@ -929,11 +929,11 @@ namespace
                 }
                 break;
             }
-            case Phase::Prepare:
+            case BfPhase::Prepare:
             {
                 EnsurePrereqs(run);
                 uint32 n = 1;
-                for (Member& m : run.members)
+                for (BfMember& m : run.members)
                 {
                     if (m.guid == run.leader)
                         continue;
@@ -944,17 +944,17 @@ namespace
                         PrepareBot(p, m);
                     Arrive(p, run, n++);
                 }
-                SetPhase(run, Phase::Ready);
+                SetPhase(run, BfPhase::Ready);
                 SayRun(run, std::string(b.title) + " (" + DifficultyName(run.diff) + "): speak to the paladin in front of the throne to begin. "
                     "The clock starts when the fight does.");
                 break;
             }
-            case Phase::Ready:
+            case BfPhase::Ready:
             {
                 EnsurePrereqs(run);
                 // the fence: anyone off the platform (fallen, released, sent down by the script) comes back, alive
                 uint32 n = 0;
-                for (Member& m : run.members)
+                for (BfMember& m : run.members)
                 {
                     Player* p = ObjectAccessor::FindConnectedPlayer(m.guid);
                     if (!p || !p->IsInWorld() || p->IsBeingTeleported())
@@ -989,7 +989,7 @@ namespace
                 }
                 break;
             }
-            case Phase::Engaged:
+            case BfPhase::Engaged:
             {
                 if (now - run.lastTickMs >= 5000)
                 {
@@ -998,7 +998,7 @@ namespace
                 }
                 break;
             }
-            case Phase::Wiped:
+            case BfPhase::Wiped:
             {
                 if (now - run.phaseSince > uint64(g_cfg.wipeIdleSec) * 1000)
                 {
@@ -1007,7 +1007,7 @@ namespace
                 }
                 break;
             }
-            case Phase::Cleared:
+            case BfPhase::Cleared:
             {
                 if (!run.botsDismissed && now - run.phaseSince > 15000)
                     DismissBots(run);
@@ -1145,12 +1145,12 @@ namespace
 
     void Tick()
     {
-        std::vector<Event> events;
+        std::vector<BfEvent> events;
         {
             std::lock_guard<std::mutex> guard(g_eventLock);
             events.swap(g_events);
         }
-        for (Event const& ev : events)
+        for (BfEvent const& ev : events)
             HandleEvent(ev);
         TickLobbies();
         std::vector<uint32> ids;
@@ -1171,26 +1171,26 @@ namespace
 
     void StatusTo(ChatHandler* handler, Player* p)
     {
-        if (Run* run = RunOf(p->GetGUID()))
+        if (BfRun* run = RunOf(p->GetGUID()))
         {
             std::string phase;
             switch (run->phase)
             {
-                case Phase::Forming: case Phase::PortLeader: case Phase::Prepare: phase = "starting"; break;
-                case Phase::Ready: phase = "ready: speak to the paladin in front of the throne"; break;
-                case Phase::Engaged: phase = "fighting, " + FormatMs(NowMs() - run->engageMs); break;
-                case Phase::Wiped: phase = "wiped (" + std::to_string(run->wipes) + "): .bossfight join to try again"; break;
-                case Phase::Cleared: phase = "cleared"; break;
+                case BfPhase::Forming: case BfPhase::PortLeader: case BfPhase::Prepare: phase = "starting"; break;
+                case BfPhase::Ready: phase = "ready: speak to the paladin in front of the throne"; break;
+                case BfPhase::Engaged: phase = "fighting, " + FormatMs(NowMs() - run->engageMs); break;
+                case BfPhase::Wiped: phase = "wiped (" + std::to_string(run->wipes) + "): .bossfight join to try again"; break;
+                case BfPhase::Cleared: phase = "cleared"; break;
             }
             uint32 bots = 0;
-            for (Member const& m : run->members)
+            for (BfMember const& m : run->members)
                 bots += m.bot ? 1 : 0;
             handler->SendSysMessage(std::string(TAG) + run->boss->title + " (" + DifficultyName(run->diff) + ", " + ModeName(run->mode) +
                 "): " + phase + ". " + std::to_string(run->members.size() - bots) + " player(s), " + std::to_string(bots) + " bot(s)." +
                 (run->gm ? " Not for the boards (a GM is in it)." : ""));
-            if (run->phase == Phase::Engaged)
+            if (run->phase == BfPhase::Engaged)
                 Addon(p, MsgTimer(NowMs() - run->engageMs));
-            else if (run->phase != Phase::Cleared)
+            else if (run->phase != BfPhase::Cleared)
                 Addon(p, MsgStarting(run->boss->key, run->diff));
             return;
         }
@@ -1223,16 +1223,16 @@ namespace
             return true;
         }
         // already in one: after a wipe, the same join means "again, here" (the in-game panel's Try again)
-        if (Run* run = RunOf(p->GetGUID()))
+        if (BfRun* run = RunOf(p->GetGUID()))
         {
             if (run->boss != a.boss || run->diff != a.diff)
             {
                 handler->SendSysMessage(std::string(TAG) + "You're already in a boss fight. .bossfight leave first.");
                 return true;
             }
-            if (run->phase == Phase::Wiped || run->phase == Phase::Ready)
+            if (run->phase == BfPhase::Wiped || run->phase == BfPhase::Ready)
                 Restart(*run);
-            else if (run->phase == Phase::Engaged)
+            else if (run->phase == BfPhase::Engaged)
                 handler->SendSysMessage(std::string(TAG) + "The fight is on!");
             else
                 StatusTo(handler, p);
@@ -1478,7 +1478,7 @@ public:
         bool ours = c.rfind("bossfight", 0) == 0 || c.rfind("bf join", 0) == 0 || c.rfind("bf leave", 0) == 0
             || c.rfind("bf status", 0) == 0 || c.rfind("bf list", 0) == 0;
         if (!ours)
-            if (Run* run = RunOf(p->GetGUID()))
+            if (BfRun* run = RunOf(p->GetGUID()))
                 run->gm = true;
         return true;
     }
@@ -1548,10 +1548,10 @@ public:
         if (!g_cfg.enable || !player)
             return;
         ObjectGuid guid = player->GetGUID();
-        if (Run* run = RunOf(guid))
+        if (BfRun* run = RunOf(guid))
         {
             // back in time (the run kept them): the panel gets its state again
-            if (run->phase == Phase::Engaged)
+            if (run->phase == BfPhase::Engaged)
                 Addon(player, MsgTimer(NowMs() - run->engageMs));
             else
                 Addon(player, MsgStarting(run->boss->key, run->diff));
@@ -1571,15 +1571,15 @@ public:
             return;
         ObjectGuid guid = player->GetGUID();
         LeaveLobby(guid);
-        Run* run = RunOf(guid);
+        BfRun* run = RunOf(guid);
         if (!run)
             return;
-        Member* m = MemberOf(*run, guid);
+        BfMember* m = MemberOf(*run, guid);
         if (m && m->bot)
         {
             // a bot logged out (its leader left, or the bot module did it): drop its seat
             g_memberRun.erase(guid);
-            run->members.erase(std::remove_if(run->members.begin(), run->members.end(), [guid](Member const& x) { return x.guid == guid; }),
+            run->members.erase(std::remove_if(run->members.begin(), run->members.end(), [guid](BfMember const& x) { return x.guid == guid; }),
                 run->members.end());
             return;
         }

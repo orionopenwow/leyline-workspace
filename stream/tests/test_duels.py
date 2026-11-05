@@ -245,7 +245,7 @@ check("fastloop.sh installs duels.py, backs it up and puts it back",
 sp = open(os.path.join(REPO, "realm", "serverpass.sh"), encoding="utf-8").read()
 spbat = open(os.path.join(REPO, "realm", "Server pass - finder 10 and bug reports.bat"), encoding="utf-8").read()
 check("server pass bat: ov_duels.lua and duels-export.py ride along", 'custom\\lua_scripts\\ov_duels.lua' in spbat
-      and 'custom\\duels-export.py' in spbat and "workshop-export.py duels-export.py 2>/dev/null" in spbat)
+      and 'custom\\duels-export.py' in spbat and "workshop-export.py duels-export.py bossfights-export.py 2>/dev/null" in spbat)
 check("serverpass.sh 1d: tables from --schema, install, a 5-minute cron, one run", "duels-export.py\" --schema |" in sp
       and "install -m 755 \"$T/duels-export.py\" /srv/wrath/duels-export.py" in sp and "/etc/cron.d/wu-duels" in sp
       and "install -d -m 755 /srv/wrath/portal/duels" in sp)

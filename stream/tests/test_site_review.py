@@ -209,6 +209,23 @@ for p in crawled:
             raw.append(f"{st} {url[:80]}")
 check(f"hostile query values and display name: never echoed raw, never a crash ({len(crawled) * 2} pages)", not raw, raw[:5])
 
+# ---------------------------------------------------------------- what the owner approves (standing rule: found mods,
+# addons, looks and HD packs stay pending until the owner approves them; a tool or Claude never approves them)
+lk = json.load(open(os.path.join(HERE, "looks.json"), encoding="utf-8"))["looks"]
+up = json.load(open(os.path.join(HERE, "upstream-addons.json"), encoding="utf-8"))["projects"]
+by_claude = [x["id"] for x in lk if (x.get("review") or {}).get("by") == "Claude" and x.get("author") != "Leyline"]
+by_claude += [x["id"] for x in up if (x.get("review") or {}).get("by") == "Claude"]
+known_fail("third-party looks and addons shown on the site carry an owner's approval (review.by is not Claude)", not by_claude,
+           f"{len(by_claude)}: " + ", ".join(by_claude[:8]))
+
+# ---------------------------------------------------------------- page weight (docs/SITE-SPEED-AUDIT.md A)
+heavy = []
+for p in ("/wrath/leyline", "/wrath/leyline/catalog", "/wrath/leyline/forum", "/wrath/leyline/realms", "/wrath/signin"):
+    st, h, b = req(p)
+    if len(b) > 120_000:
+        heavy.append(f"{p} {len(b) // 1024} KB")
+known_fail("main pages under 120 KB of HTML before compression (the styles are inline on every page)", not heavy, heavy)
+
 # ---------------------------------------------------------------- Submit a mod: a bad Content-Length
 for bad in ("-5", "abc"):
     c = http.client.HTTPConnection("127.0.0.1", PAGE_PORT, timeout=10)

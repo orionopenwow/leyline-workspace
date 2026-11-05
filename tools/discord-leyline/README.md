@@ -110,6 +110,57 @@ Options, after the .bat name in a command prompt:
 | `--backup-messages N` | messages to back up per channel (default 1000; `0` skips messages). |
 | `--guild <id>` | which server, if the bot is in more than one (otherwise it asks). |
 
+## Announcements
+
+The owner's rule (5 Nov): *"lets keep updates on schedule and milestone announcements @everyone in the discord when
+we can, just not for minor fixes but community big bug reports and long standing bugs like your mobile controls and
+flow setup"*. And the standing rule still holds: **nothing is posted without your OK**, one post at a time.
+
+So an announcement is one of three kinds, and minor fixes get none (they go in the changelog):
+
+| kind | for | ping |
+|---|---|---|
+| `milestone` | something big landing or coming: a new mode, the phone fixes, an app | usually `everyone` |
+| `bigfix` | a big community bug report fixed, or a long-standing bug (the phone controls, the first-run flow) | usually `everyone` |
+| `schedule` | when the next update lands, a planned restart or wipe | `everyone` or `none` |
+
+**How Claude drafts one.** Claude writes a file into `tools\discord-leyline\announce\pending\` on your PC, the usual
+way changes reach it (stage, check, write; docs in the Leyline handoff, section 5), named `<date>-<what>.md`:
+
+```
+---
+title: Phones, boss fights and an Android app
+kind: milestone
+ping: everyone
+created: 2026-11-05
+---
+The post, in plain words (Discord markdown).
+```
+
+The post that goes out is `@everyone` (only with `ping: everyone`), the title in bold, then the text: at most 2000
+characters in all. Claude may queue `announce-check` (read-only) so the log shows whether each draft passes. A draft
+Claude isn't sure of starts with a `TODO(owner): ...` line, and it can't be posted until you remove that line.
+
+**The checks** (`announce.py check`, the same ones Control and the post use): no `TODO(owner)`; none of the game's
+brand words (the website's own check) or game version numbers; no money, tip or donation words; links only to
+Discord, Reddit, leylinelauncher.com (and its subdomains) and our GitHub, over https; no `@everyone` or `@here` typed
+in the text (set `ping:` instead); a kind of milestone, bigfix or schedule (a minor fix is refused, with the reason);
+2000 characters at most.
+
+**How you approve one.** Leyline Control > Discord > **Pending announcements** lists each draft exactly as it would
+post, with what it fails, if anything.
+- **Check** runs the checks again (nothing is posted).
+- **Post to #announcements**: type `YES` under the draft and press it. It posts that draft, and only as you read it
+  (if the file changed since, it stops and asks you to read it again). The bot finds #announcements by name, pings
+  @everyone only when the draft says so, then publishes it to servers that follow the channel (if that fails, the post
+  is still up). The draft moves to `announce\posted\` with the message id and time. Posting needs the bot token saved
+  in the card, and the bot needs Send Messages and Mention Everyone in #announcements (Manage Messages to publish).
+- **Reject** moves it to `announce\rejected\`. Nothing is posted.
+
+`discord-announce` (the post) never runs from UPDATES-PENDING.txt, Autopilot, Launch all or a Waiting on you button:
+only from that card. By hand: `py -3 announce.py list`, `check <id>`, `post <id>` (shows the post and asks you to type
+YES) and `reject <id>`.
+
 ## The rules for anything players see
 
 No game or publisher names (World of Warcraft, WoW, Warcraft, Lich King, Blizzard) in channel names, topics or posts,
@@ -125,6 +176,12 @@ anything (`--from-control`). The card's choices reach the script as `LEYLINE_DIS
 works only when Control runs it as `discord-apply` (`LEYLINE_CONTROL_STEP`), never with the role, wipe or archive
 delete options, and with the preview's number of changes (`LEYLINE_DISCORD_EXPECT_CHANGES`).
 `python3 -I tools/control/test_control_discord.py` tests the card end to end.
+
+`Control - Discord announce.bat` and `Control - Announce check.bat` are the steps `discord-announce` (OWNER_ONLY) and
+`announce-check` (READ_ONLY). Control gives the post the approved draft as `LEYLINE_ANNOUNCE_ID` and its sha256 as
+`LEYLINE_ANNOUNCE_SHA`; `announce.py post --yes-from-control` works only when `LEYLINE_CONTROL_STEP` is
+`discord-announce` and the file still has that sha256. `python3 -I tools/discord-leyline/test_announce.py` and
+`python3 -I tools/control/test_control_announce.py` test it against fake Discords (no network).
 
 `python3 tools/discord-leyline/test_discord_leyline.py` runs the tests against a fake Discord on localhost
 (`LEYLINE_DISCORD_API` points the script at it), including a copy of today's server from the owner's screenshot.

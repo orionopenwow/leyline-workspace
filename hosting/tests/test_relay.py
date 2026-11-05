@@ -87,6 +87,24 @@ class Public(unittest.IsolatedAsyncioTestCase):
             st, info, _ = await http("GET", f"{r.http}/api/realms/{r.rid}")
             self.assertEqual((info["online"], info["auth_port"]), (True, r.ports[0]))
 
+    async def test_status_burst_is_one_agent_request(self):
+        # review 4 Nov: twenty status asks on a stale cache share one request to the host's agent (single flight)
+        async with Rig() as r:
+            s = r.relay.sessions[r.rid]
+            asked = []
+            real = s.request
+
+            async def counting(kind, *a, **kw):
+                if kind == "status":
+                    asked.append(kind)
+                    await asyncio.sleep(0.2)
+                return await real(kind, *a, **kw)
+            s.request = counting
+            s.status_cache = (0.0, None)
+            res = await asyncio.gather(*[http("GET", f"{r.http}/r/{r.rid}/status.json") for _ in range(20)])
+            self.assertTrue(all(st == 200 and body["players"] == 2 for st, body, _ in res), res[:2])
+            self.assertEqual(len(asked), 1, asked)
+
 
 class Private(unittest.IsolatedAsyncioTestCase):
     async def test_private_needs_the_secret(self):

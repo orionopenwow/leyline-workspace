@@ -639,24 +639,77 @@ fn config_wtf_with_realmlist(text: &str, addr: &str, add: bool) -> Option<String
     Some(lines.join("\r\n") + "\r\n")
 }
 
-/// Put back the realm file(s) the player had before Leyline first changed them. Returns false when there is no
+/// Put back the realm address the player had before Leyline first changed it. Returns false when there is no
 /// backup (Leyline never changed this client's realm address).
+///
+/// realmlist.wtf (only the realm lines) comes back whole. Config.wtf holds every setting of the game too, so only its
+/// `SET realmlist` line comes back from the backup: the graphics and other settings changed since stay (review 4 Nov:
+/// the whole first backup was written back, losing them).
 pub fn restore_realmlist(profile: &ClientProfile) -> io::Result<bool> {
     let rl = profile_realm_file(profile);
     let bak = backup_path(&rl);
     if !bak.is_file() {
         return Ok(false);
     }
-    crate::settings::write_atomic(&rl, &fs::read(&bak)?)?;
+    if profile.realm_file() == RealmFile::ConfigWtf {
+        restore_config_realmlist(&rl, &bak)?;
+    } else {
+        crate::settings::write_atomic(&rl, &fs::read(&bak)?)?;
+    }
     if profile.realm_file() == RealmFile::LocaleData {
         if let Some(cfg) = find_rel(&profile.path, "WTF/Config.wtf") {
             let cbak = backup_path(&cfg);
             if cbak.is_file() {
-                crate::settings::write_atomic(&cfg, &fs::read(&cbak)?)?;
+                restore_config_realmlist(&cfg, &cbak)?;
             }
         }
     }
     Ok(true)
+}
+
+/// Config.wtf as it is now, with its realmlist line put back as the backup had it (that line exactly; none when the
+/// backup had none). A Config.wtf gone since is the backup whole.
+fn restore_config_realmlist(cfg: &Path, bak: &Path) -> io::Result<()> {
+    let old = fs::read_to_string(bak)?;
+    let now = match fs::read_to_string(cfg) {
+        Ok(t) => t,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return crate::settings::write_atomic(cfg, old.as_bytes()),
+        Err(e) => return Err(e),
+    };
+    crate::settings::write_atomic(cfg, config_wtf_realmlist_from(&now, &old).as_bytes())
+}
+
+/// `now` with every `SET realmlist` line replaced by the one in `old` (in the first one's place, or at the end), or
+/// with none when `old` has none. Every other line stays as it is now.
+fn config_wtf_realmlist_from(now: &str, old: &str) -> String {
+    let is_rl = |l: &str| {
+        let mut w = l.split_whitespace();
+        matches!((w.next(), w.next()), (Some(a), Some(b)) if a.eq_ignore_ascii_case("SET") && b.eq_ignore_ascii_case("realmList"))
+    };
+    let keep = old.lines().find(|l| is_rl(l)).map(|l| l.trim_end().to_string());
+    let mut lines: Vec<String> = Vec::new();
+    let mut placed = false;
+    for l in now.lines() {
+        if is_rl(l) {
+            if !placed {
+                if let Some(k) = &keep {
+                    lines.push(k.clone());
+                }
+                placed = true;
+            }
+        } else {
+            lines.push(l.to_string());
+        }
+    }
+    if !placed {
+        if let Some(k) = keep {
+            lines.push(k);
+        }
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    lines.join("\r\n") + "\r\n"
 }
 
 /// Read the realm address a client is pointed at now.
@@ -1122,6 +1175,41 @@ mod tests {
         assert_eq!(read_realmlist(&p).as_deref(), Some("old.example.org"));
         assert_eq!(Build::V1121.interface(), "11200");
         assert_eq!(Build::V335a.catalog_tag(), "3.3.5a");
+    }
+
+    #[test]
+    fn restoring_the_realm_keeps_settings_changed_since() {
+        // 3.3.5a: realmlist.wtf whole, Config.wtf only its realmList line (the graphics set since stay)
+        let d = tempfile::tempdir().unwrap();
+        fake_335a(d.path(), true);
+        touch(d.path(), "WTF/Config.wtf", b"SET realmList \"logon.example.org\"\r\nSET gxResolution \"800x600\"\r\n");
+        let p = new_profile(d.path(), &detect(d.path()).unwrap(), &[]);
+        write_realmlist(&p, "play.openvanilla.app").unwrap();
+        let cfg = d.path().join("WTF/Config.wtf");
+        let now = fs::read_to_string(&cfg).unwrap().replace("800x600", "1920x1080") + "SET farclip \"777\"\r\n";
+        fs::write(&cfg, now).unwrap();
+        assert!(restore_realmlist(&p).unwrap());
+        let text = fs::read_to_string(&cfg).unwrap();
+        assert!(text.contains("SET realmList \"logon.example.org\""), "{text}");
+        assert!(text.contains("1920x1080") && text.contains("farclip") && !text.contains("800x600"), "{text}");
+        assert_eq!(text.matches("realmList").count(), 1, "{text}");
+        assert_eq!(read_realmlist(&p).as_deref(), Some("old.example.org"));
+
+        // 4.3.4: the realm file is Config.wtf itself: the same, only its line
+        let d = tempfile::tempdir().unwrap();
+        fake_client(d.path(), Build::V434, true);
+        let p = new_profile(d.path(), &detect(d.path()).unwrap(), &[]);
+        let rl = write_realmlist(&p, "play.openvanilla.app").unwrap();
+        fs::write(&rl, fs::read_to_string(&rl).unwrap() + "SET gamma \"1.2\"\r\n").unwrap();
+        assert!(restore_realmlist(&p).unwrap());
+        let text = fs::read_to_string(&rl).unwrap();
+        assert!(text.contains("old.example.org") && text.contains("SET gamma") && !text.contains("play.openvanilla.app"), "{text}");
+
+        // the line itself: put in place, extra ones dropped, none when the backup had none, other lines untouched
+        assert_eq!(config_wtf_realmlist_from("SET a 1\nSET realmlist \"x\"\nSET realmList \"y\"\nSET b 2\n", "SET realmList \"orig\"\n"),
+            "SET a 1\r\nSET realmList \"orig\"\r\nSET b 2\r\n");
+        assert_eq!(config_wtf_realmlist_from("SET a 1\nSET realmlist \"x\"\n", "SET b 2\n"), "SET a 1\r\n");
+        assert_eq!(config_wtf_realmlist_from("SET a 1\n", "SET realmlist \"o\"\n"), "SET a 1\r\nSET realmlist \"o\"\r\n");
     }
 
     #[test]

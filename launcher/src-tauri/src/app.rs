@@ -220,7 +220,8 @@ fn point_and_play_with(
         if r.build.is_some_and(|b| b != p.build) {
             let s = core.snapshot();
             return Err(realms::pick_client(&r, &s.clients, Some(client))
-                .map(|c| format!("{} runs {}: pick {} for it.", r.name, c.build.version(), c.name))
+                // the era, never a version number in a sentence (players' words; review 4 Nov)
+                .map(|c| format!("{} needs a {} game folder: pick {} for it.", r.name, c.build.era().unwrap_or("different"), c.name))
                 .unwrap_or_else(|e| e));
         }
     }
@@ -242,6 +243,13 @@ fn point_and_play_with(
     // anywhere but a Den: the Den's account and realm name (den_launch) out of Config.wtf, so the switch is clean
     if !local && realm != crate::host::lite::ADDRESS {
         let _ = crate::herokey::clear_login(&profile.path, crate::host::lite::ACCOUNT, crate::host::lite::REALM);
+        // a start where Leyline signs nobody in (a community realm, the official realm signed out): the account names
+        // Leyline wrote for earlier starts come out too, so the login screen never shows the player's official account
+        // (or a Den's) on another realm (review 4 Nov). A start that signs in wrote its own name just before this. The
+        // Docker Den and realms on this PC keep the name the Den page filled in (den_prefill_account).
+        if session.is_none() && !on_this_pc(&realm) {
+            let _ = crate::herokey::clear_written_names(&profile.path);
+        }
     }
     crate::gfx::prepare_launch(&profile)?;
     let hybrid_on = (core.snapshot().hybrid_login || local) && profile.build == clients::Build::V335a;
@@ -276,6 +284,13 @@ fn point_and_play_with(
         scrub_when_closed(profile.path.clone());
     }
     Ok((format!("Started {} on {realm}.{ground_note}", profile.name), hybrid))
+}
+
+/// A realm on this PC (the Docker Den, the player's own hosted realm): `127.x`, `localhost`, or the Docker Den's
+/// knocked address.
+fn on_this_pc(realm: &str) -> bool {
+    let host = realm.rsplit_once(':').map(|(h, _)| h).unwrap_or(realm);
+    host.starts_with("127.") || host.eq_ignore_ascii_case("localhost") || DEN_ADDRESS.lock().ok().and_then(|g| g.clone()).as_deref() == Some(realm)
 }
 
 /// The Docker Den's address on this PC, once its own invite was knocked (join_invite): its plays get the Den's ground.
@@ -630,7 +645,7 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
     if let Some((user, pass)) = crate::host::litenet::guest_in(&link) {
         let profile = core.client(&client)?;
         if profile.build != clients::Build::V335a {
-            return Err("Your friend's Den plays with a 3.3.5a game folder: pick that one.".into());
+            return Err("Your friend's Den plays with a Wrath game folder: pick that one.".into());
         }
         let (lan, at) = crate::host::denways::ways_in(&link);
         let (way, list, tried) = blocking(move || Ok(crate::host::denways::pick(lan.as_deref(), at.as_deref(), crate::host::denways::connects))).await?;
@@ -2277,7 +2292,16 @@ fn install_and_restart(app: &AppHandle, core: &Core) -> Result<(), String> {
         return Err("No update is ready yet.".into());
     };
     // On Windows the installer takes over and closes Leyline itself; elsewhere Leyline restarts into the new one.
-    up.install(&bytes).map_err(|e| format!("The update could not be installed: {e}"))?;
+    // A failed install keeps the download: Restart can try again at once (review 4 Nov: it said "No update is ready
+    // yet" until the next check, 30 minutes later).
+    if let Err(e) = up.install(&bytes) {
+        if let Ok(mut u) = core.upd.lock() {
+            if u.pending.is_none() {
+                u.pending = Some((up, bytes));
+            }
+        }
+        return Err(format!("The update could not be installed: {e}"));
+    }
     app.restart()
 }
 

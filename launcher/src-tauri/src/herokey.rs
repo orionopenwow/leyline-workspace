@@ -240,6 +240,51 @@ pub fn set_login(client_root: &Path, user: &str, realm: Option<&str>) -> std::io
         text = config_wtf_with(&text, "realmName", r);
     }
     crate::settings::write_atomic(&cfg, text.as_bytes())?;
+    let _ = remember_name(&cfg, user);
+    Ok(true)
+}
+
+/// The account names Leyline itself wrote into this Config.wtf (`Config.wtf.leyline-names`, beside it, one per line,
+/// the last few), so a start elsewhere can take them out again: the official account, a community realm's HK name, a
+/// friend's Den login, the Docker Den's GM (review 4 Nov: they stayed, and a community realm opened with the player's
+/// official account name filled in). The player's own names are never in it.
+fn names_path(cfg: &Path) -> std::path::PathBuf {
+    let mut n = cfg.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    n.push(".leyline-names");
+    cfg.with_file_name(n)
+}
+const NAMES_KEPT: usize = 8;
+fn remember_name(cfg: &Path, user: &str) -> std::io::Result<()> {
+    let p = names_path(cfg);
+    let mut names: Vec<String> = std::fs::read_to_string(&p).unwrap_or_default().lines().map(str::trim).filter(|l| prefill_ok(l)).map(String::from).collect();
+    names.retain(|n| !n.eq_ignore_ascii_case(user));
+    names.push(user.to_string());
+    let skip = names.len().saturating_sub(NAMES_KEPT);
+    crate::settings::write_atomic(&p, (names[skip..].join("\r\n") + "\r\n").as_bytes())
+}
+
+/// Take every account name Leyline wrote (see `names_path`) out of Config.wtf: before a start where Leyline signs
+/// nobody in, so the login screen opens empty, or with the player's own name. Anything else stays byte for byte.
+/// Returns whether it changed the file.
+pub fn clear_written_names(client_root: &Path) -> std::io::Result<bool> {
+    let Some(cfg) = config_wtf(client_root) else { return Ok(false) };
+    let Ok(names) = std::fs::read_to_string(names_path(&cfg)) else { return Ok(false) };
+    let names: Vec<&str> = names.lines().map(str::trim).filter(|l| prefill_ok(l)).collect();
+    let Ok(old) = std::fs::read_to_string(&cfg) else { return Ok(false) };
+    let text: String = old
+        .split_inclusive('\n')
+        .filter(|l| {
+            let mut w = l.trim().splitn(3, char::is_whitespace);
+            let (Some(set), Some(key), rest) = (w.next(), w.next(), w.next().unwrap_or("")) else { return true };
+            let value = rest.trim().trim_matches('"');
+            // account names are the same whatever their case (the game upper-cases what is typed)
+            !(set.eq_ignore_ascii_case("SET") && key.eq_ignore_ascii_case("accountName") && names.iter().any(|n| n.eq_ignore_ascii_case(value)))
+        })
+        .collect();
+    if text == old {
+        return Ok(false);
+    }
+    crate::settings::write_atomic(&cfg, text.as_bytes())?;
     Ok(true)
 }
 
@@ -366,5 +411,34 @@ mod tests {
         assert!(!text.to_lowercase().contains("password"));
         assert!(!set_login(d.path(), "DEN", Some("a\"b")).unwrap(), "a realm name that would break the line");
         assert!(set_account_name(d.path(), "Builder7").unwrap());
+    }
+
+    #[test]
+    fn the_names_leyline_wrote_come_out_before_a_start_that_signs_nobody_in() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir(d.path().join("WTF")).unwrap();
+        let cfg = d.path().join("WTF/Config.wtf");
+        assert!(!clear_written_names(d.path()).unwrap(), "nothing written yet: nothing to take out");
+        // the official realm's account, then a community realm's HK name: both remembered
+        assert!(set_account_name(d.path(), "WR000123").unwrap());
+        assert!(set_account_name(d.path(), "HKABCDEFGHIJKLMN").unwrap());
+        let names = std::fs::read_to_string(names_path(&cfg)).unwrap();
+        assert_eq!(names, "WR000123\r\nHKABCDEFGHIJKLMN\r\n");
+        std::fs::write(&cfg, "SET gxWindow \"1\"\r\nSET accountName \"wr000123\"\r\nSET realmList \"x\"\r\n").unwrap();
+        assert!(clear_written_names(d.path()).unwrap(), "the official name, whatever its case");
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), "SET gxWindow \"1\"\r\nSET realmList \"x\"\r\n");
+        assert!(!clear_written_names(d.path()).unwrap(), "nothing left");
+        // the player's own name stays
+        std::fs::write(&cfg, "SET accountName \"MYOWNNAME\"\r\n").unwrap();
+        assert!(!clear_written_names(d.path()).unwrap());
+        assert!(std::fs::read_to_string(&cfg).unwrap().contains("MYOWNNAME"));
+        // only the last few are kept, each once
+        for i in 0..12 {
+            set_account_name(d.path(), &format!("NAME{i:02}")).unwrap();
+        }
+        set_account_name(d.path(), "NAME05").unwrap();
+        let names = std::fs::read_to_string(names_path(&cfg)).unwrap();
+        assert_eq!(names.lines().count(), NAMES_KEPT, "{names}");
+        assert!(names.ends_with("NAME11\r\nNAME05\r\n") && !names.contains("NAME00"), "{names}");
     }
 }

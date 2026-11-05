@@ -262,13 +262,15 @@ pub fn extract_zip(zip: &Path, dest: &Path, max_zip: u64) -> Result<(), String> 
         if file.size() > cap {
             return Err(format!("{rel} is larger than {}", fmt_size(cap)));
         }
-        let total = if cap == MAX_PATCH { &mut patch_total } else { &mut addon_total };
-        *total += file.size();
-        if addon_total > MAX_PACKAGE {
-            return Err(format!("the zip unpacks to more than {}", fmt_size(MAX_PACKAGE)));
-        }
-        if patch_total > MAX_PATCH * 2 {
-            return Err(format!("the patches in the zip come to more than {}", fmt_size(MAX_PATCH * 2)));
+        // The totals count the bytes actually written, not the sizes the zip declares (review 4 Nov: a zip that
+        // under-declared could write up to MAX_FILES x the cap). The declared size still refuses early.
+        let (budget, total, too_big) = if cap == MAX_PATCH {
+            (MAX_PATCH * 2, &mut patch_total, format!("the patches in the zip come to more than {}", fmt_size(MAX_PATCH * 2)))
+        } else {
+            (MAX_PACKAGE, &mut addon_total, format!("the zip unpacks to more than {}", fmt_size(MAX_PACKAGE)))
+        };
+        if total.saturating_add(file.size()) > budget {
+            return Err(too_big);
         }
         let out = dest.join(&rel);
         if let Some(d) = out.parent() {
@@ -276,10 +278,15 @@ pub fn extract_zip(zip: &Path, dest: &Path, max_zip: u64) -> Result<(), String> 
         }
         let mut w = fs::File::create(&out).map_err(|e| e.to_string())?;
         // The zip reader checks each file's CRC when it reaches the end; a file that unpacks bigger than it
-        // said is cut at the cap and refused.
-        let n = io::copy(&mut (&mut file).take(cap + 1), &mut w).map_err(|_| format!("the zip is damaged: {rel} does not unpack"))?;
+        // said is cut at the cap (or at what is left of the budget) and refused.
+        let limit = cap.min(budget - *total);
+        let n = io::copy(&mut (&mut file).take(limit + 1), &mut w).map_err(|_| format!("the zip is damaged: {rel} does not unpack"))?;
         if n > cap {
             return Err(format!("{rel} unpacks bigger than it says"));
+        }
+        *total += n;
+        if *total > budget {
+            return Err(too_big);
         }
     }
     Ok(())

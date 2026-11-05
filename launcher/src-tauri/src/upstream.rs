@@ -600,7 +600,7 @@ fn parse_toc(text: &str) -> BTreeMap<String, String> {
 pub fn plan_of(u: &Unpacked, inst: &Install, build: Build) -> Plan {
     let mut plan = Plan::default();
     if build != Build::V335a {
-        plan.errors.push(format!("this addon is for 3.3.5a clients; this one is {}", build.catalog_tag()));
+        plan.errors.push(format!("this addon is for Wrath game folders; this one is {}", build.era().unwrap_or("another build")));
         return plan;
     }
     let names: BTreeSet<&String> = inst.folders.values().collect();

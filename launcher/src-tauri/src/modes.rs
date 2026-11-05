@@ -256,7 +256,7 @@ pub fn prepare_desktop(client: &ClientProfile, m: &Mode, made: u64) -> Result<Pa
         return Err(format!("{} can't be started from the desktop client.", m.title));
     }
     if client.build != Build::V335a {
-        return Err(format!("{} runs on the 3.3.5a realm: pick a 3.3.5a client for it.", m.title));
+        return Err(format!("{} runs on the official realm: pick a Wrath game folder for it.", m.title));
     }
     let iface = find_ci(&client.path, "Interface").unwrap_or_else(|| client.path.join("Interface"));
     let addons = find_ci(&iface, "AddOns").unwrap_or_else(|| iface.join("AddOns"));

@@ -21,7 +21,9 @@ your own PC" nudge shows only when the browser is full, or after a browser sessi
 
 | What | Value | Where it is set |
 |---|---|---|
-| A line starts at | about **250** real players | browser: `WU_PLAY_CAPACITY=250`; realm: `WU_PLAYER_LIMIT=250` |
+| A line starts at | browser: **100** streamed players for launch (owner 4 Nov; was 250); realm: about **250** | browser: `WU_PLAY_CAPACITY=100`; realm: `WU_PLAYER_LIMIT=250` |
+| Loading at once (owner 4 Nov) | at most **30** new browser seats per **120 s**, so a spike loads quickly in turns | `WU_PLAY_LOADING=30`, `WU_PLAY_LOAD_S=120` (0 = no limit) |
+| Seat numbers shown to players | **never** (owner 4 Nov): the page, `/wrath/api/queue` and status.json give only `waiting`, `wait_min`, `line` | |
 | Reconnect grace (you keep your place) | **180 s** | browser: `WU_QUEUE_BEAT=180`; realm: `WU_RECONNECT_GRACE=180` |
 | Bots while there is a line | step back to a floor, e.g. **40** | not built yet (see below) |
 

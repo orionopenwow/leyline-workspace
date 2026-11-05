@@ -288,6 +288,8 @@ STEPS = {
     "worldlog": ("tools/diag/World server log.bat", "Read-only: why the world server restarted (state, recent output, crash dumps)", False),
     "caddy-check": ("tools/security/Caddy check.bat", "Caddy and compose check: live config to the PC, secrets removed (read-only)", False),
     # HTTP/3 off: browsers use HTTP/2 over TCP (4 Nov: downloads crawled at ~20 KB/s over HTTP/3). Backup, self-check, rollback.
+    # Spike test (owner 4 Nov): a minute of moderate load on the live services from inside the server; what each takes.
+    "spike-test": ("tools/spike/Spike test.bat", "Spike test: a minute of load on the live server, what each part can take (writes nothing)", False),
     "h3-off":  ("tools/security/Caddy - HTTP3 off.bat", "Website speed: HTTP/3 off, browsers use HTTP/2 (backup, self-check, rollback)", False),
     "h3-on":   ("tools/security/Caddy - HTTP3 on again.bat", "Undo h3-off: HTTP/3 on again", False),
     # The bugs manifest (docs/BUGS-MANIFEST.md): every bug report (game, site, launcher, Discord) in one de-duplicated

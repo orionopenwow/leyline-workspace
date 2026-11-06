@@ -77,6 +77,9 @@ pub fn run(text: &str) -> Report {
     // the entry of the card in hand (for the new prop's box)
     let mut card: Option<(u32, u32, f32)> = None;
     let mut next_id: u64 = 1;
+    // each model prop's entry, display and size: its box and turned footprint are made again wherever it is put down
+    // (the footprint over the world's axes turns with it: a carry's offset is held within it)
+    let mut kinds: std::collections::HashMap<u64, (u32, u32, f32)> = std::collections::HashMap::new();
     for (line, c) in cmds {
         r.frames += 1;
         now += 40;
@@ -113,6 +116,7 @@ pub fn run(text: &str) -> Report {
                     Ok(obj) => {
                         history.push(m.props.clone());
                         m.props.push(mprop(next_id, entry, display, obj.scale, [obj.x, obj.y, obj.z, obj.o]));
+                        kinds.insert(next_id, (entry, display, obj.scale));
                         next_id += 1;
                     }
                     Err(e) => fail(&mut r, format!("setup prop {word}: {e}")),
@@ -164,13 +168,19 @@ pub fn run(text: &str) -> Report {
                 };
                 gizmo::cmd(&mut d, &mut sel, &mut a, here, "commit", true, now);
                 let made = m.commit(next_id, |at| match (moving, card) {
-                    (Some(p), _) => MProp { at: [at[0], at[1], at[2]], o: at[3], ..p },
+                    (Some(p), _) => match kinds.get(&p.id) {
+                        Some(&(entry, display, size)) => mprop(p.id, entry, display, size, at),
+                        None => MProp { at: [at[0], at[1], at[2]], o: at[3], ..p },
+                    },
                     (None, Some((entry, display, size))) => mprop(0, entry, display, size, at),
                     (None, None) => mprop(0, 0, 0, 1.0, at),
                 });
                 if made.is_some() {
                     history.push(before);
                     if made == Some(next_id) {
+                        if let Some(c) = card.filter(|_| moving.is_none()) {
+                            kinds.insert(next_id, c);
+                        }
                         next_id += 1;
                     }
                 }

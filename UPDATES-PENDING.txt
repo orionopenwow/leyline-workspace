@@ -884,3 +884,5 @@
 1343e ship  Save to GitHub: boss fights, Dalaran logout and duels, race/class combos, Android app, export fix
 1343f ship  Save to GitHub again: the launcher's compile fixes and its three stale tests (GitHub's launcher check is green)
 1343g ship  Save to GitHub: the Single player engine test skips in the public repo (its launcher build failed on it)
+1343h relay  Relay: invite links work again (its own join page was refused at step 1 since 2 Nov; player report)
+1343i ship  Save to GitHub: the relay fix

@@ -1,0 +1,65 @@
+diff --git a/crates/benilla-app/src/ui_script/glue_mgr.rs b/crates/benilla-app/src/ui_script/glue_mgr.rs
+index cc73556..bff00a9 100644
+--- a/crates/benilla-app/src/ui_script/glue_mgr.rs
++++ b/crates/benilla-app/src/ui_script/glue_mgr.rs
+@@ -2173,12 +2173,24 @@ pub(super) fn seat_glue_vm(world: &mut World, script: &mut UiScript) {
+ /// `WOW_MODERNCOMBOS=1` (`?moderncombos=1` on the web) the pairs retail WoW allows today for these
+ /// ten races and ten classes (Midnight, 2026) — for a realm whose server accepts them
+ /// (WrathUnleashed: mod-arac plus `realm/modern_combos.sql`). Every stock pair is a retail pair.
++/// With `WOW_ALLCOMBOS=1` as well (`?allcombos=1`; the realm's "all" preset,
++/// docs/RACE-CLASS-COMBOS.md) every race with every class: mod-arac's own arac.sql on the server.
+ fn race_class_pairs(stock: &[(u8, u8)]) -> Vec<(u8, u8)> {
+     if crate::webenv::var("WOW_MODERNCOMBOS").as_deref() != Some("1") {
+         return stock.to_vec();
+     }
++    let all = crate::webenv::var("WOW_ALLCOMBOS").as_deref() == Some("1");
++    combine(stock, all)
++}
++
++/// `stock` plus the modern pairs, or plus every pair of [`RACES`] and [`CLASSES`] with `all`.
++fn combine(stock: &[(u8, u8)], all: bool) -> Vec<(u8, u8)> {
+     let mut out = stock.to_vec();
+-    for &(r, c) in MODERN_RACE_CLASS {
++    let every: Vec<(u8, u8)> = RACES
++        .iter()
++        .flat_map(|&r| CLASSES.iter().map(move |&c| (r, c)))
++        .collect();
++    for &(r, c) in if all { &every[..] } else { MODERN_RACE_CLASS } {
+         if !out.contains(&(r, c)) {
+             out.push((r, c));
+         }
+@@ -2186,6 +2198,10 @@ fn race_class_pairs(stock: &[(u8, u8)]) -> Vec<(u8, u8)> {
+     out
+ }
+ 
++/// 3.3.5a's playable races and classes (race 9 and class 10 are not playable).
++const RACES: [u8; 10] = [1, 2, 3, 4, 5, 6, 7, 8, 10, 11];
++const CLASSES: [u8; 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11];
++
+ /// Retail's race and class pairs among 3.3.5a's races and classes. Races: 1 Human, 2 Orc,
+ /// 3 Dwarf, 4 Night Elf, 5 Undead, 6 Tauren, 7 Gnome, 8 Troll, 10 Blood Elf, 11 Draenei. Classes:
+ /// 1 Warrior, 2 Paladin, 3 Hunter, 4 Rogue, 5 Priest, 6 Death Knight, 7 Shaman, 8 Mage,
+@@ -2207,6 +2223,23 @@ const MODERN_RACE_CLASS: &[(u8, u8)] = &[
+ #[path = "glue_mgr_tests.rs"]
+ mod tests;
+ 
++#[cfg(test)]
++mod combo_tests {
++    /// The modern set is 83 pairs and keeps every stock pair; "all" is the full 100, each once.
++    #[test]
++    fn modern_and_all() {
++        let stock = [(1u8, 1u8), (2, 7), (6, 11)];
++        let modern = super::combine(&stock, false);
++        assert_eq!(modern.len(), 83);
++        assert!(stock.iter().all(|p| modern.contains(p)));
++        assert!(modern.contains(&(6, 2)) && !modern.contains(&(7, 11)));
++        let all = super::combine(&stock, true);
++        assert_eq!(all.len(), 100);
++        assert!(all.contains(&(7, 11)) && all.contains(&(1, 7)));
++        assert_eq!(&all[..3], &stock[..], "the stock pairs keep their place");
++    }
++}
++
+ #[cfg(test)]
+ mod reconnect_tests {
+     /// A glue switch to "login" over a parked or connected session is no disconnect.

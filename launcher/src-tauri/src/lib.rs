@@ -23,6 +23,7 @@ pub mod catalog;
 pub mod clientimport; // drop a game folder, a zip or a link to your own backup on the client list (clientimport.rs)
 pub mod clienttorrent; // magnets and .torrents for game clients: the owner's testing switch, off by default (clienttorrent.rs)
 pub mod clients;
+pub mod combos; // the official realm's race and class choices: CharBaseInfo & co. from the player's own files, patch-Y (combos.rs)
 pub mod cover; // the sign-in cover: Leyline's "Logging you in…" screen over the game while the launcher signs in (cover.rs)
 pub mod deeplink; // leyline://install/<id> (hub rankings agent)
 pub mod denmarket; // Mods & Addons › Dens: shared Dens and stamps, Share, Open in my Den, Add as a stamp (stream/denmarket.py)

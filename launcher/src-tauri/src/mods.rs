@@ -79,7 +79,9 @@ const IGNORED: &[&str] = &[".git", "__pycache__", ".ds_store", "thumbs.db", "des
 const PACKAGE_TOP: &[&str] =
     &["mod.json", "ui", "realm", "native", "assets", "tests", "readme.md", "readme.txt", "license", "license.txt", "license.md", "changelog.md"];
 /// Data/ slots for patches, in the order they are handed out. patch.MPQ, patch-2 and patch-3 are the game's own.
-const PATCH_SLOTS: &str = "456789ABCDEFGHIJKLMNOPQRSUVWXY"; // T is Your Den's ground (host/terrain.rs), Z the hybrid client's (hybrid.rs)
+// T is Your Den's ground (host/terrain.rs), Y the official realm's race and class choices (combos.rs), Z the hybrid
+// client's (hybrid.rs)
+const PATCH_SLOTS: &str = "456789ABCDEFGHIJKLMNOPQRSUVWX";
 /// Native code: a mod with any of these needs the player's one-time OK (owner decision: allowed, with a notice).
 pub const NATIVE_CODE_EXT: &[&str] = &[".dll", ".asi", ".exe"];
 /// What may sit next to native code in the client folder: the code and its own settings and notes.
@@ -1907,8 +1909,8 @@ pub mod tests {
 
     #[test]
     fn patch_slots_never_hand_out_the_dens_ground_or_the_hybrid_clients() {
-        assert!(!PATCH_SLOTS.contains('T') && !PATCH_SLOTS.contains('Z'));
-        assert_eq!(PATCH_SLOTS.len(), 30);
+        assert!(!PATCH_SLOTS.contains('T') && !PATCH_SLOTS.contains('Y') && !PATCH_SLOTS.contains('Z'));
+        assert_eq!(PATCH_SLOTS.len(), 29);
         assert_eq!(patch_slot_of("patch-T.MPQ"), None, "a patch-T is the Den's ground, never a mod's");
     }
 
@@ -2255,7 +2257,8 @@ pub mod tests {
         let bad = write(d.path(), "patch-B.MPQ", b"nope");
         assert!(install_local_t(c.path(), Build::V335a, &bad).unwrap_err().contains("not an MPQ"));
         assert_eq!(patch_slot_of("patch-2.MPQ"), None);
-        assert_eq!(patch_slot_of("PATCH-y.mpq"), Some('Y'));
+        assert_eq!(patch_slot_of("PATCH-x.mpq"), Some('X'));
+        assert_eq!(patch_slot_of("patch-Y.MPQ"), None, "Y is the official realm's race and class choices (combos.rs)");
         assert_eq!(patch_slot_of("patch-Z.MPQ"), None, "Z is the hybrid client's own");
         // Turn off and on, then remove: the player's own patch-4 stays.
         let key = load(c.path()).mods[0].key.clone();

@@ -1446,6 +1446,38 @@ def herokey_public() -> tuple[int, bytes, str] | None:
     return 200, json.dumps(doc, separators=(",", ":")).encode(), "application/json; charset=utf-8"
 
 
+# Race/class pairs at character creation (docs/RACE-CLASS-COMBOS.md): the realm's preset, written by realm/charfix.sh
+# (Control "combos") into the portal's data folder; WU_RACE_CLASS_COMBOS when there is no file; modern by default.
+#   modern: today's 83 retail pairs   all: every race with every class (100)   off: the stock pairs only
+COMBOS_PRESETS = ("modern", "all", "off")
+_combos = {"key": None, "preset": None}
+
+
+def combos_file() -> str:
+    return os.path.join(os.environ.get("WU_PORTAL_DATA", "/data"), "leyline", "race-class-combos.txt")
+
+
+def combos_preset() -> str:
+    """The realm's race/class preset. The file is read again only when it changes."""
+    try:
+        st = os.stat(combos_file())
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = None
+    if key is None:
+        v = os.environ.get("WU_RACE_CLASS_COMBOS", "").strip().lower()
+        return v if v in COMBOS_PRESETS else "modern"
+    if _combos["key"] != key:
+        try:
+            with open(combos_file(), encoding="utf-8") as f:
+                words = f.read(64).split()
+        except OSError:
+            words = []
+        v = words[0].lower() if words else ""
+        _combos.update(key=key, preset=v if v in COMBOS_PRESETS else "modern")
+    return _combos["preset"]
+
+
 def env_js(sess: dict) -> bytes:
     """The page env the web client reads before its query string (benilla_app::webenv)."""
     if sess.get("hop"):
@@ -1457,7 +1489,14 @@ def env_js(sess: dict) -> bytes:
                "slice": sess["slice"], "slice_tier": str(sess["tier"])}
         if sess.get("mode") == "stream":
             env["layer"] = "1"   # ownfiles.js may offer the game-folder layer (POST /__gate?layer=...)
-    env["moderncombos"] = "1"   # character create offers the realm's 83 retail race/class pairs
+    # Character create offers the pairs this realm takes (combos_preset): only for this realm, plain or through its
+    # Beacon on the relay; a community realm has its own rules (?moderncombos=1 on the page still turns them on).
+    if not sess.get("hop") or (sess["hop"].get("home") and sess["hop"]["id"] == hangout_id()):
+        preset = combos_preset()
+        if preset != "off":
+            env["moderncombos"] = "1"   # today's 83 retail pairs (every client build knows this switch)
+        if preset == "all":
+            env["allcombos"] = "1"      # every race with every class (builds from 20261105a; older ones show the 83)
     env["foreverui"] = FOREVERUI  # Forever UI on (the client reads this before its query string)
     if BRAND:   # the page layer's wording (wrath-page.js: the hop bar's "Back to ...", the tab note); off: not sent
         env["brand"] = "leyline"
@@ -1469,6 +1508,9 @@ def env_js(sess: dict) -> bytes:
     # The env object outranks the query string in the client, so ?foreverui=0 (or 1) is copied in.
     out += ("(function(e){try{var v=new URLSearchParams(location.search).get('foreverui');"
             "if(v!==null)e.foreverui=v;}catch(_){}})(window.__wenilla_env);\n")
+    # The same for the race/class switches: ?moderncombos=0 turns both off (the stock pairs), ?allcombos=0 keeps the 83.
+    out += ("(function(e){try{var q=new URLSearchParams(location.search);['moderncombos','allcombos'].forEach(function(k){"
+            "var v=q.get(k);if(v!==null)e[k]=v;});if(e.moderncombos==='0')e.allcombos='0';}catch(_){}})(window.__wenilla_env);\n")
     if gamedata_off():
         # The killswitch: ownfiles.js goes straight to "drop your game folder" and never asks /data.
         out += "window.WU_GAMEDATA_OFF = true;\n"
@@ -2224,7 +2266,7 @@ def sample_info() -> dict:
         mods = hub_mod.hub.official_mods() if hub_mod is not None else []
     except Exception:   # noqa: BLE001
         mods = []
-    return dict(_sample_info(), mods=mods)
+    return dict(_sample_info(), mods=mods, combos=combos_preset())
 
 
 def _sample_info() -> dict:

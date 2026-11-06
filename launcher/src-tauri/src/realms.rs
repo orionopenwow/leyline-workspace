@@ -89,6 +89,9 @@ pub struct Realm {
     pub report_url: Option<String>,
     /// The official realm is temporary for now (the network listing's `sample` block says).
     pub temporary: bool,
+    /// The official realm's race/class preset (the `sample` block's `combos`: modern, all or off; empty: modern).
+    /// crate::combos makes the create screen's tables for it before PLAY (docs/RACE-CLASS-COMBOS.md).
+    pub combos: String,
     /// The mods the realm runs or asks players to have (docs/GAME-MODS.md): ids only, checked by `parse_mods`. The UI
     /// offers the client ones it finds in the Workshop catalog when the player joins (ui/gamemods.js); `mod_install`
     /// looks each id up in the core's own catalog, so a realm can never name a URL or a file.
@@ -522,6 +525,9 @@ pub fn apply_sample(official: &mut Realm, doc: &Value) {
     if sm.get("mods").is_some() {
         official.mods = parse_mods(sm.get("mods"));   // our realm's own list (stream/network.py, hub official_mods)
     }
+    if let Some(c) = sm.get("combos").and_then(Value::as_str).filter(|c| ["modern", "all", "off"].contains(c)) {
+        official.combos = c.to_string();
+    }
     if let Some(t) = sm.get("temporary").and_then(Value::as_bool) {
         official.temporary = t;
         if !t {
@@ -830,6 +836,15 @@ mod tests {
         let mut o = official();
         apply_sample(&mut o, &relay_doc);
         assert_eq!(o.name, SAMPLE_NAME, "only the network listing names it");
+        // the realm's race/class preset (crate::combos): a word it knows, else none (modern)
+        let all: Value = serde_json::from_str(r#"{"kind":"network","sample":{"name":"W","combos":"all"},"realms":[]}"#).unwrap();
+        let mut o = official();
+        apply_sample(&mut o, &all);
+        assert_eq!((o.combos.as_str(), crate::combos::Preset::parse(&o.combos)), ("all", crate::combos::Preset::All));
+        let junk: Value = serde_json::from_str(r#"{"kind":"network","sample":{"name":"W","combos":"../x"},"realms":[]}"#).unwrap();
+        let mut o = official();
+        apply_sample(&mut o, &junk);
+        assert_eq!((o.combos.as_str(), crate::combos::Preset::parse(&o.combos)), ("", crate::combos::Preset::Modern));
         // the website down: the relay's listing, ordered the same way, counted from the list
         let l = fetch_network(&[&dead_url(), &ru], d.path());
         assert!(!l.from_cache && l.realms[0].official && l.realms.len() == 3);

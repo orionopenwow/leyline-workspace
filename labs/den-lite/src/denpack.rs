@@ -18,8 +18,9 @@
 pub const MAGIC: &str = "ley1";
 /// A code, at most (a file may hold one this big: 96 KB of letters for a ~70 KB deflated Den).
 pub const MAX_CODE: usize = 96 * 1024;
-/// The longest code a link carries (the launcher's deeplink.rs takes a link of up to 700 letters).
-pub const LINK_MAX: usize = 680;
+/// The longest code a link carries (the launcher's deeplink.rs takes a `leyline://pack/` link of up to 2000 letters:
+/// what Windows hands a protocol handler is safe well past that).
+pub const LINK_MAX: usize = 1_900;
 pub const LINK_PREFIX: &str = "leyline://pack/";
 pub const FILE_EXT: &str = "denpack";
 

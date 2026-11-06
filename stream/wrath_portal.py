@@ -325,12 +325,15 @@ modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can hos
 survivors = _load_module("wu_survivors", "survivors.py")   # Azeroth Survivors: /wrath/survivors and its own address's gate (stream/survivors.py)
 site_pages = _load_module("wu_site_pages", "site_pages.py")   # Single player, the Modes shelf, the guides, the press kit (stream/site_pages.py)
 mobile_page = _load_module("wu_mobile_page", "mobile_page.py")   # /wrath/mobile: Leyline on your phone (stream/mobile_page.py)
+phonelab = _load_module("wu_phonelab", "phonelab.py")   # /wrath/phonelab: a real phone's taps for debugging (stream/phonelab.py)
 if survivors is not None:
     survivors.bind(lambda name: globals()[name])
 if site_pages is not None:
     site_pages.bind(lambda name: globals()[name])
 if mobile_page is not None:
     mobile_page.bind(lambda name: globals()[name])
+if phonelab is not None:
+    phonelab.bind(lambda name: globals()[name])
 if modepacks is not None:
     modepacks.bind(lambda name: globals()[name])
 if hub_mod is not None:
@@ -3918,6 +3921,9 @@ class PageHandler(BaseHTTPRequestHandler):
         body = with_tab_icon(body, ctype)   # the Leyline mark on the browser tab (owner 2 Nov)
         body = legacy_body(body, ctype, self.headers.get("Host", ""))   # launcher documents on the old site name
         body = shutdown_body(body, ctype)   # the kill switch's banner (docs/KILL-SWITCH.md; no file: unchanged)
+        if phonelab is not None:   # Phone Lab (stream/phonelab.py): its recorder on this browser's pages while a session is on
+            body, nonce, lab = phonelab.inject(self, body, ctype, nonce)
+            connect = connect or lab
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -4520,6 +4526,9 @@ class PageHandler(BaseHTTPRequestHandler):
             else:
                 self.stream_layer(q)
             return
+        if phonelab is not None and phonelab.match(path):   # Phone Lab's start, stop and the phones' batches (stream/phonelab.py)
+            phonelab.post(self, path)
+            return
         if profiles is not None and profiles.match(path):   # the profile forms (stream/profiles.py)
             profiles.post(self, path)
             return
@@ -4714,6 +4723,9 @@ class PageHandler(BaseHTTPRequestHandler):
                                             mods=workshop.mod if workshop else None,
                                             made=creations.card_item if creations is not None else None,
                                             labels=RULESET_LABELS, host=PUBLIC_HOST, get_launcher=download_link()))
+            return
+        if phonelab is not None and phonelab.match(path):   # /wrath/phonelab: Phone Lab (stream/phonelab.py)
+            phonelab.get(self, path, query)
             return
         if mobile_page is not None and mobile_page.match(path):   # /wrath/mobile: Leyline on your phone
             mobile_page.get(self, path, query)

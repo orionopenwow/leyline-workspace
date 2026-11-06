@@ -331,6 +331,8 @@ STEPS = {
     # The bugs manifest (docs/BUGS-MANIFEST.md): every bug report (game, site, launcher, Discord) in one de-duplicated
     # backlog. Uploads tools/bugs/status.json, has the GM console rebuild, copies BUGS-MANIFEST.md and backlog.json to
     # tools/bugs/live/ (git-ignored). Touches only the bug backlog, so Autopilot may run it (READ_ONLY below).
+    # Phone Lab (docs/MOBILE-WEB-OVERHAUL.md, stream/phonelab.py): the owner's phone's taps from its newest session, read only
+    "phonelab": ("tools/phonelab/Phone Lab.bat", "Phone Lab: the newest session from your phone (every tap, its touch events and timings, full screen asks, errors), sketches to tools\\phonelab\\live (read-only)", False),
     "bugs": ("tools/bugs/Pull bug manifest.bat", "Bug manifest: every bug report in one list, copied to tools\\bugs\\live (statuses from tools\\bugs\\status.json go up first)", False),
     # The feedback digest (stream/feedback.py, docs/ADMIN-CONSOLE.md "Review"): bug reports, the forum and the Discord's
     # bug channel in themes with a mood score, and the quietest window for pushing updates. Writes only the digest on the
@@ -423,7 +425,7 @@ def watch_step(p, step: str, why: dict) -> threading.Event:
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "boss-rush", "combos-check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
-             "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
+             "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "phonelab", "audit", "den-check", "domain-check",
              "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make", "announce-check"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
 OWNER_ONLY = {"discord-apply", "discord-announce"}

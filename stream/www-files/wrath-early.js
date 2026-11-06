@@ -358,6 +358,24 @@
   } catch (e) { console.warn('wrath-early.js first tap', e); }
 })();
 // <<< first-tap-fullscreen ------------------------------------------------------------------------------------------
+// >>> phonelab (docs/MOBILE-WEB-OVERHAUL.md): while the owner's phone has a Phone Lab session on (the site's /wrath/phonelab
+// set the wu_phonelab cookie on the site's parent domain, so this page sees it), the site's recorder is loaded from the
+// site (stream/phonelab.py): every tap's timings and target, never typing. Nothing without the cookie.
+(function () {
+  'use strict';
+  try {
+    var m = document.cookie.match(/(?:^|;\s*)wu_phonelab=([A-HJ-NP-Z2-9]{6})\.(\d{9,11})/);
+    if (!m || +m[2] * 1000 <= Date.now()) return;
+    var site = location.hostname === 'play.leylinelauncher.com' ? 'https://leylinelauncher.com'
+      : /(^|\.)openvanilla\.app$/.test(location.hostname) ? 'https://play.openvanilla.app' : (window.__wuPhonelabSite || '');
+    if (!site) return;
+    var s = document.createElement('script');
+    s.src = site + '/wrath/phonelab.js';
+    s.async = true;
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) { /* never in the way */ }
+})();
+// <<< phonelab ------------------------------------------------------------------------------------------------------
 // "Your addons" (wu-addons.js): the addons a player dropped on this page, kept in this browser. The
 // client asks the page's body store (globalThis.__wenilla_prefetch, benilla-formats web.rs) first
 // for every /data read and for the name index /data/__index. This puts a layered store there before

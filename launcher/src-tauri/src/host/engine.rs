@@ -971,11 +971,21 @@ fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
 
 // ------------------------------------------------------------------------------------------------ get and unpack
 
+/// The download's error in words a player can act on: no release yet (404, hosting audit 5 Nov: `engine-latest` was
+/// never published) says to use Docker for now instead of "the author's site answered 404".
+pub fn get_error(e: &str) -> String {
+    if e.ends_with("answered 404") {
+        "Leyline's Built-in engine isn't published yet, so it can't be downloaded. Choose Docker on this page for now.".to_string()
+    } else {
+        format!("Couldn't get the engine: {e}")
+    }
+}
+
 /// The release's checksum, then the zip into tmp/ with its progress. The checksum text, for [`place`].
 fn download(p: &Paths) -> Result<String, String> {
     let base = release();
     let shaf = p.tmp.join(format!("{ASSET}.sha256"));
-    crate::upstream::download(&format!("{base}{ASSET}.sha256"), &shaf, 4096).map_err(|e| format!("Couldn't get the engine: {e}"))?;
+    crate::upstream::download(&format!("{base}{ASSET}.sha256"), &shaf, 4096).map_err(|e| get_error(&e))?;
     let want = fs::read_to_string(&shaf).unwrap_or_default();
     let _ = fs::remove_file(&shaf);
     if crate::host::forge::sha_in(&want).is_none() {
@@ -1667,6 +1677,12 @@ mod tests {
             assert!(!kept.starts_with(&p.dist), "the player's things are outside what an update replaces: {kept:?}");
         }
         assert!(required(&p).contains(&p.mysqldump()), "back-ups need it");
+    }
+
+    #[test]
+    fn missing_release_says_use_docker() {
+        assert!(get_error("the author's site answered 404").contains("Choose Docker"));
+        assert_eq!(get_error("timed out"), "Couldn't get the engine: timed out");
     }
 
     #[test]

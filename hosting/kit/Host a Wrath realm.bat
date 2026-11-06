@@ -90,6 +90,10 @@ if "%OTHER%"=="1" (
 )
 if not exist "realm-files\profiles\main.env" (echo This kit is missing its realm-files folder. Download the full kit again. & pause & exit /b 1)
 
+rem What this Docker can run (CPU kind, memory): warnings only, before the long steps (setup.py preflight)
+set "DARCH=" & set "DMEM=0"
+for /f "usebackq tokens=1,2" %%A in (`docker info --format "{{.Architecture}} {{.MemTotal}}" 2^>nul`) do (set "DARCH=%%A" & set "DMEM=%%B")
+if defined DARCH docker run --rm -v "%~dp0.:/kit" -e WU_KIT=/kit %WU_TOOLS_IMAGE% python -m wuhost.setup preflight --arch "!DARCH!" --mem !DMEM! --profile %WU_PROFILE% --host-os Windows
 echo.
 echo == Realm images
 set "IMG=" & set "TAG="

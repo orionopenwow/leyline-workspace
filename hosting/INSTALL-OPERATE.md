@@ -160,7 +160,9 @@ reachable by players). Every relay player comes from the agent's address, so the
 wrong-password IP ban (`WrongPass.MaxCount = 0`); the relay limits per player IP. `leyline link status | stop |
 remove` (remove keeps `state/realm.key`, so linking again keeps the realm id). Env answers: `LEYLINE_LINK_NAME`,
 `_AUTH`, `_WORLD`, `_CLIENT`, `_TAGLINE`, `_CORE`, `_TAGS`, `_STATUS_URL`. Claiming uses the usual `leyline claim
-TOKEN` once the site's "Claim a realm" page exists. Tests: `hosting/tests/test_link.py`.
+TOKEN` once the site's "Claim a realm" page exists. **No Docker on that machine?** `leyline link` then runs the agent
+on its own python3 (3.10+; also `LEYLINE_NO_DOCKER=1`): `state/agent.pid`, `state/agent.log`, and it prints the
+`@reboot` crontab line that keeps it on. Tests: `hosting/tests/test_link.py`.
 
 The relay's listing knows the `vanillaplus` ruleset from this change on (`wurelay/listing.py` RULESETS); a relay not
 yet redeployed lists such realms as "custom".

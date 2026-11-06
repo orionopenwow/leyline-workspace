@@ -52,7 +52,7 @@ jobs:
   # images: the realm job compiles the modules for real.
   sandbox-core:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 75   # the core's headers fetch + three modules' syntax compiles (30 cut it off, 6 Nov)
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: unit test (pure helpers)

@@ -6,7 +6,8 @@
 // Not Den Lite: nothing here is played. CI runs the same page test against the real wasm (den-lite-web.yml).
 /* global importScripts, Wire335 */
 'use strict';
-importScripts('./wire335.js');
+// next to this file (a worker resolves importScripts against its own address, so the engine's is made absolute)
+importScripts(self.__engineUrl && self.location ? new URL('./wire335.js', new URL(self.__engineUrl, self.location.href)).href : './wire335.js');
 
 self.LeylineSoloEngine = {
   run: function (ly) {

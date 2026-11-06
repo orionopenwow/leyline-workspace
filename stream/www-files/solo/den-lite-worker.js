@@ -82,6 +82,7 @@ function run(m) {
   };
   var engine = m.engine || {};
   if (engine.kind === 'script') {
+    self.__engineUrl = engine.url;   // the engine's own importScripts may resolve against it
     importScripts(engine.url);
     self.postMessage({ t: 'ready', engine: 'script' });
     var code = self.LeylineSoloEngine.run({

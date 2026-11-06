@@ -131,23 +131,30 @@
     };
     function SoloSocket(url, protocols) {
       var m = /\/ws\/(\d{1,5})(?:[?#].*)?$/.exec(String(url));
-      this.url = String(url);
-      this.protocol = '';
-      this.extensions = '';
-      this.bufferedAmount = 0;
-      this.binaryType = 'blob';
+      Object.defineProperty(this, '_p', { value: { url: String(url), protocol: '', extensions: '', bufferedAmount: 0, binaryType: 'blob',
+        onopen: null, onmessage: null, onclose: null, onerror: null } });
       this._state = 0;
       this._port = m ? Number(m[1]) : 0;
       this._listeners = {};
-      this.onopen = this.onmessage = this.onclose = this.onerror = null;
       void protocols;
       bus.open(this);
     }
     if (Native && Native.prototype) {
-      // `instanceof WebSocket` holds (web-sys casts); every member the client uses is this class's own
+      // `instanceof WebSocket` holds (web-sys casts); every member the client uses is this class's own (the native
+      // prototype's accessors would throw on this object)
       SoloSocket.prototype = Object.create(Native.prototype);
     }
     SoloSocket.prototype.constructor = SoloSocket;
+    ['url', 'protocol', 'extensions', 'bufferedAmount'].forEach(function (k) {
+      Object.defineProperty(SoloSocket.prototype, k, { get: function () { return this._p[k]; }, configurable: true });
+    });
+    ['binaryType', 'onopen', 'onmessage', 'onclose', 'onerror'].forEach(function (k) {
+      Object.defineProperty(SoloSocket.prototype, k, {
+        get: function () { return this._p[k]; },
+        set: function (v) { this._p[k] = k === 'binaryType' ? (v === 'arraybuffer' ? 'arraybuffer' : 'blob') : (typeof v === 'function' ? v : null); },
+        configurable: true,
+      });
+    });
     Object.defineProperty(SoloSocket.prototype, 'readyState', { get: function () { return this._state; }, configurable: true });
     ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k, i) {
       SoloSocket[k] = i;

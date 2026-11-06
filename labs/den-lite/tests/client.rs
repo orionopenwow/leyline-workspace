@@ -3150,3 +3150,68 @@ fn the_moves_scripts_replay_clean() {
     let fails = den_lite::replay::fuzz(1000..1100, 80);
     assert!(fails.is_empty(), "{fails:?}");
 }
+
+/// Boss Rush, the light version (bossrush.rs, bossrush_world.rs; docs/BOSS-RUSH.md): `.den bossrush frozen-throne`
+/// sends the player to the fight's real platform (map 631, a far teleport), the boss (its entry, hostile), nine
+/// companions (friendly) go up once the game is there; a swing pulls; stepping off the platform's edge is a wipe
+/// (on the launcher's board); Try again comes by itself; a practice jump changes the phase; the killing blow clears.
+#[test]
+fn boss_rush_light_lands_on_the_platform_pulls_wipes_and_clears() {
+    let (srv, dir) = server("bossrush", HeroGender::Female);
+    let mut w = into_world(&srv, 0);
+    let boss = den_lite::bossrush::BOSS_GUID;
+    w.say(".den dojo invulnerable on");
+    until_said(&mut w, "Nothing hurts you now");
+    w.say(".den bossrush frozen-throne");
+    let (frames, _) = until_said(&mut w, "Off to The Frozen Throne");
+    let nw = frames.iter().find(|f| f.opcode == 0x03E).expect("SMSG_NEW_WORLD: a far teleport");
+    assert_eq!(&nw.body[..4], &631u32.to_le_bytes()[..], "the citadel's own map");
+    assert!((f32_at(&nw.body, 4) - 517.0).abs() < 0.5 && (f32_at(&nw.body, 8) + 2124.6).abs() < 0.5, "the platform's arrival spot");
+    w.raw(0x0DC, &[]);
+    let (frames, line) = until_said(&mut w, "The Frozen Throne: light version (not exact)");
+    let creates = unit_creates(&frames);
+    let b = creates.iter().find(|c| c.0 == boss).unwrap_or_else(|| panic!("the boss goes up: {creates:?} {line}"));
+    assert_eq!((b.1, b.4), (36597, 14), "its own entry (the game's model), hostile");
+    let friends = creates.iter().filter(|c| c.0 & 0xFFFF_FFFF_FFFF_FF00 == den_lite::bossrush::MEMBER_GUID && c.4 == 35).count();
+    assert_eq!(friends, 9, "nine companions, friendly");
+    // the boss's name is ours, never the game's
+    w.send(&CMSG_CREATURE_QUERY { creature: 36597, guid: Guid::new(boss) });
+    let name = w.until(|f| if let Some(ServerOpcodeMessage::SMSG_CREATURE_QUERY_RESPONSE(r)) = &f.msg { r.found.as_ref().map(|x| x.name1.clone()) } else { None });
+    assert_eq!(name, "The Frozen King");
+    // a swing pulls; off the edge is a wipe
+    w.send(&heartbeat(472.0, -2124.4, 841.0, 3.14));
+    w.raw(0x13D, &boss.to_le_bytes());
+    w.raw(0x141, &boss.to_le_bytes());
+    w.until(|f| (f.opcode == 0x1CB && String::from_utf8_lossy(&f.body).contains("the fight is on")).then_some(()));
+    w.send(&heartbeat(600.0, -2124.4, 841.0, 0.0));
+    let (_, line) = until_said(&mut w, "Wiped at");
+    assert!(line.contains("off the edge"), "{line}");
+    let board = std::fs::read_to_string(dir.join(den_lite::bossrush::RESULTS)).unwrap();
+    assert!(board.starts_with("frozen-throne\tnormal\tlight\t") && board.contains("\twipe\t"), "{board}");
+    // Try again by itself: back on the arrival spot, ready
+    let tp = w.until(|f| (f.opcode == 0x0C7).then(|| f.body.clone()));
+    assert!((f32_at(&tp, 16) - 517.0).abs() < 0.5, "back on the platform");
+    w.until(|f| (f.opcode == 0x1CB && String::from_utf8_lossy(&f.body).contains("Ready again")).then_some(()));
+    w.send(&heartbeat(472.0, -2124.4, 841.0, 3.14));
+    // practice: phase two (the edge gives way), then the killing blow
+    w.say(".den bossrush phase 2");
+    until_said(&mut w, "Phase 2.");
+    w.say(".den bossrush status");
+    until_said(&mut w, "The Frozen Throne (normal): Fighting, phase 2");
+    w.say(".den bossrush phase end");
+    until_said(&mut w, "Practice:");
+    w.raw(0x141, &boss.to_le_bytes());
+    let (_, line) = until_said(&mut w, "Cleared in");
+    assert!(line.contains("practice: not on the board"), "{line}");
+    assert_eq!(std::fs::read_to_string(dir.join(den_lite::bossrush::RESULTS)).unwrap().lines().count(), 1, "a practice run isn't on the board");
+    // the launcher's ask opens a fight too (once per id)
+    std::fs::write(dir.join(den_lite::bossrush::ASK_FILE), r#"{"fight": "stone-watcher", "diff": "normal", "class": "mage", "spec": "fire", "id": "77"}"#).unwrap();
+    let (frames, _) = until_said(&mut w, "Off to The Stone Watcher");
+    let nw = frames.iter().find(|f| f.opcode == 0x03E).expect("to the vault");
+    assert_eq!(&nw.body[..4], &624u32.to_le_bytes()[..]);
+    w.say(".den bossrush leave");
+    until_said(&mut w, "Off to your");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}

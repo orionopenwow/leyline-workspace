@@ -10,6 +10,11 @@
 #          Artifact: leyline-android-release. Without the secrets that part is skipped; nothing else needs them.
 #   smoke: an Android 14 (API 34) x86_64 emulator installs the debug APK, starts it, takes a screenshot upright and
 #          one sideways, and fails if the app crashed (launcher/scripts/android-smoke.sh). Artifact: android-smoke.
+#   publish: only on main (a push or Run workflow), only once smoke passed: the APKs and their checksums go on the
+#          rolling pre-release "android-latest", the download the website's /wrath/mobile page links (docs/MOBILE-RELEASE.md):
+#            https://github.com/<this repo>/releases/download/android-latest/Leyline-debug.apk   (+ .sha256)
+#            https://github.com/<this repo>/releases/download/android-latest/Leyline.apk         (with the release key)
+#          Pull requests never publish. The only job with write access (contents: write, the built-in token).
 #
 # Runs in the PUBLIC repo orionopenwow/Leyline, beside leyline-launcher.yml. Source copy: tools/github-workflows/ in
 # the workspace; "setup\Turn on GitHub builds.bat" puts it in Leyline's .github/workflows/. No game data: the app plays
@@ -176,3 +181,34 @@ jobs:
           name: android-smoke
           path: android-smoke/
           if-no-files-found: warn
+
+  publish:
+    needs: [apk, smoke]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: leyline-android-*
+          path: dist-android
+          merge-multiple: true
+      - name: Put the APKs on android-latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd dist-android
+          ls -la
+          test -f Leyline-debug.apk || { echo "no debug APK to publish"; exit 1; }
+          sha256sum -c Leyline-debug.apk.sha256
+          if [ -f Leyline.apk ]; then sha256sum -c Leyline.apk.sha256; fi
+          if unzip -l Leyline-debug.apk | grep -iE '\.(mpq|m2|wmo|adt|blp|dbc|skin)$'; then echo "game data in the APK"; exit 1; fi
+          if ! gh release view android-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create android-latest -R "$GITHUB_REPOSITORY" --prerelease --latest=false --target "$GITHUB_SHA" \
+              --title "Leyline for Android (latest)" \
+              --notes "The Leyline app for Android phones, built by CI from launcher/ (MIT licence). It plays the browser game from the website; it never contains or downloads game data. Install: allow Install unknown apps for your browser or Files, then open the APK. Guide: https://leylinelauncher.com/wrath/mobile"
+          fi
+          gh release upload android-latest Leyline-debug.apk Leyline-debug.apk.sha256 $(ls Leyline.apk Leyline.apk.sha256 2>/dev/null) -R "$GITHUB_REPOSITORY" --clobber

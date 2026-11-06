@@ -16,13 +16,22 @@ desktop launcher. The plan is the Claude Doc "Leyline on Android".
   site's Play: the page runs its own server (Den Lite in a worker), so the game plays with no realm. It needs a web view
   that allows shared memory on the cross-origin-isolated game page; one that doesn't gets one line and plays on the
   realm. No WebGPU: the same Open in Chrome line as PLAY.
+- **Join a friend** (on Play): a friend's invite link to the realm they host on their PC plays it in the app.
+  **Paste invite link and join** reads the clipboard (one tap); the box and **Join** take a typed link. The app opens
+  the site's browser hop, `/wrath?go=r:<id>#inv=<invite>`: the invite stays in the fragment, never sent to a server,
+  and the realm's own join page makes the friend's account. A friend's Den link, a `DEN-…` code, a link on another
+  site or an empty clipboard each get one line, and nothing opens (docs/MOBILE-RELEASE.md).
 - **Realms.** The Official and Community lists, as on the desktop.
   - The official realm's Play is the browser game (the same as PLAY).
-  - A community realm's Play says that community realms play with your own game on a computer.
-  - An invite link, or a `DEN-…` code to a friend's Den, can be pasted under "Got an invite link?". Join explains that
-    Dens run in the game on a computer, and that you open Leyline on your PC and paste it there.
+  - A community realm for the browser game's client plays in the app too (`/wrath?go=r:<id>`, as the website's Play
+    in your browser). Any other says it plays with your own game on a computer.
+  - "Got an invite link?" takes a friend's invite link (the same as Join a friend). A Den link or code says Dens run
+    in the game on a computer.
 - **Mods.** Mods & Addons › Discover: Mods, Addons and Looks, with search and the sort tabs, for browsing only.
-  - A line at the top says installing mods, addons, loadouts and looks needs Leyline on your computer for now.
+  - A line at the top says addons work on the phone (the game page's Your addons, from the addon's .zip), and that
+    mods, loadouts and looks install into a game folder, on a computer.
+  - Each card says whether it works on a phone: an addon yes, a realm mod on a realm that runs it, a mod with both
+    halves its realm half only, a client mod no.
   - The Install, Update and Use buttons are hidden. Looks are shown for their information.
 - **Account.** Log in with your Hero Key, Google, your name and password, or a new guest account (`ui/gate.js`,
   `ui/account.js`). Logging in with the browser opens the approval page in Chrome. The app sees the approval by itself.
@@ -94,6 +103,10 @@ The workflow `leyline android` runs in the public Leyline repo:
 4. Uploads the artifact **android-smoke** (`portrait.png`, `landscape.png`, `logcat.txt`, `app-log.txt`, `ui.xml`),
    even when it fails.
 
+**Job `publish`** (pushes to main and Run workflow on main only, never pull requests; only after `smoke` passed):
+puts `Leyline-debug.apk` (and `Leyline.apk` with the release key) with their `.sha256` on the rolling pre-release
+**android-latest** of the repo it runs in. The only job with write access (the built-in token).
+
 ## Turning it on (the owner)
 
 1. **Ship** (Leyline Control), so the `leyline` step exports the launcher with the Android changes into the Leyline
@@ -111,6 +124,9 @@ The workflow `leyline android` runs in the public Leyline repo:
 
 ## Getting the APK onto a phone
 
+0. Once the `publish` job has run (main only, after the emulator passed), the APK is on the rolling pre-release
+   **android-latest**: `https://github.com/orionopenwow/Leyline/releases/download/android-latest/Leyline-debug.apk`
+   (and on Leyline-Mobile's releases once that repo exists: docs/MOBILE-RELEASE.md). No GitHub login needed. Or:
 1. On github.com/orionopenwow/Leyline › Actions › **leyline android**, open the newest green run. Under **Artifacts**,
    download **leyline-android-debug** (or **leyline-android-release** once the release key is set up). It is a zip with
    `Leyline-debug.apk` inside. You need to be logged in to GitHub to download artifacts.
@@ -133,6 +149,9 @@ The workflow `leyline android` runs in the public Leyline repo:
 - [ ] Realms: both lists load. The official realm's Play opens the game. A community realm's Play gives the "on a
       computer" line.
 - [ ] Realms › Got an invite link?: a `DEN-…` code and Join say the Den needs a computer.
+- [ ] Join a friend: a friend presses Invite a friend on their PC (a full realm); copy the link on the phone, tap
+      Paste invite link and join: their realm's join page opens in the game, make the account, play.
+- [ ] Realms: a community realm for the browser game plays in the app.
 - [ ] Mods: Discover lists mods, addons and looks. There are no Install buttons, and the line at the top says why.
 - [ ] Account: log in with the Hero Key, then Google. Logging in with the browser opens Chrome and comes back logged in.
 - [ ] Play solo on this phone: the game opens, logs in and enters the world by itself, with no realm (docs/PHONE-SOLO.md

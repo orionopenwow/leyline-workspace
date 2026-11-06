@@ -150,6 +150,10 @@ STEPS = {
     "den-check": ("tools/den-check/Den check.bat", "My Den check (read-only): game folder, login archive, Config.wtf, Den Lite and a test sign-in", False),
     "client-smoke": ("tools/client-smoke/Client smoke test.bat", "Client smoke test: your game started as PLAY starts it on Wrath Unleashed (the launcher's sign-in skips the login screen), a screenshot every few seconds, then closed and the sign-in taken out (logs\\client-smoke)", False),
     "client-smoke-world": ("tools/client-smoke/Client smoke test - world.bat", "Client smoke test, on into the world with your last character (logs\\client-smoke)", False),
+    # Boss Rush (docs/BOSS-RUSH.md): boss-rush looks (read-only: the exact engine's install, the raid maps, the light
+    # version, the board); boss-rush-test runs its tests here (the light version and its test client, the profile)
+    "boss-rush": ("tools/boss-rush/Boss Rush check.bat", "Boss Rush check (read-only): the exact engine's own install and its raid maps, the shared engine files, the light version, the board", False),
+    "boss-rush-test": ("tools/boss-rush/Boss Rush tests.bat", "Boss Rush tests: the light version (its fights, then a test client onto the platform: pull, wipe, try again, phase, clear), the profile and the module's catalog (a few minutes)", False),
     "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, then builds, saves and loads, the white room, Forge's files, a shareable Den file, an invite a test friend signs in with, the autosave; a screenshot, closes it (logs in tools\\den-check\\logs)", False),
     # the first-run test (tools/first-run/first_run.py, docs/FIRST-RUN-TEST.md): a brand-new launcher through to in the game
     "first-run-test": ("tools/first-run/First run test.bat", "First-run test: today's download in an empty data folder, your game folder added, a test Hero Key logged in, PLAY on Wrath Unleashed, the game logs in by itself, into the world, then the Den test; screenshots, then the test account and temp folders removed (logs in tools\\first-run\\logs)", False),
@@ -258,6 +262,8 @@ STEPS = {
     "build-realm-saves": ("hosting/build-realm/Builders realm - saves.bat", "Builders' Realm saves: copy them to this PC, send the files in its send folder", False),
     "leyline-launcher": ("tools/leyline-repo/Update Leyline-Launcher repo.bat", "Leyline-Launcher repo (the old Open Vanilla one): the same Leyline version, copied and pushed (its site and releases kept)", False),
     "leyline": ("tools/leyline-repo/Update Leyline repo.bat", "Leyline repo: copy and push (github.com/orionopenwow/Leyline)", False),
+    # the phone release's own repo (docs/MOBILE-RELEASE.md): press after ship; the owner makes the repo on GitHub once
+    "leyline-mobile": ("tools/leyline-repo/Update Leyline-Mobile repo.bat", "Leyline-Mobile repo: the phone release (touch layer, phone solo, the app's phone files, screenshots, guides, the Android build pinned to the Leyline repo's commit), copied and pushed as Orion (github.com/orionopenwow/Leyline-Mobile; make it on GitHub once first)", False),
     "mods":  ("mods/Put mods on Wrath.bat", "Mods catalog: realm (live reload), streamed addons and /wrath/mods", False),
     # Resilience (docs/RESILIENCE.md): after a ship, our own copy of each Leyline release, the Host pack, the addons and
     # the upstream server source at our pinned commits, on our server with checksums and torrents (and, with the release
@@ -369,7 +375,7 @@ STEPS = {
 # exports and uploads get more, and LEYLINE_STEP_TIMEOUT_MIN changes the default.
 STEP_TIMEOUT_MIN = {"client-build": 360, "slice": 360, "slice-sampler": 360, "sampler": 240, "sv-record": 180,
                     "sv-export": 240, "client": 120, "ship": 120, "ship-again": 120, "leyline": 120,
-                    "leyline-launcher": 120, "release-mirror": 180, "audit": 60, "den-test-variants": 120,
+                    "leyline-launcher": 120, "leyline-mobile": 120, "release-mirror": 180, "audit": 60, "den-test-variants": 120,
                     "fresh-test": 180, "fresh-sandbox": 180, "first-run-test": 180, "mods-daily": 180, "thumbs": 120,
                     "addons-curate": 120, "ov112-data-remove": 120, "foreverui": 120}
 
@@ -415,7 +421,7 @@ def watch_step(p, step: str, why: dict) -> threading.Event:
 
 
 # Autopilot runs only these by itself; anything else waits for "Launch all".
-READ_ONLY = {"check", "combos-check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
+READ_ONLY = {"check", "boss-rush", "combos-check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
              "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make", "announce-check"}

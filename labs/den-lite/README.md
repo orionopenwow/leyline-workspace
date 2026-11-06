@@ -74,6 +74,7 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den ask <words>`, or say `Jaina, <words>` within 10 yards of her | written down for your own assistant (Leyline's Agents page: `den_messages`); its `den_say` lines are hers |
 | `.den mode [id]` | Leyline's game modes and Host templates; with an id, what it is and how to run it on this PC (the full Den) |
 | `.den mods` | the addons your game loaded, and (with `--client`) the launcher's mods in it |
+| `.den bossrush [<fight> [normal\|heroic] [class spec]\|again\|phase <n\|end>\|status\|leave]` | Boss Rush's light version (`src/bossrush.rs`, `src/bossrush_world.rs`; docs/BOSS-RUSH.md): a raid's big fight at its real spot on its real map, our own recreation of its mechanics (not exact), nine companions; the launcher's Boss Rush page sends it through `<dens>/bossrush.json`, results go to `<dens>/bossrush-results.tsv` |
 | `.den where` | where you stand against the ground under you, what your game did with its character (took it, moved, walked, the time sync) and every kind of message it sent; the den-test asks it |
 | `.den diag [tag]` | asks the Leyline UI for its view of the character (into the events as `wudiag` lines, after `at:<tag>`); the den-test's before / after |
 | `.den dojo` (`.dojo`) | the Dojo: a training ring in front of you, built by your companion piece by piece, with three training dummies in it (below, "The Dojo") |

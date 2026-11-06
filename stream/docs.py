@@ -44,6 +44,7 @@ PAGES = (
     ("join-network", "Bring your server"),   # an existing server joins with Hero Key sign-in (setup.py join-network)
     ("be-a-node", "Help carry the network"),   # community nodes (hosting/relay/wurelay/nodes.py)
     ("launcher", "Launcher"),
+    ("mobile", "On your phone"),   # the phone app and the browser on a phone (stream/mobile_page.py is the showcase, /wrath/mobile)
     ("den", "Your Den"),   # Your Den: open it, build, invite (the Forge page's My Den section links it)
     ("agents", "Agents"),   # the launcher's Agents page: your own AI assistant, what it may do (launcher/src-tauri/src/agents.rs)
     ("hero-key", "Hero Key"),

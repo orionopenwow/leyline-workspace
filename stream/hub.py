@@ -977,6 +977,7 @@ class Hub:
                 ("arena", "Duels and arena", "/wrath/arena", "arena"),
                 ("forge", "Forge", BASE + "/forge", "forge"), ("agents", "Agents", BASE + "/agents", "agents"),
                 ("docs", "Docs", "/wrath/docs", "docs"), ("guides", "Guides", "/wrath/guides", "guides"),   # the guide series (stream/site_pages.py)
+                ("mobile", "On your phone", "/wrath/mobile", "mobile"),   # Leyline on your phone (stream/mobile_page.py)
                 ("news", "News", BASE + "/news", "news"),
                 ("creators", "Creators", BASE + "/creators", "creators")]   # Modes, Gallery and Status left the menu (owner 2026-10-30)
         return main, more
@@ -1054,7 +1055,7 @@ class Hub:
         flag = '<p class="hb-flag">Preview: this page is hidden while it is being built.</p>' if not front_on() else ""
         repo = self.portal("LEYLINE_REPO") or "https://github.com/orionopenwow/Leyline"
         discord = self.portal("DISCORD_URL") or ""
-        foot_links = [("Docs", "/wrath/docs"), ("Guides", "/wrath/guides"), ("Modes", "/wrath/modes"), ("Download", dl),
+        foot_links = [("Docs", "/wrath/docs"), ("Guides", "/wrath/guides"), ("On your phone", "/wrath/mobile"), ("Modes", "/wrath/modes"), ("Download", dl),
                       ("Forum", FORUM), ("Status", f"{home}#status"),
                       ("Mods", f"{BASE}/catalog"), ("Creators", f"{BASE}/creators"), ("Submit a mod", f"{BASE}/submit"),
                       ("Press", "/wrath/press")]
@@ -5006,6 +5007,7 @@ NAV_ICONS = {
     # the launcher's sword mark for Single player (launcher/ui/single.js SWORD), and a book with a play mark for Guides
     "single": '<path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/>',
     "guides": '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M10.5 7.5v5l4-2.5z"/>',
+    "mobile": '<rect x="6.5" y="2.5" width="11" height="19" rx="2.2"/><path d="M10.5 18.5h3"/>',   # a phone (stream/mobile_page.py)
     "realms": ICONS["realms"], "mods": ICONS["mods"], "modes": ICONS["modes"], "host": ICONS["host"], "looks": ICONS["looks"],
     "community": ICONS["community"], "forge": ICONS["forge"], "agents": ICONS["agents"],
     "forum": '<path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>'

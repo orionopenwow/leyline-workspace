@@ -87,11 +87,127 @@ fn release() -> String {
     release_from(std::env::var("LEYLINE_ENGINE_URL").ok().as_deref())
 }
 
+// ------------------------------------------------------------------------------------------------ the two realms
+
+/// Which realm the engine runs: Single player (`solo`, `<app>/engine/`) or Boss Rush's exact engine (`bossrush`,
+/// `<app>/engine-bossrush/`, docs/BOSS-RUSH.md): the same engine files (Boss Rush uses Single player's `dist/`, so
+/// nothing is downloaded twice), but its own maps (only the raid maps), database, saves, login and logs. One runs
+/// at a time: both use this PC's login, world and database ports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    #[default]
+    Single,
+    BossRush,
+}
+
+impl Kind {
+    pub fn profile(self) -> &'static str {
+        match self {
+            Kind::Single => PROFILE,
+            Kind::BossRush => "bossrush",
+        }
+    }
+    pub fn account(self) -> &'static str {
+        match self {
+            Kind::Single => ACCOUNT,
+            Kind::BossRush => crate::host::bossrush::ACCOUNT,
+        }
+    }
+    /// Its realm list row's name (Config.wtf picks it by name).
+    pub fn realm_name(self) -> &'static str {
+        match self {
+            Kind::Single => REALM_NAME,
+            // TODO(owner): his name for it (realm/profiles/bossrush.env OV_REALM_NAME says the same)
+            Kind::BossRush => "Boss Rush",
+        }
+    }
+    /// What the pages call it.
+    pub fn title(self) -> &'static str {
+        match self {
+            Kind::Single => "Single player",
+            Kind::BossRush => "Boss Rush",
+        }
+    }
+    pub fn folder(self) -> &'static str {
+        match self {
+            Kind::Single => "engine",
+            Kind::BossRush => "engine-bossrush",
+        }
+    }
+    /// The progress line's `kind` (single.js reads "engine").
+    pub fn job_kind(self) -> &'static str {
+        match self {
+            Kind::Single => "engine",
+            Kind::BossRush => "bossrush",
+        }
+    }
+    pub fn bots(self) -> u32 {
+        match self {
+            Kind::Single => BOTS,
+            Kind::BossRush => 0,
+        }
+    }
+    pub fn player_limit(self) -> u32 {
+        match self {
+            Kind::Single => PLAYER_LIMIT,
+            Kind::BossRush => 2,
+        }
+    }
+    pub fn profile_sql(self) -> &'static [&'static str] {
+        match self {
+            Kind::Single => &PROFILE_SQL,
+            Kind::BossRush => &[],
+        }
+    }
+    /// Only these maps are read from the game folder (None: every map).
+    pub fn only_maps(self) -> Option<Vec<u32>> {
+        match self {
+            Kind::Single => None,
+            Kind::BossRush => Some(crate::host::bossrush::maps()),
+        }
+    }
+    /// Its profile is layered after modules.env (its own lines win; Single player's profile comes first, as the
+    /// Docker kit does).
+    pub fn profile_last(self) -> bool {
+        self == Kind::BossRush
+    }
+}
+
+/// The realm this launcher last started (None: none, or it was stopped).
+static ACTIVE: Mutex<Option<Kind>> = Mutex::new(None);
+
+pub fn active() -> Option<Kind> {
+    ACTIVE.lock().ok().and_then(|g| *g)
+}
+
+/// The other realm is the one running on these ports now: this launcher started it, or its own database's pid
+/// file names a live process (a launcher restarted while it ran) and this one's doesn't.
+pub fn other_running(p: &Paths) -> Option<Kind> {
+    let other = match p.kind {
+        Kind::Single => Kind::BossRush,
+        Kind::BossRush => Kind::Single,
+    };
+    if !port_answers(DB_PORT) && !port_answers(WORLD_PORT) {
+        return None;
+    }
+    let o = Paths::for_kind(&p.app, other);
+    let theirs = active() == Some(other) || (active() != Some(p.kind) && read_pid_alive(&o.pid("mysqld")) && !read_pid_alive(&p.pid("mysqld")));
+    theirs.then_some(other)
+}
+
+fn set_active(k: Option<Kind>) {
+    if let Ok(mut g) = ACTIVE.lock() {
+        *g = k;
+    }
+}
+
 // ------------------------------------------------------------------------------------------------ paths
 
 /// Where everything is, under `<app data>/engine/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
+    pub kind: Kind,
     pub app: PathBuf,
     pub root: PathBuf,
     /// The unpacked release (replaced on update; nothing of the player's in it).
@@ -109,10 +225,15 @@ pub struct Paths {
 
 impl Paths {
     pub fn new(app_dir: &Path) -> Paths {
-        let root = app_dir.join("engine");
+        Paths::for_kind(app_dir, Kind::Single)
+    }
+    /// Boss Rush's install shares Single player's unpacked engine (`<app>/engine/dist`).
+    pub fn for_kind(app_dir: &Path, kind: Kind) -> Paths {
+        let root = app_dir.join(kind.folder());
         Paths {
+            kind,
             app: app_dir.to_path_buf(),
-            dist: root.join("dist"),
+            dist: app_dir.join(Kind::Single.folder()).join("dist"),
             data: root.join("data"),
             db: root.join("db"),
             logs: root.join("logs"),
@@ -204,7 +325,7 @@ pub fn required(p: &Paths) -> Vec<PathBuf> {
         p.mysqladmin(),
         p.mysqldump(),
         p.source().join("data").join("sql").join("base"),
-        p.profile_env(PROFILE),
+        p.profile_env(p.kind.profile()),
         p.modules_env(),
         p.bin().join("configs").join("worldserver.conf.dist"),
         p.bin().join("configs").join("authserver.conf.dist"),
@@ -234,6 +355,8 @@ pub struct State {
     pub account_made: bool,
     /// The game folder the maps were read from.
     pub maps_from: String,
+    /// Boss Rush: the hero account's login password (host/bossrush.rs `account_lines`; made once, kept here).
+    pub hero_password: String,
 }
 
 pub fn load_state(p: &Paths) -> State {
@@ -258,13 +381,18 @@ pub fn secret(n: usize) -> Result<String, String> {
 
 /// The secrets made once (true when something was made).
 pub fn ensure_secrets(s: &mut State) -> Result<bool, String> {
+    ensure_secrets_for(s, Kind::Single)
+}
+
+/// The same for one of the two realms (its own login name).
+pub fn ensure_secrets_for(s: &mut State, kind: Kind) -> Result<bool, String> {
     let mut made = false;
     if s.db_password.len() < 16 {
         s.db_password = secret(24)?;
         made = true;
     }
     if s.account.is_empty() {
-        s.account = ACCOUNT.into();
+        s.account = kind.account().into();
         made = true;
     }
     if s.password.len() < 8 {
@@ -376,10 +504,11 @@ fn common_env(p: &Paths, s: &State, v: &mut Vec<(String, String)>) {
 /// window, SOAP on 127.0.0.1 for the clean stop. `realm` may set `WU_BOTS` and `OV_PATHING` as the kit's .env does.
 pub fn world_env(p: &Paths, s: &State, profile: &str, modules: &str, realm: Option<&str>) -> Vec<(String, String)> {
     let mut v: Vec<(String, String)> = Vec::new();
-    for (k, val) in parse_env(profile).into_iter().chain(parse_env(modules)).chain(realm.map(parse_env).unwrap_or_default()) {
+    let (first, second) = if p.kind.profile_last() { (modules, profile) } else { (profile, modules) };
+    for (k, val) in parse_env(first).into_iter().chain(parse_env(second)).chain(realm.map(parse_env).unwrap_or_default()) {
         put(&mut v, &k, val);
     }
-    let bots = get(&v, "WU_BOTS").and_then(|b| b.parse::<u32>().ok()).unwrap_or(BOTS).min(500);
+    let bots = get(&v, "WU_BOTS").and_then(|b| b.parse::<u32>().ok()).unwrap_or(p.kind.bots()).min(500);
     let pathing = if get(&v, "OV_PATHING") == Some("1") { "1" } else { "0" };
     common_env(p, s, &mut v);
     put(&mut v, "AC_PLAYERBOTS_DATABASE_INFO", db_info(s, "acore_playerbots"));
@@ -391,7 +520,7 @@ pub fn world_env(p: &Paths, s: &State, profile: &str, modules: &str, realm: Opti
         put(&mut v, &env_name(k), pathing);
     }
     put(&mut v, &env_name("Warden.Enabled"), "0");
-    put(&mut v, &env_name("PlayerLimit"), PLAYER_LIMIT.to_string());
+    put(&mut v, &env_name("PlayerLimit"), p.kind.player_limit().to_string());
     put(&mut v, "AC_ALE_SCRIPT_PATH", fwd(&p.lua()));
     put(&mut v, &env_name("WorldServerPort"), WORLD_PORT.to_string());
     put(&mut v, &env_name("RealmID"), "1");
@@ -456,8 +585,14 @@ pub fn init_sql(s: &State) -> String {
 
 /// The realm list's one row: this PC, the world port, its name.
 pub fn realm_sql() -> String {
+    realm_sql_named(REALM_NAME)
+}
+
+/// The same row with another name (Boss Rush's: Kind::realm_name, letters and spaces only).
+pub fn realm_sql_named(name: &str) -> String {
+    let name: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == ' ').take(32).collect();
     format!(
-        "UPDATE realmlist SET name = '{REALM_NAME}', address = '{ADDRESS}', localAddress = '{ADDRESS}', port = {WORLD_PORT}, gamebuild = 12340 WHERE id = 1;\n"
+        "UPDATE realmlist SET name = '{name}', address = '{ADDRESS}', localAddress = '{ADDRESS}', port = {WORLD_PORT}, gamebuild = 12340 WHERE id = 1;\n"
     )
 }
 
@@ -727,7 +862,7 @@ pub fn have(p: &Paths, s: &State, update: bool) -> Have {
         db: s.db_made && db_made(p),
         filled: s.filled,
         account: s.account_made,
-        running: port_answers(DB_PORT) && port_answers(LOGIN_PORT) && port_answers(WORLD_PORT),
+        running: port_answers(DB_PORT) && port_answers(LOGIN_PORT) && port_answers(WORLD_PORT) && other_running(p).is_none(),
     }
 }
 
@@ -762,12 +897,20 @@ pub struct EngineStatus {
     pub realm: String,
     pub root: String,
     pub backups: usize,
+    /// Which realm this status is of, its realm list name, and the realm that is running now if it is the other one
+    /// (both use the same ports: one at a time).
+    pub kind: Kind,
+    pub realm_name: String,
+    pub other_running: Option<Kind>,
 }
 
 pub fn status(p: &Paths) -> EngineStatus {
     let s = load_state(p);
     let h = have(p, &s, false);
     let (db_up, auth_up, world_up) = (port_answers(DB_PORT), port_answers(LOGIN_PORT), port_answers(WORLD_PORT));
+    // the other realm's servers answering these ports aren't this one's
+    let other = other_running(p);
+    let (db_up, auth_up, world_up) = if other.is_some() { (false, false, false) } else { (db_up, auth_up, world_up) };
     let su = set_up(&h);
     EngineStatus {
         supported: supported(),
@@ -790,6 +933,9 @@ pub fn status(p: &Paths) -> EngineStatus {
         realm: REALM.into(),
         root: p.root.display().to_string(),
         backups: list_backups(p).len(),
+        kind: p.kind,
+        realm_name: p.kind.realm_name().into(),
+        other_running: other,
     }
 }
 
@@ -824,7 +970,7 @@ pub fn progress() -> Job {
             }
             j
         }
-        None => Job { idle: true, kind: "engine".into(), ..Default::default() },
+        None => Job { idle: true, kind: Kind::Single.job_kind().into(), ..Default::default() },
     }
 }
 
@@ -850,31 +996,43 @@ pub fn pct(done: u64, total: u64) -> u8 {
 /// Start setting up / starting (in the background; follow it with [`progress`]). `game`: the game folder the maps
 /// are read from (needed only while they aren't). `update`: take the release's newer engine first.
 pub fn begin(app_dir: &Path, game: Option<PathBuf>, update: bool) -> Result<String, String> {
+    begin_kind(app_dir, Kind::Single, game, update)
+}
+
+/// [`begin`] for one of the two realms. The other one running is said, never stopped here (the page asks first).
+pub fn begin_kind(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: bool) -> Result<String, String> {
+    let title = kind.title();
     if !supported() {
-        return Err("The Built-in engine is made for Windows PCs for now: Docker runs Single player here.".into());
+        return Err(match kind {
+            Kind::Single => "The Built-in engine is made for Windows PCs for now: Docker runs Single player here.".to_string(),
+            Kind::BossRush => "Boss Rush's exact engine is made for Windows PCs for now: the light version runs here.".to_string(),
+        });
     }
-    let p = Paths::new(app_dir);
+    let p = Paths::for_kind(app_dir, kind);
+    if let Some(o) = other_running(&p) {
+        return Err(format!("{} is running on this PC and uses the same ports. Stop it first, then press Start again.", o.title()));
+    }
     let s = load_state(&p);
     let h = have(&p, &s, update);
     let steps = plan(&h);
     if steps.is_empty() {
-        return Ok("Single player is running.".into());
+        return Ok(format!("{title} is running."));
     }
     if steps.contains(&Step::Maps) && game.is_none() {
-        return Err("Pick your game folder first: Single player reads its maps from it once.".into());
+        return Err(format!("Pick your game folder first: {title} reads its maps from it once."));
     }
     {
         let mut g = JOB.lock().map_err(|_| "busy")?;
         if g.as_ref().is_some_and(|(j, _)| j.running) {
-            return Ok("Single player is starting already.".into());
+            return Ok(format!("{} is starting already.", Kind::of_job(&g.as_ref().map(|x| x.0.kind.clone()).unwrap_or_default()).title()));
         }
         let first = steps[0];
         *g = Some((
-            Job { idle: false, kind: "engine".into(), running: true, step: first.label().into(), n: 1, of: steps.len(), ..Default::default() },
+            Job { idle: false, kind: kind.job_kind().into(), running: true, step: first.label().into(), n: 1, of: steps.len(), ..Default::default() },
             Instant::now(),
         ));
     }
-    let msg = if steps.contains(&Step::Download) { "Getting the engine…" } else { "Starting Single player…" };
+    let msg = if steps.contains(&Step::Download) { "Getting the engine…".to_string() } else { format!("Starting {title}…") };
     std::thread::spawn(move || {
         let r = run(&p, game.as_deref(), &steps);
         setup_log(&p, &match &r {
@@ -897,7 +1055,18 @@ pub fn begin(app_dir: &Path, game: Option<PathBuf>, update: bool) -> Result<Stri
             }
         });
     });
-    Ok(msg.into())
+    Ok(msg)
+}
+
+impl Kind {
+    /// The realm a progress line's `kind` is of.
+    pub fn of_job(k: &str) -> Kind {
+        if k == Kind::BossRush.job_kind() {
+            Kind::BossRush
+        } else {
+            Kind::Single
+        }
+    }
 }
 
 fn setup_log(p: &Paths, line: &str) {
@@ -913,7 +1082,7 @@ fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
         fs::create_dir_all(d).map_err(|e| format!("Couldn't make the engine's folder: {e}"))?;
     }
     let mut s = load_state(p);
-    if ensure_secrets(&mut s)? {
+    if ensure_secrets_for(&mut s, p.kind)? {
         save_state(p, &s)?;
     }
     let mut want = String::new();
@@ -959,7 +1128,7 @@ fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
                 use ring::rand::SecureRandom;
                 ring::rand::SystemRandom::new().fill(&mut salt).map_err(|_| "no random source on this PC".to_string())?;
                 sql(p, "acore_auth", &account_sql(&s.account, &s.password, &salt)?)?;
-                sql(p, "acore_auth", &realm_sql())?;
+                sql(p, "acore_auth", &realm_sql_named(p.kind.realm_name()))?;
                 s.account_made = true;
                 save_state(p, &s)?;
             }
@@ -1144,7 +1313,15 @@ fn extract_maps(p: &Paths, game: &Path) -> Result<(), String> {
     fs::create_dir_all(&p.data).map_err(|e| format!("Couldn't make the maps folder: {e}"))?;
     let _ = fs::remove_file(p.maps_marker());
     let mut cmd = Command::new(p.extractor());
-    cmd.arg("-i").arg(game).arg("-o").arg(&p.data).current_dir(&p.data).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.arg("-i").arg(game).arg("-o").arg(&p.data);
+    // Boss Rush: only the raid maps (and the start tiles the world server checks), when the engine's extractor
+    // takes `-m` (engine.json "map_filter", realm/custom/patches/core.patch); else all of them, trimmed after.
+    let only = p.kind.only_maps();
+    let filter = only.is_some() && map_filter(&p.dist);
+    if filter {
+        cmd.arg("-m").arg(crate::host::bossrush::maps_arg());
+    }
+    cmd.current_dir(&p.data).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     no_window(&mut cmd);
     let mut child = cmd.spawn().map_err(|e| format!("The map reader didn't start: {e}"))?;
     let log = fs::File::create(p.logs.join("extract.log")).ok();
@@ -1180,14 +1357,40 @@ fn extract_maps(p: &Paths, game: &Path) -> Result<(), String> {
     if !st.success() {
         return Err(format!("The maps couldn't be read from your game folder (the map reader stopped, code {}). The log has its lines.", st.code().unwrap_or(-1)));
     }
+    if only.is_some() {
+        trim_maps(&p.data.join("maps"));
+    }
     let maps = count(&p.data.join("maps"));
     if maps == 0 || count(&p.data.join("dbc")) == 0 {
         return Err("The map reader finished but wrote no maps. Is this the right game folder?".into());
     }
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    let marker = serde_json::json!({ "from": game.display().to_string(), "at": now, "maps": maps });
+    let marker = serde_json::json!({ "from": game.display().to_string(), "at": now, "maps": maps, "only": only });
     fs::write(p.maps_marker(), marker.to_string()).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// The unpacked engine's extractor takes `-m` (engine.json `"map_filter": 1`).
+pub fn map_filter(dist: &Path) -> bool {
+    fs::read_to_string(dist.join("engine.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("map_filter").and_then(|x| x.as_u64()))
+        .unwrap_or(0)
+        >= 1
+}
+
+/// Boss Rush's maps folder trimmed to what it plays (host/bossrush.rs keeps_map_file): how many files went.
+pub fn trim_maps(maps: &Path) -> usize {
+    let mut n = 0;
+    let Ok(rd) = fs::read_dir(maps) else { return 0 };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.ends_with(".map") && !crate::host::bossrush::keeps_map_file(&name) && fs::remove_file(e.path()).is_ok() {
+            n += 1;
+        }
+    }
+    n
 }
 
 // ------------------------------------------------------------------------------------------------ processes
@@ -1339,6 +1542,9 @@ fn init_db(p: &Paths, s: &State) -> Result<(), String> {
 
 /// MySQL up (ours from earlier, or started now).
 pub fn start_db(p: &Paths) -> Result<(), String> {
+    if let Some(o) = other_running(p) {
+        return Err(format!("{} is running on this PC and uses the same ports. Stop it first, then press Start again.", o.title()));
+    }
     if port_answers(DB_PORT) {
         return Ok(());
     }
@@ -1375,6 +1581,36 @@ pub fn sql(p: &Paths, db: &str, text: &str) -> Result<(), String> {
     }
 }
 
+/// One query's rows (the mysql client's `-N -B`: tab separated, no header).
+pub fn query(p: &Paths, db: &str, text: &str) -> Result<String, String> {
+    let out = mysql_cmd(p, &p.mysql(), &["--default-character-set=utf8mb4", "-N", "-B", "-e", text, db])
+        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).output().map_err(|e| format!("The database client didn't start: {e}"))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        Err(format!("The database said no: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("").chars().take(200).collect::<String>()))
+    }
+}
+
+/// One console command over the realm's SOAP (127.0.0.1 only), as the player's own GM login: the answer's text.
+pub fn console(p: &Paths, command: &str) -> Result<String, String> {
+    let s = load_state(p);
+    if !s.account_made {
+        return Err(format!("Set {} up first.", p.kind.title()));
+    }
+    soap(&s, command).map(|body| crate::host::bossrush::soap_text(&body))
+}
+
+/// Boss Rush's hero account password: made once and kept in state.json.
+pub fn hero_password(p: &Paths) -> Result<String, String> {
+    let mut s = load_state(p);
+    if s.hero_password.len() < 8 {
+        s.hero_password = secret(10)?;
+        save_state(p, &s)?;
+    }
+    Ok(s.hero_password)
+}
+
 fn sql_file(p: &Paths, db: &str, file: &Path) -> Result<(), String> {
     let f = fs::File::open(file).map_err(|e| e.to_string())?;
     let out = mysql_cmd(p, &p.mysql(), &["--default-character-set=utf8mb4", db]).stdin(Stdio::from(f)).stdout(Stdio::null()).stderr(Stdio::piped())
@@ -1406,7 +1642,7 @@ fn fill(p: &Paths, s: &State) -> Result<(), String> {
         job(|j| j.detail = format!("{} min", t.elapsed().as_secs() / 60));
         std::thread::sleep(Duration::from_secs(1));
     }
-    for name in PROFILE_SQL {
+    for name in p.kind.profile_sql() {
         let f = p.profile_sql(name);
         if f.is_file() {
             sql_file(p, "acore_world", &f)?;
@@ -1425,16 +1661,21 @@ fn den_lite_running(p: &Paths) -> bool {
 pub fn start(p: &Paths, s: &State) -> Result<(), String> {
     let ours_auth = child_alive(Which::Auth);
     let ours_world = child_alive(Which::World);
+    let title = p.kind.title();
+    if let Some(o) = other_running(p) {
+        return Err(format!("{} is running on this PC and uses the same ports. Stop it first, then press Start again.", o.title()));
+    }
     if !ours_auth && port_answers(LOGIN_PORT) && !read_pid_alive(&p.pid("auth")) {
         return Err(if den_lite_running(p) {
             "Your Den is running on this PC and uses the same login port. Stop it on the Your Den page, then press Start again.".into()
         } else {
-            format!("Another server on this PC is using the login port ({LOGIN_PORT}), so Single player can't start. Stop that server, then press Start again.")
+            format!("Another server on this PC is using the login port ({LOGIN_PORT}), so {title} can't start. Stop that server, then press Start again.")
         });
     }
     if !ours_world && port_answers(WORLD_PORT) && !read_pid_alive(&p.pid("world")) {
-        return Err(format!("Another server on this PC is using the world port ({WORLD_PORT}), so Single player can't start. Stop that server, then press Start again."));
+        return Err(format!("Another server on this PC is using the world port ({WORLD_PORT}), so {title} can't start. Stop that server, then press Start again."));
     }
+    set_active(Some(p.kind));
     start_db(p)?;
     make_confs(&p.bin());
     if !port_answers(LOGIN_PORT) {
@@ -1447,7 +1688,7 @@ pub fn start(p: &Paths, s: &State) -> Result<(), String> {
     }
     if !port_answers(WORLD_PORT) {
         job(|j| j.detail = "The world (the first start can take several minutes)".into());
-        let profile = fs::read_to_string(p.profile_env(PROFILE)).map_err(|_| "The engine has no solo profile: get the engine again.".to_string())?;
+        let profile = fs::read_to_string(p.profile_env(p.kind.profile())).map_err(|_| format!("The engine has no {} profile: get the engine again.", p.kind.profile()))?;
         let modules = fs::read_to_string(p.modules_env()).unwrap_or_default();
         let realm = fs::read_to_string(p.realm_env()).ok();
         let env = world_env(p, s, &profile, &modules, realm.as_deref());
@@ -1535,6 +1776,7 @@ pub fn stop(p: &Paths) -> Result<String, String> {
     }
     g.db = None;
     g.world = None;
+    set_active(None);
     Ok(if forced {
         "Stopped. Something didn't stop by itself in time and was ended: your characters were saved when you last left a zone or logged out.".into()
     } else {
@@ -1662,6 +1904,70 @@ mod tests {
 
     fn st() -> State {
         State { db_password: "PW".repeat(12), account: ACCOUNT.into(), password: "ABCD2345".into(), ..Default::default() }
+    }
+
+    #[test]
+    fn boss_rush_has_its_own_install_on_the_same_engine_files() {
+        let app = Path::new("/app");
+        let (single, rush) = (Paths::new(app), Paths::for_kind(app, Kind::BossRush));
+        assert_eq!(rush.root, Path::new("/app/engine-bossrush"));
+        assert_eq!(rush.dist, single.dist, "the engine is downloaded once");
+        for (a, b) in [(&rush.data, &single.data), (&rush.db, &single.db), (&rush.state, &single.state), (&rush.logs, &single.logs)] {
+            assert_ne!(a, b, "its own maps, database, saves and logs");
+        }
+        assert!(required(&rush).contains(&rush.profile_env("bossrush")));
+        let mut s = State::default();
+        assert!(ensure_secrets_for(&mut s, Kind::BossRush).unwrap());
+        assert_eq!(s.account, "RUSH");
+        assert_eq!(crate::host::bossrush::hero_account(&s.account), "RUSHBF");
+        assert!(realm_sql_named(Kind::BossRush.realm_name()).contains("name = 'Boss Rush'"));
+        assert!(realm_sql_named("x'; DROP").contains("name = 'x DROP'"), "letters and spaces only");
+        assert_eq!(realm_sql(), realm_sql_named(REALM_NAME));
+        assert_eq!((Kind::of_job("bossrush"), Kind::of_job("engine")), (Kind::BossRush, Kind::Single));
+        assert_eq!(Kind::BossRush.only_maps(), Some(vec![249, 615, 616, 624, 631, 724]));
+        assert_eq!(Kind::Single.only_maps(), None);
+        assert!(Kind::BossRush.profile_sql().is_empty());
+    }
+
+    #[test]
+    fn boss_rush_profile_wins_over_modules_env() {
+        let p = Paths::for_kind(Path::new("C:\\L"), Kind::BossRush);
+        let (Ok(rush), Ok(modules)) = (
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/profiles/bossrush.env")),
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/modules.env")),
+        ) else {
+            return;
+        };
+        let v = world_env(&p, &st(), &rush, &modules, None);
+        let g = |k: &str| get(&v, k).map(str::to_string);
+        assert_eq!(g("AC_AUTO_BALANCE_ENABLE_GLOBAL").as_deref(), Some("0"), "modules.env says 1; Boss Rush's profile wins");
+        assert_eq!(g("AC_LEYLINE_BOSSFIGHT_ALL_FIGHTS").as_deref(), Some("1"));
+        assert_eq!(g("AC_PLAYERBOTS_MIN_RANDOM_BOTS").as_deref(), Some("0"), "no roaming bots");
+        assert_eq!(g("AC_PLAYERBOTS_RANDOM_BOT_AUTOLOGIN").as_deref(), Some("0"));
+        assert_eq!(g("AC_MYTHIC_PLUS_ENABLE").as_deref(), Some("0"));
+        assert_eq!(g("AC_PLAYER_LIMIT").as_deref(), Some("2"));
+        assert_eq!(g("AC_ALE_ENABLED").as_deref(), Some("true"), "modules.env's own lines stay");
+        assert!(g("AC_DATA_DIR").unwrap().ends_with("engine-bossrush/data"));
+        assert!(g("AC_ALE_SCRIPT_PATH").unwrap().ends_with("engine/dist/lua_scripts"));
+        assert_eq!(env_name("LeylineBossfight.AllFights"), "AC_LEYLINE_BOSSFIGHT_ALL_FIGHTS");
+        assert_eq!(env_name("Wintergrasp.KickVoAPlayers"), "AC_WINTERGRASP_KICK_VO_APLAYERS");
+        assert!(!v.iter().any(|(k, _)| k == "WU_BOTS"));
+    }
+
+    #[test]
+    fn boss_rush_trims_a_full_map_read() {
+        let d = tempfile::tempdir().unwrap();
+        for f in ["6313531.map", "0004331.map", "0003232.map", "5712020.map", "notes.txt"] {
+            std::fs::write(d.path().join(f), b"x").unwrap();
+        }
+        assert_eq!(trim_maps(d.path()), 2);
+        let mut left: Vec<String> = std::fs::read_dir(d.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        left.sort();
+        assert_eq!(left, ["0004331.map", "6313531.map", "notes.txt"]);
+        std::fs::write(d.path().join("engine.json"), r#"{"name":"leyline-engine","map_filter":1}"#).unwrap();
+        assert!(map_filter(d.path()));
+        std::fs::write(d.path().join("engine.json"), r#"{"name":"leyline-engine"}"#).unwrap();
+        assert!(!map_filter(d.path()), "an older engine: read everything, then trim");
     }
 
     #[test]

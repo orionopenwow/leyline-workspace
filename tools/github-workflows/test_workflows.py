@@ -401,9 +401,9 @@ class Workflows(unittest.TestCase):
         self.assertIn("workflow_dispatch", doc["on"])
         self.assertEqual(doc["permissions"], {"contents": "read"})
         self.assertEqual(set(re.findall(r"secrets\.(\w+)", text)),
-                         {"ANDROID_KEYSTORE_B64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"})
+                         {"ANDROID_KEYSTORE_B64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD", "GITHUB_TOKEN"})
         jobs = doc["jobs"]
-        self.assertEqual(list(jobs), ["apk", "smoke"])
+        self.assertEqual(list(jobs), ["apk", "smoke", "publish"])
         apk = jobs["apk"]
         self.assertNotIn("permissions", apk, "no write access: artifacts only")
         names = [s.get("name", s.get("uses", "")) for s in apk["steps"]]
@@ -454,6 +454,19 @@ class Workflows(unittest.TestCase):
         sh = (REPO / "launcher" / "scripts" / "android-smoke.sh").read_text(encoding="utf-8")
         for bit in ("adb install", "screencap -p", "FATAL EXCEPTION", "Fatal signal", "pidof", "user_rotation 1"):
             self.assertIn(bit, sh)
+        # publish (docs/MOBILE-RELEASE.md): main only, after the emulator passed, onto the rolling pre-release
+        # android-latest; the only job that may write, with the built-in token
+        pub = jobs["publish"]
+        self.assertEqual(pub["needs"], ["apk", "smoke"])
+        self.assertEqual(pub["if"], "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'")
+        self.assertEqual(pub["permissions"], {"contents": "write"})
+        prun = "\n".join(s.get("run", "") for s in pub["steps"])
+        self.assertIn("gh release create android-latest", prun)
+        self.assertIn("--prerelease --latest=false", prun)
+        self.assertIn("sha256sum -c Leyline-debug.apk.sha256", prun)
+        self.assertRegex(prun, r"(?i)\\\.\(mpq\|m2\|wmo")
+        self.assertNotIn("ANDROID_KEYSTORE", prun, "the release key never reaches the publish job")
+        self.assertEqual(set(re.findall(r"secrets\.(\w+)", str(pub))), {"GITHUB_TOKEN"})
         conf = json.loads((REPO / "launcher" / "src-tauri" / "tauri.android.conf.json").read_text(encoding="utf-8"))
         self.assertEqual(conf["identifier"], doc["env"]["APP_ID"])
         self.assertGreaterEqual(conf["bundle"]["android"]["minSdkVersion"], 26)

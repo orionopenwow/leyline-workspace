@@ -22,6 +22,10 @@
   var KIND = { OPEN: 1, DATA: 2, CLOSE: 3, STOP: 4 };
   var DB = 'leyline-solo', STORE = 'files', FORMAT = 'leyline-solo';
   var HERO = 'Wren', ACCOUNT = 'SOLO', PASSWORD = 'den';
+  // Where the world is: Northshire Abbey, the human start (AzerothCore playercreateinfo: map 0, -8949.95, -132.49,
+  // 83.53), inside the streamed slice's Northshire Valley tier, so the client has the ground there. Den Lite's own Den
+  // spot (the GM island) is not in the slice. A Den save opened from the Dens folder keeps its own props around it.
+  var SPOT = '0 -8949.95 -132.49 83.53';
 
   // -- Saves (IndexedDB) ------------------------------------------------------------------------------------------
 
@@ -409,7 +413,7 @@
     var bus = new Bus(win, {
       workerUrl: base + 'den-lite-worker.js',
       engine: opts.engine || win.__wuSoloEngine || { kind: 'wasm', url: base + 'den-lite-web.wasm' },
-      env: Object.assign({ DEN_LITE_PASSWORD: PASSWORD, DEN_LITE_NAME: hero, DEN_LITE_REALM: 'Solo' }, opts.workerEnv || {}),
+      env: Object.assign({ DEN_LITE_PASSWORD: PASSWORD, DEN_LITE_NAME: hero, DEN_LITE_REALM: 'Solo', DEN_LITE_SPOT: SPOT }, opts.workerEnv || {}),
       store: opts.store,
       onFail: function (why) { if (typeof opts.onFail === 'function') opts.onFail(why); emit(win, 'failed', { why: why }); },
       onSaved: function (paths) { emit(win, 'saved', { files: paths.length }); },
@@ -461,5 +465,5 @@
   }
 
   return { install: install, wanted: wanted, supported: supported, Bus: Bus, Store: Store, makeSocketClass: makeSocketClass,
-           packSave: packSave, unpackSave: unpackSave, KIND: KIND, ACCOUNT: ACCOUNT, PASSWORD: PASSWORD, HERO: HERO };
+           packSave: packSave, unpackSave: unpackSave, KIND: KIND, ACCOUNT: ACCOUNT, PASSWORD: PASSWORD, HERO: HERO, SPOT: SPOT };
 });

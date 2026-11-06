@@ -13,7 +13,10 @@
 //   * Pages that need a computer (game folders, Host, Your Den, Single player, Agents, Settings, Find your files) never
 //     open: a button or a remembered page that leads there lands on Play instead.
 //
-//   window.LeylinePhone = { on, play, go }   go(url): how PLAY leaves for the game (the tests replace it)
+//   * Play solo on this phone (docs/PHONE-SOLO.md): the same game page with ?go=solo:phone, through the site's Play
+//     (the realm list's "Play solo on this device"): the page runs its own server (Den Lite in a worker), no realm.
+//
+//   window.LeylinePhone = { on, play, solo, go }   go(url): how PLAY leaves for the game (the tests replace it)
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
@@ -31,6 +34,7 @@
     get on() { return on; },
     go: (url) => window.location.assign(url),
     play,
+    solo,
   });
 
   function nav() { return window.LeylineNav; }
@@ -57,6 +61,22 @@
     }
     if (no) no.hidden = true;
     Phone.go(browserUrl);
+    return true;
+  }
+
+  // Solo on this phone: the site's Play with go=solo:phone (signs in first when needed, then the page plays solo)
+  function soloUrl() {
+    try { return new URL("/wrath/play?mini=mini&go=solo:phone", browserUrl).href; } catch (_) { return "https://leylinelauncher.com/wrath/play?mini=mini&go=solo:phone"; }
+  }
+  function solo() {
+    const no = $("ph-nogpu");
+    if (!canDraw()) {
+      if (no) no.hidden = false;
+      show("phone");
+      return false;
+    }
+    if (no) no.hidden = true;
+    Phone.go(soloUrl());
     return true;
   }
 
@@ -124,6 +144,8 @@
     }));
     const pb = $("ph-play");
     if (pb) pb.addEventListener("click", play);
+    const sb = $("ph-solo");
+    if (sb) sb.addEventListener("click", solo);
     const ch = $("ph-chrome");
     if (ch) ch.addEventListener("click", () => {
       invoke("open_browser_play").catch(() => {

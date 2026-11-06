@@ -22,6 +22,16 @@ getrandom = "0.2"
 # stand on the edited ground.
 leyline-terrain = { path = "../../launcher/src-tauri/terrain" }
 
+[features]
+# Den Lite inside a web page (src/web.rs, src/web_main.rs; docs/PHONE-SOLO.md). Only for the wasm build:
+#   cargo build --release --target wasm32-wasip1 --features web --bin den-lite-web
+web = []
+
+[[bin]]
+name = "den-lite-web"
+path = "src/web_main.rs"
+required-features = ["web"]
+
 [profile.dev]
 debug = 0
 

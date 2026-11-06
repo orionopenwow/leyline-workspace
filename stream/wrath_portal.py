@@ -412,6 +412,8 @@ def go_param(query: dict) -> str:
     A boss fight (bf:<boss>:<difficulty>:<mode>) or the arena queue (arena:1v1) rides along the same way
     (stream/bossfights.py check_go), so the game page can warm the fight's area and say what it is getting ready."""
     v = (query.get("go") or [""])[0][:40]
+    if v in ("solo", "solo:phone"):   # "Play solo on this device": the game page runs its own server (docs/PHONE-SOLO.md)
+        return "&go=solo:phone"
     if bossfights is not None and playmodes is not None and v.startswith("mode:"):
         v = bossfights.mode_go(playmodes.go_mode(v)) or v   # the launcher's Modes page: ?go=mode:frozen-throne
     if bossfights is not None and v and bossfights.check_go(v):
@@ -2068,8 +2070,16 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
            'tabindex="-1" loading="eager" style="display:none"></iframe></template>' if streamed else '')
         + ('<p class="fine end"><a href="/wrath/play/end">End my browser pass</a></p>' if streamed else '')
         + '</div>'
+        # 1b. Solo on this device: the same streamed page, with its own server in the page (docs/PHONE-SOLO.md)
+        + ('<div class="realm" id="solo"><h2>Solo</h2>'
+           '<div class="tags"><span class="tag">On this device</span><span class="tag">No realm</span>'
+           '<span class="tag">Phones too</span></div>'
+           '<p>Your own world, run by this phone or computer: your companion at your side, the Dojo, building. '
+           'Nothing you do goes to a server; your world is kept in this browser.</p>'
+           '<p><a class="btn" href="/wrath/play?mini=mini&amp;go=solo:phone">Play solo on this device</a></p></div>'
+           if streamed else '')
         # 2. The whole world: own game files
-        f'<div class="realm"><h2>{html.escape(REALM_NAME)}</h2>'
+        + f'<div class="realm"><h2>{html.escape(REALM_NAME)}</h2>'
         f'<div class="tags"><span class="tag">The whole world</span><span class="tag">Your own game files</span><span class="tag">3.3.5a</span>{live}</div>'
         '<p>The full game, on the same realm and with the same characters. Uses your own '
         'game files, read on your computer and never uploaded.</p>'

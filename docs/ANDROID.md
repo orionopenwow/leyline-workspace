@@ -12,6 +12,10 @@ desktop launcher. The plan is the Claude Doc "Leyline on Android".
   - The game draws with WebGPU. If the phone's web view has no `navigator.gpu`, PLAY doesn't open a black page. It
     shows "This phone's web view can't draw the game yet: open in Chrome" and an **Open in Chrome** button, which opens
     the same Play page in the phone's browser.
+- **Play solo on this phone** (under PLAY; docs/PHONE-SOLO.md). The same game page with `go=solo:phone`, through the
+  site's Play: the page runs its own server (Den Lite in a worker), so the game plays with no realm. It needs a web view
+  that allows shared memory on the cross-origin-isolated game page; one that doesn't gets one line and plays on the
+  realm. No WebGPU: the same Open in Chrome line as PLAY.
 - **Realms.** The Official and Community lists, as on the desktop.
   - The official realm's Play is the browser game (the same as PLAY).
   - A community realm's Play says that community realms play with your own game on a computer.
@@ -131,6 +135,8 @@ The workflow `leyline android` runs in the public Leyline repo:
 - [ ] Realms › Got an invite link?: a `DEN-…` code and Join say the Den needs a computer.
 - [ ] Mods: Discover lists mods, addons and looks. There are no Install buttons, and the line at the top says why.
 - [ ] Account: log in with the Hero Key, then Google. Logging in with the browser opens Chrome and comes back logged in.
+- [ ] Play solo on this phone: the game opens, logs in and enters the world by itself, with no realm (docs/PHONE-SOLO.md
+      "Owner presses" first). Close the app and open solo again: the world is as you left it.
 - [ ] News, Forum and Join the Discord open.
 - [ ] Close the app and open it again: you are still logged in.
 - [ ] No banned words anywhere, and no game client version numbers in sentences.

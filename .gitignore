@@ -135,3 +135,6 @@ desktop.ini
 # the reel kit (tools/reels): raw takes and finished videos stay on the machine that made them
 /tools/reels/takes/
 /tools/reels/out/
+
+# Den Lite's page build, downloaded by the solo-wasm step (tools/solo/solo_wasm.py); never committed
+stream/www-files/solo/den-lite-web.wasm

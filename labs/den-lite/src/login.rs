@@ -13,7 +13,8 @@
 
 use crate::{Lock, Shared};
 use std::io::{self, Write};
-use std::net::{TcpListener, TcpStream};
+use crate::wire::Stream;
+use std::net::TcpListener;
 use std::sync::Arc;
 use std::time::Duration;
 use wow_login_messages::all::{Population, ProtocolVersion, Version};
@@ -44,7 +45,7 @@ pub fn serve(listener: TcpListener, shared: Arc<Shared>, remote: bool) {
             let _ = stream.set_nodelay(true);
             let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
             let remote = remote || !stream.peer_addr().map(|a| a.ip().is_loopback()).unwrap_or(false);
-            if let Err(e) = session(stream, &shared, remote, None) {
+            if let Err(e) = session(Stream::tcp(stream), &shared, remote, None) {
                 shared.log(&format!("login: {e}"));
             }
         });
@@ -97,14 +98,14 @@ pub fn serve_direct(listener: TcpListener, shared: Arc<Shared>, world_port: u16)
             let public = direct_host(&shared.cfg.den_dir);
             let address = direct_address(local.ip(), peer.ip(), public.as_deref(), world_port);
             shared.event("direct", "", if same_network(peer.ip()) { "same network" } else { "internet" });
-            if let Err(e) = session(stream, &shared, true, Some(address)) {
+            if let Err(e) = session(Stream::tcp(stream), &shared, true, Some(address)) {
                 shared.log(&format!("login: {e}"));
             }
         });
     }
 }
 
-fn send<M: Message>(s: &mut TcpStream, m: &M) -> io::Result<()> {
+fn send<M: Message>(s: &mut Stream, m: &M) -> io::Result<()> {
     let mut v = Vec::new();
     m.write(&mut v)?;
     s.write_all(&v)
@@ -114,7 +115,8 @@ fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-fn session(mut s: TcpStream, shared: &Shared, remote: bool, address: Option<String>) -> io::Result<()> {
+/// One login connection, from its first message to its end (also the page's own Den Lite: web.rs).
+pub fn session(mut s: Stream, shared: &Shared, remote: bool, address: Option<String>) -> io::Result<()> {
     let first = read_initial_message(&mut s).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
     let challenge = match first {
         InitialMessage::Logon(c) => c,

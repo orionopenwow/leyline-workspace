@@ -71,7 +71,11 @@ pub mod stamps;
 pub mod testctl;
 pub mod tools;
 pub mod tourney;
+pub mod wire;
 pub mod world;
+/// Den Lite inside a web page (the phone's solo play, docs/PHONE-SOLO.md): no sockets, no threads.
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 
 use std::collections::HashMap;
 use std::io;
@@ -410,6 +414,34 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     }
     let _ = std::fs::create_dir_all(&cfg.den_dir);
     let _ = std::fs::remove_file(cfg.den_dir.join(DIRECT_FILE));
+    let shared = build_shared(cfg, la.port(), wa, remote_addrs.map(|r| r.1));
+    let s = shared.clone();
+    std::thread::spawn(move || login::serve(login, s, false));
+    let s = shared.clone();
+    std::thread::spawn(move || world::serve(world, s, false));
+    if let Some((rl, rw)) = remote {
+        let s = shared.clone();
+        std::thread::spawn(move || login::serve(rl, s, true));
+        let s = shared.clone();
+        std::thread::spawn(move || world::serve(rw, s, true));
+    }
+    if let Some(ip) = shared.cfg.friends_lan {
+        let ports = shared.cfg.friends_lan_ports;
+        let _ = open_direct(&shared, ip, ports);
+    }
+    let s = shared.clone();
+    std::thread::spawn(move || world::companion_ticker(s));
+    let s = shared.clone();
+    std::thread::spawn(move || world::dojo_ticker(s));
+    // the host's Friends list and asks, kept friends, the tournament's calls (hosting.rs, tourney.rs)
+    let s = shared.clone();
+    std::thread::spawn(move || hosting::run(s));
+    Ok(Running { login: la, world: wa, remote: remote_addrs, shared })
+}
+
+/// Everything one Den Lite shares between its sessions, opened from the Dens folder (the Den's autosave, the class,
+/// the looks, the companion): the PC's [`start`] and the page's web.rs alike. `world_addr` is the realm list's address.
+pub(crate) fn build_shared(cfg: Config, login_port: u16, world_addr: SocketAddr, remote_world: Option<SocketAddr>) -> Arc<Shared> {
     den::set_local_stamps(&cfg.den_dir);
     let mut d = den::Den::new(cfg.spot);
     if let Some(Err(e)) = d.reload_ground(&cfg.den_dir) {
@@ -433,7 +465,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     let pick = classes::Pick::load(&cfg.den_dir);
     let looks = gear::Gear::load(&cfg.den_dir);
     let events = events::Events::new(&cfg.den_dir);
-    events.note("start", "", &format!("{}{}", la.port(), if cfg.test_control { " test" } else { "" }));
+    events.note("start", "", &format!("{}{}", login_port, if cfg.test_control { " test" } else { "" }));
     events.note("models", "", &known.to_string());
     events.note("my_models", "", &mine.to_string());
     let shared = Arc::new(Shared {
@@ -446,8 +478,8 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         sessions: Mutex::new(HashMap::new()),
         players: Mutex::new(Vec::new()),
         guests_build: std::sync::atomic::AtomicBool::new(false),
-        remote_world: Mutex::new(remote_addrs.map(|r| r.1)),
-        world: Mutex::new(wa),
+        remote_world: Mutex::new(remote_world),
+        world: Mutex::new(world_addr),
         opened: Mutex::new(std::collections::HashSet::new()),
         notices: Mutex::new(notice::Notices::default()),
         last_cheer: Mutex::new(0),
@@ -467,28 +499,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         den_map: std::sync::atomic::AtomicU32::new(den_map),
     });
     note_panics(&shared);
-    let s = shared.clone();
-    std::thread::spawn(move || login::serve(login, s, false));
-    let s = shared.clone();
-    std::thread::spawn(move || world::serve(world, s, false));
-    if let Some((rl, rw)) = remote {
-        let s = shared.clone();
-        std::thread::spawn(move || login::serve(rl, s, true));
-        let s = shared.clone();
-        std::thread::spawn(move || world::serve(rw, s, true));
-    }
-    if let Some(ip) = shared.cfg.friends_lan {
-        let ports = shared.cfg.friends_lan_ports;
-        let _ = open_direct(&shared, ip, ports);
-    }
-    let s = shared.clone();
-    std::thread::spawn(move || world::companion_ticker(s));
-    let s = shared.clone();
-    std::thread::spawn(move || world::dojo_ticker(s));
-    // the host's Friends list and asks, kept friends, the tournament's calls (hosting.rs, tourney.rs)
-    let s = shared.clone();
-    std::thread::spawn(move || hosting::run(s));
-    Ok(Running { login: la, world: wa, remote: remote_addrs, shared })
+    shared
 }
 
 #[cfg(test)]

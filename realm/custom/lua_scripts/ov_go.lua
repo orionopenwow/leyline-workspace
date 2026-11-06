@@ -21,6 +21,9 @@
 --   bf:<boss>:<normal|heroic>:<bots|group|group-only>   Boss fights (mod-leyline-bossfights, docs/BOSS-FIGHTS.md):
 --                                                       .bossfight join <boss> <difficulty> <mode>; level 80.
 --   arena:1v1                                           the 1v1 arena queue (mod-1v1-arena): .q1v1 unrated; level 80.
+-- A bf: go is tried only while the boss fight module is running: it refreshes characters.leyline_bossfight_live
+-- every minute (mod-leyline-bossfights). On a realm image without it the player is told so in plain words, the go is
+-- forgotten and nobody is moved (owner 5 Nov: a Fight now must never just drop someone in the normal world).
 -- Only places in PLACES below can be reached: the table is generated from stream/modes_data.py (map ids,
 -- entrances, levels and where each number came from are documented there). A place with no entrance in that
 -- file is looked up in the world database's areatrigger_teleport by its map.
@@ -177,6 +180,21 @@ local BOSSFIGHTS = { ["frozen-throne"] = "The Frozen Throne" }
 local BF_DIFF = { normal = true, heroic = true }
 local BF_MODE = { bots = true, group = true, ["group-only"] = true }
 local MODE_MIN = 80
+local BF_LIVE_SQL = "SELECT beat FROM leyline_bossfight_live WHERE id = 1 AND beat > UNIX_TIMESTAMP() - 300"
+local BF_NOT_LIVE = "Boss fights aren't open on this realm yet: the realm update that adds them isn't live. "
+    .. "Nothing was started and you stay where you are."
+
+if CharDBExecute then
+    pcall(CharDBExecute, "CREATE TABLE IF NOT EXISTS leyline_bossfight_live (id TINYINT UNSIGNED NOT NULL PRIMARY KEY, "
+        .. "version INT UNSIGNED NOT NULL DEFAULT 0, beat INT UNSIGNED NOT NULL DEFAULT 0)")
+end
+
+-- Is mod-leyline-bossfights running? (its heartbeat row is under 5 minutes old). Without CharDBQuery: can't tell, yes.
+local function bossfightsLive()
+    if not CharDBQuery then return true end
+    local ok, q = pcall(CharDBQuery, BF_LIVE_SQL)
+    return ok and q ~= nil
+end
 
 -- { kind = "bossfight"|"arena", name, cmd, min } for a mode kind, else nil.
 local function modeGo(go)
@@ -261,6 +279,11 @@ local function act(player, why)
     local lvl = player:GetLevel()
     local mg = modeGo(g.go)
     if mg then
+        if mg.kind == "bossfight" and not bossfightsLive() then
+            forget(account)
+            say(player, BF_NOT_LIVE)
+            return
+        end
         if lvl < mg.min then
             if why ~= "level" then
                 say(player, string.format("%s needs level %d. Reach it (new characters: |cffffff00.boost|r) or log in a "
@@ -505,4 +528,4 @@ RegisterPlayerEvent(30, onFirstLogin)  -- PLAYER_EVENT_ON_FIRST_LOGIN
 RegisterPlayerEvent(42, onCommand)     -- PLAYER_EVENT_ON_COMMAND
 
 -- for tests (stream/tests/test_ov_go.lua)
-OV_GO_TEST = { PLACES = PLACES, modeGo = modeGo, pending = pending, act = act, validGo = validGo, TTL = TTL, HUB = HUB, HUB_ORDER = HUB_ORDER }
+OV_GO_TEST = { bossfightsLive = bossfightsLive, PLACES = PLACES, modeGo = modeGo, pending = pending, act = act, validGo = validGo, TTL = TTL, HUB = HUB, HUB_ORDER = HUB_ORDER }

@@ -53,7 +53,7 @@ local MODES = {
     ["coin-dash"] = { title = "Coin Dash", mod = "wumodes", solo = { "solo", "coindash" }, party = { "host", "coindash" } },
     ["community"] = { title = "Community modes", open = true },
     -- cmd: a command the character runs (Player:RunCommand); the module behind it answers in chat
-    ["frozen-throne"] = { title = "The Frozen Throne", cmd = "bossfight join frozen-throne normal bots" },
+    ["frozen-throne"] = { title = "The Frozen Throne", cmd = "bossfight join frozen-throne normal bots", bossfight = true },
     ["arena-queue"] = { title = "The 1v1 arena queue", cmd = "q1v1 unrated" },
 }
 
@@ -136,6 +136,15 @@ local function start(player, id)
         return false
     end
     if m.cmd then
+        -- mod-leyline-bossfights' heartbeat (as ov_go.lua): without the module, say so instead of starting nothing
+        if m.bossfight and CharDBQuery then
+            local ok, q = pcall(CharDBQuery, "SELECT beat FROM leyline_bossfight_live WHERE id = 1 AND beat > UNIX_TIMESTAMP() - 300")
+            if not (ok and q) then
+                say(player, "Boss fights aren't open on this realm yet: the realm update that adds them isn't live. "
+                    .. "Nothing was started and you stay where you are.")
+                return false
+            end
+        end
         if not player.RunCommand then
             say(player, m.title .. " can't be started from here on this realm yet.")
             return false

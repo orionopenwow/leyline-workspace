@@ -657,8 +657,10 @@ namespace
             return "not while dead";
         if (p->InBattleground() || p->InArena() || p->InBattlegroundQueue())
             return "not from a battleground, an arena or their queue";
-        if (p->GetMap() && (p->GetMap()->IsDungeon() || p->GetMap()->IsBattlegroundOrArena()) && !LeylineBFHeroes::InWaitingRoom(p))
-            return "not from inside an instance";   // a hero waits on the platform: it starts from there
+        // a hero waits on the platform in an instance of its own (no run's): it starts from there, queued or not
+        bool heroWaiting = LeylineBFHeroes::IsHeroPlayer(p) && FindBossByMap(p->GetMapId()) && !g_instanceRun.count(p->GetInstanceId());
+        if (p->GetMap() && (p->GetMap()->IsDungeon() || p->GetMap()->IsBattlegroundOrArena()) && !heroWaiting)
+            return "not from inside an instance";
         return "";
     }
 
@@ -1727,7 +1729,7 @@ namespace LeylineBFCore
 {
     std::string Join(Player* p, JoinArgs const& a) { return p ? JoinCore(p, a) : std::string(); }
 
-    bool InRun(ObjectGuid guid) { return RunOf(guid) != nullptr || !LobbyKeyOf(guid).empty(); }
+    bool InRun(ObjectGuid guid) { return RunOf(guid) != nullptr; }
 
     bool Fighting(ObjectGuid guid)
     {

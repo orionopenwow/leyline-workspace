@@ -20,7 +20,7 @@ namespace LeylineBFCore
     // What ".bossfight join" does for this player (start, queue, or try again). Returns the line to show when it
     // didn't go ahead ("" when it did: the module's own lines say what happens next).
     std::string Join(Player* p, LeylineBF::JoinArgs const& a);
-    bool InRun(ObjectGuid guid);
+    bool InRun(ObjectGuid guid);               // in a run (a lobby doesn't count)
     bool Fighting(ObjectGuid guid);            // in a run whose boss is engaged
     bool RunAllHeroes(ObjectGuid guid);        // in a run whose real players are all heroes
     bool InstanceUsed(std::uint32_t instanceId);  // an instance a run already used (a hero needs a fresh one)

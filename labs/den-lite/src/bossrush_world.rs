@@ -9,6 +9,7 @@
 
 use super::*;
 use crate::bossrush::{self as br, Ev, Live, State};
+use crate::combat;
 
 /// Companions' entries (names Den Lite answers; never a real creature's).
 const MEMBER_ENTRY: u32 = 905_000;

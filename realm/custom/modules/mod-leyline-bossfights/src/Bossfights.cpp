@@ -825,8 +825,8 @@ namespace
         if (ev.type == EV_STATE)
         {
             if (ev.a == run.boss->bossData)
-                kind = ev.b == IN_PROGRESS ? K_ENGAGE : ev.b == FAIL ? K_WIPE : ev.b == DONE ? K_DONE : K_NONE;
-            else if (ev.c == DONE && ev.b != DONE && IsPrereq(*run.boss, ev.a))
+                kind = ev.b == uint32(IN_PROGRESS) ? K_ENGAGE : ev.b == uint32(FAIL) ? K_WIPE : ev.b == uint32(DONE) ? K_DONE : K_NONE;
+            else if (ev.c == uint32(DONE) && ev.b != uint32(DONE) && IsPrereq(*run.boss, ev.a))
                 kind = K_REASSERT;   // a boss's AI reset it (its creature loaded)
         }
         else if (ev.type == EV_SPELL && run.boss->endSpell && ev.a == run.boss->endSpell && ev.b == run.boss->bossEntry)

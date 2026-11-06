@@ -1627,10 +1627,10 @@ ART_TYPES = {
     # the round Leyline mark, split so the swirl turns while the crystal stays upright (SPIN_CSS, the hub)
     "leyline-swirl-256.webp": "image/webp", "leyline-crystal-256.webp": "image/webp",
     "leyline-swirl-128.png": "image/png", "leyline-crystal-128.png": "image/png",
-    "leyline-swirl-512.png": "image/png", "leyline-crystal-512.png": "image/png", "leyline-mark-512.png": "image/png", "leyline-favicon-32.png": "image/png", "leyline-favicon-180.png": "image/png",
+    "leyline-swirl-512.png": "image/png", "leyline-swirl-512.webp": "image/webp", "leyline-crystal-512.png": "image/png", "leyline-mark-512.png": "image/png", "leyline-favicon-32.png": "image/png", "leyline-favicon-180.png": "image/png",
     # the launcher's own pages for the hub's feature sections (tools/art/leyline-ui-shots.cjs: sample data, no game art)
     "leyline-ui-home.webp": "image/webp", "leyline-ui-realms.webp": "image/webp", "leyline-ui-modes.webp": "image/webp",
-    "leyline-ui-workshop.webp": "image/webp", "leyline-ui-clients.webp": "image/webp", "leyline-ui-clients-close.webp": "image/webp", "leyline-ui-launcher.webp": "image/webp", "leyline-ui-hosting.webp": "image/webp",
+    "leyline-ui-workshop.webp": "image/webp", "leyline-ui-clients.webp": "image/webp", "leyline-ui-clients-1280.webp": "image/webp", "leyline-ui-clients-close.webp": "image/webp", "leyline-ui-launcher.webp": "image/webp", "leyline-ui-hosting.webp": "image/webp",
 }
 ART_MAX_AGE = 7 * 86400
 # Screenshots of the running game (rendered from the game's own files): the killswitch takes them off too

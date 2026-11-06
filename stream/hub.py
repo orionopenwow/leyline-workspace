@@ -2300,7 +2300,10 @@ class Hub:
             '<p class="hb-start"><a href="/wrath/start">New here? Start here ›</a></p>'
             # the launcher itself, right under the line (owner 1 Nov 04:50: wider, with the client list open showing every
             # client; tools/art/leyline-ui-shots: the launcher's own UI with sample folders, no game art)
+            # phones take the 1280 px copy (59 KB, not 187 KB: the phone sim's throttled front page, 6 Nov)
             '<figure class="hb-hero-shot"><img src="/wrath/art/leyline-ui-clients.webp" width="1600" height="900" '
+            'srcset="/wrath/art/leyline-ui-clients-1280.webp 1280w, /wrath/art/leyline-ui-clients.webp 3200w" '
+            'sizes="(max-width:700px) 100vw, 1040px" '
             'alt="The Leyline launcher with its game client list open: five game clients found on this PC, each with its version, '
             'with the featured mode on the home banner, and the realm and PLAY button below." decoding="async" fetchpriority="high"></figure>'
             # no buttons under the line (owner 2026-10-30): Download and Play are in the side menu
@@ -3589,6 +3592,8 @@ transform:translate(-50%,-50%);border-radius:50%;
 background:radial-gradient(closest-side,rgba(91,141,239,.34),rgba(139,108,240,.15) 55%,transparent 100%)}
 .hb-hero-mark{--ly-spin-size:clamp(220px,min(34vw,42vh),400px)!important;--ly-spin-turn:48s!important}
 .hb-hero-mark::before{background-image:url(/wrath/art/leyline-swirl-512.png)}
+/* the same swirl as a WebP where the browser takes one (6 Nov, phones: 67 KB, not 160 KB) */
+.hb-hero-mark::before{background-image:image-set(url(/wrath/art/leyline-swirl-512.webp) type("image/webp"),url(/wrath/art/leyline-swirl-512.png) type("image/png"))}
 .hb-hero-mark::after{background-image:url(/wrath/art/leyline-crystal-512.png);filter:drop-shadow(0 8px 10px rgba(0,0,0,.6)) drop-shadow(0 2px 3px rgba(0,0,0,.55))}
 .hb-hero-mark::before{filter:drop-shadow(0 12px 16px rgba(0,0,0,.6)) drop-shadow(0 3px 4px rgba(0,0,0,.5))}
 .hb-hero h1{margin:0 0 8px;font-size:clamp(22px,3vw,32px);line-height:1.1;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--lk-text-2)}

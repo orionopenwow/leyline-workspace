@@ -270,9 +270,8 @@ impl Model {
             return None;
         }
         let t = (self.floor - e[2]) / d[2];
-        // the ground is searched in half-yard steps up to the reach (and the step that crosses it)
-        let last = (reach / GROUND_STEP).floor() * GROUND_STEP + GROUND_STEP;
-        (t <= last.max(reach)).then(|| {
+        // the ground is met within the reach along the ray (the editor searches it in half-yard steps up to there)
+        (t <= reach).then(|| {
             let p = add(e, d, t);
             [p[0], p[1]]
         })

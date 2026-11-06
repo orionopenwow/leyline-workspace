@@ -1,0 +1,24 @@
+# The video's card (DEN-EDITOR-PARITY f17-f24): a card picked, its copy glides under the cursor, a click puts it down
+# selected, and the next card starts turned as the last one placed.
+mode build
+card chair 0 -0.3
+hover 0.05 -0.28
+hover 0.10 -0.25
+hover 0.15 -0.22
+hover 0.20 -0.20
+hover 0.25 -0.18
+hover 0.30 -0.15
+hover 0.30 -0.10
+hover 0.25 -0.05
+turn 15
+hover 0.20 0.00
+commit
+expect props 1
+expect nothing
+card lantern
+hover 0 1        # over the horizon first: shown 5 yards ahead
+hover -0.2 -0.2
+hover -0.3 -0.25
+commit
+expect props 2
+expect prop last 0.28 3.45 0 15 0.1   # turned as the last one placed

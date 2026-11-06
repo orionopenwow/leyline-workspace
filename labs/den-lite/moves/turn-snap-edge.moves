@@ -1,0 +1,25 @@
+# Turning (Q / E, the wheel), the grid, and the Den's edge: past it the copy waits a grid step inside.
+mode build
+grid 1
+card lantern 0.1 -0.2
+turn 15
+turn 15
+turn -45
+hover 0.2 -0.1
+hover 0.3 0.0
+zoom 40
+hover 0.0 0.6       # far past the edge
+hover 0.5 0.6
+hover -0.5 0.6
+commit
+expect props 1
+grid 0
+zoom 12
+card chair -0.2 -0.3
+turn 90
+commit
+at 5 5 face 135
+card chair 0.1 -0.2
+hover 0.12 -0.18
+commit
+expect props 3

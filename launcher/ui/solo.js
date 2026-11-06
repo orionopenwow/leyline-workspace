@@ -117,7 +117,7 @@
   function paintNotes() {
     for (const n of [...notes]) {
       if (!n.isConnected) { notes.delete(n); continue; }
-      n.textContent = noteText(n.__solo);
+      n.textContent = (n.__lead || "") + noteText(n.__solo);
       const b = n.__soloBtn;
       if (b && n.__solo.kind === "realm" && !n.__solo.coming) b.title = realmTitle(n.__solo);
     }
@@ -142,21 +142,24 @@
     if (t.kind === "realm") docker();
     return b;
   }
-  function note(t, b) {
+  // `lead`: words before the line, where the card's own lines could be mistaken for it (a realm row: "Play solo · ",
+  // so "Needs Docker" reads as the solo button's, not the realm's; 5 Nov polish)
+  function note(t, b, lead) {
     if (!t) return null;
     const p = mk("p", "solo-note", "");
     p.__solo = t;
     p.__soloBtn = b || null;
-    p.textContent = noteText(t);
+    p.__lead = lead || "";
+    p.textContent = p.__lead + noteText(t);
     notes.add(p);
     return p;
   }
-  function attach(acts, body, t) {
+  function attach(acts, body, t, lead) {
     if (!t || !acts) return null;
     const b = button(t);
     const online = acts.firstElementChild;   // the card's online button stays first: Play solo right beside it
     if (online) online.after(b); else acts.append(b);
-    const n = note(t, b);
+    const n = note(t, b, lead);
     if (body) body.append(n);
     return { button: b, note: n };
   }

@@ -76,7 +76,14 @@
       // a key file from before the last Log out isn't used by itself, but it is offered: "Log in as …" (one click)
       const was = known ? known.path + known.mtime_ms : "";
       known = f && f.path && f.mtime_ms <= outAt() ? { path: f.path, name: f.name || "", mtime_ms: f.mtime_ms } : null;
-      if ((known ? known.path + known.mtime_ms : "") !== was && open && phase === "in") render();
+      if ((known ? known.path + known.mtime_ms : "") !== was && open && phase === "in") {
+        // the file can be found after the dialog put the focus on its first way: "Log in as …" takes it, so Enter
+        // logs in (it was left on nothing about one time in five), unless the player is typing in a field
+        const a = document.activeElement;
+        const typing = !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+        render();
+        if (known && !typing) { const g = $("gate-again"); if (g) g.focus(); }
+      }
       if (!f || !f.path || !(f.mtime_ms > outAt()) || !(f.mtime_ms > triedAt())) return false;
       try { localStorage.setItem("leyline.keyFileTried", String(f.mtime_ms)); } catch (_) { /* fine */ }
       here = open;
@@ -270,15 +277,16 @@
     // the website down: its own box says it, so the error line isn't said twice
     if (err && !isDown) { const p = el("p", "sf-err", err); p.id = "gate-err"; p.setAttribute("role", "alert"); pane.append(p); }
     // the fields point at the line that says what went wrong, so a screen reader reads it with them (review 4 Nov)
+    // Set on the pane as it is built (not a tick later), so a field focused at once is read with its line.
     const why2 = err && !isDown ? "gate-err" : isDown ? "gate-down" : "";
-    setTimeout(() => {
+    const markFields = () => {
       for (const id of ["gate-pwname", "gate-pw", "gate-key"]) {
-        const x = $(id);
+        const x = pane.querySelector("#" + id);
         if (!x) continue;
         if (why2) x.setAttribute("aria-describedby", why2); else x.removeAttribute("aria-describedby");
         if (err && !isDown) x.setAttribute("aria-invalid", "true"); else x.removeAttribute("aria-invalid");
       }
-    }, 0);
+    };
     if (isDown) {
       const d = el("div", "gate-down"); d.id = "gate-down";
       d.append(el("p", "", "The Leyline website isn't answering, so logging in can't work right now. Everything else in the launcher does."));
@@ -290,6 +298,7 @@
       a.append(again, sk); d.append(a); pane.append(d);
     }
     loginPane(pane);
+    markFields();
   }
 
   function loginPane(pane) {

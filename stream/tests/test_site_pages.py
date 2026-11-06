@@ -95,8 +95,8 @@ check("/wrath/modes: one card per way to play (flag off: six)", modes_pg.count('
 for want in ("Wrath Unleashed", "Community realms", "Your Den", "Azeroth Survivors", "Minigolf and the Dojo", "The seeded realm"):
     check(f"shelf: {want}", f"<h3>{want}</h3>" in modes_pg)
 check("shelf: each card has How it works", modes_pg.count(">How it works</a>") == 6)
-check("shelf: the seeded realm is marked Coming, with no Play", re.search(r'id="mode-seeded-realm".*?Coming.*?</article>', modes_pg, re.S)
-      and not re.search(r'id="mode-seeded-realm"(?:(?!</article>).)*class="lp-btn" href', modes_pg, re.S))
+check("shelf: the seeded realm is marked Coming, with no Play", re.search(r'id="way-seeded-realm".*?Coming.*?</article>', modes_pg, re.S)
+      and not re.search(r'id="way-seeded-realm"(?:(?!</article>).)*class="lp-btn" href', modes_pg, re.S))
 check("shelf: Play now on the official realm goes to /wrath", 'href="/wrath">Play now</a>' in modes_pg)
 
 # ---------------------------------------------------------------- the flag: dark by default

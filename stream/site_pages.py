@@ -479,7 +479,8 @@ def _mode_card(m: dict) -> str:
     acts = (f'<a class="lp-btn" href="{_e(play[0])}"{_rel(play[0])}>{_e(play[1])}</a>' if play else "")
     acts += f'<a class="lp-btn ghost" href="{MODES_PATH}/{_e(m["id"])}">How it works</a>'
     tag = '<span class="lp-tag soon">Coming</span>' if m.get("coming") else f'<span class="lp-tag">{_e(m["kick"])}</span>'
-    return (f'<article class="lp-mode" id="mode-{_e(m["id"])}">'
+    # way-<id>: /wrath/modes also has the Games cards (playmodes.py, id="mode-<id>"); one id per element on the page
+    return (f'<article class="lp-mode" id="way-{_e(m["id"])}">'
             + slot(m["pic"], m["alt"], m["title"], m.get("w", 1280), m.get("h", 720))
             + f'{tag}<h3>{_e(m["title"])}</h3><p>{_e(m["line"])}</p><p class="lp-acts">{acts}</p></article>')
 

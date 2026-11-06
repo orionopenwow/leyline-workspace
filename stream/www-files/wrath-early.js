@@ -701,7 +701,9 @@
                              from: String(url).split('?')[0], to: String(to).split('?')[0] });
           if (api.sockets.length > 20) api.sockets.shift();
         } catch (e) { /* the log is optional */ }
-        return protocols === undefined ? new Orig(to) : new Orig(to, protocols);
+        var sock = protocols === undefined ? new Orig(to) : new Orig(to, protocols);
+        try { watchDead(win, sock, to, env); } catch (e) { /* the watch is optional */ }
+        return sock;
       };
       Hop.prototype = Orig.prototype;
       ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) { Hop[k] = Orig[k]; });
@@ -710,6 +712,57 @@
     }
     return { id: env.hop, name: String(env.hop_name || ''), base: base, login: !!login || home || !!pending || !!pre, home: home,
              sso: sso, ssoPending: pending, ssoOffer: declined };
+  }
+
+  /** The host's realm not answering (player report 5 Nov: "stuck in a cycle of Connecting and Connected"). The relay
+   * opens the browser's socket at once ("Connected") and then asks the host's PC; when the realm there isn't running
+   * the host's side gives up, the relay closes with 4502, and the game logs in again, round after round. After two
+   * such closes (or three login sockets in a row that closed without a word, for an older relay) the page says so in
+   * plain words, once. A login socket that hears anything resets the count. */
+  var dead = { n: 0, code4502: 0, shown: false };
+  function watchDead(win, sock, to, env) {
+    if (!/\/auth$/.test(String(to))) return;
+    var heard = false;
+    sock.addEventListener('message', function () { heard = true; dead.n = 0; dead.code4502 = 0; });
+    sock.addEventListener('close', function (ev) {
+      if (heard) return;
+      dead.n += 1;
+      if (ev && ev.code === 4502) dead.code4502 += 1;
+      api.dead = { n: dead.n, code4502: dead.code4502, shown: dead.shown };
+      if (!dead.shown && (dead.code4502 >= 2 || dead.n >= 3)) { dead.shown = true; api.dead.shown = true; deadNote(win, env); }
+    });
+  }
+
+  function deadNote(win, env) {
+    var d = win.document;
+    if (!d || !d.body) return;
+    var box = d.createElement('div');
+    box.id = 'wu-hop-dead';
+    box.setAttribute('role', 'alert');
+    box.style.cssText = 'position:fixed;left:50%;top:84px;transform:translateX(-50%);z-index:40;max-width:min(92vw,520px);'
+      + 'padding:12px 16px;border-radius:10px;font:14px/1.45 system-ui,sans-serif;color:#e8eef7;'
+      + 'background:linear-gradient(#141c2e,#0a0f1a);border:1px solid rgba(201,162,39,.6);box-shadow:0 8px 30px rgba(0,0,0,.5)';
+    var name = String((env && env.hop_name) || 'This realm');
+    var h = d.createElement('b');
+    h.textContent = name + " isn't answering";
+    var p = d.createElement('div');
+    p.textContent = "We reach the host's computer, but the realm on it isn't answering. If they just started it, the "
+      + 'first start can take several minutes. Ask them to check it is running, then try again.';
+    var row = d.createElement('div');
+    row.style.cssText = 'margin-top:10px;display:flex;gap:8px;justify-content:flex-end';
+    var again = d.createElement('button');
+    again.type = 'button';
+    again.textContent = 'Try again';
+    again.addEventListener('click', function () { win.location.reload(); });
+    var close = d.createElement('button');
+    close.type = 'button';
+    close.textContent = 'Close';
+    close.addEventListener('click', function () { box.remove(); });
+    [again, close].forEach(function (b) { b.style.cssText = 'font:inherit;padding:6px 12px;border-radius:7px;cursor:pointer;'
+      + 'border:1px solid rgba(201,162,39,.6);background:#1b2540;color:#e8eef7'; });
+    row.append(close, again);
+    box.append(h, p, row);
+    d.body.appendChild(box);
   }
 
   /** For live tests: the hop (no secrets), the sockets the client opened and where they went, the hop watcher. */

@@ -6,6 +6,7 @@
 //! See README.md for what works, what is verified only by the test client, and what multi-player would need.
 
 pub mod accdata;
+pub mod bossrush; // Boss Rush, the light version: the encounter format and the fight (docs/BOSS-RUSH.md)
 pub mod buildtools;
 pub mod cheers;
 pub mod creatures;
@@ -274,6 +275,8 @@ pub struct Shared {
     pub den_map: std::sync::atomic::AtomicU32,
     /// The tale under way, Jaina's draft, Sky Island's edge (taleplay.rs).
     pub tales: Mutex<taleplay::Tales>,
+    /// Boss Rush's light version: the fight under way and the launcher's last ask (bossrush.rs).
+    pub rush: Mutex<bossrush::Rush>,
 }
 
 impl Shared {
@@ -511,6 +514,7 @@ pub(crate) fn build_shared(cfg: Config, login_port: u16, world_addr: SocketAddr,
         trips: Mutex::new(HashMap::new()),
         den_map: std::sync::atomic::AtomicU32::new(den_map),
         tales: Mutex::new(taleplay::Tales::default()),
+        rush: Mutex::new(bossrush::Rush::default()),
     });
     note_panics(&shared);
     shared

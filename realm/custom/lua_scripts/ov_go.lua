@@ -90,7 +90,7 @@ local PLACES = {
     ["b:zulaman"] = { name = "Zul'Aman", what = "raid", map = 568, pos = nil, min = 70, raid = true, hint = "" },
     ["b:zulgurub"] = { name = "Zul'Gurub", what = "raid", map = 309, pos = nil, min = 60, raid = true, hint = "" },
     ["h:dalaran"] = { name = "Dalaran", what = "hangout", map = 571, pos = { 571, 5807.98, 588.487, 660.94, 1.66594 }, min = 1, raid = false, hint = "" },
-    ["h:duels"] = { name = "Duels in Dalaran", what = "hangout", map = 571, pos = { 571, 5813.84, 449.122, 658.752, 1.16086 }, min = 1, raid = false, hint = "Duel corner: target a player and type /duel. Either of you can say no. Health and cooldowns come back after." },
+    ["h:duels"] = { name = "Duels in Dalaran", what = "hangout", map = 571, pos = { 571, 5813.84, 449.122, 658.752, 1.16086 }, min = 1, raid = false, hint = "Duels work anywhere in Dalaran; the corner is where people meet. Target a player and type /duel. Either of you can say no. Health and cooldowns come back after." },
     ["h:goldshire-inn"] = { name = "The Goldshire Inn", what = "hangout", map = 0, pos = { 0, -9460.3, 18.9, 57, 3.98 }, min = 1, raid = false, hint = "" },
     ["q:258"] = { name = "Random dungeon: Azeroth", what = "queue", map = nil, pos = nil, min = 15, raid = false, hint = "" },
     ["q:259"] = { name = "Random dungeon: Outland", what = "queue", map = nil, pos = nil, min = 59, raid = false, hint = "" },
@@ -400,7 +400,7 @@ end
 local HUB_COOLDOWN = 10
 local HUB = {
     duels    = { label = "Duel corner", pos = PLACES["h:duels"].pos,
-                 tip = "The duel corner. Target a player and type /duel. Health and cooldowns come back after." },
+                 tip = "The duel corner (duels work anywhere in Dalaran). Target a player and type /duel. Health and cooldowns come back after." },
     arena    = { label = "1v1 arena", pos = { 571, 5818.2, 446.0, 658.752, 2.6 }, npc = 999991,
                  tip = "Talk to the Arena Battlemaster 1v1 (level 80), or type .q1v1 rated or .q1v1 unrated." },
     transmog = { label = "Transmog", pos = { 571, 5799.6, 628.6, 647.8, 5.6 }, npc = 190010,

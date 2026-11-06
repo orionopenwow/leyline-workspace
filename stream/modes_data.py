@@ -90,12 +90,13 @@ HANGOUTS = [
 ]
 
 # The duel corner: Krasus' Landing, the open flight platform on the city's edge (game_tele "KrasusLanding",
-# azerothcore-wotlk game_tele.sql id 1731). Duels work anywhere in the city; this is the one place we point at.
+# azerothcore-wotlk game_tele.sql id 1731). Duels work anywhere in the city (realm/custom/modules/mod-leyline-qol);
+# this is the one place we point at.
 # TODO(check in game): the spot stands clear of the flight master and his landing path.
 DUEL_CORNER = (571, 5813.84, 449.122, 658.752, 1.16086)
 DUEL = {"id": "duels", "name": "Duels in Dalaran", "pos": DUEL_CORNER, "min": 1, "tag": "Any level · 1 v 1",
-        "line": "The duel corner at Krasus' Landing. Health and cooldowns come back after every duel.",
-        "hint": "Duel corner: target a player and type /duel. Either of you can say no. Health and cooldowns come back after."}
+        "line": "The duel corner at Krasus' Landing; duels work anywhere in the city. Health and cooldowns come back after every duel.",
+        "hint": "Duels work anywhere in Dalaran; the corner is where people meet. Target a player and type /duel. Either of you can say no. Health and cooldowns come back after."}
 
 # ---------------------------------------------------------------------------------------------
 # 5-player dungeons (share kind "q", by slug) and the random queues (kind "q", by LFG id)

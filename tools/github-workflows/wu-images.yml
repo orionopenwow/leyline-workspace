@@ -164,6 +164,30 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # mod-playerbots builds its own database on the worldserver's first start from its SQL folder, which the stock
+      # runtime image doesn't carry: our own server mounts it (server/docker-compose.prod.yml modules-sql/), but a
+      # player hosting with the host kit has no source tree, so every hosted realm stopped with "Directory
+      # .../mod-playerbots/data/sql/playerbots/base/ not exist" (player report 5 Nov). Bake it into the image.
+      - name: the bots' database files inside the worldserver image
+        run: |
+          python3 - <<'PY'
+          import re, pathlib, sys
+          src = pathlib.Path("realm/custom/acore/modules/mod-playerbots/data/sql/playerbots/base")
+          if not src.is_dir():
+              print(f"::warning::{src} is missing; the bots' SQL is not baked in")
+              sys.exit(0)
+          df = pathlib.Path("realm/custom/acore/apps/docker/Dockerfile")
+          lines = df.read_text().splitlines(keepends=True)
+          at = [i for i, l in enumerate(lines) if re.match(r"(?i)^FROM\s+\S+\s+AS\s+worldserver\b", l)]
+          if len(at) != 1:
+              # never block the image for this: say so loudly and build as before (the host kit then still needs
+              # the folder mounted, as our own server does)
+              print("::warning::the Dockerfile's worldserver stage wasn't found exactly once; the bots' SQL is not baked in")
+              sys.exit(0)
+          lines.insert(at[0] + 1, "COPY modules/mod-playerbots/data/sql /azerothcore/modules/mod-playerbots/data/sql\n")
+          df.write_text("".join(lines))
+          print("worldserver stage: the bots' SQL copied in")
+          PY
       # One builder for all three: the compile stage is built once and reused by the next two targets.
       - name: wu-ac-wotlk-worldserver (the long one, 1-3 hours)
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6

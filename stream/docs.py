@@ -39,6 +39,7 @@ PAGES = (
     ("hosting", "Hosting"),
     ("host-a-realm", "Host a realm"),   # the launcher's Host page, start to finish (launcher/ui/hostflow.js, host/flow.rs)
     ("den-invite", "Invite a friend to your Den"),   # docs/DEN-INVITE.md, the same text (launcher host/denways.rs)
+    ("host-for-friends", "Host for friends"),   # Play with friends in the launcher: one invite, Ready for friends?, fixes (ui/hostfriends.js)
     ("always-on", "Keep your realm up 24/7"),
     ("join-network", "Bring your server"),   # an existing server joins with Hero Key sign-in (setup.py join-network)
     ("be-a-node", "Help carry the network"),   # community nodes (hosting/relay/wurelay/nodes.py)

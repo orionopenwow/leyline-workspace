@@ -29,6 +29,13 @@
   .pill { display:inline-block; font-size:.8rem; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--muted); margin-left:6px; vertical-align:middle; }
   ol { padding-left:20px; margin:8px 0 0; } li { margin:4px 0; }
   .small { font-size:.88rem; color:var(--muted); }
+  .steps { list-style:none; padding:0; margin:0; }
+  .steps li { display:flex; gap:8px; align-items:baseline; margin:6px 0; }
+  .steps li::before { content:"…"; display:inline-grid; place-items:center; flex:none; width:20px; height:20px; border-radius:50%; font-size:.8rem; font-weight:700; background:var(--line); color:var(--muted); }
+  .steps li.ok::before { content:"✓"; background:var(--ok); color:#fff; }
+  .steps li.bad::before { content:"✕"; background:var(--bad); color:#fff; }
+  .steps li.skip { opacity:.55; } .steps li.skip::before { content:"·"; }
+  .steps li span { color:var(--muted); font-size:.92rem; }
 </style>
 </head>
 <body>
@@ -40,6 +47,19 @@
     <h2>Have Leyline?</h2>
     <p class="small">One click: Leyline joins this realm with this link and starts your game. You can skip the steps below.</p>
     <div style="margin-top:10px"><button id="open-leyline" type="button">Open in Leyline</button></div>
+  </div>
+
+  <div class="card" id="steps-card">
+    <h2>What's happening</h2>
+    <ol class="steps" id="steps">
+      <li id="st-reach"><b>Reaching the host's realm</b> <span></span></li>
+      <li id="st-answer"><b>The host's realm answers</b> <span></span></li>
+      <li id="st-login"><b>Logging in</b> <span></span></li>
+    </ol>
+    <div id="fix" class="msg"></div>
+    <div id="den-login" hidden><p class="small">Your login is in this link, made for you by the host (<b>Open in Leyline</b> signs you in by itself). To type it yourself:</p>
+      <div class="line"><code id="den-login-text"></code></div></div>
+    <button id="retry" class="ghost" type="button" hidden>Try again</button>
   </div>
 
   <div class="card" id="state-card">
@@ -103,6 +123,8 @@
   // #<invite secret>, or the host's own link: #<invite secret>~<host key> (lets the host make the GM account)
   const frag = decodeURIComponent((location.hash || "").slice(1)).split("~");
   const invite = frag[0] || "", hostKey = frag[1] || "";
+  // a friend's Den link (launcher host/litenet.rs): #<secret>~~<account>.<password>, the login made for this friend
+  const denLogin = (frag[2] || "").match(/^([A-Z0-9]{3,16})\.([A-Z0-9]{8,16})(?:$|~)/) || null;
   const relay = (qs.get("relay") && /^https:\/\/[a-z0-9.-]+$/i.test(qs.get("relay"))) ? qs.get("relay")
               : (location.hostname.startsWith("relay.") ? location.origin : RELAY_DEFAULT);
   const $ = (id) => document.getElementById(id);
@@ -182,17 +204,81 @@
     $("client-note").innerHTML = `This realm needs ${c[0]}: use your own game files for it. Open ${c[1]} and make it this one line:`;
   }
 
+
+  // ---- What's happening (owner 5 Nov: the friend sees reaching the host, the host answering, logging in, and the
+  // one fix when it's stuck). explain(): the line and the fix for each way it can stop. probe(): the game's first login
+  // message (for LEYLINECHECK, an account no realm has) through the relay's WebSocket, the same way the browser game
+  // and the host's own "Ready for friends?" check go: any answer means the host's realm is answering; the relay
+  // closes with 4502 when the host's realm never answers. The relay doesn't count this as a wrong password.
+  const PROBE_ACCOUNT = "LEYLINECHECK";
+  function hello(name) {
+    const n = Array.from(name.toUpperCase(), (c) => c.charCodeAt(0));
+    return Uint8Array.from([0x00, 0x08, 30 + n.length, 0, 0x57, 0x6f, 0x57, 0, 3, 3, 5, 0x34, 0x30,
+      0x36, 0x38, 0x78, 0, 0x6e, 0x69, 0x57, 0, 0x53, 0x55, 0x6e, 0x65, 0, 0, 0, 0, 127, 0, 0, 1, n.length].concat(n));
+  }
+  // TODO(owner): the words
+  function explain(what, status, error) {
+    const e = String(error || "");
+    if (what === "relay") return { step: "reach", line: "The Leyline relay can't be reached from here.", fix: "Check your internet. A school, work or VPN network can block it: try another network, then Try again." };
+    if (what === "unknown") return { step: "reach", line: "This link isn't known to the relay.", fix: "Ask the host for a new link." };
+    if (what === "offline") return { step: "reach", line: "The host's realm isn't online right now.", fix: "Tell the host to open Leyline (their realm goes online with it) and keep their PC awake. This page checks again by itself." };
+    if (what === "knock") {
+      if (status === 403 && /not valid|new one/.test(e)) return { step: "reach", line: "This invite link doesn't work any more.", fix: "Links work for 24 hours, and stop when the host stops sharing or makes a new one. Ask the host for a new link." };
+      if (status === 429) return { step: "reach", line: "Too many tries from your address.", fix: "Wait a minute, then Try again." };
+      return { step: "reach", line: e || "The relay refused this link.", fix: "Ask the host for a new link." };
+    }
+    if (what === "silent") return { step: "answer", line: "The host's realm isn't answering (it may still be starting, be stopped, or their PC may be asleep).", fix: "Tell the host: open Leyline and press Invite a friend. It checks their side and says what to fix. Then Try again." };
+    if (what === "busy") return { step: "answer", line: e || "The relay is busy right now.", fix: "Try again in a few minutes." };
+    return { step: "reach", line: e || "Something went wrong.", fix: "Try again. Still stuck: ask the host for a new link." };
+  }
+  function probe(url, timeoutMs) {
+    return new Promise((resolve) => {
+      let ws, done = false;
+      const t0 = Date.now();
+      const end = (r) => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch (_) {} resolve(r); };
+      const timer = setTimeout(() => end({ ok: false, why: "silent" }), timeoutMs || 8000);
+      try { ws = new WebSocket(url); } catch (_) { return end({ ok: false, why: "relay" }); }
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => ws.send(hello(PROBE_ACCOUNT));
+      ws.onmessage = (ev) => { const b = new Uint8Array(ev.data || []); end(b.length && b[0] === 0 ? { ok: true, ms: Date.now() - t0 } : { ok: false, why: "silent" }); };
+      ws.onclose = (ev) => end({ ok: false, why: ev.code === 4502 ? "silent" : ev.code >= 4000 && ev.code !== 4502 ? "busy" : "silent", code: ev.code, reason: ev.reason });
+      ws.onerror = () => { /* onclose follows */ };
+    });
+  }
+  window.__wuExplain = explain; window.__wuHello = hello; // for tests
+  const step = (id, cls, text) => { const li = $("st-" + id); li.className = cls; li.querySelector("span").textContent = text || ""; };
+  function stuck(x) {
+    const order = ["reach", "answer", "login"];
+    const at = order.indexOf(x.step);
+    order.forEach((id, i) => { if (i > at) step(id, "skip", ""); });
+    step(x.step, "bad", x.line);
+    say($("fix"), x.fix, "bad");
+    $("retry").hidden = false;
+  }
+  let again = null, tries = 0;
+  $("retry").addEventListener("click", () => { clearTimeout(again); tries = 0; start(); });
   async function start() {
+    $("retry").hidden = true; say($("fix"), "");
+    $("steps-card").hidden = hop;   // in the browser game the game says what's happening
+    ["reach", "answer", "login"].forEach((id) => step(id, "", ""));
     if (!/^[a-z2-7]{16}$/.test(realmId)) { $("name").textContent = "That isn't an invite link"; say($("knock-msg"), "Ask the host for the link again.", "bad"); return; }
     let info;
-    try { info = await api("/api/realms/" + realmId); } catch (e) { say($("knock-msg"), "The relay can't be reached right now. Try again in a minute.", "bad"); return; }
-    if (info.status !== 200) { $("name").textContent = "Unknown realm"; say($("knock-msg"), "This realm isn't known to the relay. Ask the host for a new link.", "bad"); return; }
+    try { info = await api("/api/realms/" + realmId); } catch (e) { say($("knock-msg"), "The relay can't be reached right now. Try again in a minute.", "bad"); stuck(explain("relay")); return; }
+    if (info.status !== 200) { $("name").textContent = "Unknown realm"; say($("knock-msg"), "This realm isn't known to the relay. Ask the host for a new link.", "bad"); stuck(explain("unknown")); return; }
     $("name").innerHTML = ""; $("name").append(document.createTextNode(info.doc.name || "A realm"));
     const pill = document.createElement("span"); pill.className = "pill"; pill.textContent = info.doc.online ? (info.doc.visibility || "") : "offline"; $("name").append(pill);
-    if (!info.doc.online) { say($("knock-msg"), "The host's realm isn't running right now. Try again later.", "bad"); return; }
+    if (!info.doc.online) {
+      say($("knock-msg"), "The host's realm isn't running right now. Try again later.", "bad");
+      stuck(explain("offline"));
+      if (tries++ < 30) again = setTimeout(start, 20000);   // it comes online when the host opens Leyline
+      return;
+    }
     const k = await api("/api/realms/" + realmId + "/knock", invite ? { invite } : {});
-    if (k.status !== 200) { say($("knock-msg"), k.doc.error || "The relay refused this link.", "bad"); return; }
+    if (k.status !== 200) { say($("knock-msg"), k.doc.error || "The relay refused this link.", "bad"); stuck(explain("knock", k.status, k.doc.error)); return; }
     say($("knock-msg"), "Done: your internet connection may now reach this realm.", "ok");
+    step("reach", "ok", "Through the Leyline relay.");
+    // the host's realm answering, asked while the rest of the page fills in
+    const answer = hop ? null : (step("answer", "", "Asking…"), probe(relay.replace(/^http/, "ws") + "/r/" + realmId + "/ws/3724"));
     // Play in your browser: the site's browser game hops here (?go=r:<id>); a private realm's invite goes along in
     // the #fragment (never sent to a server) so the game's join step can make an account here too.
     const site = document.querySelector("main").getAttribute("data-site") || "";
@@ -209,6 +295,21 @@
     if (hop) { $("signin-card").hidden = false; $("sub").textContent = "Make an account on this realm, or sign in with one you have. Then you're in."; }
     if (k.doc.signup !== "off" && (k.doc.signup === "open" || invite)) $("account-card").hidden = false;
     if (hostKey) { $("account-card").hidden = false; $("host-note").hidden = false; }
+    let answering = true;
+    if (answer) {
+      const r = await answer;
+      if (r.ok) step("answer", "ok", `Yes (${r.ms} ms).`);
+      else { answering = false; stuck(explain(r.why, r.code, r.reason)); }
+    }
+    if (denLogin) {
+      $("den-login-text").textContent = "account " + denLogin[1] + "   password " + denLogin[2];
+      $("den-login").hidden = false;
+    }
+    if (!answering) { /* the login step waits for the host's realm */ }
+    else if (denLogin) {
+      step("login", "ok", "Your login is in this link.");
+    } else if (k.doc.signup === "off" && !hostKey) step("login", "", "The host makes accounts on this realm: ask them for yours.");
+    else step("login", "", "Make your account in step 2 below, or use the one you have.");
   }
 
   $("acct").addEventListener("submit", async (ev) => {

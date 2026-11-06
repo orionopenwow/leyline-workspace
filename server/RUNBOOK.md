@@ -323,9 +323,10 @@ passwords are not case-sensitive in this client.
 **Warden** is on (AzerothCore's default) because players use stock clients. The browser
 client from the PC setup has no Warden module, so it cannot use this realm.
 
-**mod-arac (all races, all classes)** needs a client patch (`Patch-A.MPQ`) on each player's
-PC. It is built from game data: link players to the module's own project page if you want
-them to have it, and do not host the MPQ on `play.example.com`.
+**mod-arac (more race/class pairs)** needs the create screen's tables on each player's PC.
+The Leyline launcher makes them before PLAY from the player's own game files
+(docs/RACE-CLASS-COMBOS.md); the browser client offers them through the page env. The
+module's `Patch-A.MPQ` is built from game data: never host it on `play.example.com`.
 
 **Bots on a public box.** `modules.env` comes from the PC with
 `AC_PLAYERBOTS_MIN_RANDOM_BOTS=60` / `AC_PLAYERBOTS_MAX_RANDOM_BOTS=60`

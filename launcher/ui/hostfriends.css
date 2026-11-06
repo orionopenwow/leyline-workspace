@@ -1,0 +1,65 @@
+/* Play with friends (hostfriends.js): the one window, the Ready-for-friends checklist, the friend's steps, the Host page's
+   banner. In the theme's tokens (themes/themes.css). */
+.wf { position: fixed; inset: 0; z-index: 65; display: grid; place-items: center; background: rgba(0, 0, 0, .55); padding: 16px; }
+.wf[hidden] { display: none; }
+.wf-card { width: min(680px, 100%); max-height: calc(100vh - 32px); overflow: auto; display: grid; gap: 12px; padding: 18px 20px;
+  border-radius: var(--t-radius, 10px); background: var(--t-panel, var(--t-surface));
+  border: var(--t-border-w, 1px) solid var(--t-panel-border, var(--t-border)); color: var(--t-text); }
+.wf-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.wf-top h2 { margin: 0; font: 700 19px var(--t-font); }
+.wf-lead { margin: 0; color: var(--t-muted); font-size: 13.5px; }
+.wf-body { display: grid; gap: 14px; }
+.wf-sec { display: grid; gap: 8px; }
+.wf-sec h3 { margin: 0; font-size: 14.5px; }
+.wf-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wf-row input { flex: 1; min-width: 200px; }
+.wf-hint { font-size: 12.5px; color: var(--t-muted); margin: 0; }
+.wf-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; }
+.wf-pick { display: grid; gap: 3px; text-align: left; padding: 10px 12px; border-radius: 10px; cursor: pointer; font: inherit;
+  background: transparent; color: var(--t-text); border: 1px solid color-mix(in srgb, var(--t-muted) 30%, transparent); }
+.wf-pick.on { border-color: var(--t-accent); box-shadow: inset 0 0 0 1px var(--t-accent); }
+.wf-pick.off { opacity: .6; }
+.wf-pick-line { font-size: 13px; }
+.wf-pick-needs { font-size: 12px; color: var(--t-muted); }
+.btn.wf-go { justify-self: start; }
+
+/* the checklist */
+.wf-ready { display: grid; gap: 8px; }
+.wf-ready-head { margin: 0; font-weight: 600; }
+.wf-ready[data-state="ok"] .wf-ready-head { color: var(--ok, var(--t-ok)); }
+.wf-ready[data-state="bad"] .wf-ready-head { color: var(--bad, var(--t-bad)); }
+.wf-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.wf-check { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--t-muted) 20%, transparent); }
+.wf-check-t { display: grid; gap: 2px; }
+.wf-check-line { font-size: 12.5px; color: var(--t-muted); }
+.wf-ic { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 12px; font-weight: 700;
+  background: color-mix(in srgb, var(--t-muted) 25%, transparent); }
+.wf-check.ok .wf-ic, .wf-step.ok::before { background: var(--ok, var(--t-ok)); color: #fff; }
+.wf-check.bad { border-color: color-mix(in srgb, var(--t-bad) 55%, transparent); }
+.wf-check.bad .wf-ic, .wf-step.bad::before { background: var(--bad, var(--t-bad)); color: #fff; }
+.wf-check.warn .wf-ic, .wf-step.warn::before { background: var(--warn, var(--t-warn)); color: #111; }
+.wf-check.wait .wf-ic { animation: wf-pulse 1.2s ease-in-out infinite; }
+.wf-fix { margin: 2px 0 0; font-size: 12.5px; }
+@keyframes wf-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .wf-check.wait .wf-ic { animation: none; } }
+.wf-linkbox { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--t-muted) 18%, transparent); }
+.wf-linkbox[hidden] { display: none; }
+
+/* the guide */
+.wf-guide summary { cursor: pointer; font-weight: 600; font-size: 13.5px; }
+.wf-how { margin: 8px 0; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; }
+.wf-trouble { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0; }
+.wf-trouble th, .wf-trouble td { text-align: left; vertical-align: top; padding: 5px 6px; border-bottom: 1px solid color-mix(in srgb, var(--t-muted) 18%, transparent); }
+
+/* the friend's steps (solo.js offerJoin, Realms' Join) */
+.wf-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.wf-step { display: grid; grid-template-columns: 18px auto 1fr; gap: 6px; align-items: baseline; }
+.wf-step::before { content: ""; width: 10px; height: 10px; border-radius: 50%; align-self: center; background: color-mix(in srgb, var(--t-muted) 35%, transparent); }
+.wf-step.skip { opacity: .55; }
+.wf-step-line { color: var(--t-muted); }
+
+/* the Host page's banner */
+.wf-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; padding: 10px 14px;
+  border-radius: 10px; border: 1px solid color-mix(in srgb, var(--t-accent) 45%, transparent); background: var(--t-accent-soft, transparent); }
+.wf-banner-t { display: grid; gap: 2px; }

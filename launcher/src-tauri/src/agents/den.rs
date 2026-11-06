@@ -1194,6 +1194,30 @@ fn say_text(args: &Value) -> Result<String, String> {
     Ok(t)
 }
 
+/// A tale from the player's assistant (`den_tale_draft`, docs/DEN-NEXT.md): the Den reads it from here when the
+/// player asked their companion for one, checks it whole (labs/den-lite tale.rs) and the companion shows it for a yes
+/// or no. Here only its size, its first word and the brand words.
+pub const TALE_FILE: &str = "tale-draft.json";
+pub const TALE_MAX: usize = 8 * 1024;
+
+fn tale_text(args: &Value) -> Result<String, String> {
+    let t = arg_str(args, "text").ok_or("Give the tale's text (text): the tool's description has the format.")?.replace("\r\n", "\n");
+    if t.len() > TALE_MAX {
+        return Err("A tale is up to 8 KB.".into());
+    }
+    if !t.trim_start().to_lowercase().starts_with("tale ") {
+        return Err("A tale's first line is: tale <its title>.".into());
+    }
+    if let Some(w) = brand_word(&t) {
+        return Err(format!("A tale never says \"{w}\" (the game's brand stays out of Leyline): say it another way."));
+    }
+    Ok(t)
+}
+
+fn tale_title(t: &str) -> String {
+    t.trim_start().lines().next().unwrap_or("").trim().get(5..).unwrap_or("").trim().to_string()
+}
+
 // ------------------------------------------------------------------------------------------------ the tools
 
 /// Den Lite's folder (labs/den-lite, `<app dir>/den-lite`, laid out like a Host pack: host/lite.rs): its companion
@@ -1314,6 +1338,17 @@ pub fn describe(app_dir: &Path, name: &str, args: &Value) -> Option<Result<Card,
             })
         }),
         "den_recipe_save" => den_kit(app_dir).and_then(|k| plan_recipe(&k, args)).map(|p| p.3),
+        "den_tale_draft" => den_kit(app_dir).and_then(|_| {
+            let t = tale_text(args)?;
+            let steps = t.lines().filter(|l| l.trim_start().starts_with("step ")).count();
+            Ok(Card {
+                title: format!("A tale for your Den: {}", short(&tale_title(&t), 40)),
+                lines: vec![
+                    format!("{steps} step{}. Your companion shows it in game; you say yes to play it, or no.", if steps == 1 { "" } else { "s" }),
+                    "Checked in game first: nothing in a tale runs, its rewards are looks only.".into(),
+                ],
+            })
+        }),
         _ => return None,
     })
 }
@@ -1391,6 +1426,13 @@ pub fn run(app_dir: &Path, tool: &str, args: &Value) -> Option<Result<String, St
                 crate::settings::write_atomic(&dens::dir(&k).join(PLACE_FILE), &b).map_err(|e| format!("Couldn't write to the Den's folder: {e}"))?;
                 Ok(format!("Saved as the Den file \"{saved}\"; the Den adds its {} pieces while the player is in it, and the companion says how far along it is. den_status shows it too.", c.pieces))
             }
+        }),
+        "den_tale_draft" => den_kit(app_dir).and_then(|k| {
+            let t = tale_text(args)?;
+            let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+            let b = serde_json::to_vec(&json!({"n": n, "text": t})).map_err(|e| e.to_string())?;
+            crate::settings::write_atomic(&dens::dir(&k).join(TALE_FILE), &b).map_err(|e| format!("Couldn't write to the Den's folder: {e}"))?;
+            Ok("Sent to the Den: the companion shows it to the player for a yes or no (it is checked there; a problem is said in game).".into())
         }),
         "den_say" => den_kit(app_dir).and_then(|k| {
             let t = say_text(args)?;

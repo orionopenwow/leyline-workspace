@@ -2996,3 +2996,157 @@ fn a_practice_run_has_a_number_the_boss_is_kicked_and_a_pet_comes_and_goes() {
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Sky Island (owner 5 Nov, docs/DEN-NEXT.md): the one click's way in (login, the realm, the ready character, the
+/// world) is quick; `.den island` floats the Den (its ground, rim and tree are the look's pieces), lands you by the
+/// tree with dummies to hit and the welcome tale under way; a fall off puts you back; a prop placed there stands on
+/// the island; a swing hits a dummy; `.den pack` makes the island a code short enough for a link.
+#[test]
+fn sky_island_lands_rescues_places_hits_and_packs() {
+    use den_lite::skyisland as sky;
+    let t0 = std::time::Instant::now();
+    let (srv, dir) = server("skyisland", HeroGender::Female);
+    let started = t0.elapsed();
+    let mut w = into_world(&srv, 0);
+    let entered = t0.elapsed();
+    eprintln!("den-lite start {} ms, in the world {} ms", started.as_millis(), entered.as_millis());
+    assert!(entered < Duration::from_secs(5), "a light Den: in the world in {entered:?}");
+
+    w.say(".den island");
+    let (frames, _) = until_said(&mut w, "Off to Sky Island");
+    let (made, _) = objects(&frames);
+    let ground = made.values().filter(|g| g.entry == sky::GROUND as i32).count();
+    assert!(ground >= 40, "the island's ground: {ground} tiles");
+    assert!(made.values().any(|g| g.entry == sky::TREE as i32 && (g.z - sky::Z).abs() < 0.01), "the tree, up in the sky");
+    let tp = answer_near(&mut w, &frames);
+    let (lx, ly) = (sky::X + sky::LANDING[0], sky::Y + sky::LANDING[1]);
+    assert!((f32_at(&tp, 16) - lx).abs() < 0.01 && (f32_at(&tp, 20) - ly).abs() < 0.01, "landed by the tree");
+    let (frames, _) = until_said(&mut w, "Sky Island: build");
+    let dummies = unit_creates(&frames);
+    assert_eq!(dummies.len(), 3, "three dummies by the tree");
+    w.say(".den tale status");
+    let (_, line) = until_said(&mut w, "Welcome to Sky Island");
+    assert!(line.contains("step 1 of 4"), "{line}");
+    w.say(".den tale use jaina");
+    until_said(&mut w, "Tale, step 2 of 4");
+
+    // the edge: a fall off the island, far under it, is put back by the tree
+    w.raw(0x0EE, &raw_heartbeat(sky::X + 70.0, sky::Y, sky::Z - 30.0, 0x1000));
+    let (frames, _) = until_said(&mut w, "You fell off the island");
+    let tp = frames.iter().find(|f| f.opcode == 0x0C7).expect("back by a near teleport").body.clone();
+    assert!((f32_at(&tp, 16) - lx).abs() < 0.01 && (f32_at(&tp, 20) - ly).abs() < 0.01);
+
+    // a placement on the island stands on it
+    w.send(&heartbeat(lx, ly, sky::Z + 0.1, 0.0));
+    w.say(".den place chair");
+    let (frames, _) = w.until_line();
+    let (made, _) = objects(&frames);
+    let chair = made.values().find(|g| g.entry != sky::GROUND as i32).expect("the chair");
+    assert!((chair.z - sky::Z).abs() < 0.6, "on the island's top: {}", chair.z);
+
+    // a swing at a dummy (they stand west of the spot east of the tree)
+    let dummy = dummies[0].0;
+    let (dx, dy) = (sky::X + sky::DUMMIES_AT[0] - 3.0, sky::Y + sky::DUMMIES_AT[1]);
+    w.send(&heartbeat(dx - 1.5, dy, sky::Z + 0.1, 0.0));
+    w.raw(0x141, &dummy.to_le_bytes());
+    let st = w.until(|f| (f.opcode == 0x0143).then(|| f.body.clone()));
+    assert_eq!(u64::from_le_bytes(st[8..16].try_into().unwrap()), dummy);
+    let swing = w.until(|f| (f.opcode == 0x014A).then(|| f.body.clone()));
+    let mut at = 4;
+    den_lite::combat::read_packed(&swing, &mut at);
+    assert_eq!(den_lite::combat::read_packed(&swing, &mut at), Some(dummy));
+    w.raw(0x142, &[]);
+
+    // the island as a code: short enough for a link, and it opens as the same island
+    w.say(".den pack sky-mine");
+    let (frames, line) = until_said(&mut w, "Your Den as a code");
+    assert!(line.contains("short enough for a link"), "{line}");
+    let link = frames.iter().filter_map(addon_text).find_map(|t| t.strip_prefix("OVMOD\twuden\tpack\t").map(|r| r.split_once('\t').map(|x| x.1.to_string()).unwrap_or_default())).expect("the link in the Den bar");
+    assert!(link.starts_with("leyline://pack/ley1.den.z."), "{link}");
+    let code = std::fs::read_to_string(dir.join("sky-mine.denpack")).unwrap();
+    match den_lite::packs::open(&code).unwrap() {
+        den_lite::packs::Opened::Den(d, _) => assert_eq!(d.room.unwrap().look, sky::LOOK),
+        _ => panic!("a Den"),
+    }
+
+    // home again: the open plane, no island under it
+    w.say(".den island off");
+    let (frames, _) = until_said(&mut w, "Off to your Den");
+    let (_, gone) = objects(&frames);
+    assert!(gone.len() >= ground, "the island taken away");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// "Jaina, make a quest where ..." with no assistant connected: her own draft at once, a preview in three lines, then
+/// "Jaina, yes" plays it (kept in the Dens folder's tales); a tale's code opens as the same tale.
+#[test]
+fn jaina_drafts_a_tale_and_yes_plays_it() {
+    let (srv, dir) = server_with("tale", HeroGender::Female, true);
+    let mut w = into_world(&srv, 0);
+    w.send(&heartbeat(16226.2, 16257.0, 13.25, 0.0));
+    w.say("Jaina, make a quest where you find my lost lantern then beat 2 dummies");
+    let (_, name, first) = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m)) => match &m.chat_type {
+            SMSG_MESSAGECHAT_ChatType::MonsterSay { sender1, .. } if m.message.starts_with("Here's a tale") => Some((m.sender.guid(), sender1.clone(), m.message.clone())),
+            _ => None,
+        },
+        _ => None,
+    });
+    assert_eq!(name, "Jaina");
+    assert!(first.contains("The Lost Lantern"), "{first}");
+    w.say("Jaina, yes");
+    let (frames, _) = until_said(&mut w, "A tale begins: The Lost Lantern");
+    let _ = frames;
+    assert!(dir.join("tales").join("the-lost-lantern.tale").is_file(), "kept");
+    w.say(".den tale code");
+    until_said(&mut w, "The tale's code is in");
+    let code = std::fs::read_to_string(dir.join("tale-the-lost-lantern.denpack")).unwrap();
+    assert!(matches!(den_lite::packs::open(&code).unwrap(), den_lite::packs::Opened::Tale(t, _) if t.title == "The Lost Lantern"));
+    w.say(".den tale stop");
+    until_said(&mut w, "The tale stopped");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The replay harness over the wire (no game window): the verbs Gizmo.lua sends, as addon messages, give the copy
+/// where the expected model (movemodel.rs) says, line by line (the `where` answer).
+#[test]
+fn the_mouse_over_the_wire_matches_the_model() {
+    use den_lite::movemodel::Model;
+    let (srv, dir) = server("wire-moves", HeroGender::Female);
+    let mut w = into_world(&srv, 0);
+    let s = Spot::default();
+    w.send(&heartbeat(s.x, s.y, s.z, 0.0));
+    let mut m = Model::new([s.x, s.y], s.z, s.reach());
+    m.me = [s.x, s.y, s.z, 0.0];
+    let aspect = 16.0f32 / 9.0;
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
+    w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\tpreview 2413 0 -0.3 {aspect}"));
+    m.card(Some([0.0, -0.3]));
+    for (u, v) in [(0.05f32, -0.28f32), (0.2, -0.2), (0.3, -0.1), (-0.2, -0.25), (0.0, 1.0), (0.1, -0.15)] {
+        w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\thover {u} {v} {aspect}"));
+        m.hover(u, v);
+        w.addon("OVMOD", "wubuild\tcmd\t1/1\twhere");
+        let (_, ghost) = until_aid(&mut w, "ghost");
+        let p: Vec<f32> = ghost.split(',').map(|x| x.parse().unwrap()).collect();
+        let want = m.at.unwrap();
+        assert!((p[0] - want[0]).abs() < 0.02 && (p[1] - want[1]).abs() < 0.02 && (p[2] - want[2]).abs() < 0.02, "hover {u} {v}: the Den {ghost}, the model {want:?}");
+    }
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The owner's .moves flows and a fuzz, in the integration run too (the same as replay.rs's unit tests).
+#[test]
+fn the_moves_scripts_replay_clean() {
+    for (name, text) in den_lite::replay::SCRIPTS {
+        let r = den_lite::replay::run(text);
+        assert!(r.ok(), "{name}: {}", r.line());
+    }
+    let fails = den_lite::replay::fuzz(1000..1100, 80);
+    assert!(fails.is_empty(), "{fails:?}");
+}

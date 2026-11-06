@@ -78,6 +78,8 @@ check("go_href: signed out, Log in first with the same play link next", nxt == "
 # --- the portal: go_param, remember_go, the sign-in -------------------------------------------------------------------
 check("go_param carries a boss fight", wp.go_param({"go": ["bf:frozen-throne:heroic:group"]}) == "&go=bf:frozen-throne:heroic:group")
 check("go_param carries the arena queue", wp.go_param({"go": ["arena:1v1"]}) == "&go=arena:1v1")
+check("go_param carries solo on this device (docs/PHONE-SOLO.md)", wp.go_param({"go": ["solo"]}) == "&go=solo:phone" == wp.go_param({"go": ["solo:phone"]})
+      and wp.go_param({"go": ["solo:x"]}) == "")
 check("go_param: the launcher's mode id becomes its go", wp.go_param({"go": ["mode:frozen-throne"]}) == "&go=bf:frozen-throne:normal:bots"
       and wp.go_param({"go": ["mode:arena-queue"]}) == "&go=arena:1v1")
 check("go_param: other modes still carry nothing", wp.go_param({"go": ["mode:minigolf"]}) == "")
@@ -152,13 +154,22 @@ st, hd, b = get("/wrath?go=arena:1v1", cookie="wr_session=stale")
 check("a stale session: to Log in with the go", st in (302, 303) and "next=%2Fwrath%3Fgo%3Darena%3A1v1" in hd.get("location", ""), (st, hd.get("location")))
 st, _, b = get("/wrath/account?go=bf:frozen-throne:heroic:group", cookie="wr_session=good")
 check("signed in: the page works", st == 200 and "WR000123" in b, st)
-check("signed in: ovgo set for the game account", sent("ovgo") == ["ovgo set WR000123 bf:frozen-throne:heroic:group"], sent("ovgo"))
+check("signed in, heroes on: a boss fight is never an ovgo for the player's own account (it is played on a hero)",
+      sent("ovgo") == [], sent("ovgo"))
 get("/wrath/account?go=arena:1v1", cookie="wr_session=good")
 check("signed in: the arena queue", sent("ovgo")[-1] == "ovgo set WR000123 arena:1v1", sent("ovgo"))
-n_play = len(sent("ovplay"))
+n_play, n_go = len(sent("ovplay")), len(sent("ovgo"))
 get("/wrath/account?go=mode:frozen-throne", cookie="wr_session=good")
-check("the launcher's ?go=mode:frozen-throne: the boss fight go, never ovplay",
+check("the launcher's ?go=mode:frozen-throne, heroes on: no ovgo, never ovplay",
+      len(sent("ovgo")) == n_go and len(sent("ovplay")) == n_play, soap["commands"][-3:])
+os.environ["WU_BF_HEROES"] = "0"   # heroes off: the boss fight go is the player's own account's intent, as before
+BF._recent.clear()
+get("/wrath/account?go=bf:frozen-throne:heroic:group", cookie="wr_session=good")
+check("heroes off: ovgo set for the game account", sent("ovgo")[-1] == "ovgo set WR000123 bf:frozen-throne:heroic:group", sent("ovgo"))
+get("/wrath/account?go=mode:frozen-throne", cookie="wr_session=good")
+check("heroes off: the launcher's ?go=mode:frozen-throne is the boss fight go, never ovplay",
       sent("ovgo")[-1] == "ovgo set WR000123 bf:frozen-throne:normal:bots" and len(sent("ovplay")) == n_play, soap["commands"][-3:])
+del os.environ["WU_BF_HEROES"]
 n = len(sent("ovgo"))
 for v in bad:
     if isinstance(v, str) and v:

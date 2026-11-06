@@ -568,3 +568,29 @@ test('My models: drop your own model files on Your Den, checked first, listed, r
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('Sky Island in one click, and a Den code a friend sent (docs/DEN-NEXT.md)', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', page: 'den', auto: true });
+  await page.waitForSelector('#yd-sky');
+  await page.click('#yd-sky');
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'den_play_lite'), null, { timeout: 8000 });
+  const add = (await calls(page, 'den_add'))[0];
+  assert.equal(add.fileName, 'sky-island.den.json');
+  const doc = JSON.parse(add.text);
+  assert.equal(doc.room.look, 'sky', 'the island file, decoded from its code here');
+  assert.deepEqual(await calls(page, 'den_open'), [{ name: 'friend' }], 'opened, then played');
+  // a code pasted (with a chat's line break in it): decoded, then the core checks it as a Den file
+  const code = await page.evaluate(() => window.LeylineDenPack.encode('den', JSON.stringify({ format: 'leyline-den', version: 1, name: 'garden', props: [] })));
+  await page.fill('#yd-code', code.slice(0, 15) + '\n' + code.slice(15));
+  await page.click('#yd .yd-code button:has-text("Open the code")');
+  await page.waitForFunction(() => window.__calls.filter((c) => c[0] === 'den_add').length === 2);
+  assert.equal((await calls(page, 'den_add'))[1].fileName, 'garden.den.json');
+  // a changed code: refused here, in plain words, before the core
+  await page.fill('#yd-code', code.slice(0, -1) + (code.endsWith('0') ? '1' : '0'));
+  await page.click('#yd .yd-code button:has-text("Open the code")');
+  await page.waitForFunction(() => /changed or copied wrong|wrong letter/.test(document.querySelector('#yd .yd-status').textContent));
+  assert.equal((await calls(page, 'den_add')).length, 2);
+  await noBrands(page);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

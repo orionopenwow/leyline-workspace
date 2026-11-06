@@ -238,7 +238,7 @@ class TcpConn:
         t = self.writer.transport
         return t.get_write_buffer_size() <= mux.MAX_BUFFER
 
-    def close(self):
+    def close(self, code=None, reason=""):
         try:
             self.writer.close()
         except (OSError, RuntimeError):
@@ -267,8 +267,12 @@ class WsConn:
             self.sock.send_nowait(data[i:i + mux.MAX_CHUNK], ws.OP_BIN)
         return self.sock.buffered() <= mux.MAX_BUFFER
 
-    def close(self):
-        self.sock.abort()
+    def close(self, code=None, reason=""):
+        # a code tells the browser why (4502: the host's realm never answered); else a plain drop as before
+        if code and not self.sock.closed:
+            asyncio.ensure_future(self.sock.close(code, reason))
+        else:
+            self.sock.abort()
 
 
 class Stream:
@@ -278,6 +282,21 @@ class Stream:
         self.closed = False
         self.bytes = 0
         self.auth_seen = 0     # logon answers looked at (service 3724 only: the challenge, then the proof)
+        self.down = 0          # bytes from the host to the player (none at all: the host's realm never answered)
+        self.probe = False     # the launcher's "Ready for friends?" self-test (is_probe): one question, never a login
+
+
+# The launcher's self-test and the join page's "host answering" check (launcher host/ready.rs): the game's first login
+# message for this account, which no realm has. The realm answers "unknown account" at once; that answer is not counted
+# as a wrong password (or a host pressing Check would lock their own home address out), and a probe stream carries
+# nothing after it (no proof can follow, so the name can't be used to guess a password without being counted).
+PROBE_ACCOUNT = b"LEYLINECHECK"
+
+
+def is_probe(data):
+    n = len(PROBE_ACCOUNT)
+    return (len(data) >= 34 + n and data[0] == 0x00 and data[33] == n
+            and bytes(data[34:34 + n]).upper() == PROBE_ACCOUNT)
 
 
 # ------------------------------------------------------------------------------ realm session
@@ -343,7 +362,7 @@ class Session:
         self.ws.send_nowait(mux.pack(OPEN, sid, mux.open_payload(port)))
         return st
 
-    def close_stream(self, st: Stream, tell_agent=True, why=""):
+    def close_stream(self, st: Stream, tell_agent=True, why="", code=None, reason=""):
         if st.closed:
             return
         st.closed = True
@@ -351,7 +370,7 @@ class Session:
         self.relay.ip_streams_dec(st.ip, self.realm_id)
         if st.conn.kind == "ws":
             self.relay.ws_open -= 1
-        st.conn.close()
+        st.conn.close(code, reason)
         if tell_agent and not self.closed:
             try:
                 self.ws.send_nowait(mux.pack(CLOSE, st.sid))
@@ -666,7 +685,7 @@ class Relay:
         proof answer [0x01, error, ...]. A non-zero result is a failed logon (wrong password, unknown or banned account)
         and counts against the player's IP for this realm. Nothing else of the stream is read."""
         st.auth_seen += 1
-        if len(data) < 2:
+        if len(data) < 2 or st.probe:
             return
         failed = (data[0] == 0x01 and data[1] != 0) or (data[0] == 0x00 and len(data) >= 3 and data[2] != 0)
         if data[0] == 0x01:
@@ -771,6 +790,12 @@ class Relay:
                 data = await st.conn.read()
                 if not data:
                     break
+                if st.port == 3724:
+                    if st.bytes == 0 and is_probe(data):
+                        st.probe = True
+                        self.metrics["probes"] += 1
+                    elif st.probe:
+                        break   # a probe asks once
                 st.last = time.monotonic()
                 st.bytes += len(data)
                 self.count_bytes(session, len(data))
@@ -934,6 +959,7 @@ class Relay:
                 if kind == DATA and st:
                     st.last = time.monotonic()
                     st.bytes += len(payload)
+                    st.down += len(payload)
                     self.count_bytes(s, len(payload))
                     if not st.conn.write(payload):
                         s.close_stream(st, why="player too slow (buffer full)")
@@ -946,7 +972,14 @@ class Relay:
                         for x in list(s.streams.values()):
                             s.close_stream(x, why="daily traffic cap")
                 elif kind == CLOSE and st:
-                    s.close_stream(st, tell_agent=False)
+                    if st.down == 0:
+                        # the agent gave up before its realm said a word: the realm on the host's PC isn't answering
+                        # (still starting, stopped or crashed). Say so, so the page can stop looping (player report 5 Nov:
+                        # "stuck in a cycle of Connecting and Connected").
+                        s.close_stream(st, tell_agent=False, why="host realm not answering", code=4502,
+                                       reason="the host's realm isn't answering")
+                    else:
+                        s.close_stream(st, tell_agent=False)
                 continue
             try:
                 doc = json.loads(msg)
@@ -1025,7 +1058,8 @@ class Relay:
         except httpd.BadRequest as e:
             out = httpd.response(e.status, {"error": str(e)}, headers=self.cors(req))
         except Exception:  # never let one request take the relay down
-            log.exception("request failed: %s %s", req.method, req.path)
+            # the path can carry an invite (/r/<id>/i/<secret>/ws/<port>): never into the log
+            log.exception("request failed: %s %s", req.method, re.sub(r"/i/[^/]+/", "/i/***/", req.path)[:200])
             out = httpd.response(500, {"error": "internal error"})
         if out is None:  # upgraded to a websocket; that handler owns the socket now
             return

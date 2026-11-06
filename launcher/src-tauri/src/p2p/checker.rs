@@ -12,8 +12,11 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-const GAME_EXT: &[&str] = &[".mpq", ".blp", ".m2", ".wmo", ".adt", ".dbc", ".db2", ".skin", ".anim", ".wdt", ".wdl", ".bls", ".casc"];
-const GAME_MAGIC: &[&[u8; 4]] = &[b"MPQ\x1a", b"MPQ\x1b", b"BLP1", b"BLP2", b"MD20", b"MD21", b"WDBC", b"WDB2", b"REVM"];
+/// The client's own files, and the server data a host makes from its client (`.vmtree`/`.vmtile`/`.mmap`/`.mmtile`, and
+/// the maps as `<7 digits>.map`, see [`server_map`]): those stay on the host's PC (hosting audit, 5 Nov).
+const GAME_EXT: &[&str] = &[".mpq", ".blp", ".m2", ".wmo", ".adt", ".dbc", ".db2", ".skin", ".anim", ".wdt", ".wdl", ".bls", ".casc",
+    ".vmtree", ".vmtile", ".mmap", ".mmtile"];
+const GAME_MAGIC: &[&[u8; 4]] = &[b"MPQ\x1a", b"MPQ\x1b", b"BLP1", b"BLP2", b"MD20", b"MD21", b"WDBC", b"WDB2", b"REVM", b"MAPS"];
 /// Executables and folders that only a game client has.
 const CLIENT_NAMES: &[&str] = &["wow.exe", "wow-64.exe", "wowb.exe", "wowt.exe", "wowclassic.exe", "world of warcraft.app", "wow.app", "blizzard launcher.exe", "battle.net.exe", "battle.net launcher.exe"];
 /// A zip may hold at most this many entries before it is refused unread.
@@ -39,7 +42,15 @@ pub fn name_refusal(name: &str) -> Option<String> {
     if let Some(e) = GAME_EXT.iter().find(|e| base.ends_with(*e)) {
         return Some(format!("{name}: game data ({e} files are never downloaded by Leyline)"));
     }
+    if server_map(&base) {
+        return Some(format!("{name}: game data (server maps are never downloaded by Leyline)"));
+    }
     None
+}
+
+/// A server map tile made from a client (`0001234.map`): seven digits, then `.map` (a source map is `x.js.map`).
+fn server_map(base: &str) -> bool {
+    base.strip_suffix(".map").is_some_and(|stem| stem.len() == 7 && stem.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Why these first bytes are refused, or None.
@@ -190,14 +201,16 @@ pub(crate) mod tests {
 
     #[test]
     fn names_and_magic() {
-        for bad in ["Data/common.MPQ", "x/tex.BLP", "Wow.exe", "wow-64.exe", "WowCustom.exe", "World of Warcraft.app", "a/_retail_/x.txt", "Interface/model.m2"] {
+        for bad in ["Data/common.MPQ", "x/tex.BLP", "Wow.exe", "wow-64.exe", "WowCustom.exe", "World of Warcraft.app", "a/_retail_/x.txt", "Interface/model.m2",
+                    "maps/0003031.map", "vmaps/000.vmtree", "vmaps/000_30_31.vmtile", "mmaps/000.mmap", "mmaps/0003031.mmtile"] {
             assert!(name_refusal(bad).is_some(), "{bad}");
         }
-        for ok in ["leyline-host.zip", "hostpack.json", "tools/Dockerfile", "Leyline_0.3.0_x64-setup.exe", "Leyline.AppImage", "theme/bg.webp"] {
+        for ok in ["leyline-host.zip", "hostpack.json", "tools/Dockerfile", "Leyline_0.3.0_x64-setup.exe", "Leyline.AppImage", "theme/bg.webp", "ui/app.js.map", "1234.map"] {
             assert!(name_refusal(ok).is_none(), "{ok}");
         }
         assert!(magic_refusal("renamed.png", b"MPQ\x1a....").is_some());
         assert!(magic_refusal("ok.png", b"\x89PNG").is_none());
+        assert!(magic_refusal("renamed.bin", b"MAPSv1.").is_some());
     }
 
     /// A .tar.gz with these (name, contents), ustar headers (tests only).

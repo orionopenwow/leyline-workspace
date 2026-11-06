@@ -73,7 +73,8 @@ passes your friend's game connection through it.
 ## If a way fails
 
 - Your friend's Leyline moves on to the next way by itself, and tells them what it tried.
-- If none works: check your Den is open (press **Play solo** once), then send a new link.
+- If none works: press **Invite a friend** again. **Ready for friends?** checks every step a friend's game takes and says
+  what to fix (the Host for friends guide has every fix).
 - A link stops working after 24 hours, or when you press **Stop sharing**. Send a new one.
 
 ## In your Den

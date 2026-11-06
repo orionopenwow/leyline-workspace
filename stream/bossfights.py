@@ -207,6 +207,226 @@ def go_intent(soap, account: str, go: str, log=None) -> bool:
 
 
 # ----------------------------------------------------------------------------------------------
+# boss fight heroes (docs/BOSS-FIGHT-HEROES.md)
+# ----------------------------------------------------------------------------------------------
+#
+# A boss fight is played on a hero: a level 80 character the realm makes at once for the fight, on a second game
+# account linked to the player's own (hero_account). The player's own characters are never shown, moved or bound by
+# a boss fight. With heroes on (WU_BF_HEROES, default 1), /wrath/play with a bf: go:
+#   1. makes sure the hero account exists with the player's own game password (ensure_account),
+#   2. asks the realm over SOAP:  bossfight hero go <ACCOUNT> <boss> <difficulty> <mode> [class spec]
+#      which makes the hero if there is none for that pick, remembers the pick, saves the hero on the fight's
+#      platform in a fresh instance and keeps the join for its login. The reply: "bfhero ok <name> <class> <spec>
+#      <spec2> <made|ready> <hero account>" or "bfhero no <why>",
+#   3. signs the browser game in to the hero account with the hero named (/__env.js "char": no character list).
+# A realm without the module (an older image) answers with a console fault: the page says so in plain words and
+# nothing starts (owner 5 Nov: Fight now must never just land someone in the normal realm).
+
+HERO_CLASSES = {   # class word -> (label, [(spec key, label, role)]); the realm's table is BossfightsHeroLogic.h Specs()
+    "warrior": ("Warrior", [("arms", "Arms", "dps"), ("fury", "Fury", "dps"), ("prot", "Protection", "tank")]),
+    "paladin": ("Paladin", [("holy", "Holy", "heal"), ("prot", "Protection", "tank"), ("ret", "Retribution", "dps")]),
+    "hunter": ("Hunter", [("bm", "Beast Mastery", "dps"), ("mm", "Marksmanship", "dps"), ("sv", "Survival", "dps")]),
+    "rogue": ("Rogue", [("assa", "Assassination", "dps"), ("combat", "Combat", "dps"), ("sub", "Subtlety", "dps")]),
+    "priest": ("Priest", [("disc", "Discipline", "heal"), ("holy", "Holy", "heal"), ("shadow", "Shadow", "dps")]),
+    "deathknight": ("Death Knight", [("blood", "Blood", "tank"), ("frost", "Frost", "dps"), ("unholy", "Unholy", "dps")]),
+    "shaman": ("Shaman", [("ele", "Elemental", "dps"), ("enh", "Enhancement", "dps"), ("resto", "Restoration", "heal")]),
+    "mage": ("Mage", [("arcane", "Arcane", "dps"), ("fire", "Fire", "dps"), ("frost", "Frost", "dps")]),
+    "warlock": ("Warlock", [("affli", "Affliction", "dps"), ("demo", "Demonology", "dps"), ("destro", "Destruction", "dps")]),
+    "druid": ("Druid", [("balance", "Balance", "dps"), ("bear", "Feral (bear)", "tank"), ("resto", "Restoration", "heal"),
+                        ("cat", "Feral (cat)", "dps")]),
+}
+CLASS_WORD = {1: "warrior", 2: "paladin", 3: "hunter", 4: "rogue", 5: "priest", 6: "deathknight", 7: "shaman", 8: "mage",
+              9: "warlock", 11: "druid"}
+ROLE_WORD = {"tank": "Tank", "heal": "Healer", "dps": "Damage"}
+HERO_RE = re.compile(r"^([a-z]{4,11})-([a-z]{2,8})(?:-(alliance|horde))?$")
+HERO_LIMIT = 10
+HERO_ACCOUNT_MAX = 16
+NOT_LIVE = ("Boss fights aren't open on the realm yet: the realm update that adds them hasn't gone live. Nothing was "
+            "started, and none of your characters were moved.")
+
+
+def heroes_on() -> bool:
+    return os.environ.get("WU_BF_HEROES", "1").strip() != "0"
+
+
+def check_hero(value) -> str | None:
+    """A ?hero= pick as sent (<class>-<spec>[-alliance|-horde]) when the class and spec are real, else None."""
+    if not isinstance(value, str) or len(value) > 32:
+        return None
+    m = HERO_RE.fullmatch(value)
+    if not m or m.group(1) not in HERO_CLASSES:
+        return None
+    return value if m.group(2) in {k for k, _, _ in HERO_CLASSES[m.group(1)][1]} else None
+
+
+def hero_param(query: dict) -> str:
+    """'&hero=<pick>' for a valid pick in the query (carried through Log in like the go), else ''."""
+    v = check_hero((query.get("hero") or [""])[0][:32])
+    return "&hero=" + v if v else ""
+
+
+def hero_account(user) -> str:
+    """The player's hero account (BossfightsHeroLogic.h HeroAccountName): <ACCOUNT>BF, or BF + 14 hex digits of the
+    name's FNV-1a hash when that would pass 16 characters. "" for a name that isn't a plain account name."""
+    if not isinstance(user, str) or not ACCOUNT_RE.fullmatch(user):
+        return ""
+    u = user.upper()
+    if len(u) + 2 <= HERO_ACCOUNT_MAX:
+        return u + "BF"
+    h = 1469598103934665603
+    for c in u.encode("ascii"):
+        h ^= c
+        h = (h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    return "BF" + "%014X" % (h & 0xFFFFFFFFFFFFFF)
+
+
+def hero_command(account: str, go: str, pick: str | None = None) -> str | None:
+    """The console line for a Fight now: bossfight hero go <ACCOUNT> <boss> <difficulty> <mode> [class spec [faction]]."""
+    if not isinstance(account, str) or not ACCOUNT_RE.fullmatch(account) or not check_go(go) or not go.startswith("bf:"):
+        return None
+    _, boss, diff, mode = go.split(":")
+    cmd = f"bossfight hero go {account.upper()} {boss} {diff} {mode}"
+    pick = check_hero(pick) if pick else None
+    if pick:
+        cmd += " " + " ".join(pick.split("-"))
+    return cmd
+
+
+REPLY_RE = re.compile(r"^bfhero ok ([A-Z][a-z]{1,11}) ([a-z]{4,11}) ([a-z]{2,8}) ([a-z]{2,8}) (made|ready) ([A-Z0-9]{1,16})$")
+LINE_RE = re.compile(r"^bfhero hero ([A-Z][a-z]{1,11}) ([a-z]{4,11}) ([a-z]{2,8}) ([a-z]{2,8}) (current|-)$")
+
+
+def parse_hero_reply(text) -> dict:
+    """The realm's answer to "bossfight hero go/make": {"ok": True, name, class, spec, spec2, made, account} or
+    {"ok": False, "why": plain words}. A name with a brand word is refused (the module never makes one)."""
+    for line in str(text or "").replace("\r", "\n").split("\n"):
+        line = line.strip()
+        m = REPLY_RE.fullmatch(line)
+        if m and m.group(2) in HERO_CLASSES and not _banned(m.group(1)):
+            return {"ok": True, "name": m.group(1), "class": m.group(2), "spec": m.group(3), "spec2": m.group(4),
+                    "made": m.group(5) == "made", "account": m.group(6)}
+        if line.startswith("bfhero no "):
+            why = re.sub(r"[^A-Za-z0-9 .,:;'()/-]", "", line[len("bfhero no "):])[:120].strip()
+            return {"ok": False, "why": why or "the realm said no"}
+    return {"ok": False, "why": "the realm gave no answer"}
+
+
+def parse_hero_list(text) -> list[dict]:
+    out = []
+    for line in str(text or "").replace("\r", "\n").split("\n"):
+        m = LINE_RE.fullmatch(line.strip())
+        if m and m.group(2) in HERO_CLASSES and not _banned(m.group(1)):
+            out.append({"name": m.group(1), "class": m.group(2), "spec": m.group(3), "spec2": m.group(4),
+                        "current": m.group(5) == "current"})
+    return out[:HERO_LIMIT]
+
+
+def _not_live(ex) -> bool:
+    """A console fault that isn't our own answer: the command isn't known (no module, or one without heroes)."""
+    return getattr(ex, "kind", "") == "fault" and "bfhero" not in str(getattr(ex, "detail", ""))
+
+
+def hero_play(soap, account: str, go: str, pick: str | None = None, log=None) -> dict:
+    """Fight now for a signed-in player: {"state": "ok", name, ...} (play the hero), "not-live" (the realm has no boss
+    fights yet), "no" (the realm said why: "why"), "down" (the console didn't answer) or "bad" (nothing to send)."""
+    cmd = hero_command(account, go, pick)
+    if not cmd:
+        return {"state": "bad"}
+    try:
+        text = soap(cmd) or ""
+    except Exception as ex:  # noqa: BLE001
+        if _not_live(ex):
+            if log:
+                log.warning("hero go %s: the realm doesn't know boss fight heroes yet (%s)", account.upper(),
+                            str(getattr(ex, "detail", ""))[:80])
+            return {"state": "not-live"}
+        if log:
+            log.warning("hero go %s failed: %s", account.upper(), getattr(ex, "kind", type(ex).__name__))
+        return {"state": "down"}
+    r = parse_hero_reply(text)
+    if not r["ok"]:
+        return {"state": "no", "why": r["why"]}
+    if r["account"] != hero_account(account):
+        return {"state": "no", "why": "the realm named another hero account"}
+    return dict(r, state="ok")
+
+
+_lists: dict = {}
+_lists_lock = threading.Lock()
+LIST_TTL = 30.0
+
+
+def hero_list(soap, account: str) -> list[dict] | None:
+    """The player's heroes (".bossfight hero list"), cached half a minute; None when the realm can't say."""
+    if not isinstance(account, str) or not ACCOUNT_RE.fullmatch(account):
+        return None
+    key, now = account.upper(), time.monotonic()
+    with _lists_lock:
+        hit = _lists.get(key)
+        if hit and now - hit[0] < LIST_TTL:
+            return hit[1]
+    try:
+        heroes = parse_hero_list(soap(f"bossfight hero list {key}") or "")
+    except Exception:  # noqa: BLE001
+        return None
+    with _lists_lock:
+        if len(_lists) > 5000:
+            _lists.clear()
+        _lists[key] = (now, heroes)
+    return heroes
+
+
+def forget_list(account: str) -> None:
+    with _lists_lock:
+        _lists.pop(str(account).upper(), None)
+
+
+def hero_label(cls: str, spec: str) -> str:
+    c = HERO_CLASSES.get(cls)
+    if not c:
+        return ""
+    s = next((lab for k, lab, _ in c[1] if k == spec), spec)
+    return f"{s} {c[0]}"
+
+
+def hero_href(go: str, pick: str | None, signed_in: bool) -> str:
+    """Fight now with this pick (the realm makes the hero if there is none for it)."""
+    link = play_link(go) + (("&hero=" + pick) if pick and check_hero(pick) else "")
+    if signed_in:
+        return link
+    sign = P("signin_url")
+    try:
+        return sign(link) if sign is not None else "/wrath/signin?next=" + urllib.parse.quote(link, safe="")
+    except Exception:   # noqa: BLE001
+        return "/wrath/signin?next=" + urllib.parse.quote(link, safe="")
+
+
+def heroes_html(go: str, signed_in: bool, heroes: list[dict] | None) -> str:
+    """The hero picker: the player's heroes (signed in), then every class and spec. No script: plain links."""
+    if not heroes_on():
+        return ""
+    mine = ""
+    if heroes:
+        items = "".join(
+            f'<li><a class="bf-hero-me{" on" if h["current"] else ""}" href="{e(hero_href(go, h["class"] + "-" + h["spec"], signed_in))}">'
+            f'<b>{e(h["name"])}</b><span>{e(hero_label(h["class"], h["spec"]))}</span></a></li>' for h in heroes)
+        mine = (f'<p class="hb-fine">Your heroes ({len(heroes)} of {HERO_LIMIT}). Pick one to fight now:</p>'
+                f'<ul class="bf-heroes">{items}</ul>')
+    rows = []
+    for cls, (label, specs) in HERO_CLASSES.items():
+        links = "".join(f'<a href="{e(hero_href(go, cls + "-" + key, signed_in))}" title="{e(ROLE_WORD[role])}">'
+                        f'{e(slab)}<small>{e(ROLE_WORD[role])}</small></a>' for key, slab, role in specs)
+        rows.append(f'<div class="bf-cls"><span class="bf-cls-n">{e(label)}</span><div class="bf-specs">{links}</div></div>')
+    return ('<section class="bf-sec" aria-labelledby="bf-hero-h"><h2 id="bf-hero-h">Your hero</h2>'
+            '<p class="hb-lede">Boss fights use their own heroes, separate from your characters: level 80, geared for '
+            'the fight, every spell on the bars, both talent specs ready and the rest of the class\'s gear in the bags. '
+            'Pick a class and spec and the fight starts with it at once.</p>'
+            + mine + f'<div class="bf-pick">{"".join(rows)}</div>'
+            '<p class="hb-fine">In game: <code>/bf</code> opens the panel, <code>.bf hero</code> lists your heroes, '
+            '<code>.bf hero spec &lt;spec&gt;</code> changes talents for free between pulls.</p></section>')
+
+
+# ----------------------------------------------------------------------------------------------
 # data: whitelisted fields only
 # ----------------------------------------------------------------------------------------------
 
@@ -435,6 +655,16 @@ radial-gradient(60% 80% at 90% 80%,rgba(150,110,255,.25),transparent 70%),linear
 .bf-card code,.bf-how code{font-size:13px}
 @media (max-width:640px){.bf-t th,.bf-t td{padding:7px 7px}.bf-t .hide-s{display:none}.bf-acts{flex-direction:column;align-items:stretch}
 .bf-acts .hb-play,.bf-acts .hb-ghost{justify-content:center}.bf-hero img{display:none}}
+.bf-pick{display:grid;gap:8px;margin:12px 0}
+.bf-cls{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center}
+.bf-cls-n{font-weight:600;color:#ece6d6}
+.bf-specs{display:flex;flex-wrap:wrap;gap:6px}
+.bf-specs a,.bf-hero-me{display:inline-flex;flex-direction:column;justify-content:center;min-height:44px;padding:6px 12px;border:1px solid #3a3550;
+border-radius:8px;background:rgba(12,10,24,.6);color:#ece6d6;text-decoration:none;line-height:1.2}
+.bf-specs a:hover,.bf-hero-me:hover,.bf-hero-me.on{border-color:#d9b45a}
+.bf-specs small,.bf-hero-me span{font-size:12px;color:#b4ab96}
+.bf-heroes{list-style:none;padding:0;margin:8px 0 12px;display:flex;flex-wrap:wrap;gap:8px}
+@media (max-width:640px){.bf-cls{grid-template-columns:1fr}}
 """
 
 
@@ -530,8 +760,8 @@ def _rank_cls(i: int) -> str:
     return f' class="p{i}"' if i <= 3 else ""
 
 
-def boss_page(query: dict, signed_in: bool, d: dict | None = None) -> tuple[str, str]:
-    """(title, body) for /wrath/bossfights."""
+def boss_page(query: dict, signed_in: bool, d: dict | None = None, heroes: list[dict] | None = None) -> tuple[str, str]:
+    """(title, body) for /wrath/bossfights. heroes: the signed-in player's boss fight heroes, when the realm said."""
     d = d or store.doc()
     boss = FEATURED
     b = BOSSES[boss]
@@ -556,8 +786,10 @@ def boss_page(query: dict, signed_in: bool, d: dict | None = None) -> tuple[str,
             f'<a class="hb-play" href="{e(now)}">Fight now with companions</a>'
             f'<a class="hb-ghost" href="{e(queue)}">Queue with players</a></div>' + login + '</header>')
     how = ('<ul class="bf-how" aria-label="How it works">'
-           f'<li><b>{b["size"]} players</b>A raid of {b["size"]} at level {b["level"]}. New characters can boost to 80 first.</li>'
-           '<li><b>Go now or queue</b>Fight now and companions fill the raid around you. Queue with players and the raid '
+           + (f'<li><b>{b["size"]} players</b>A raid of {b["size"]} at level {b["level"]}, on a hero made for the fight: '
+            'none of your own characters is needed or moved.</li>' if heroes_on() else
+            f'<li><b>{b["size"]} players</b>A raid of {b["size"]} at level {b["level"]}. New characters can boost to 80 first.</li>')
+           + '<li><b>Go now or queue</b>Fight now and companions fill the raid around you. Queue with players and the raid '
            'forms from the line; companions fill the gaps.</li>'
            '<li><b>Normal or heroic</b>Heroic is harder and has its own board. Pick it above before you go.</li>'
            '<li><b>The clock</b>Time starts on the pull and stops when the fight is won. A wipe sends the raid back to '
@@ -570,7 +802,8 @@ def boss_page(query: dict, signed_in: bool, d: dict | None = None) -> tuple[str,
               + boards_html(d, boss, diff)
               + f'<p class="hb-fine">{when + ". " if when else ""}Every board: <a href="{BOARDS_PAGE}?board=bosses'
               + ("&amp;d=heroic" if diff == "heroic" else "") + '">the leaderboards</a>. Companions are counted, never named.</p></section>')
-    body = ('<section class="hb-pg db bf" aria-labelledby="hb-pg-h"><div class="hb-pg-b">' + hero + how + boards + nxt
+    picker = heroes_html(go_value(boss, diff, "bots"), signed_in, heroes)
+    body = ('<section class="hb-pg db bf" aria-labelledby="hb-pg-h"><div class="hb-pg-b">' + hero + picker + how + boards + nxt
             + f'<p class="hb-fine">More ways to fight: <a href="{ARENA_PAGE}">duels and the 1v1 arena</a>, '
             '<a href="/wrath/modes#bosses">every raid by its door</a>.</p></div></section>')
     return f"Boss fights · {b['name']} · Leyline", body
@@ -658,6 +891,20 @@ def _limited(h) -> bool:
         return False
 
 
+def _my_heroes(h) -> list[dict] | None:
+    """The signed-in viewer's heroes: their game account from the realm service, then the realm's list (cached)."""
+    portal_get, soap, bucket = P("portal_get"), P("ac_soap"), P("rl_bucket")
+    if portal_get is None or soap is None:
+        return None
+    try:
+        ip = h.ip()
+        status, play = portal_get("/api/play", h.headers.get("Cookie", ""), ip, h.headers.get("User-Agent", ""))
+        user = str((play or {}).get("user", "")) if status == 200 else ""
+        return hero_list(soap, user) if user else None
+    except Exception:   # noqa: BLE001
+        return None
+
+
 def get(h, path: str, query: dict) -> None:
     if _limited(h):
         h.send(429, b'{"error":"busy"}' if path == API else b"too many requests\n",
@@ -678,6 +925,6 @@ def get(h, path: str, query: dict) -> None:
         title, body = arena_page(query, signed)
         out, headers = _shell(title, body, path, "arena")
     else:
-        title, body = boss_page(query, signed)
+        title, body = boss_page(query, signed, heroes=_my_heroes(h) if signed and heroes_on() else None)
         out, headers = _shell(title, body, path, "bossfights")
     h.send(200, out, headers=headers)

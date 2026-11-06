@@ -762,9 +762,15 @@ fn den_invite_with(name: Option<&str>, tunnel: bool) -> Result<DenInvite, String
     let tunnel_on = tunnel;
     {
         let app = crate::settings::app_dir();
-        let l = lite::Binary::find(&app);
+        let mut l = lite::Binary::find(&app);
         if !l.available() {
-            return Err("Press Play solo once first: it gets your Den's server.".to_string());
+            // one step for the host (owner 5 Nov: "invite a friend easy 1 step"): Your Den's server is got here, as
+            // Play solo gets it (one small download, its sha256 checked)
+            if !tunnel_on {
+                return Err("Press Play solo once first: it gets your Den's server.".to_string());
+            }
+            lite::install(&app).map_err(|e| format!("{e} Check this PC is online, then press Invite a friend again."))?;
+            l = lite::Binary::find(&app);
         }
         if !l.status().running {
             l.start()?;
@@ -1005,6 +1011,129 @@ async fn den_net_stop() -> Result<(), String> {
         Ok(())
     })
     .await
+}
+
+/// Ready for friends? (host/ready.rs): the checklist the host sees before sending an invite, for Your Den on Den
+/// Lite ("lite") or the Host pack realm ("docker"), and the same as text to paste (no invite secret, no logins).
+#[derive(Serialize)]
+struct HostReady {
+    #[serde(flatten)]
+    ready: crate::host::ready::Ready,
+    diagnostics: String,
+}
+
+#[tauri::command]
+async fn host_ready(core: State<'_, Core>, kind: Option<String>) -> Result<HostReady, String> {
+    let kit = core.kit();
+    blocking(move || {
+        let r = host_ready_now(kind.as_deref().unwrap_or("lite"), kit);
+        let diagnostics = crate::host::ready::diagnostics(&r, env!("CARGO_PKG_VERSION"));
+        Ok(HostReady { ready: r, diagnostics })
+    })
+    .await
+}
+
+fn host_ready_now(kind: &str, kit: Option<PathBuf>) -> crate::host::ready::Ready {
+    use crate::host::{denways, lite::{self, DenLite}, litenet, ready};
+    let t = Duration::from_secs(6);
+    let mut f = ready::Facts { kind: kind.to_string(), os: std::env::consts::OS.into(), relay: realms::RELAY.into(), ..Default::default() };
+    let mut secret: Option<String> = None;
+    if kind == "docker" {
+        if let Some(link) = kit.as_deref().and_then(crate::host::invite) {
+            if let Some((relay, rid, s)) = realms::parse_invite(&link) {
+                (f.relay, f.realm_id, secret) = (relay, rid, Some(s));
+            } else if let Some((relay, rid)) = ready::link_parts(&link) {
+                (f.relay, f.realm_id) = (relay, rid);
+            }
+        }
+        let login = ready::login_answers("127.0.0.1:3724", t);
+        f.running = login.is_ok();
+        f.login = Some(login);
+    } else {
+        let app = settings::app_dir();
+        let l = lite::Binary::find(&app);
+        f.running = l.available() && l.status().running;
+        if let (true, Some((lp, _))) = (f.running, litenet::remote_ports(&l.den_dir())) {
+            f.login = Some(ready::login_answers(&format!("127.0.0.1:{lp}"), t));
+        }
+        // a tunnel just started gets a few seconds to come up
+        let mut st = litenet::state();
+        for _ in 0..40 {
+            if !st.running || st.connected {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+            st = litenet::state();
+        }
+        f.tunnel = Some((st.running, st.connected, st.last_error.clone()));
+        f.realm_id = st.realm_id.clone();
+        let root = lite::root(&app);
+        if f.realm_id.is_empty() {
+            if let Ok(p) = litenet::load_or_create_key(&litenet::key_path(&root)).and_then(|k| litenet::public_key(&k)) {
+                f.realm_id = litenet::realm_id(&p);
+            }
+        }
+        secret = lite::invite_secret(&root).ok();
+        f.lan = std::fs::read_to_string(l.den_dir().join(denways::DIRECT_FILE)).ok().map(|t| denways::direct_state(&t).is_ok());
+    }
+    f.relay_ms = ready::connect_ms(&f.relay, 443, 3, Duration::from_secs(4));
+    if !f.realm_id.is_empty() {
+        let base = format!("https://{}", f.relay);
+        match net::get_json(&format!("{base}/api/realms/{}", f.realm_id), t) {
+            Ok(v) => {
+                let online = v.get("online").and_then(serde_json::Value::as_bool).unwrap_or(false);
+                f.relay_online = Some(Ok(online));
+                if online {
+                    // the way a friend's game comes in: the invite's knock (a private world), then the world's own
+                    // login port at the relay
+                    let at = match &secret {
+                        Some(s) => realms::knock(&base, &f.realm_id, s).map(|(a, _)| a),
+                        None => match (v.get("address").and_then(serde_json::Value::as_str), v.get("auth_port").and_then(serde_json::Value::as_u64)) {
+                            (Some(a), Some(p)) => Ok(format!("{a}:{p}")),
+                            _ => Err("the relay gave no address for your world".to_string()),
+                        },
+                    };
+                    f.path = Some(at.and_then(|a| ready::login_answers(&ready::with_port(&a), t)));
+                }
+            }
+            Err(e) => f.relay_online = Some(Err(e)),
+        }
+    }
+    f.sleep_min = ready::sleep_now();
+    ready::judge(&f)
+}
+
+/// The friend's side, after Join: does the host's world answer at the address Join used? Ok(ms), or why not (a world
+/// that isn't answering is what loops the game between Connecting and Connected).
+#[tauri::command]
+async fn realm_answers(address: String) -> Result<u32, String> {
+    let address = crate::host::ready::with_port(address.trim());
+    if !crate::host::ready::may_test(&address, &[crate::addresses::RELAY_HOST, crate::addresses::OLD_RELAY_HOST]) {
+        return Err("Leyline only tests its own relay and your own network.".into());
+    }
+    blocking(move || crate::host::ready::login_answers(&address, Duration::from_secs(6))).await
+}
+
+/// A fix button on the checklist that opens the PC's own settings: "power" (sleep) or "firewall" (allowed apps).
+#[tauri::command]
+fn host_ready_fix(app: AppHandle, what: String) -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err(match what.as_str() {
+            "power" => "Open your computer's power or energy settings and turn off sleep while friends play.".into(),
+            _ => "Open your computer's firewall settings and allow Den Lite for your home network.".into(),
+        });
+    }
+    match what.as_str() {
+        "power" => {
+            app.opener().open_url("ms-settings:powersleep", None::<&str>).map_err(|e| e.to_string())?;
+            Ok("Your power settings are open: set Sleep to Never (plugged in), then press Check again.".into())
+        }
+        "firewall" => {
+            std::process::Command::new("control").arg("firewall.cpl").spawn().map_err(|e| e.to_string())?;
+            Ok("Your firewall settings are open: Allow an app, then tick Den Lite for Private networks.".into())
+        }
+        _ => Err("That isn't a fix Leyline knows.".into()),
+    }
 }
 
 /// What Play solo did: the line to show, and whether the game signs in by itself (`auto`) or the login screen
@@ -2539,6 +2668,9 @@ pub fn run() {
             den_friend,  // kick, build on/off, keep for one friend (host/denhost.rs)
             den_net_state,
             den_net_stop,
+            host_ready, // Ready for friends?: the checklist before an invite (host/ready.rs)
+            host_ready_fix,
+            realm_answers, // the friend's side: the host's world answers (host/ready.rs)
             den_own_address, // Invite: your own address for friends (host/denways.rs)
             den_models, // My models (host/denmodels.rs)
             den_models_add,

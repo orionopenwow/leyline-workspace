@@ -117,7 +117,7 @@
   function paintNotes() {
     for (const n of [...notes]) {
       if (!n.isConnected) { notes.delete(n); continue; }
-      n.textContent = noteText(n.__solo);
+      n.textContent = (n.__lead || "") + noteText(n.__solo);
       const b = n.__soloBtn;
       if (b && n.__solo.kind === "realm" && !n.__solo.coming) b.title = realmTitle(n.__solo);
     }
@@ -142,21 +142,24 @@
     if (t.kind === "realm") docker();
     return b;
   }
-  function note(t, b) {
+  // `lead`: words before the line, where the card's own lines could be mistaken for it (a realm row: "Play solo · ",
+  // so "Needs Docker" reads as the solo button's, not the realm's; 5 Nov polish)
+  function note(t, b, lead) {
     if (!t) return null;
     const p = mk("p", "solo-note", "");
     p.__solo = t;
     p.__soloBtn = b || null;
-    p.textContent = noteText(t);
+    p.__lead = lead || "";
+    p.textContent = p.__lead + noteText(t);
     notes.add(p);
     return p;
   }
-  function attach(acts, body, t) {
+  function attach(acts, body, t, lead) {
     if (!t || !acts) return null;
     const b = button(t);
     const online = acts.firstElementChild;   // the card's online button stays first: Play solo right beside it
     if (online) online.after(b); else acts.append(b);
-    const n = note(t, b);
+    const n = note(t, b, lead);
     if (body) body.append(n);
     return { button: b, note: n };
   }
@@ -268,11 +271,16 @@
       return null;
     } finally { if (b) b.disabled = false; }
   }
-  function inviteButton(sayTo) {
+  // Since 5 Nov the button opens Play with friends (hostfriends.js): one press makes the link, checks the way a friend
+  // comes in (Ready for friends?) and copies it once everything is green. `kind`: "docker" from a full realm's page.
+  function inviteButton(sayTo, kind) {
     const b = mk("button", "btn small solo-invite", "Invite a friend");
     b.type = "button";
-    b.title = "Copies a link for one friend to join your world on this PC (private: only people with the link get in)";
-    b.addEventListener("click", () => invite(b, sayTo));
+    b.title = "One link for one friend to join your world on this PC (private: only people with the link get in), checked before you send it";
+    b.addEventListener("click", () => {
+      if (window.LeylineHostFriends) window.LeylineHostFriends.open({ go: true, kind: kind || null });
+      else invite(b, sayTo);
+    });
     return b;
   }
 
@@ -291,6 +299,9 @@
       mk("p", "solo-join-line", "Join starts your game on their world, through the Leyline relay. Your address isn't shown to them."));
     const st = mk("p", "status solo-join-status");
     st.setAttribute("role", "status");
+    // what's happening (hostfriends.js, looked up on Join: a leyline:// link can arrive before it loads): reaching the
+    // host, the host answering, logging in, and the fix when stuck
+    let HF = null, list = null;
     const acts = mk("div", "solo-join-acts");
     const join = mk("button", "btn primary", "Join");
     join.type = "button";
@@ -315,6 +326,8 @@
         return;
       }
       line("Joining…");
+      if (!list && window.LeylineHostFriends) { HF = window.LeylineHostFriends; list = HF.steps(); list.id = "solo-join-steps"; card.append(list); }
+      if (list) { list.hidden = false; list.set("reach", "wait", "Asking the Leyline relay…"); list.set("answer", "wait", ""); list.set("login", "wait", ""); }
       try {
         const j = await call("join_invite", { client: c.id, link });
         const via = { lan: " on your shared network", own: " through your friend's own address", relay: " through the Leyline relay" }[j.way] || "";
@@ -323,7 +336,24 @@
         else line(`${j.name || "Their world"} is open for you: ${c.name} now points at it. Press PLAY.`, "ok");
         later.textContent = "Close";
         if (typeof refresh === "function") refresh().catch(() => { /* the bar as it was */ });
-      } catch (e) { line(oops(e, "Their world didn't answer. Ask your friend to check it is running."), "bad"); join.disabled = false; }
+        if (HF && list) {
+          const up = await HF.afterJoin(j, list, (t, k) => line(t, k));
+          if (up !== false) list.set("login", j.guest ? (j.guest.auto ? "ok" : "warn") : "ok",
+            j.guest ? (j.guest.auto ? "Your game signs in by itself with the login in your link." : `Type account ${j.guest.account} and the password above.`)
+              : "Log in with your account on their world (made on the link's page).");
+        }
+      } catch (e) {
+        const x = HF ? HF.explainJoin(e) : null;
+        if (x && list) {
+          const order = ["reach", "answer", "login"];
+          const at = x.step === "answer" ? "answer" : "reach";
+          for (const id of order.slice(0, order.indexOf(at))) list.set(id, "ok", "");
+          list.set(at, "bad", x.line);
+          for (const id of order.slice(order.indexOf(at) + 1)) list.set(id, "skip", "");
+          line(x.fix, "bad");
+        } else line(oops(e, "Their world didn't answer. Ask your friend to check it is running."), "bad");
+        join.disabled = false;
+      }
     });
     acts.append(join, later);
     card.append(acts, st);

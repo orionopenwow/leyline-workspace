@@ -16,7 +16,8 @@ use crate::notice::{self, Item, Old, Route};
 use crate::{buildtools, dojo, gizmo, movewatch, mymodels, ovmod, places, play, raw, testctl};
 use crate::{Gender as HeroGender, Lock, Shared};
 use std::io::{self, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use crate::wire::Stream;
+use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -54,7 +55,7 @@ pub fn serve(listener: TcpListener, shared: Arc<Shared>, remote: bool) {
             let _ = stream.set_nodelay(true);
             let _ = stream.set_read_timeout(Some(Duration::from_secs(300)));
             let remote = remote || !stream.peer_addr().map(|a| a.ip().is_loopback()).unwrap_or(false);
-            if let Err(e) = session(stream, &shared, remote) {
+            if let Err(e) = session(Stream::tcp(stream), &shared, remote) {
                 if e.kind() != io::ErrorKind::UnexpectedEof {
                     shared.log(&format!("world: {e}"));
                 }
@@ -70,7 +71,7 @@ fn bad(what: impl Into<String>) -> io::Error {
 /// The writing half of a connection: the stream and the header encrypter, shared with the session's _watcher thread
 /// (the launcher's open.json), so either may send.
 #[derive(Clone)]
-pub struct Writer(Arc<Mutex<(TcpStream, Option<ServerEncrypterHalf>)>>);
+pub struct Writer(Arc<Mutex<(Stream, Option<ServerEncrypterHalf>)>>);
 
 impl Writer {
     fn send<M: ServerMessage>(&self, m: &M) -> io::Result<()> {
@@ -105,7 +106,7 @@ impl Writer {
 }
 
 struct Conn {
-    s: TcpStream,
+    s: Stream,
     dec: Option<ServerDecrypterHalf>,
     w: Writer,
 }
@@ -317,7 +318,8 @@ fn now_ms() -> u64 {
 }
 
 #[allow(unused_assignments)]
-fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
+/// One world connection, from the auth challenge to its end (also the page's own Den Lite: web.rs).
+pub fn session(s: Stream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     let w = Writer(Arc::new(Mutex::new((s.try_clone()?, None))));
     let mut c = Conn { s, dec: None, w };
     let seed = ProofSeed::new();
@@ -557,6 +559,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 moved_once = true;
                 track(shared, &sess, &mut watch, op, &body, n);
                 watch_landing(&c.w, shared, &sess, &mut landing, &body, n)?;
+                tale_moved(&c.w, shared, &sess, n, op, &body)?;
                 aid_follow(&c.w, shared, &sess, &sel, &mut aids, n)?;
                 if let Some(l) = shared.live.lk().as_mut().filter(|l| l.0 == sess.id) {
                     l.2 = n;
@@ -712,6 +715,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     track(shared, &sess, &mut watch, op, &body, n);
                     guard_rail(&c.w, shared, &sess, was, n, op, &body)?;
                     watch_landing(&c.w, shared, &sess, &mut landing, &body, n)?;
+                    tale_moved(&c.w, shared, &sess, n, op, &body)?;
                     aid_follow(&c.w, shared, &sess, &sel, &mut aids, n)?;
                     if let Some(l) = shared.live.lk().as_mut().filter(|l| l.0 == sess.id) {
                         l.2 = n;
@@ -1759,6 +1763,7 @@ const HELP: &[&str] = &[
     ".den mounts [list|off]: every mount in your spellbook; flying ones fly with .den fly on",
     ".go <place> (stormwind, goldshire, icc, nagrand arena...) or .go <map> <x> <y> <z>: go anywhere your game has; .back: where you were; .den home: your Den, from anywhere; .den places [word]: the list; /tp: the Teleports window",
     ".den here: make your Den here (each place keeps its own); .den size city: a whole-city Den; .den copy <place>: a place from your own game files",
+    ".den island: Sky Island, your Den floating in the sky (.den island off: home); .den tale: tales to play, or say \"Jaina, make a quest where ...\"; .den pack: your Den as a code",
 ];
 
 fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Result<()> {
@@ -2109,6 +2114,23 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         (".den", "mounts") | (".den", "mount") => sandbox::mounts_cmd(c, shared, sess, w(2), w(3)),
         (".den", "fly") => fly(c, shared, sess, w(2)),
         (".den", "speed") => speed(c, shared, sess, w(2)),
+        // the tales (taleplay.rs, tale.rs): play, stop, keep, codes, Jaina's drafts
+        (".den", "tale") | (".den", "tales") | (".den", "quest") | (".den", "quests") => {
+            let rest = text.split_whitespace().skip(2).collect::<Vec<_>>().join(" ");
+            let outs = crate::taleplay::chat(shared, &words[2..], &rest);
+            tale_outs(c, shared, sess.me.guid, outs)
+        }
+        // Sky Island (skyisland.rs): the Den floats; `.den island off` takes it back home
+        (".den", "island") | (".den", "sky") => island(c, shared, sess, w(2)),
+        // a Den as a code (packs.rs, denpack.rs): `.den pack [name]`, `.den pack open <name>`
+        (".den", "pack") | (".den", "code") => pack(c, shared, sess, &words[2..]),
+        (".den", "companion") | (".den", "jaina")
+            if crate::taleplay::wants_tale(&words[2..].join(" "))
+                || (shared.tales.lk().draft.is_some() && matches!(crate::jaina::word(&words[2..].join(" ")), Some(crate::jaina::Word::Yes | crate::jaina::Word::No))) =>
+        {
+            let outs = crate::taleplay::heard(shared, &words[2..].join(" ")).unwrap_or_default();
+            tale_outs(c, shared, sess.me.guid, outs)
+        }
         (".den", "companion") | (".den", "jaina") => match w(2) {
             "build" | "make" => match dojo::build_words(&words[2..].join(" ")) {
                 Some(name) => build_or_offer(c, shared, sess, p, &name),
@@ -2185,6 +2207,10 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             // "Jaina, ..." near her: she hears it too (said aloud as usual). The short commands ("Jaina, come") are
             // hers wherever she is in the Den; the rest is an ask, heard within HEAR yards.
             if let Some(words) = companion::heard(text) {
+                // "Jaina, make a quest where ...", and "yes" / "no" to her draft (taleplay.rs)
+                if let Some(outs) = crate::taleplay::heard(shared, &words) {
+                    return tale_outs(c, shared, sess.me.guid, outs);
+                }
                 // "Jaina, build a garden": she builds a stamp (dojo.rs), wherever she is in the Den
                 if let Some(name) = dojo::build_words(&words) {
                     return build_or_offer(c, shared, sess, p, &name);
@@ -2357,6 +2383,10 @@ fn creature_answer(entry: u32) -> SMSG_CREATURE_QUERY_RESPONSE {
     if let Some(a) = crate::farsight::creature(entry) {
         return a;
     }
+    // a tale's NPCs (taleplay.rs)
+    if let Some(a) = crate::taleplay::creature(entry) {
+        return a;
+    }
     if let Some(a) = crate::glide::creature(entry) {
         return a;
     }
@@ -2480,14 +2510,20 @@ pub fn companion_ticker(shared: Arc<Shared>) {
     loop {
         std::thread::sleep(Duration::from_millis(500));
         n += 1;
-        let _ = companion_tick(&shared, n % 2 == 0);
-        notices_due(&shared);
-        // every 2 seconds, when the Den changed; the Den bar shows "Saved 2 s ago"
-        if n % 4 == 0 && shared.autosave() {
-            let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|l| (l.0, l.1.clone()));
-            if let Some((sess, w)) = live {
-                let _ = bar_data(&w, &shared, sess, PLAYER_GUID, "saved", "auto");
-            }
+        companion_step(&shared, n);
+    }
+}
+
+/// One beat of [`companion_ticker`] (every 500 ms; `n` counts them): the page's Den Lite calls it from its own clock
+/// (web.rs), as it has no threads.
+pub fn companion_step(shared: &Shared, n: u64) {
+    let _ = companion_tick(shared, n % 2 == 0);
+    notices_due(shared);
+    // every 2 seconds, when the Den changed; the Den bar shows "Saved 2 s ago"
+    if n % 4 == 0 && shared.autosave() {
+        let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|l| (l.0, l.1.clone()));
+        if let Some((sess, w)) = live {
+            let _ = bar_data(&w, shared, sess, PLAYER_GUID, "saved", "auto");
         }
     }
 }
@@ -2626,6 +2662,10 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
 /// (a copy of what was there is kept as "backup"); each id opens once, also across restarts (`.open-done`).
 fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
     let stop = Arc::new(AtomicBool::new(false));
+    // the page's Den Lite (web.rs) has no launcher beside it and no threads: nothing to watch
+    if cfg!(target_arch = "wasm32") {
+        return StopOnDrop(stop);
+    }
     let flag = stop.clone();
     let dir = shared.cfg.den_dir.clone();
     let shared = shared.clone();
@@ -2771,6 +2811,15 @@ fn check_open(shared: &Shared, w: &Writer, file: &str) -> io::Result<()> {
         Err(e) => return say(w, &format!("The launcher asked to open '{file}': {e}")),
     };
     say(w, &format!("Opening '{file}' from the launcher."))?;
+    // a Sky Island file (its look: skyisland.rs): the Den floats up first and you land on it, then the file's own
+    // props and tales go on it
+    if doc.room.as_ref().is_some_and(|r| r.look == crate::skyisland::LOOK) {
+        let live = shared.live.lk().clone();
+        if let Some((sess_id, _, _)) = live {
+            let sess = Sess { id: sess_id, addons: Vec::new(), me: Me::host(shared) };
+            island(w, shared, &sess, "")?;
+        }
+    }
     let mut d = shared.den.lk();
     if !d.props.is_empty() {
         let _ = d.save(&shared.cfg.den_dir, "backup", now());
@@ -3062,6 +3111,177 @@ fn dummy_create(shared: &Shared, d: &dojo::Dummy) -> SMSG_UPDATE_OBJECT {
 }
 
 /// Every 50 ms for as long as Den Lite runs: the companion's build in progress (dojo::Job), shown to the host.
+/// What a tale does (taleplay.rs Out), to the host's game.
+fn tale_outs(c: &Writer, shared: &Shared, guid: u64, outs: Vec<crate::taleplay::Out>) -> io::Result<()> {
+    use crate::taleplay::Out as T;
+    static TELE: AtomicU64 = AtomicU64::new(3_000_000);
+    for o in outs {
+        match o {
+            T::Say(s) => say(c, &s)?,
+            T::Voice { name, guid: g, text } => c.send(&SMSG_MESSAGECHAT {
+                chat_type: SMSG_MESSAGECHAT_ChatType::MonsterSay { sender1: name.as_str().into(), target1: NamedGuid::zero() },
+                language: Language::Universal,
+                sender: Guid::new(g),
+                flags: 0,
+                message: text.as_str().into(),
+                tag: PlayerChatTag::None,
+            })?,
+            T::Addon(name, data) => send_addon(c, guid, "wuden", name, &data)?,
+            T::Unit(m) => c.send(&*m)?,
+            T::Objects(objs) => send_creates(c, shared, &objs)?,
+            T::Destroy(gs) => {
+                for g in gs {
+                    c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false })?;
+                }
+            }
+            T::Teleport(p) => {
+                let counter = (TELE.fetch_add(1, Ordering::Relaxed) & 0xFFFF_FFFF) as u32;
+                c.send_raw(places::MSG_MOVE_TELEPORT_ACK, &places::teleport_body(guid, counter, movewatch::server_ms(), p[0], p[1], p[2], p[3]))?;
+            }
+            T::Event(e, d) => shared.event(e, "", &d),
+            T::Dummies(at, n) => {
+                dummies_up(shared, at, n);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A player moved: Sky Island's edge (everyone) and the tale under way (the host's; taleplay.rs).
+fn tale_moved(c: &Writer, shared: &Shared, sess: &Sess, n: Pos, op: u32, body: &[u8]) -> io::Result<()> {
+    let flags = raw_move(op, body).and_then(|_| movewatch::raw_flags(body)).unwrap_or(0);
+    let outs = crate::taleplay::moved(shared, n, flags & (movewatch::FLYING | movewatch::CAN_FLY) != 0, sess.me.host);
+    if outs.is_empty() {
+        return Ok(());
+    }
+    tale_outs(c, shared, sess.me.guid, outs)
+}
+
+/// The tale's clock and Jaina's drafts (taleplay.rs tick), to the host in the world.
+fn tale_tick(shared: &Shared) -> io::Result<()> {
+    let outs = crate::taleplay::tick(shared);
+    if outs.is_empty() {
+        return Ok(());
+    }
+    let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let Some((_, w, _)) = live else { return Ok(()) };
+    tale_outs(&w, shared, PLAYER_GUID, outs)
+}
+
+/// `.den island` (Sky Island, skyisland.rs): the Den moves up into the sky (the Den here kept for its spot, as
+/// `.den here` does), the island's look, you land by the tree, the dummies go up and the welcome tale starts the first
+/// time. `.den island off`: the Den back on its first spot.
+fn island(c: &Writer, shared: &Shared, sess: &Sess, arg: &str) -> io::Result<()> {
+    use crate::skyisland as sky;
+    if !sess.me.host {
+        return say(c, "Only the Den's owner moves it.");
+    }
+    let off = matches!(arg, "off" | "home" | "leave" | "back" | "down");
+    let spot = if off { den::Spot::default() } else { den::Spot { map: sky::MAP, x: sky::X, y: sky::Y, z: sky::Z, half: den::ring_half(0) } };
+    let t0 = std::time::Instant::now();
+    let mut ch = {
+        let mut d = shared.den.lk();
+        let here = d.spot;
+        let mut ch = if here.map == spot.map && (here.x - spot.x).abs() < 1.0 && (here.y - spot.y).abs() < 1.0 {
+            Change::default()
+        } else {
+            d.relocate(&shared.cfg.den_dir, spot, if off { "your Den" } else { sky::NAME }, 0, now())
+        };
+        if !off && d.look.name != sky::LOOK {
+            let c2 = d.open(&crate::taleplay::island_doc(), true);
+            ch.destroyed.extend(c2.destroyed);
+            ch.created.extend(c2.created);
+        }
+        if off && d.look.name == sky::LOOK {
+            // home has no island under it: the open plane again
+            d.look = den::LOOKS[0];
+            d.spot.half = den::ring_half(0);
+            ch.destroyed.extend(d.build_room());
+            ch.created.extend(d.room.clone());
+        }
+        ch.message = String::new();
+        ch
+    };
+    shared.den_map.store(spot.map, Ordering::Relaxed);
+    shared.event("den_island", &sess.me.name, &format!("{} {} pieces {} ms", if off { "off" } else { "on" }, ch.created.len(), t0.elapsed().as_millis()));
+    // the tale under way belonged to the other place
+    let stop = shared.tales.lk().run.is_some();
+    if stop {
+        tale_outs(c, shared, sess.me.guid, crate::taleplay::chat(shared, &["stop".to_string()], "stop"))?;
+    }
+    apply(c, shared, &std::mem::take(&mut ch))?;
+    shared.autosave();
+    if off {
+        return travel(c, shared, sess, home_target(shared));
+    }
+    let l = sky::LANDING;
+    travel(c, shared, sess, places::Target { map: sky::MAP, x: spot.x + l[0], y: spot.y + l[1], z: spot.z + l[2] + places::TYPED_LIFT, o: l[3], area: None, title: sky::NAME.into() })?;
+    let dm = sky::DUMMIES_AT;
+    dummies_up(shared, At { x: spot.x + dm[0], y: spot.y + dm[1], z: spot.z, o: dm[3] }, 3);
+    say(c, "Sky Island: build with F7, spar with the dummies by the tree, fall off and you're back by the tree. .den pack makes it a code to pass on; .den island off goes home.")?;
+    if !crate::taleplay::welcomed(&shared.cfg.den_dir) {
+        let text = crate::taleplay::island_doc().extra.get("tales").and_then(|t| t.as_array()).and_then(|a| a.first()).and_then(|t| t.as_str()).map(String::from).unwrap_or_else(|| sky::WELCOME_TALE.to_string());
+        match crate::taleplay::start(shared, &text) {
+            Ok(outs) => tale_outs(c, shared, sess.me.guid, outs)?,
+            Err(e) => say(c, &e)?,
+        }
+    }
+    Ok(())
+}
+
+/// `.den pack [name]`: the Den as it is now as a code (packs.rs), kept as `<dens>/<name>.denpack` and its link in the Den
+/// bar; `.den pack open <name>`: a `.denpack` file from the Dens folder, checked, kept as a Den file (or a tale).
+fn pack(c: &Writer, shared: &Shared, sess: &Sess, args: &[String]) -> io::Result<()> {
+    if !sess.me.host {
+        return say(c, "Only the Den's owner makes its code.");
+    }
+    let dir = shared.cfg.den_dir.clone();
+    if args.first().map(String::as_str) == Some("open") {
+        let Some(name) = args.get(1).and_then(|n| den::clean_name(n.trim_end_matches(".denpack"))) else { return say(c, "Which code file? .den pack open <name> (a <name>.denpack in your Dens folder)") };
+        let opened = crate::packs::read(&dir.join(crate::denpack::file_name(&name))).and_then(|t| crate::packs::open(&t));
+        return match opened {
+            Err(e) => say(c, &e),
+            Ok(crate::packs::Opened::Den(_, text)) | Ok(crate::packs::Opened::Stamp(_, text)) => {
+                let path = dir.join(format!("{name}.den.json"));
+                if path.exists() {
+                    return say(c, &format!("A Den file called {name} is already there: rename the code file first."));
+                }
+                match crate::settings::write_atomic(&path, text.as_bytes()) {
+                    Ok(()) => say(c, &format!("The code is a Den file now: .den load {name} opens it.")),
+                    Err(_) => say(c, "That Den file can't be written."),
+                }
+            }
+            Ok(crate::packs::Opened::Tale(t, text)) => {
+                let slug = crate::taleplay::slug(&t.title);
+                let tdir = dir.join(crate::taleplay::TALES_DIR);
+                let _ = std::fs::create_dir_all(&tdir);
+                match crate::settings::write_atomic(&tdir.join(format!("{slug}.tale")), text.as_bytes()) {
+                    Ok(()) => say(c, &format!("The tale \"{}\" is here: .den tale play {slug}", t.title)),
+                    Err(_) => say(c, "That tale can't be written."),
+                }
+            }
+        };
+    }
+    let name = args.first().and_then(|n| den::clean_name(n)).unwrap_or_else(|| "my-den".into());
+    let code = {
+        let d = shared.den.lk();
+        crate::packs::den_code(&d, &name)
+    };
+    match crate::packs::keep(&dir, &name, &code) {
+        Err(e) => say(c, &e),
+        Ok(path) => {
+            shared.event("den_pack", &sess.me.name, &format!("{name} {} letters", code.len()));
+            send_addon(c, sess.me.guid, "wuden", "pack", &crate::denpack::link(&code).unwrap_or_else(|| code.clone()))?;
+            say(c, &format!(
+                "Your Den as a code ({} letters{}): {}. Friends open it in the launcher (Saved Dens > Open a code), no server needed.",
+                code.len(),
+                if crate::denpack::link(&code).is_some() { ", short enough for a link" } else { "" },
+                path.display()
+            ))
+        }
+    }
+}
+
 pub fn dojo_ticker(shared: Arc<Shared>) {
     loop {
         std::thread::sleep(Duration::from_millis(50));
@@ -3069,9 +3289,15 @@ pub fn dojo_ticker(shared: Arc<Shared>) {
     }
 }
 
+/// One beat of [`dojo_ticker`] (every 50 ms), for the page's Den Lite (web.rs).
+pub fn dojo_step(shared: &Shared) {
+    let _ = dojo_tick(shared);
+}
+
 fn dojo_tick(shared: &Shared) -> io::Result<()> {
     sandbox::tick(shared);
     let _ = flight_tick(shared);
+    let _ = tale_tick(shared);
     if shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job.is_none() {
         return Ok(());
     }

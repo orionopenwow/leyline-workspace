@@ -280,5 +280,80 @@ class Files(unittest.TestCase):
             self.assertIn("vanillaplus", open(os.path.join(KIT, f)).read())
 
 
+class LinkWithoutDocker(unittest.IsolatedAsyncioTestCase):
+    """Hosting audit, 5 Nov ("people should be able to host from anything"): a server box with no Docker links too.
+    The real `leyline link` with LEYLINE_NO_DOCKER=1 starts the agent on this machine's python3 (its own process,
+    nohup, a pid file); a player then logs in through the relay to the host's server."""
+
+    async def asyncSetUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="wu-link-nod-")
+        lo, hi = free_range(20)
+        self.relay = await relaymod.Relay(relaymod.Config(
+            name="127.0.0.1", http_bind="127.0.0.1:0", game_bind="127.0.0.1", shared_auth_port=0,
+            port_min=lo, port_max=hi, state_file=os.path.join(self.tmp, "relay", "state.json"),
+            listing_site_secret="s")).start()
+        self.http = f"http://127.0.0.1:{self.relay.http_port()}"
+        self.realm = await FakeRealm(realm_name="Box Realm").start()
+        self.realm.world_address = f"127.0.0.1:{self.realm.world_port}"   # its realm list already works for players
+        self.realm.add_account("BOXPLAYER", "BOXPASS1")
+        self.kit = os.path.join(self.tmp, "kit")
+        os.makedirs(self.kit)
+        for f in ("leyline", "host-wrath-realm.sh"):
+            shutil.copy(os.path.join(KIT, f), self.kit)
+        shutil.copytree(os.path.join(KIT, "tools"), os.path.join(self.kit, "tools"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        self.bin = os.path.join(self.tmp, "bin")     # a docker that is installed but not running
+        os.makedirs(self.bin)
+        with open(os.path.join(self.bin, "docker"), "w") as f:
+            f.write('#!/bin/sh\necho "docker $*" >> "%s/calls"\nexit 1\n' % self.tmp)
+        os.chmod(os.path.join(self.bin, "docker"), 0o755)
+
+    async def asyncTearDown(self):
+        subprocess.run(["bash", os.path.join(self.kit, "leyline"), "link", "stop"], env=self.env(), capture_output=True,
+                       timeout=30)
+        await self.relay.stop()
+        await self.realm.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def env(self, **extra):
+        e = dict(os.environ, PATH=self.bin + os.pathsep + os.environ["PATH"], LEYLINE_NONINTERACTIVE="1",
+                 LEYLINE_LINK_WAIT="15", LEYLINE_LINK_NAME="Box Realm", LEYLINE_LINK_CLIENT="wrath",
+                 LEYLINE_LINK_AUTH=f"127.0.0.1:{self.realm.auth_port}", LEYLINE_LINK_WORLD=f"127.0.0.1:{self.realm.world_port}",
+                 WU_RELAY_URL=f"ws://127.0.0.1:{self.relay.http_port()}/agent", WU_LISTING_URL=self.http + "/api/listing/heartbeat",
+                 **extra)
+        for k in ("WU_KIT", "LEYLINE_LOCAL_TOOLS", "LEYLINE_NO_DOCKER"):
+            e.pop(k, None)
+        e.update(extra)
+        return e
+
+    async def test_link_on_python3_then_play_through_the_relay(self):
+        p = await asyncio.create_subprocess_exec("bash", os.path.join(self.kit, "leyline"), "link", env=self.env(),
+                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        out = (await asyncio.wait_for(p.communicate(), 90))[0].decode()
+        self.assertEqual(p.returncode, 0, out)
+        self.assertIn("No Docker here", out)                    # chosen by itself: docker answers but isn't running
+        self.assertIn("Connected to the Leyline relay", out)
+        self.assertIn("@reboot", out)
+        self.assertFalse(re.search(r"(?i)world\s*of\s*warcraft|\bwow\b|warcraft|lich\s*king|blizzard", out))
+        calls = open(os.path.join(self.tmp, "calls")).read() if os.path.exists(os.path.join(self.tmp, "calls")) else ""
+        self.assertNotIn("docker run", calls)
+        rid = json.load(open(os.path.join(self.kit, "state", "host.json")))["realm_id"]
+        s = self.relay.sessions.get(rid)
+        self.assertIsNotNone(s)
+        auth = self.relay.state["realms"][rid]["auth"]
+        rep = await wire335.full_run("127.0.0.1", auth, "BOXPLAYER", "BOXPASS1", timeout=30)
+        self.assertIn("enter_world", rep["steps"])
+        st = subprocess.run(["bash", os.path.join(self.kit, "leyline"), "link", "status"], env=self.env(),
+                            capture_output=True, text=True, timeout=30).stdout
+        self.assertIn("running on python3", st)
+        subprocess.run(["bash", os.path.join(self.kit, "leyline"), "link", "stop"], env=self.env(), capture_output=True,
+                       timeout=30)
+        for _ in range(100):
+            if rid not in self.relay.sessions:
+                break
+            await asyncio.sleep(0.1)
+        self.assertNotIn(rid, self.relay.sessions, "stop ends the agent")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,13 @@ It opens the same Den files as the full Den (`docs/DEN.md`, "The save file": for
 same stamps (`realm/custom/lua_scripts/den-stamps/*.den.json`), so a Den made here moves to the Docker Den later to
 share with friends, and back.
 
+## In a web page (5 Nov)
+
+The same Den Lite runs inside the browser game's page for "Play solo on this device" (docs/PHONE-SOLO.md):
+`cargo build --release --target wasm32-wasip1 --features web --bin den-lite-web` (src/web.rs, src/web_main.rs). The
+sessions run over `wire::Stream` (src/wire.rs: a TCP connection on a PC, the page's fake sockets there); CI builds it
+(den-lite-web.yml) onto `den-lite-latest` as `den-lite-web.wasm`.
+
 ## Run it
 
 ```

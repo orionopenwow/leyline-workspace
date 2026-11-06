@@ -16,6 +16,7 @@ const { chromium } = require('playwright');
 
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const PLAY_URL = 'https://leylinelauncher.com/wrath';
+const SOLO_URL = 'https://leylinelauncher.com/wrath/play?mini=mini&go=solo:phone';
 const PORTRAIT = { width: 390, height: 844 };
 const LANDSCAPE = { width: 844, height: 390 };
 const BANNED = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
@@ -75,8 +76,8 @@ async function open(opts = {}, viewport = PORTRAIT) {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.route(/^https?:\/\//, (r) => (r.request().url() === PLAY_URL
-    ? r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Play</title><p id="game">the browser game</p>' })
+  await page.route(/^https?:\/\//, (r) => (r.request().url() === PLAY_URL || r.request().url() === SOLO_URL
+    ? r.fulfill({ contentType: 'text/html', body: `<!doctype html><title>Play</title><p id="game">${r.request().url() === SOLO_URL ? 'solo' : 'the browser game'}</p>` })
     : r.abort()));
   await page.addInitScript(FAKE, Object.assign({ os: 'android', gpu: true }, opts));
   await page.goto(INDEX);
@@ -188,6 +189,24 @@ test('PLAY opens the website\'s Play page in the app; Back comes back to the lau
   assert.equal(page.url(), INDEX);
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('Play solo on this phone opens the game page in solo through the site\'s Play; Back comes back', async () => {
+  const { page, ctx, errors } = await open();
+  assert.ok(await visible(page, '#ph-solo'));
+  await Promise.all([page.waitForURL(SOLO_URL), page.click('#ph-solo')]);
+  assert.equal(await page.textContent('#game'), 'solo');
+  await page.goBack();
+  await page.waitForFunction(() => window.LeylinePhone && window.LeylinePhone.on && document.querySelector('#page-phone.on'));
+  // no WebGPU: the same one line as PLAY, never a black page
+  await ctx.close();
+  const b = await open({ gpu: false });
+  await b.page.click('#ph-solo');
+  assert.equal(b.page.url(), INDEX);
+  assert.ok(await visible(b.page, '#ph-nogpu'));
+  assert.deepEqual(errors, []);
+  assert.deepEqual(b.errors, []);
+  await b.ctx.close();
 });
 
 test('no WebGPU in this web view: one line and Open in Chrome, never a black page', async () => {

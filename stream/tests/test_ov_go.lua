@@ -291,6 +291,29 @@ console("ovgo set PLAYER arena:1v1")
 local ar = player({ guid = 33, level = 80 })
 events[3](3, ar); run(ar)
 check("arena:1v1 at login: .q1v1 unrated", ar.commands[1] == "q1v1 unrated" and #ar.teleports == 0 and auth.intents[42] == nil)
+-- without mod-leyline-bossfights (an older realm image): plain words, the go forgotten, nothing run, nobody moved
+check("module heartbeat: no query function means don't block", T.bossfightsLive() == true)
+local beat = false
+CharDBQuery = function(sql)
+    if sql:find("leyline_bossfight_live", 1, true) then return beat and rows({ { 1 } }) or nil end
+    return nil
+end
+console("ovgo set PLAYER bf:frozen-throne:normal:bots")
+local nolive = player({ guid = 34, level = 80 })
+events[3](3, nolive); run(nolive)
+check("bf without the module: says so plainly, runs nothing, never moves, forgets the go",
+    #nolive.commands == 0 and #nolive.teleports == 0 and last(nolive):match("aren't open on this realm yet")
+    and auth.intents[42] == nil)
+console("ovgo set PLAYER arena:1v1")
+local ar2 = player({ guid = 35, level = 80 })
+events[3](3, ar2); run(ar2)
+check("the arena queue doesn't need the boss fight module", ar2.commands[1] == "q1v1 unrated")
+beat = true
+console("ovgo set PLAYER bf:frozen-throne:heroic:bots")
+local live = player({ guid = 36, level = 80 })
+events[3](3, live); run(live)
+check("bf with the module's heartbeat: runs the join", live.commands[1] == "bossfight join frozen-throne heroic bots")
+CharDBQuery = nil
 check("places still work beside the mode kinds", T.validGo("q:deadmines") and T.validGo("b:icc-frozen-throne") and not T.modeGo("q:deadmines"))
 
 -- messages ----------------------------------------------------------------------------------------------------

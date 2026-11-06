@@ -89,6 +89,10 @@ const FAKE = (o) => {
       case 'den_net_state': return { running: false };
       case 'forge_state': return { running: false };
       case 'join_invite': return { address: 'relay.openvanilla.app:40007', name: 'Hosty world', guest: args.link.includes('~') ? { auto: true, account: 'G1', password: '', why: '', message: '' } : null };
+      // Ready for friends? (host/ready.rs): all green unless the test says otherwise
+      case 'host_ready': return { kind: args.kind, ok: true, relay: 'relay.leylinelauncher.com', realm_id: 'dddddddddddddddd', relay_ms: 30, path_ms: 80, os: 'windows', diagnostics: '[ok] server',
+        checks: [{ id: 'server', state: 'ok', label: 'Your world is running', line: 'Running.', fix: '', action: '' }, { id: 'path', state: 'ok', label: 'A friend can reach you', line: 'A test login went through.', fix: '', action: '' }] };
+      case 'realm_answers': return 40;
       case 'mode_prepare_desktop': return 'Minigolf starts after you log in.';
       case 'mode_open_browser': return 'Opened it in your browser.';
       case 'open_link': return null;
@@ -223,11 +227,13 @@ test('Home: the ways to play solo, and Invite a friend copies Your Den\'s link (
   const { page, ctx, errors } = await open({ lite: 'running' });
   await page.waitForSelector('#solo-home');
   assert.match(await page.textContent('#solo-home .solo-ways'), /Single player.*Modes.*Your own realm.*GM command center/);
+  // one press (owner 5 Nov): Play with friends opens, makes the link, checks the way in, then copies it
   await page.click('#solo-home .solo-invite');
-  await page.waitForFunction(() => /Invite link copied/.test(document.getElementById('solo-status').textContent));
+  await page.waitForFunction(() => /Ready: your invite link is copied/.test(document.getElementById('wf-status').textContent));
   assert.deepEqual(await callsOf(page, 'den_invite'), [{ name: null }]);
+  assert.deepEqual(await callsOf(page, 'host_ready'), [{ kind: 'lite' }]);
   assert.equal(await page.evaluate(() => window.__clip), 'https://relay.leylinelauncher.com/join/dddddddddddddddd#DENSECRETDENSECR~G1~p');
-  assert.match(await page.textContent('#solo-status'), /Open in Leyline.*24 hours/);
+  assert.match(await page.textContent('#wf-link-box'), /Open in Leyline.*24 hours/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -236,17 +242,22 @@ test('Invite a friend from a Host pack realm: its invite link', async () => {
   const { page, ctx, errors } = await open({ kit: KIT, lite: false });
   await page.waitForSelector('#solo-home');
   await page.click('#solo-home .solo-invite');
-  await page.waitForFunction(() => /Invite link copied/.test(document.getElementById('solo-status').textContent));
+  await page.waitForFunction(() => /Ready: your invite link is copied/.test(document.getElementById('wf-status').textContent));
   assert.equal(await page.evaluate(() => window.__clip), 'https://relay.leylinelauncher.com/join/abcdefghijk2345a#HOSTLINKHOSTLINK');
   assert.equal((await callsOf(page, 'den_invite')).length, 0);
+  assert.deepEqual(await callsOf(page, 'host_ready'), [{ kind: 'docker' }], 'no Den Lite here: the full realm is checked');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
 
-test('Invite with no world of yours yet says to Play solo first', async () => {
+test('Invite with no world this PC can run for friends: the full realm, and what it needs', async () => {
   const { page, ctx, errors } = await open({ lite: false });
   await page.click('#solo-home .solo-invite');
-  await page.waitForFunction(() => /Play solo once first/.test(document.getElementById('solo-status').textContent));
+  await page.waitForSelector('#wf:not([hidden]) #wf-pick-docker');
+  assert.equal(await page.isDisabled('#wf-invite'), true, 'nothing to invite to yet');
+  assert.match(await page.textContent('#wf-pick-lite'), /Not made for this kind of computer yet/);
+  assert.match(await page.textContent('#wf-pick-docker'), /Docker Desktop.*4 GB.*5 to 20 minutes/);
+  assert.equal((await callsOf(page, 'den_invite')).length + (await callsOf(page, 'host_invite')).length, 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

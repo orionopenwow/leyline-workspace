@@ -25,6 +25,7 @@ pub mod creaturemodels; // Your Den's gliding copy: creature rows wearing the pr
 pub mod denmodels; // My models: kept, listed for Den Lite, put in the Den's patch (host/denmodels.rs)
 pub mod engine; // Single player's Built-in engine: the realm natively on Windows, no Docker (docs/BUILTIN-ENGINE.md)
 pub mod lite; // Den Lite: the built-in Den server, no Docker (an interface; the program is labs/den-lite)
+pub mod ready; // Ready for friends?: the checklist before an invite, the self-test login through the relay (host/ready.rs)
 pub mod litenet; // Your Den on the Leyline network with no Docker: the relay tunnel for Den Lite's friends (host/litenet.rs)
 pub mod terrain; // Your Den's ground: the terrain delta, patch-T.MPQ, the Docker Den's tile (host/terrain.rs)
 pub mod forge; // Forge, the Den's terrain editor (GPL, its own program): get it, start it, take what it saves

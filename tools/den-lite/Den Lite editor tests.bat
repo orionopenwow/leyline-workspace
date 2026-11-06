@@ -10,8 +10,8 @@ set "CARGO_HOME=%TOOLS%\cargo"
 set "PATH=%CARGO_HOME%\bin;%PATH%"
 where cargo >nul 2>&1 || (echo No Rust tools found in %TOOLS%. Run the client-build step once first, or install Rust. & exit /b 1)
 set "CARGO_TARGET_DIR=%LOCALAPPDATA%\Leyline\den-lite-build"
-echo Den Lite editor tests: gizmo and pick
-cargo test --release --lib -- gizmo:: pick:: 2>&1
+echo Den Lite editor tests: gizmo, pick and the replay against the model
+cargo test --release --lib -- gizmo:: pick:: replay:: movemodel:: 2>&1
 if errorlevel 1 (echo. & echo DEN LITE EDITOR TESTS FAILED & exit /b 1)
 echo.
 echo DEN LITE EDITOR TESTS OK

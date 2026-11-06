@@ -20,6 +20,7 @@ DenKeys.lua
 BuildTools.lua
 Dojo.lua
 DenTourney.lua
+DenTale.lua
 TeleportsData.lua
 Teleports.lua
 Guide.lua

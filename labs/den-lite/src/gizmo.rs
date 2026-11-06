@@ -1742,7 +1742,7 @@ fn extent(o: &WorldObject) -> (f32, f32, f32) {
 /// [`extent`] over the world's axes: the half width (x) and depth (y) of the prop's box as it is turned, and its
 /// height. The X / Y arrows stand just outside these (review 4 Nov: placed by the model's own half sizes, a long prop
 /// turned 90 degrees had its X arrow inside it).
-fn world_extent(o: &WorldObject) -> (f32, f32, f32) {
+pub fn world_extent(o: &WorldObject) -> (f32, f32, f32) {
     let (hx, hy, h) = extent(o);
     let (s, c) = if o.o.is_finite() { (o.o.sin().abs(), o.o.cos().abs()) } else { (0.0, 1.0) };
     (c * hx + s * hy, s * hx + c * hy, h)

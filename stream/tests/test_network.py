@@ -8,7 +8,16 @@ console acting on them, and the hub's realm pages. A fake relay listing, a fake 
 import http.client, importlib.util, json, os, re, sys, tempfile, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-RELAY_PORT, PAGE_PORT = 18193, 18194
+import socket
+
+
+def _free_port():   # not fixed ports: another test (or a second copy of this one) may be running
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+RELAY_PORT, PAGE_PORT = _free_port(), _free_port()
 DATA = tempfile.mkdtemp()
 HANG, FEAT, PLAIN, BUSY, SLEEPY, HIDDEN, OLD = ("hangouthangout22", "featuredfeatured", "plainplainplainp",
                                                "busybusybusybusy", "sleepysleepysle2", "hiddenhiddenhidd", "oldoldoldoldoldo")

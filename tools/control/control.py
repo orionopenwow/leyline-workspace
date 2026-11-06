@@ -165,12 +165,17 @@ STEPS = {
     # with them is out; den-move makes them itself when they're missing
     "den-glide": ("tools/den-check/Den glide rows.bat", "The gliding copy in Your Den: Den Lite makes each prop model's creature rows from your own game's tables into Data\\patch-S.MPQ (backup first; den-glide-undo takes them away). Run den-lite first; close the game", False),
     "den-glide-undo": ("tools/den-check/Den glide rows - undo.bat", "Takes the gliding copy's rows away (our Data\\patch-S.MPQ and the marker): the copy is a gameobject made anew again", False),
+    "den-replay": ("tools/den-lite/Den replay.bat", "The Den's mouse proven: the owner's flows and 300 random scripts against the editor, compared with the expected model after every line; tales, Den codes, Sky Island; then over the wire (no game, a few minutes)", False),
+    "den-smoke": ("tools/den-check/Den smoke.bat", "The Den with no game window: this PC's Den Lite and the headless client: the way in, Sky Island, a fall off, a placement, the mouse against the model, the island as a code (tools\\den-check\\logs\\den-smoke-latest.txt)", False),
+    "sky-island": ("tools/den-check/Sky Island.bat", "Sky Island on this PC: the no-window smoke, then the island in Your Den and My Den started: you land on the floating island (your own game's models; nothing goes online)", False),
     "den-move": ("tools/den-check/Den move.bat", "The one Den test for now: select and move (build mode, a prop placed and selected, hover glow, click selects, press and drag moves it, snap out and back, zoom far and back; pictures in tools\\den-check\\logs\\den-move)", False),
     "den-features": ("tools/den-check/Den features.bat", "The Den editor's feature test: den-test, then the gallery (do the tiles show models?), five props placed, select, move, turn, copy, paste, delete, undo, redo, save and open, every panel and play mode, through the editor's own buttons; a screenshot after each (tools\\den-check\\logs\\den-features)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
     "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),
     "page":    ("stream/Update game page.bat", "Game page only (keeps the live game build)", False),
+    # Solo on this device (docs/PHONE-SOLO.md): Den Lite's page build from CI (den-lite-web.yml) into www-files\solo; then page
+    "solo-wasm": ("tools/solo/Get solo wasm.bat", "Solo on this device: Den Lite's page build (den-lite-web.wasm) from the den-lite-latest release, checked, into stream\\www-files\\solo (then the page step puts it on the game page)", False),
     "frontpage": ("tools/front-page/Front page as home - on.bat", "The site's home (/) opens the Leyline front page", False),
     "frontpage-off": ("tools/front-page/Front page as home - off.bat", "Undo: the site's home opens the game's sign-in page again", False),
     "ov112-check": ("tools/ov112-off/Turn off 1.12 jobs - dry run.bat", "1.12 Open Vanilla jobs: what would be turned off (read-only)", False),
@@ -1675,7 +1680,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self._send(200, '{"ok":true}')
             return self._send(400, '{"error":"nothing to do"}')
         if self.path == "/api/open-game":
-            webbrowser.open("https://play.openvanilla.app/wrath")
+            webbrowser.open("https://leylinelauncher.com/wrath")   # the site's name now (the old one still answers)
             return self._send(200, '{"ok":true}')
         self._send(404, '{"error":"not found"}')
 
@@ -1953,7 +1958,7 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
 <button id="audit" title="Checks every feature as a new player would (about 10 minutes, read-only), then opens the report">Release audit</button>
 <a id="areport" class="sub" href="#" target="_blank" hidden></a>
 <details class="more"><summary>More</summary><div class="menu">
-<button id="hq" title="Leyline HQ: status, what needs you, releases, notes (play.openvanilla.app/wrath/admin)">Open HQ</button>
+<button id="hq" title="Leyline HQ: status, what needs you, releases, notes (leylinelauncher.com/wrath/admin)">Open HQ</button>
 <button id="gmc" title="Opens the GM console (bug reports, players, health, logs) in your browser">GM console</button>
 <button id="game">Open the game</button><button id="check">Check server</button>
 <button id="ask" title="On: deploys wait for Launch all; read-only checks still run by themselves">Ask before deploys: …</button>

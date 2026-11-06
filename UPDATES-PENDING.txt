@@ -892,3 +892,9 @@
 1344d ship  Save to GitHub: private realms in the browser
 1344e page  Touch controls 2026-11-05c: 13 phone fixes, two-finger right-click, size and opacity, keyboard, notch
 1344f ship  Save to GitHub: the mobile pass
+1346g den-lite-all  All Den Lite tests again (the Sky Island test now has its own folder; 1346a: two tests shared one)
+1346b ship  Save to GitHub: boss fight heroes, hosting audit + onboarding, phone solo, Den next, polish, Connecting loop fix
+1346c signin  Website: heroes on the boss fight page, host-for-friends guide, polish fixes, Play solo on this device
+1346d page  Browser page: heroes skip character select, the host-not-answering note, phone solo
+1346e foreverui  In-game UI in the browser: the hero row in the boss fight panel, the tale tracker
+1346f addons  Desktop addon pack: the hero row, the tale tracker

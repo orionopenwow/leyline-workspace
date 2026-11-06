@@ -30,6 +30,7 @@
  */
 
 #include "BossfightsLogic.h"
+#include "BossfightHeroes.h"
 
 #include "CharacterCache.h"
 #include "Chat.h"
@@ -135,6 +136,7 @@ namespace
         uint32 sizeAtEngage = 0;
         uint32 botsAtEngage = 0;
         bool botsDismissed = false;
+        uint64 autoRetryAt = 0;            // heroes-only runs: the restart after a wipe (steady ms)
     };
 
     struct LobbyEntry
@@ -284,6 +286,21 @@ namespace
         return nullptr;
     }
 
+    // Every real player of the run is a boss fight hero (the minigame's own rules apply: auto retry, no loot).
+    bool AllHeroes(BfRun const& run)
+    {
+        bool any = false;
+        for (BfMember const& m : run.members)
+        {
+            if (m.bot)
+                continue;
+            if (!LeylineBFHeroes::IsHero(m.guid))
+                return false;
+            any = true;
+        }
+        return any;
+    }
+
     void ForHumans(BfRun& run, std::function<void(Player*, BfMember&)> fn)
     {
         for (BfMember& m : run.members)
@@ -362,6 +379,11 @@ namespace
     {
         if (!p)
             return;
+        if (LeylineBFHeroes::IsHeroPlayer(p))
+        {
+            LeylineBFHeroes::ToPlatform(p);   // a hero's home is the platform (docs/BOSS-FIGHT-HEROES.md)
+            return;
+        }
         if (p->isDead())
         {
             p->ResurrectPlayer(1.0f);
@@ -379,8 +401,10 @@ namespace
         // a little spread so ten players don't stand in one spot
         float dx = float(n % 3) * 2.5f, dy = (float(n / 3) - 1.5f) * 2.5f;
         BossDef const& b = *run.boss;
-        if (p->GetMapId() == b.mapId && p->GetInstanceId() == run.instanceId)
+        if (p->GetMapId() == b.mapId && (p->GetInstanceId() == run.instanceId || !run.instanceId))
             p->NearTeleportTo(b.x + dx, b.y + dy, b.z, b.o);
+        else if (p->GetMapId() == b.mapId)
+            LeylineBFHeroes::HopInto(p, b.x + dx, b.y + dy, b.z, b.o);   // a hero in its own waiting instance
         else
             p->TeleportTo(b.mapId, b.x + dx, b.y + dy, b.z, b.o, TELE_TO_GM_MODE);
     }
@@ -633,7 +657,9 @@ namespace
             return "not while dead";
         if (p->InBattleground() || p->InArena() || p->InBattlegroundQueue())
             return "not from a battleground, an arena or their queue";
-        if (p->GetMap() && (p->GetMap()->IsDungeon() || p->GetMap()->IsBattlegroundOrArena()))
+        // a hero waits on the platform in an instance of its own (no run's): it starts from there, queued or not
+        bool heroWaiting = LeylineBFHeroes::IsHeroPlayer(p) && FindBossByMap(p->GetMapId()) && !g_instanceRun.count(p->GetInstanceId());
+        if (p->GetMap() && (p->GetMap()->IsDungeon() || p->GetMap()->IsBattlegroundOrArena()) && !heroWaiting)
             return "not from inside an instance";
         return "";
     }
@@ -675,6 +701,10 @@ namespace
         std::vector<int> roles;
         for (Player* p : humans)
         {
+            // a hero waits in a raid of its own: it leaves that one for this raid
+            if (p != leader && LeylineBFHeroes::IsHeroPlayer(p) && p->GetGroup() && p->GetGroup() != group &&
+                p->GetGroup()->GetMembersCount() <= 1)
+                p->RemoveFromGroup();
             if (p != leader && p->GetGroup() != group && !group->IsMember(p->GetGUID()))
             {
                 if (p->GetGroup() || !group->AddMember(p))
@@ -699,8 +729,9 @@ namespace
             LeaveLobby(m.guid);
             if (p->GetSession()->GetSecurity() > SEC_PLAYER || p->IsGameMaster())
                 run.gm = true;
-            for (BossDef const& b : Bosses())
-                UnbindNow(p, b.mapId);   // checked above: nobody here is inside an instance
+            if (!FindBossByMap(p->GetMapId()))   // checked above: nobody here is inside an instance but a waiting hero,
+                for (BossDef const& b : Bosses())   // whose own bind is dropped when it moves (HopInto)
+                    UnbindNow(p, b.mapId);
         }
         group->SetRaidDifficulty(diff == DIFF_HEROIC ? RAID_DIFFICULTY_10MAN_HEROIC : RAID_DIFFICULTY_10MAN_NORMAL);
 
@@ -732,8 +763,11 @@ namespace
                 p->SpawnCorpseBones();
             }
             p->SetFullHealth();
+            if (!m.bot)
+                LeylineBFHeroes::Refresh(p);   // QoL between pulls: cooldowns, durability, health, power
             Arrive(p, run, n++);
         }
+        run.autoRetryAt = 0;
         SetPhase(run, BfPhase::Ready);
         AddonRun(run, MsgStarting(run.boss->key, run.diff));
         SayRun(run, "Ready again. Speak to the paladin in front of the throne to begin.");
@@ -790,8 +824,15 @@ namespace
                     ++run.wipes;
                     SetPhase(run, BfPhase::Wiped);
                     AddonRun(run, MsgResult(false, ms, 0));
-                    SayRun(run, "Wiped at " + FormatMs(ms) + ". Try again: .bossfight join " + run.boss->key + " " +
-                        DifficultyName(run.diff) + " " + ModeName(run.mode) + " (or .bossfight leave).");
+                    if (AllHeroes(run))
+                    {
+                        run.autoRetryAt = NowMs() + uint64(HERO_AUTO_RETRY_SEC) * 1000;
+                        SayRun(run, "Wiped at " + FormatMs(ms) + ". Back on your feet in " + std::to_string(HERO_AUTO_RETRY_SEC) +
+                            " s, cooldowns ready (.bossfight leave to stop).");
+                    }
+                    else
+                        SayRun(run, "Wiped at " + FormatMs(ms) + ". Try again: .bossfight join " + run.boss->key + " " +
+                            DifficultyName(run.diff) + " " + ModeName(run.mode) + " (or .bossfight leave).");
                 }
                 break;
         }
@@ -1000,6 +1041,11 @@ namespace
             }
             case BfPhase::Wiped:
             {
+                if (run.autoRetryAt && now >= run.autoRetryAt)
+                {
+                    Restart(run);   // heroes only: no run back, no Try again needed
+                    break;
+                }
                 if (now - run.phaseSince > uint64(g_cfg.wipeIdleSec) * 1000)
                 {
                     EndRun(run.id, "Nobody tried again for a while: the boss fight is over.", true);
@@ -1120,6 +1166,11 @@ namespace
     {
         for (auto it = g_pendingUnbind.begin(); it != g_pendingUnbind.end();)
         {
+            if (LeylineBFHeroes::IsHero(*it))
+            {
+                it = g_pendingUnbind.erase(it);
+                continue;
+            }
             Player* p = ObjectAccessor::FindConnectedPlayer(*it);
             if (!p || !p->IsInWorld() || p->IsBeingTeleported() || RunOf(*it))
             {
@@ -1206,69 +1257,53 @@ namespace
             ".bossfight join frozen-throne normal bots starts one.");
     }
 
-    bool HandleJoin(ChatHandler* handler, Optional<std::string> bossArg, Optional<std::string> diffArg, Optional<std::string> modeArg)
+    // What ".bossfight join" does for this player: start, queue, or try again. "" = it went ahead (the module's own
+    // lines and LYBF messages say what happens next); else the line to show.
+    std::string JoinCore(Player* p, JoinArgs const& a)
     {
-        Player* p = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
-        if (!p)
-            return true;
         if (!g_cfg.enable)
-        {
-            handler->SendSysMessage(std::string(TAG) + "Boss fights are off on this realm.");
-            return true;
-        }
-        JoinArgs a = ParseJoin(Arg(bossArg), Arg(diffArg), Arg(modeArg));
-        if (!a.error.empty())
-        {
-            handler->SendSysMessage(std::string(TAG) + a.error + ". Usage: .bossfight join <boss> <normal|heroic> <bots|group|group-only>");
-            return true;
-        }
+            return "Boss fights are off on this realm.";
         // already in one: after a wipe, the same join means "again, here" (the in-game panel's Try again)
         if (BfRun* run = RunOf(p->GetGUID()))
         {
             if (run->boss != a.boss || run->diff != a.diff)
-            {
-                handler->SendSysMessage(std::string(TAG) + "You're already in a boss fight. .bossfight leave first.");
-                return true;
-            }
+                return "You're already in a boss fight. .bossfight leave first.";
             if (run->phase == BfPhase::Wiped || run->phase == BfPhase::Ready)
                 Restart(*run);
             else if (run->phase == BfPhase::Engaged)
-                handler->SendSysMessage(std::string(TAG) + "The fight is on!");
-            else
-                StatusTo(handler, p);
-            return true;
+                return "The fight is on!";
+            else if (p->GetSession())
+            {
+                ChatHandler ch(p->GetSession());
+                StatusTo(&ch, p);
+            }
+            return "";
         }
         if (!LobbyKeyOf(p->GetGUID()).empty())
         {
-            StatusTo(handler, p);
-            return true;
+            if (p->GetSession())
+            {
+                ChatHandler ch(p->GetSession());
+                StatusTo(&ch, p);
+            }
+            return "";
         }
+        // a hero whose instance was used (or is of the other difficulty) gets a fresh one first, then this join
+        if (LeylineBFHeroes::HopFirst(p, a))
+            return "";
         std::string why = Blocked(p);
         if (!why.empty())
-        {
-            handler->SendSysMessage(std::string(TAG) + "Not now: " + why + ".");
-            return true;
-        }
+            return "Not now: " + why + ".";
         bool fill = a.mode != MODE_GROUP_ONLY;
         if (a.mode == MODE_BOTS && !BotsOn())
-        {
-            handler->SendSysMessage(std::string(TAG) + "Bots aren't on for boss fights on this realm: join with group (or group-only) "
-                "to raid with other players.");
-            return true;
-        }
+            return "Bots aren't on for boss fights on this realm: join with group (or group-only) to raid with other players.";
         // a group of their own: its leader starts with it at once
         if (Group* g = p->GetGroup(); g && g->GetMembersCount() > 1)
         {
             if (!g->IsLeader(p->GetGUID()))
-            {
-                handler->SendSysMessage(std::string(TAG) + "You're in a group: its leader starts the boss fight for all of you.");
-                return true;
-            }
+                return "You're in a group: its leader starts the boss fight for all of you.";
             if (g->isLFGGroup() || g->isBGGroup() || g->isBFGroup())
-            {
-                handler->SendSysMessage(std::string(TAG) + "Not with a Dungeon Finder or battleground group.");
-                return true;
-            }
+                return "Not with a Dungeon Finder or battleground group.";
             std::vector<Player*> humans{ p };
             for (GroupReference* ref = g->GetFirstMember(); ref; ref = ref->next())
             {
@@ -1277,24 +1312,18 @@ namespace
                     continue;
                 std::string mw = Blocked(m);
                 if (!mw.empty() || RunOf(m->GetGUID()))
-                {
-                    handler->SendSysMessage(std::string(TAG) + m->GetName() + " can't come: " + (mw.empty() ? "already in a boss fight" : mw) + ".");
-                    return true;
-                }
+                    return m->GetName() + " can't come: " + (mw.empty() ? "already in a boss fight" : mw) + ".";
                 humans.push_back(m);
             }
             if (humans.size() > a.boss->size)
-            {
-                handler->SendSysMessage(std::string(TAG) + "Your group is bigger than this fight's " + std::to_string(a.boss->size) + " seats.");
-                return true;
-            }
+                return "Your group is bigger than this fight's " + std::to_string(a.boss->size) + " seats.";
             StartRun(humans, a.boss, a.diff, a.mode, fill, false);
-            return true;
+            return "";
         }
         if (a.mode == MODE_BOTS)
         {
             StartRun({ p }, a.boss, a.diff, a.mode, true, false);
-            return true;
+            return "";
         }
         std::string key = LobbyKey(a.boss, a.diff, p->GetTeamId(true));
         LobbyEntry e;
@@ -1306,12 +1335,36 @@ namespace
         g_lobbySent.erase(key);
         std::vector<LobbyEntry> const& list = g_lobbies[key];
         bool leaderOnly = list.front().groupOnly;
-        handler->SendSysMessage(std::string(TAG) + "In the queue for " + a.boss->title + " (" + DifficultyName(a.diff) + "): " +
+        Say(p, std::string("In the queue for ") + a.boss->title + " (" + DifficultyName(a.diff) + "): " +
             std::to_string(list.size()) + " of " + std::to_string(a.boss->size) + ". " +
             (leaderOnly || !BotsOn() ? "It starts when the raid is full." :
                 "If it isn't full in " + std::to_string(g_cfg.lobbyWaitSec / 60) + " min, bots take the empty seats.") +
             " .bossfight leave to stop.");
+        return "";
+    }
+
+    bool HandleJoin(ChatHandler* handler, Optional<std::string> bossArg, Optional<std::string> diffArg, Optional<std::string> modeArg)
+    {
+        Player* p = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!p)
+            return true;
+        JoinArgs a = ParseJoin(Arg(bossArg), Arg(diffArg), Arg(modeArg));
+        if (!a.error.empty() && g_cfg.enable)
+        {
+            handler->SendSysMessage(std::string(TAG) + a.error + ". Usage: .bossfight join <boss> <normal|heroic> <bots|group|group-only>");
+            return true;
+        }
+        std::string why = JoinCore(p, a);
+        if (!why.empty())
+            handler->SendSysMessage(std::string(TAG) + why);
         return true;
+    }
+
+    // .bossfight hero ... / .bf hero ...: boss fight heroes (BossfightHeroes.cpp). The console form takes an account
+    // (the website, over SOAP); a player's form works on their own hero account.
+    bool HandleHero(ChatHandler* handler, Tail rest)
+    {
+        return LeylineBFHeroes::Command(handler, std::string(rest));
     }
 
     bool HandleLeave(ChatHandler* handler)
@@ -1338,7 +1391,10 @@ namespace
     bool HandleStatus(ChatHandler* handler)
     {
         if (Player* p = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+        {
+            LeylineBFHeroes::SendState(p);   // a hero: the panel's hero row (after a /reload too)
             StatusTo(handler, p);
+        }
         return true;
     }
 
@@ -1440,6 +1496,7 @@ public:
             { "list",   HandleList,   SEC_PLAYER,     Console::Yes },
             { "start",  HandleStart,  SEC_GAMEMASTER, Console::Yes },
             { "reset",  HandleReset,  SEC_GAMEMASTER, Console::Yes },
+            { "hero",   HandleHero,   SEC_PLAYER,     Console::Yes },   // the console form needs the console (no session)
         };
         // .bf is also the core's battlefield (Wintergrasp) GM table (cs_bf.cpp: start, stop, switch, timer, enable,
         // queue). Sub-commands merge by name, so the alias carries only the player words that don't clash:
@@ -1450,6 +1507,7 @@ public:
             { "leave",  HandleLeave,  SEC_PLAYER, Console::No },
             { "status", HandleStatus, SEC_PLAYER, Console::No },
             { "list",   HandleList,   SEC_PLAYER, Console::Yes },
+            { "hero",   HandleHero,   SEC_PLAYER, Console::Yes },
         };
         static ChatCommandTable commandTable =
         {
@@ -1476,7 +1534,7 @@ public:
             return true;
         std::string c = Lower(std::string(cmdStr));
         bool ours = c.rfind("bossfight", 0) == 0 || c.rfind("bf join", 0) == 0 || c.rfind("bf leave", 0) == 0
-            || c.rfind("bf status", 0) == 0 || c.rfind("bf list", 0) == 0;
+            || c.rfind("bf status", 0) == 0 || c.rfind("bf list", 0) == 0 || c.rfind("bf hero", 0) == 0;
         if (!ours)
             if (BfRun* run = RunOf(p->GetGUID()))
                 run->gm = true;
@@ -1547,6 +1605,7 @@ public:
     {
         if (!g_cfg.enable || !player)
             return;
+        LeylineBFHeroes::OnLogin(player);   // a hero: its waiting join (it is on the platform already)
         ObjectGuid guid = player->GetGUID();
         if (BfRun* run = RunOf(guid))
         {
@@ -1558,7 +1617,7 @@ public:
             return;
         }
         // inside one of our old instances with no run (a restart, or the run ended while offline): home, unbound
-        if (FindBossByMap(player->GetMapId()) && g_knownInstances.count(player->GetInstanceId()))
+        if (FindBossByMap(player->GetMapId()) && g_knownInstances.count(player->GetInstanceId()) && !LeylineBFHeroes::IsHeroPlayer(player))
         {
             Say(player, "That boss fight is over.");
             SendHome(player, nullptr);
@@ -1573,7 +1632,10 @@ public:
         LeaveLobby(guid);
         BfRun* run = RunOf(guid);
         if (!run)
+        {
+            LeylineBFHeroes::OnLogout(player);
             return;
+        }
         BfMember* m = MemberOf(*run, guid);
         if (m && m->bot)
         {
@@ -1588,9 +1650,11 @@ public:
             g_inLogout = true;
             EndRun(run->id, "The raid's leader logged out: the boss fight is over.", false);
             g_inLogout = false;
+            LeylineBFHeroes::OnLogout(player);
             return;
         }
         LeaveRun(nullptr, guid, false, "");
+        LeylineBFHeroes::OnLogout(player);
     }
 };
 
@@ -1629,6 +1693,7 @@ public:
                 g_knownInstances.insert((*r)[0].Get<uint32>());
             } while (r->NextRow());
         }
+        LeylineBFHeroes::LoadTables();
         LOG_INFO("module", "mod-leyline-bossfights: {} (bots {}, bot buffs {}, playerbots {}, {} old instances)",
             g_cfg.enable ? "on" : "off", BotsOn() ? "on" : "off", BotBuffsOn() ? "on" : "off",
             LEYLINE_BF_PLAYERBOTS ? "built in" : "missing", g_knownInstances.size());
@@ -1643,6 +1708,7 @@ public:
             return;
         g_updateAcc = 0;
         Tick();
+        LeylineBFHeroes::Tick();
     }
 };
 
@@ -1654,4 +1720,42 @@ void AddLeylineBossfightsScripts()
     new LeylineBossfightsSpellScript();
     new LeylineBossfightsPlayerScript();
     new LeylineBossfightsWorldScript();
+    LeylineBFHeroes::AddScripts();
+}
+
+// ---- the seam for BossfightHeroes.cpp (BossfightHeroes.h) ------------------------------------------------------------
+
+namespace LeylineBFCore
+{
+    std::string Join(Player* p, JoinArgs const& a) { return p ? JoinCore(p, a) : std::string(); }
+
+    bool InRun(ObjectGuid guid) { return RunOf(guid) != nullptr; }
+
+    bool Fighting(ObjectGuid guid)
+    {
+        BfRun* run = RunOf(guid);
+        return run && run->phase == BfPhase::Engaged;
+    }
+
+    bool RunAllHeroes(ObjectGuid guid)
+    {
+        BfRun* run = RunOf(guid);
+        return run && AllHeroes(*run);
+    }
+
+    bool InstanceUsed(uint32 instanceId) { return instanceId && g_knownInstances.count(instanceId) != 0; }
+
+    bool Enabled() { return g_cfg.enable; }
+
+    void UnbindBossMaps(Player* p)
+    {
+        if (!p)
+            return;
+        for (BossDef const& b : Bosses())
+            UnbindNow(p, b.mapId);
+    }
+
+    void Say(Player* p, std::string const& text) { ::Say(p, text); }
+
+    void Addon(Player* p, std::string const& payload) { ::Addon(p, payload); }
 }

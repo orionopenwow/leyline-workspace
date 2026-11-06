@@ -255,9 +255,16 @@ export function guestPass(env = window.__wenilla_env) {
   return pageSignedIn(env) && env.demo === '1';
 }
 
+/** A boss fight hero (stream/bossfights.py hero_play): /__env.js names it ("char") and marks the pass "bf", so the
+ *  client goes from the login straight into the fight. Read only. */
+export function heroPass(env = window.__wenilla_env) {
+  return pageSignedIn(env) && env.bf === '1' && typeof env.char === 'string' && /^[A-Za-z]{2,12}$/.test(env.char);
+}
+
 export function signingIn(wenilla) {
   if (!pageSignedIn()) return;
-  const guest = guestPass();    // the cover stays up through the character list, into the inn
+  const hero = heroPass();      // the cover stays up through the character list, onto the platform
+  const guest = guestPass() || hero;    // the cover stays up through the character list, into the inn
   const hopping = window.__wenilla_env?.hop ? String(window.__wenilla_env.hop_name || 'a community realm').replace(/[\u0000-\u001f<>]/g, '').slice(0, 32) : '';
   const GIVE_UP_MS = guest ? 30000 : 12000;     // a failed sign-in: the client's own form comes back
   const NO_BRIDGE_MS = 5000;    // without bridge states: about a sign-in's length
@@ -280,7 +287,7 @@ export function signingIn(wenilla) {
     cover.id = 'ow-signin';
     cover.setAttribute('role', 'status');
     cover.innerHTML = '<div><div class="wu-spin" aria-hidden="true"></div>'
-      + (guest ? 'Opening the Goldshire Inn…' : hopping ? 'Going to ' + hopping + '…' : 'Signing in…') + '</div>';
+      + (hero ? 'Getting your hero to The Frozen Throne…' : guest ? 'Opening the Goldshire Inn…' : hopping ? 'Going to ' + hopping + '…' : 'Signing in…') + '</div>';
     document.body.append(cover);
     status.signin = 'shown';
     timer = setTimeout(() => hide(wenilla?.ready ? 'gave up' : 'timer'), wenilla?.ready ? GIVE_UP_MS : NO_BRIDGE_MS);

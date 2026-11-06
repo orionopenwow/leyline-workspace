@@ -67,6 +67,23 @@ class Public(unittest.IsolatedAsyncioTestCase):
             st, body, _ = await http("GET", f"{r.http}/r/{r.rid}/ws/9999")
             self.assertEqual(st, 404)
 
+    async def test_a_realm_that_never_answers_closes_with_4502(self):
+        # player report 5 Nov: "stuck in a cycle of Connecting and Connected": the host's realm wasn't running, the agent
+        # gave up, and the browser's socket just dropped, so the game logged in again forever. Now the relay says why.
+        async with Rig() as r:
+            r.agent.services[3724] = ("127.0.0.1", 1)   # nothing listens there: the realm "isn't running"
+            sock = await ws.connect(f"{r.base}/ws/{r.rid}/auth")
+            sock.send_nowait(b"\x00\x08", ws.OP_BIN)
+            with self.assertRaises(ws.WSClosed) as cm:
+                for _ in range(10):
+                    await asyncio.wait_for(sock.recv(), 15)
+            self.assertEqual(cm.exception.code, 4502, cm.exception)
+            # a realm that answers still works as before through the same path
+            r.agent.services[3724] = ("127.0.0.1", r.realm.auth_port)
+            r.realm.add_account("dave", "pw")
+            rep = await wire335.full_run("relay.test", 3724, "dave", "pw", opener=ws_opener(r.base, r.rid))
+            self.assertEqual(rep["steps"][-1], "logout")
+
     async def test_many_players_multiplexed(self):
         # every test player shares 127.0.0.1, so lift the per-IP caps (tested in Caps)
         async with Rig(max_streams_per_ip=64, max_streams_per_ip_total=64, conn_rate_per_ip=500) as r:
@@ -291,7 +308,7 @@ class Caps(unittest.IsolatedAsyncioTestCase):
                     self.n += len(data)
                     return self.n <= mux.MAX_BUFFER
 
-                def close(self):
+                def close(self, *a):
                     pass
             st.conn = Stuck()
             for _ in range(40):

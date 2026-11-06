@@ -277,5 +277,36 @@ class BrowserAndCap(unittest.TestCase):
         self.assertEqual(json.load(open(os.path.join(self.kit, "state", "beacon.json")))["signup"], "off")
 
 
+class Preflight(unittest.TestCase):
+    """Hosting audit, 5 Nov: "host from anything" says what this Docker can't run well before the long steps."""
+
+    def test_notes(self):
+        from wuhost import setup
+        GB = 1024 ** 3
+        self.assertEqual(setup.preflight_notes("x86_64", 16 * GB, 200 * GB), [])
+        arm = setup.preflight_notes("aarch64", 8 * GB, 200 * GB, host_os="Linux", os_type="linux")
+        self.assertEqual(len(arm), 1)
+        self.assertIn("ARM", arm[0])
+        self.assertIn("Rosetta", setup.preflight_notes("arm64", 8 * GB, host_os="Darwin")[0])
+        low = setup.preflight_notes("x86_64", 2 * GB, None, profile="main")
+        self.assertTrue(low and "dalaran" in low[0] and "4 GB" in low[0])
+        self.assertEqual(setup.preflight_notes("x86_64", 3 * GB, None, profile="dalaran"), [])
+        self.assertIn("disk", setup.preflight_notes("x86_64", 16 * GB, 5 * GB)[0])
+        self.assertEqual(setup.preflight_notes("", 0, None), [])        # docker info said nothing: nothing to say
+
+    def test_both_scripts_run_it_before_setup(self):
+        kit = os.path.join(helpers.ROOT, "kit")
+        sh = open(os.path.join(kit, "host-wrath-realm.sh")).read()
+        self.assertLess(sh.index("    preflight      #"), sh.index("    pick_images\n  fi"))
+        bat = open(os.path.join(kit, "Host a Wrath realm.bat"), newline="").read()
+        self.assertLess(bat.index("wuhost.setup preflight"), bat.index("== Realm images"))
+        self.assertTrue(bat.count("\n") == bat.count("\r\n") or "\r" not in bat)
+        out = io.StringIO()
+        from wuhost import setup
+        with redirect_stdout(out):
+            setup.main(["preflight", "--arch", "aarch64", "--mem", str(1024 ** 3), "--host-os", "Linux", "--os-type", "linux"])
+        self.assertEqual(out.getvalue().count("Note:"), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

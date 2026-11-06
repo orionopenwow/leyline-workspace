@@ -102,7 +102,7 @@ check("no brand words in their titles and lines", not any(PM.BANNED.search(PM.by
 surv, hordes = PM.by_id("azeroth-survivors"), PM.by_id("hordes-of-azeroth")
 check("Azeroth Survivors: offline, coming, credited (MIT or Apache-2.0)", surv["kind"] == "offline" and surv["status"] == "coming"
       and surv["credit"]["by"] == "Aethus (original game)" and surv["credit"]["note"] == "Open rebuild by OutThisLife" and "Apache-2.0" in surv["credit"]["license"] and "MIT" in surv["credit"]["license"]
-      and surv["credit"]["source"] == "https://github.com/OutThisLife/azeroth-survivors-re" and surv["start"] == {"path": "/wrath/survivors"} and "own site" in surv["line"])
+      and surv["credit"]["source"] == "https://github.com/OutThisLife/azeroth-survivors-re" and surv["start"] == {"path": "/wrath/survivors"} and "in your browser now" in surv["line"])
 check("Hordes of Azeroth: a realm type, coming, both repos and licenses", hordes["kind"] == "realm-type" and hordes["status"] == "coming"
       and hordes["credit"]["by"] == "jonhaldors" and "GPL-3.0" in hordes["credit"]["license"] and "GPL-2.0" in hordes["credit"]["license"]
       and hordes["credit"]["source"] == "https://github.com/jonhaldors/hordes-of-azeroth"

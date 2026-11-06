@@ -2278,6 +2278,15 @@ async function handleDeepLink() {
     window.LeylinePendingDen = link.id;
     return;
   }
+  // a Den code's link (leyline://pack/<code>, deeplink.rs): Your Den's page with the code in its box; nothing opens until
+  // the player presses Open the code (den.js)
+  if (link && link.action === "pack" && typeof link.id === "string") {
+    if (window.LeylineNav) window.LeylineNav.show("den"); else show("den", true);
+    const box = document.getElementById("yd-code");
+    if (box) { box.value = link.id; box.focus(); }
+    else window.LeylinePendingCode = link.id;
+    return;
+  }
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
   if (link.id.startsWith("look:")) {   // the website's Looks page: Discover › Looks, that card (looks.js); nothing installs yet
     show("mods", true, "discover");
@@ -2976,7 +2985,7 @@ function renderRealms() {
     acts.prepend(play);
     if (window.LeylineHostModes) window.LeylineHostModes.realmRow(r, main, acts);   // its mode, "based on", Fork this mode (hostmodes.js)
     // Play solo right after Play (solo.js, owner 3 Nov): the same game on this PC, with your own game files
-    if (window.LeylineSolo) window.LeylineSolo.attach(acts, main, window.LeylineSolo.forRealm(r));
+    if (window.LeylineSolo) window.LeylineSolo.attach(acts, main, window.LeylineSolo.forRealm(r), window.LeylineSolo.LABEL + " · ");
     card.append(realmIcon(r.name, r.official), main, pop, acts);
     box.append(card);
   }
@@ -3128,7 +3137,12 @@ $("rl-join").addEventListener("click", async () => {
     else say("rl-status", `${j.name || "The realm"} is open for this PC; ${c.name} now points at ${j.address}. Press PLAY.`, "ok");
     $("rl-invite").value = "";
     await refresh();
-  } catch (e) { sayErr("rl-status", e); }
+    // does the host's world answer there? (hostfriends.js afterJoin: the friend's "what's happening" line)
+    if (window.LeylineHostFriends) window.LeylineHostFriends.afterJoin(j, null, (t, k) => say("rl-status", t, k));
+  } catch (e) {
+    const x = window.LeylineHostFriends ? window.LeylineHostFriends.explainJoin(e) : null;
+    if (x) say("rl-status", `${x.line} ${x.fix}`, "bad"); else sayErr("rl-status", e);
+  }
 });
 
 // ------------------------------------------------------------------ Host

@@ -67,6 +67,16 @@ need_docker() {
 
 need_tools() { [ "${LEYLINE_LOCAL_TOOLS:-0}" = 1 ] || need_docker; }
 
+preflight() {  # what this Docker can run (CPU kind, memory, disk): warnings, before the long steps (setup.py preflight)
+  local info free
+  info="$(docker info --format '{{.Architecture}} {{.MemTotal}} {{.OSType}}' 2>/dev/null || true)"
+  free="$(df -Pk "$KIT" 2>/dev/null | awk 'NR==2 {print $4 * 1024}' || true)"
+  set -- $info
+  case "${2:-}" in ''|*[!0-9]*) return 0 ;; esac   # no numbers from docker info: nothing to say
+  tools preflight --arch "$1" --mem "${2:-0}" ${free:+--free "$free"} --profile "${WU_PROFILE:-main}" \
+        --os-type "${3:-}" --host-os "$(uname -s)" || true
+}
+
 ask() {  # ask VAR "question" default [choices...]
   local var="$1" q="$2" def="$3"; shift 3
   local cur="${!var:-}"
@@ -301,6 +311,8 @@ cmd_up() {
     IMG="${WU_IMAGE}"; TAG="${WU_TAG}"
     ensure_tools
   else
+    ensure_tools
+    preflight      # before the long download or build
     pick_images
   fi
   tools init --name "$WU_NAME" --profile "$WU_PROFILE" --visibility "$WU_VISIBILITY" --image "$IMG" --tag "$TAG" \

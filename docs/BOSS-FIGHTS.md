@@ -4,6 +4,18 @@ Leyline's instant boss fights. The featured fight is the last fight of the citad
 **The Frozen Throne**. The boss is never named on screen. Other sections (the realm, the board) are written
 separately.
 
+## Heroes
+
+Since 5 Nov a boss fight is played on a **hero**: a level 80 character the realm makes for boss fights only, on a
+second game account linked to the player's own (`<ACCOUNT>BF`). Fight now makes the hero at once (talents, dual spec,
+the spec's kit worn, every other kit of the class in the bags, bars filled), signs the browser game in to it with no
+character list, and its first frame is the platform. The player's own characters are never touched. A realm without
+the module says so in plain words, and nothing starts. The hero has its own rules: free respec, instant spec swap,
+auto retry after a wipe, no trade or mail, and it stays at the fight.
+The design, the commands, the tables, what the owner presses and what is not verified are in
+**[BOSS-FIGHT-HEROES.md](BOSS-FIGHT-HEROES.md)**. `WU_BF_HEROES=0` (portal) goes back to playing on the player's own
+level 80 character, as described below.
+
 ## In-game panel
 
 The addon side is `stream/fui-web/Interface/AddOns/WrathUnleashedUI/BossFights.lua`, listed in the `.toc` after

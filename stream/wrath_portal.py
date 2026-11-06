@@ -412,6 +412,8 @@ def go_param(query: dict) -> str:
     A boss fight (bf:<boss>:<difficulty>:<mode>) or the arena queue (arena:1v1) rides along the same way
     (stream/bossfights.py check_go), so the game page can warm the fight's area and say what it is getting ready."""
     v = (query.get("go") or [""])[0][:40]
+    if v in ("solo", "solo:phone"):   # "Play solo on this device": the game page runs its own server (docs/PHONE-SOLO.md)
+        return "&go=solo:phone"
     if bossfights is not None and playmodes is not None and v.startswith("mode:"):
         v = bossfights.mode_go(playmodes.go_mode(v)) or v   # the launcher's Modes page: ?go=mode:frozen-throne
     if bossfights is not None and v and bossfights.check_go(v):
@@ -915,9 +917,10 @@ class Sessions:
         for k in [k for k, v in self.codes.items() if v[1] <= now]:
             del self.codes[k]
 
-    def create(self, user: str, password: str, slug: str, tier: int, mode: str = "stream") -> str:
+    def create(self, user: str, password: str, slug: str, tier: int, mode: str = "stream", char: str = "") -> str:
         """A new session and its one-time code (returns the code). mode "stream" (the slice, the
-        realm mark) or OWN (the player's own game files: no mark, no /data)."""
+        realm mark) or OWN (the player's own game files: no mark, no /data). char: a boss fight hero to seat
+        at once (/__env.js "char": no character list; stream/bossfights.py hero_play)."""
         now = time.time()
         sid, code = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
         with self.lock:
@@ -929,6 +932,8 @@ class Sessions:
                 del self.sessions[min(self.sessions, key=lambda k: self.sessions[k]["exp"])]
             self.sessions[sid] = {"user": user.upper(), "pass": password, "slice": slug,
                                   "tier": tier, "mode": mode, "exp": now + SESSION_TTL}
+            if char and re.fullmatch(r"[A-Za-z]{2,12}", char):
+                self.sessions[sid]["char"] = char
             self.seen[sid] = now
             self.codes[code] = (sid, now + CODE_TTL)
             self._persist()
@@ -1542,6 +1547,9 @@ def env_js(sess: dict) -> bytes:
         env["home_name"] = REALM_NAME
     if guest and sess.get("mode") == "demo":
         env.update(guest.env_extra(sess))  # the guest pass's character: no character select
+    elif not sess.get("hop") and re.fullmatch(r"[A-Za-z]{2,12}", str(sess.get("char") or "")):
+        env["char"] = sess["char"]   # a boss fight hero: seated at once, no character list (stream/bossfights.py)
+        env["bf"] = "1"
     body = json.dumps(env, separators=(",", ":")).replace("<", "\\u003c")
     out = f"window.__wenilla_env = {body};\n"
     # The env object outranks the query string in the client, so ?foreverui=0 (or 1) is copied in.
@@ -1940,11 +1948,42 @@ document.body.appendChild(f);f.submit()},function(){if(!done){done=true;clearTim
 AUTO_SIGNIN_JS = AUTO_SIGNIN_TPL % (SIGN_IN_URL, SIGN_IN_URL)
 
 
+def hero_go(query: dict) -> str | None:
+    """The boss fight go of a Fight now (bf:<boss>:<difficulty>:<mode>, or the launcher's mode:frozen-throne) when boss
+    fights are played on heroes (stream/bossfights.py heroes_on), else None."""
+    if bossfights is None or not bossfights.heroes_on():
+        return None
+    v = (query.get("go") or [""])[0][:40]
+    if playmodes is not None and v.startswith("mode:"):
+        v = bossfights.mode_go(playmodes.go_mode(v)) or v
+    v = bossfights.check_go(v) if v else None
+    return v if v and v.startswith("bf:") else None
+
+
+def bf_not_live_page() -> bytes:
+    """Fight now on a realm without boss fights yet: plain words, nothing started, nobody moved."""
+    return render(
+        f'{crest(REALM_NAME)}<p class="sub">The Frozen Throne</p>{RULE}'
+        f'<p class="center">{html.escape(bossfights.NOT_LIVE)}</p>'
+        '<p class="center"><a class="btn" href="/wrath/bossfights">Back to boss fights</a> '
+        '<a class="btn" href="/wrath/play?mini=mini">Play the realm instead</a></p>',
+        title="Boss fights aren't open yet", current="play")
+
+
+def bf_no_page(why: str) -> bytes:
+    return render(
+        f'{crest(REALM_NAME)}<p class="sub">The Frozen Throne</p>{RULE}'
+        f'<p class="center">Your hero couldn\'t be readied: {html.escape(why)}.</p>'
+        '<p class="center"><a class="btn" href="/wrath/bossfights">Back to boss fights</a></p>',
+        title="Boss fights", current="play")
+
+
 def go_signin(query: dict) -> str:
     """The sign-in for /wrath when it came with a go link (a boss fight, a share link): Log in first, then back to
     /wrath with the same go (checked again by go_param). "" without one: the usual SIGN_IN_URL."""
     go = go_param(query or {})
-    return signin_url("/wrath?" + go[1:]) if go else ""
+    hero = bossfights.hero_param(query or {}) if bossfights is not None and go.startswith("&go=bf:") else ""
+    return signin_url("/wrath?" + go[1:] + hero) if go else ""
 
 
 def auto_signin_page(nonce: str, signin: str = "") -> bytes:
@@ -2031,8 +2070,16 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
            'tabindex="-1" loading="eager" style="display:none"></iframe></template>' if streamed else '')
         + ('<p class="fine end"><a href="/wrath/play/end">End my browser pass</a></p>' if streamed else '')
         + '</div>'
+        # 1b. Solo on this device: the same streamed page, with its own server in the page (docs/PHONE-SOLO.md)
+        + ('<div class="realm" id="solo"><h2>Solo</h2>'
+           '<div class="tags"><span class="tag">On this device</span><span class="tag">No realm</span>'
+           '<span class="tag">Phones too</span></div>'
+           '<p>Your own world, run by this phone or computer: your companion at your side, the Dojo, building. '
+           'Nothing you do goes to a server; your world is kept in this browser.</p>'
+           '<p><a class="btn" href="/wrath/play?mini=mini&amp;go=solo:phone">Play solo on this device</a></p></div>'
+           if streamed else '')
         # 2. The whole world: own game files
-        f'<div class="realm"><h2>{html.escape(REALM_NAME)}</h2>'
+        + f'<div class="realm"><h2>{html.escape(REALM_NAME)}</h2>'
         f'<div class="tags"><span class="tag">The whole world</span><span class="tag">Your own game files</span><span class="tag">3.3.5a</span>{live}</div>'
         '<p>The full game, on the same realm and with the same characters. Uses your own '
         'game files, read on your computer and never uploaded.</p>'
@@ -2562,6 +2609,7 @@ html body :is(.ly-btn,a.btn,button,a.ly-next-go):hover{background:var(--lk-accen
 html body .ly-btn::before{display:none!important}
 html body .ly-btn.violet{background:var(--lk-accent-2)!important;border-color:var(--lk-accent-2)!important}
 html body :is(button.ghost,.btn.off,.ly-btn.hb-alt){background:var(--lk-raised)!important;border-color:var(--lk-border-strong)!important;color:var(--lk-text)!important}
+html body .btn.off{display:inline-flex;align-items:center;min-height:40px;padding:8px 16px;box-sizing:border-box;border:1px dashed var(--lk-border-strong)!important;border-radius:var(--lk-r-sm);color:var(--lk-muted)!important;font-weight:650;cursor:default}
 html body :is(.sub,.fine,label,.tags,.eyebrow,summary,.ly-fine,.ly-lede,.ly-next p,.ly-foot,.hb-count){color:var(--lk-muted)}
 html body .ly-lede{color:var(--lk-text-2)}
 html body :is(.rule,.wu-divider){background:none!important;border:0!important;border-top:1px solid var(--lk-border)!important;height:0!important}
@@ -3102,6 +3150,8 @@ def remember_go(user: str, query: dict) -> None:
     if playmodes is not None and (query.get("go") or [""])[0][:40].startswith("mode:"):   # a game mode (stream/playmodes.py)
         mid = playmodes.go_mode((query.get("go") or [""])[0][:40])
         alias = bossfights.mode_go(mid) if bossfights is not None and mid else None
+        if alias and alias.startswith("bf:") and bossfights.heroes_on():
+            return   # played on a hero (/wrath/play)
         if alias:   # a catalog entry that is a boss fight or the arena queue (the launcher's Modes page): its own go
             if gate_limit.hit("go:" + user.upper(), 20):
                 bossfights.go_intent(ac_soap, user, alias, log)
@@ -3110,6 +3160,8 @@ def remember_go(user: str, query: dict) -> None:
             playmodes.go_intent(ac_soap, user, mid, log)
         return
     bf = bossfights.check_go((query.get("go") or [""])[0][:40]) if bossfights is not None else None
+    if bf and bf.startswith("bf:") and bossfights.heroes_on():
+        return   # boss fights are played on a hero: /wrath/play asks the realm for it (stream/bossfights.py hero_play)
     if bf:   # a boss fight or the 1v1 arena queue: "ovgo set <ACCOUNT> <go>" (stream/bossfights.py, docs/BOSS-FIGHTS.md)
         if gate_limit.hit("go:" + user.upper(), 20):
             bossfights.go_intent(ac_soap, user, bf, log)
@@ -3978,6 +4030,36 @@ class PageHandler(BaseHTTPRequestHandler):
         display = str(me.get("display_name") or me.get("username") or user)
         return None, user, password, display
 
+    def hero_login(self, user: str, password: str, query: dict) -> tuple[str, str] | None:
+        """(game account, character to seat) for this play: the player's own account and nothing, or with a Fight now
+        their hero account and the hero the realm readied (stream/bossfights.py hero_play). None: a page was sent
+        (boss fights not live yet, the realm said no, or it didn't answer)."""
+        go = hero_go(query or {})
+        if not go:
+            return user, ""
+        hero = bossfights.hero_account(user)
+        try:
+            ensure_account(hero, password)   # the same game password as the player's own account
+        except SoapError as e:
+            log.error("hero account %s failed: %s %s", hero, e.kind, e.detail[:160])
+            self.send(503, error_page("The Wrath realm isn't answering right now. Please try again shortly."))
+            return None
+        pick = (query.get("hero") or [""])[0][:32] or None
+        r = bossfights.hero_play(ac_soap, user, go, pick, log)
+        if r["state"] == "not-live":
+            self.send(200, bf_not_live_page())
+            return None
+        if r["state"] == "no":
+            self.send(200, bf_no_page(r["why"]))
+            return None
+        if r["state"] != "ok":
+            self.send(503, error_page("The Wrath realm isn't answering right now. Please try again shortly."))
+            return None
+        bossfights.forget_list(user)
+        log.info("boss fight hero for %s: %s (%s %s, %s)", user.upper(), r["name"], r["spec"], r["class"],
+                 "made" if r["made"] else "ready")
+        return hero, r["name"]
+
     def own_play(self, query: dict | None = None) -> None:
         """GET /wrath/play?mode=own: the browser client with the player's own game files."""
         if not ownfiles_on():
@@ -4011,8 +4093,11 @@ class PageHandler(BaseHTTPRequestHandler):
                 log.error("own: clear %s failed: %s %s", user.upper(), e.kind, e.detail[:160])
                 self.send(503, error_page("The realm isn't answering right now. Please try again shortly."))
                 return
-        code = sessions.create(user, password, OWN, 0, mode=OWN)
-        log.info("own-files session for %s", user.upper())
+        hero = self.hero_login(user, password, query or {})
+        if hero is None:
+            return
+        code = sessions.create(hero[0], password, OWN, 0, mode=OWN, char=hero[1])
+        log.info("own-files session for %s", hero[0].upper())
         self.redirect(f"https://{STREAM_HOST}/__gate?code={urllib.parse.quote(code)}{go_param(query or {})}")
 
     def stream_play(self, query: dict) -> None:
@@ -4064,8 +4149,11 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         remember_go(user, query)
         layers.take(user)   # a new stream play: marked again above; a page with the folder lifts it again
-        code = sessions.create(user, password, slug, info["tier"])
-        log.info("stream session for %s (%s, tier %d)", user.upper(), slug, info["tier"])
+        hero = self.hero_login(user, password, query)
+        if hero is None:
+            return
+        code = sessions.create(hero[0], password, slug, info["tier"], char=hero[1])
+        log.info("stream session for %s (%s, tier %d)", hero[0].upper(), slug, info["tier"])
         self.redirect(f"https://{STREAM_HOST}/__gate?code={urllib.parse.quote(code)}{go_param(query)}",
                       f"{QUEUE_COOKIE}=; Path=/wrath; Max-Age=0; HttpOnly; Secure; SameSite=Lax" if token else "")
 
@@ -4113,6 +4201,8 @@ class PageHandler(BaseHTTPRequestHandler):
             self.send(*page)
             return
         sessions.end_user(user)
+        if bossfights is not None and bossfights.hero_account(user):
+            sessions.end_user(bossfights.hero_account(user))   # the boss fight hero's sessions end with the pass
         play_queue.drop_user(user)
         layers.take(user)
         try:
@@ -4740,6 +4830,11 @@ class PageHandler(BaseHTTPRequestHandler):
             self.send(503, error_page("The Wrath realm isn't answering right now. Please try again shortly."))
             return
         remember_go(user, query)
+        if hero_go(query):   # Fight now: straight to the hero, whichever way the browser game runs
+            if straight_in:
+                return self.redirect("/wrath/play?mini=mini" + go_param(query) + bossfights.hero_param(query))
+            if ownfiles_on():
+                return self.redirect("/wrath/play?mode=own" + go_param(query) + bossfights.hero_param(query))
         if straight_in:
             return self.redirect("/wrath/play?mini=mini" + go_param(query))
         nonce = secrets.token_urlsafe(16)

@@ -458,6 +458,58 @@
       .catch(function (e) { console.warn('wrath-page.js:', e); });
   } catch (e) { console.warn('wrath-early.js', e); }
 })();
+// >>> leyline-solo (solo on this device, 2026-11-05: docs/PHONE-SOLO.md) ---------------------------------------
+// ?solo=1, ?go=solo (the site's "Play solo on this device", carried through sign-in) or env.solo ("phone": the Android
+// app): the game plays against Den Lite running in this page (solo/solo.js, solo/den-lite-worker.js), no realm.
+// Here, before the hop block below and before the client starts: the env is made this page's own (no hop, the
+// device's login and its ready-made character, so no login form and no character list), then solo.js is written into
+// the page right after this script, so it has replaced WebSocket before the page's module script runs. A browser
+// without shared memory (not cross-origin isolated) can't run it: the page says so and plays as before.
+// window.__wuSoloEarly: {wanted, ok, why} for the tests and wu-diag.
+(function (root) {
+  'use strict';
+  var win = root;
+  var st = { wanted: false, ok: false, why: '' };
+  win.__wuSoloEarly = st;
+  try {
+    var q = String((win.location && win.location.search) || '');
+    var env = win.__wenilla_env;
+    if (/[?&]solo=0\b/.test(q)) return;
+    st.wanted = /[?&]solo=1\b/.test(q) || /[?&]go=solo\b/.test(q) || !!(env && (env.solo === 'phone' || env.solo === '1'));
+    if (!st.wanted) return;
+    if (typeof win.Worker !== 'function' || typeof win.SharedArrayBuffer !== 'function' || win.crossOriginIsolated === false) {
+      st.why = 'this browser can\'t run solo here (no shared memory)';
+      // one line, then the page plays on the realm as before (the player asked for solo: say why it isn't)
+      var note = function () {
+        try {
+          if (!win.document.body || win.document.getElementById('wu-solo-off')) return;
+          var n = win.document.createElement('div');
+          n.id = 'wu-solo-off';
+          n.setAttribute('role', 'status');
+          n.setAttribute('style', 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:2147482000;max-width:min(92vw,30rem);'
+            + 'background:#15181f;color:#e8e6ef;border:1px solid #6b5a2e;border-radius:10px;padding:.7rem 1rem;font:14px system-ui,sans-serif;'
+            + 'box-shadow:0 6px 24px rgba(0,0,0,.5)');
+          n.textContent = 'Solo can\'t start in this browser (it needs a newer Chrome, Edge or Safari). You are playing on the realm instead.';
+          win.document.body.appendChild(n);
+          setTimeout(function () { n.remove(); }, 9000);
+        } catch (e) { /* the note is optional */ }
+      };
+      if (win.document && typeof win.document.addEventListener === 'function') {
+        if (win.document.body) note(); else win.document.addEventListener('DOMContentLoaded', note);
+      }
+      return;
+    }
+    env = win.__wenilla_env = env || {};
+    delete env.hop; delete env.hop_ws; delete env.hop_sso; delete env.hop_home;
+    env.solo = env.solo || 'phone';
+    st.ok = true;
+    if (win.document && typeof win.document.write === 'function' && win.document.readyState === 'loading') {
+      win.document.write('<script src="./solo/solo-ring.js"></script><script src="./solo/solo.js"></script>' +
+        '<script>try{LeylineSolo.install(window)}catch(e){console.warn("leyline solo",e);window.__wuSoloEarly.ok=false;window.__wuSoloEarly.why=String(e)}</script>');
+    }
+  } catch (e) { st.ok = false; st.why = String(e); console.warn('wrath-early.js leyline solo', e); }
+})(typeof window !== 'undefined' ? window : globalThis);
+// <<< leyline-solo -----------------------------------------------------------------------------------
 // >>> leyline-hop (realm hopping, 2026-10-25) ------------------------------------------------------
 // A Leyline hop session (the Leyline window's Join: /wrath?go=r:<realm id>, wrath_portal.py hop_env) gets an
 // env with hop, hop_ws (wss://<relay>/ws/<realm id>) and no login. Before the client starts, this:
@@ -649,7 +701,9 @@
                              from: String(url).split('?')[0], to: String(to).split('?')[0] });
           if (api.sockets.length > 20) api.sockets.shift();
         } catch (e) { /* the log is optional */ }
-        return protocols === undefined ? new Orig(to) : new Orig(to, protocols);
+        var sock = protocols === undefined ? new Orig(to) : new Orig(to, protocols);
+        try { watchDead(win, sock, to, env); } catch (e) { /* the watch is optional */ }
+        return sock;
       };
       Hop.prototype = Orig.prototype;
       ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) { Hop[k] = Orig[k]; });
@@ -658,6 +712,57 @@
     }
     return { id: env.hop, name: String(env.hop_name || ''), base: base, login: !!login || home || !!pending || !!pre, home: home,
              sso: sso, ssoPending: pending, ssoOffer: declined };
+  }
+
+  /** The host's realm not answering (player report 5 Nov: "stuck in a cycle of Connecting and Connected"). The relay
+   * opens the browser's socket at once ("Connected") and then asks the host's PC; when the realm there isn't running
+   * the host's side gives up, the relay closes with 4502, and the game logs in again, round after round. After two
+   * such closes (or three login sockets in a row that closed without a word, for an older relay) the page says so in
+   * plain words, once. A login socket that hears anything resets the count. */
+  var dead = { n: 0, code4502: 0, shown: false };
+  function watchDead(win, sock, to, env) {
+    if (!/\/auth$/.test(String(to))) return;
+    var heard = false;
+    sock.addEventListener('message', function () { heard = true; dead.n = 0; dead.code4502 = 0; });
+    sock.addEventListener('close', function (ev) {
+      if (heard) return;
+      dead.n += 1;
+      if (ev && ev.code === 4502) dead.code4502 += 1;
+      api.dead = { n: dead.n, code4502: dead.code4502, shown: dead.shown };
+      if (!dead.shown && (dead.code4502 >= 2 || dead.n >= 3)) { dead.shown = true; api.dead.shown = true; deadNote(win, env); }
+    });
+  }
+
+  function deadNote(win, env) {
+    var d = win.document;
+    if (!d || !d.body) return;
+    var box = d.createElement('div');
+    box.id = 'wu-hop-dead';
+    box.setAttribute('role', 'alert');
+    box.style.cssText = 'position:fixed;left:50%;top:84px;transform:translateX(-50%);z-index:40;max-width:min(92vw,520px);'
+      + 'padding:12px 16px;border-radius:10px;font:14px/1.45 system-ui,sans-serif;color:#e8eef7;'
+      + 'background:linear-gradient(#141c2e,#0a0f1a);border:1px solid rgba(201,162,39,.6);box-shadow:0 8px 30px rgba(0,0,0,.5)';
+    var name = String((env && env.hop_name) || 'This realm');
+    var h = d.createElement('b');
+    h.textContent = name + " isn't answering";
+    var p = d.createElement('div');
+    p.textContent = "We reach the host's computer, but the realm on it isn't answering. If they just started it, the "
+      + 'first start can take several minutes. Ask them to check it is running, then try again.';
+    var row = d.createElement('div');
+    row.style.cssText = 'margin-top:10px;display:flex;gap:8px;justify-content:flex-end';
+    var again = d.createElement('button');
+    again.type = 'button';
+    again.textContent = 'Try again';
+    again.addEventListener('click', function () { win.location.reload(); });
+    var close = d.createElement('button');
+    close.type = 'button';
+    close.textContent = 'Close';
+    close.addEventListener('click', function () { box.remove(); });
+    [again, close].forEach(function (b) { b.style.cssText = 'font:inherit;padding:6px 12px;border-radius:7px;cursor:pointer;'
+      + 'border:1px solid rgba(201,162,39,.6);background:#1b2540;color:#e8eef7'; });
+    row.append(close, again);
+    box.append(h, p, row);
+    d.body.appendChild(box);
   }
 
   /** For live tests: the hop (no secrets), the sockets the client opened and where they went, the hop watcher. */

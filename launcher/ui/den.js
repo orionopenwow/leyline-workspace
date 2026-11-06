@@ -333,6 +333,7 @@
   // goes on the Leyline network from this PC at once (private: only people with a link get in; the relay only
   // passes the game's connection through), and the link for one friend, with their own login in it, is copied.
   let net = null;   // den_net_state
+  let readyBox = null;   // Ready for friends? (hostfriends.js checklist, app.rs host_ready): the checks after an invite
   async function inviteLite() {
     busy = true; paint();
     say("Putting your Den on the Leyline network… (a few seconds)");
@@ -340,6 +341,8 @@
       const r = await call("den_invite", { name: null });
       net = r.tunnel;
       invited = r;
+      // the way a friend comes in, checked line by line (each red line with its fix)
+      if (window.LeylineHostFriends) readyBox = window.LeylineHostFriends.checklist({ kind: "lite", id: "yd-ready", prefix: "yd-c-", quietWithout: true, onStart: () => inviteLite() });
       let copied = true;
       try { await navigator.clipboard.writeText(r.link); } catch (_) { copied = false; }
       // TODO(owner): the words
@@ -362,7 +365,7 @@
     netTimer = setTimeout(tick, 1500);
   }
   async function stopSharing() {
-    try { await call("den_net_stop"); net = null; invited = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
+    try { await call("den_net_stop"); net = null; invited = null; readyBox = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
     catch (e) { say(oops(e), "bad"); }
     await loadFriends();
     paint();
@@ -662,6 +665,73 @@
     return box;
   }
 
+  // ---------------------------------------------------------------- Den codes and Sky Island (denpack.js)
+  // A code a friend sent (or a leyline://pack/ link, or a .denpack file): decoded here, checked by the core as any Den
+  // file (den_add), and by Den Lite again when it opens. A tale's code becomes a small Den file Den Lite's
+  // .den tale list reads.
+  async function addCode(text, open) {
+    const P = window.LeylineDenPack;
+    if (!P) { say("Den codes need a newer launcher.", "warn"); return null; }
+    let d;
+    try { d = await P.decode(text); } catch (e) { say(e.message || String(e), "warn"); return null; }
+    const f = P.asDenFile(d.kind, d.text);
+    let name;
+    try { name = await call("den_add", { fileName: f.fileName, text: f.text }); }
+    catch (e) { say(oops(e, "That code doesn't hold a Den Leyline can open."), "bad"); return null; }
+    if (d.kind === "tale") say(`The tale is in your Dens as '${name}'. In your Den: .den tale play ${name}`, "ok");
+    else if (open) {
+      try { await call("den_open", { name }); say(`'${name}' opens when you're in your Den (a copy of what was there is kept as 'backup').`, "ok"); }
+      catch (e) { say(oops(e), "bad"); }
+    } else say(`Added as '${name}'. Open it to step into it.`, "ok");
+    load();
+    return name;
+  }
+  function fromCode() {
+    const box = mk("div", "yd-link yd-code");
+    const u = mk("input", "");
+    u.type = "text"; u.maxLength = 100000; u.placeholder = "ley1.den.z.… (a Den code a friend sent, or a leyline://pack/ link)";
+    u.setAttribute("aria-label", "A Den code");
+    u.spellcheck = false;
+    u.id = "yd-code";
+    // a leyline://pack/ link that came before this page was drawn (app.js handleDeepLink)
+    if (window.LeylinePendingCode) { u.value = String(window.LeylinePendingCode); window.LeylinePendingCode = null; }
+    const add = btn("Open the code", "btn small primary", async () => {
+      add.disabled = true;
+      if (await addCode(u.value, true)) u.value = "";
+      add.disabled = false;
+    });
+    const pick = mk("input", "");
+    pick.type = "file"; pick.accept = ".denpack,.txt"; pick.hidden = true;
+    pick.addEventListener("change", async () => {
+      const f = pick.files && pick.files[0];
+      pick.value = "";
+      if (f && f.size < 100 * 1024) await addCode(await f.text(), false);
+      else if (f) say("That code file is too big.", "warn");
+    });
+    box.append(u, add, btn("A .denpack file", "btn small", () => pick.click()), pick);
+    return box;
+  }
+  // Sky Island (owner 5 Nov): a floating island over open sky, a big tree, dummies to spar with, the whole editor, its
+  // welcome tale; one click: the island's file in your Dens, then Your Den, and Den Lite floats it when you're in
+  async function skyIsland(b) {
+    if (b) b.disabled = true;
+    const name = await addCode(window.LeylineDenPack ? window.LeylineDenPack.ISLAND_CODE : "", true);
+    if (b) b.disabled = false;
+    if (name) go();
+  }
+  function islandTile() {
+    const b = mk("div", "");
+    const play = btn("Play Sky Island", "btn primary", () => skyIsland(play));
+    play.id = "yd-sky";
+    const copy = btn("Copy its code", "btn small", async () => {
+      try { await navigator.clipboard.writeText((window.LeylineDenPack.LINK) + window.LeylineDenPack.ISLAND_CODE); say("Sky Island's link is copied: paste it to a friend.", "ok"); }
+      catch (_) { say("Couldn't copy here.", "warn"); }
+    });
+    b.append(play, copy, mk("p", "yd-hint", "In the game: .den island (and .den island off), .den pack makes your Den a code, .den tale for its tales."));
+    // TODO(owner): the tile's words
+    return tile("Sky Island", "A floating island in open sky: build, spar, play its tale, pass it on as one code. Your own game's models, nothing to download.", b);
+  }
+
   // ---------------------------------------------------------------- Share on the Workshop
   function workshop(f) {
     const d = mk("div", "yd-share");
@@ -814,6 +884,7 @@
       row1.append(inv);
       sb.append(row1);
       if (invited && invited.code) sb.append(codeRow());
+      if (invited && readyBox) sb.append(readyBox);
       sb.append(friendsBox());
       // the bigger server, for a Den that should run without this PC's Den Lite (the Host pack, Docker)
       const more = mk("div", "yd-row yd-share-more");
@@ -860,8 +931,9 @@
     sd.append(ul);
     const addRow = mk("div", "yd-row");
     addRow.append(btn("Add a Den file", "btn small", () => fileIn.click()), fileIn);
-    sd.append(addRow, fromLink());
-    grid.append(tile("Saved Dens", "Open one to step into it. Add a file a friend sent, or a link from the Workshop.", sd, "wide"));
+    sd.append(addRow, fromLink(), fromCode());
+    grid.append(tile("Saved Dens", "Open one to step into it. Add a file a friend sent, a Den code, or a link from the Workshop.", sd, "wide"));
+    if (where() === "lite") grid.append(islandTile());
     // Packs
     const pk = mk("div", "");
     const packs = (st && st.packs) || [];
@@ -895,7 +967,7 @@
   document.addEventListener("leyline:page", (e) => { if (e.detail && e.detail.page === "den") load(); });
   const homeGo = byId("hm-den-go");
   if (homeGo) homeGo.addEventListener("click", () => { if (window.LeylineNav) window.LeylineNav.show("den"); go(); });
-  window.LeylineDen = { go, load, state: () => st, where };
+  window.LeylineDen = { go, load, state: () => st, where, addCode, skyIsland };
   // Your Den's state read once at the start too (not only on its page): the play bar's PLAY and the realm picker go by it
   if (page.classList.contains("on")) load(); else { paint(); call("den_state").then((x) => { if (!st) { st = x; paint(); } }).catch(() => { /* asked again on go() */ }); }
 })();

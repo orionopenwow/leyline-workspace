@@ -11,7 +11,8 @@
 //!    Snap is on, held a grid step inside the Den's edge, on the top of a prop under it (within 2.5 yards of the
 //!    ground, never its own), else on the ground plus its own lift.
 //! 3. A still click on a prop picks it up (it doesn't jump: its foot keeps its offset from where the ray met the
-//!    ground, at most its own footprint); the next click (commit) puts it down; Esc puts it back where it was.
+//!    ground, at most its own footprint), even with a card in hand (the card goes); the next click (commit) puts it
+//!    down; Esc puts it back where it was. A click on empty ground leaves whatever is in hand in hand.
 //! 4. A press and drag keeps the grabbed point under the cursor on the plane at the grabbed height.
 //! 5. A turn (Q / E, the wheel) turns what is in hand; the next card starts turned as the last placed.
 //! 6. One commit is one undo.
@@ -327,13 +328,9 @@ impl Model {
     pub fn grab(&mut self, u: f32, v: f32, carry: bool) -> bool {
         let Some((e, d)) = self.ray(u, v) else { return false };
         let reach = self.cam_now().dist + REACH;
-        let Some((id, t)) = pick(e, d, &self.props, reach) else {
-            if carry {
-                self.armed = None;
-                self.at = None;
-            }
-            return false;
-        };
+        // nothing under the cursor: what is in hand stays in hand (a click on empty ground only clears the selection;
+        // Esc is what puts a card away: gizmo.rs `click`, DEN-EDITOR-PARITY.md)
+        let Some((id, t)) = pick(e, d, &self.props, reach) else { return false };
         let Some(p) = self.props.iter().find(|p| p.id == id).copied() else { return false };
         let hit = add(e, d, t.max(0.0));
         let mut off = [p.at[0] - hit[0], p.at[1] - hit[1]];

@@ -210,7 +210,7 @@ pub const LOOKS: &[Look] = &[
     Look { name: "stone", floor: 190024, wall: 19444, light: 180043, tile: 4.0, rows: 1 },
     Look { name: "wood", floor: 190615, wall: 211062, light: 179977, tile: 4.0, rows: 1 },
     // Sky Island (skyisland.rs): the floating island's ground, rim, rocks and tree are this look's pieces
-    Look { name: crate::skyisland::LOOK, floor: crate::skyisland::GROUND, wall: crate::skyisland::RIM, light: 0, tile: crate::skyisland::GROUND_TILE, rows: 0 },
+    Look { name: crate::skyisland::LOOK, floor: crate::skyisland::GROUND, wall: crate::skyisland::RIM, light: crate::skyisland::LANTERN, tile: crate::skyisland::GROUND_TILE, rows: 0 },
 ];
 
 pub fn look(name: &str) -> Option<Look> {

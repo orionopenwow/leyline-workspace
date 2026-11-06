@@ -103,7 +103,7 @@
 import { gamePointerEvent } from './input.js';
 import { makeDriver } from './touch-driver.js';
 
-export const TOUCH_BUILD = 'wrath 2026-11-05c (mobile pass: phone keyboard, two-finger right-click, hold mode, size and opacity, keyboard hides, background let-go, no page zoom, notch; tap re-send, magnet, tap test, debug copy; targeting, cast bar, ground spells; layouts; controller card)';
+export const TOUCH_BUILD = 'wrath 2026-11-06a (first tap full screen, no pan on the prompts; mobile pass: phone keyboard, two-finger right-click, hold mode, size and opacity, keyboard hides, background let-go, no page zoom, notch; tap re-send, magnet, tap test, debug copy; targeting, cast bar, ground spells; layouts; controller card)';
 // the driver installTouch made (gameTicks below asks it for game updates)
 let DRIVER = null;
 
@@ -409,7 +409,9 @@ function style() {
     #ow-touch .toast.on { opacity: 1; }
     #ow-touch .toast, #ow-touch .info { z-index: 8; }
     #ow-touch .rotate { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-      background: rgba(5, 4, 10, .92); color: #f0d79a; font: 600 16px 'OW Cinzel', Georgia, serif; letter-spacing: .06em; pointer-events: auto; }
+      background: rgba(5, 4, 10, .92); color: #f0d79a; font: 600 16px 'OW Cinzel', Georgia, serif; letter-spacing: .06em; pointer-events: auto;
+      /* no browser pan from a finger here (6 Nov): a tap that rolled a few px became a pan (pointercancel, no lift) */
+      touch-action: none; }
     #ow-touch .rotate svg { width: 64px; height: 64px; }
     /* a phone held upright: the game's screens are laid out for landscape (character creation's
        panels pile up over its buttons), so every game screen asks to be turned sideways */
@@ -421,7 +423,7 @@ function style() {
     #ow-touch .rotate .sub, #ow-touch .fsgo .sub { font: 13px system-ui, sans-serif; color: #c9b98f; letter-spacing: 0; max-width: 80vw; text-align: center; }
     /* sideways but not full screen yet: one tap goes full screen (the browser only allows it from a tap) */
     #ow-touch .fsgo { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
-      background: rgba(5, 4, 10, .72); color: #f0d79a; font: 600 17px 'OW Cinzel', Georgia, serif; letter-spacing: .05em; pointer-events: auto; }
+      background: rgba(5, 4, 10, .72); color: #f0d79a; font: 600 17px 'OW Cinzel', Georgia, serif; letter-spacing: .05em; pointer-events: auto; touch-action: none; }
     #ow-touch .fsgo svg { width: 46px; height: 46px; }
     #ow-touch .fsgo .inst, #ow-touch .rotate .inst { display: none; margin-top: 2px; padding: 8px 16px; border-radius: 18px; border: 1px solid #6b5a2e;
       background: rgba(20,16,10,.7); color: #e8d9a8; font: 13px system-ui, sans-serif; }
@@ -2858,6 +2860,8 @@ end`;
   const lockLandscape = () => { try { screen.orientation?.lock?.('landscape').catch(() => {}); } catch { /* not supported */ } };
   function fullscreen() {
     if (fsEl()) { lockLandscape(); return; }
+    // wrath-early.js's first-tap ask (one ask per tap: a second in the same tap is refused, the first used the gesture)
+    if (typeof window.__wuGoFull === 'function') { window.__wuGoFull('touch.js'); return; }
     try {
       const p = el0.requestFullscreen ? el0.requestFullscreen({ navigationUI: 'hide' }) : el0.webkitRequestFullscreen?.();
       Promise.resolve(p).then(lockLandscape).catch(() => {});

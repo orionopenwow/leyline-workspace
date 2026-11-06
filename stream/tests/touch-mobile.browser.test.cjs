@@ -417,7 +417,7 @@ test('Copy debug info in the world: the layout (not "?"), the notch, the keyboar
   const { ctx, p, errors } = await open(browser, { state: 'inworld', live: true, w: 844, h: 390 });
   await p.waitForTimeout(1500);                     // the game layout has been applied (it used to overwrite the layout)
   const line = await p.evaluate(() => T.debugReport());
-  for (const want of ['2026-11-05c', 'layout phone', 'size 100 alpha 100 hold tip', 'safe 0,0,0,0', 'vv 844x390 kb 0', 'haptics', 'two 0', 'stale 0', 'letgo 0']) {
+  for (const want of ['2026-11-06a', 'layout phone', 'size 100 alpha 100 hold tip', 'safe 0,0,0,0', 'vv 844x390 kb 0', 'haptics', 'two 0', 'stale 0', 'letgo 0']) {
     assert.ok(line.includes(want), `has "${want}": ${line}`);
   }
   assert.ok(!line.includes('\n'));

@@ -2,7 +2,7 @@
 
 The browser game's touch layer: `stream/www-files/touch.js` (the controls), `touch-driver.js` (the bridge, or the
 default keys when the client has no bridge), `input.js` (pointer fixes). Build shown on the debug line:
-`TOUCH_BUILD` in touch.js (now `wrath 2026-11-05c ...`). Deployed with the Control step **`page`** (the game page
+`TOUCH_BUILD` in touch.js (now `wrath 2026-11-06a ...`). Deployed with the Control step **`page`** (the game page
 only: backs up the live page, runs `www-patch.py`, checks `PAGE OK`, puts the old page back if the check fails).
 
 It switches on by itself on a touch screen (a coarse pointer with touch points). `?touch=1` forces it on, `?touch=0`
@@ -13,7 +13,7 @@ off (both remembered in this browser).
 About 5 minutes. Phone held sideways, the game open in the phone's browser (or from the Leyline home-screen icon).
 
 1. **The build.** On the character list tap the **Controls** button (top right, the sliders icon) > **Copy debug
-   info**, and paste it anywhere (a note, Discord's box). It must start `Leyline touch wrath 2026-11-05c`. If it says
+   info**, and paste it anywhere (a note, Discord's box). It must start `Leyline touch wrath 2026-11-06a`. If it says
    `05b`, close the tab, open the game again and check once more.
 2. **Tap test.** Same sheet > **Tap test**: tap the centre of the 5 gold rings. Expect "5 of 5 hit". Close.
 3. **Name and keyboard.** Create New Character. Tap a race and a class: each goes where you tapped. Tap the

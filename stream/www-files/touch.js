@@ -2936,7 +2936,8 @@ end`;
     if (wake || !status.inworld || document.hidden || !navigator.wakeLock?.request) return;
     navigator.wakeLock.request('screen').then((w) => { wake = w; w.addEventListener?.('release', () => { if (wake === w) wake = null; }); }).catch(() => {});
   };
-  document.addEventListener('visibilitychange', () => { if (document.hidden) letGo(); else askWake(); });
+  // (the browser drops the screen lock of a hidden page itself: forgotten here, so coming back asks again)
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { letGo(); wake = null; } else askWake(); });
   addEventListener('pagehide', () => letGo());
   addEventListener('blur', () => { if (stickId !== null || touches.size || held.size) letGo(); });
   status.wake = () => !!wake;

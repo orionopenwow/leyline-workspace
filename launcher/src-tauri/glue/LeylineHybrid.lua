@@ -7,7 +7,10 @@
 -- (DefaultServerLogin, as the stock Login button does), under a cover with the spinning Leyline mark, a bar and a
 -- tip, until character select is up; the realm is picked by name when the realm list shows (the only one, when
 -- the name isn't there); with `enter`, the last character enters the world, and with none, one is made first
--- (`name`, else Wren: a human, as Den Lite's own) and then enters. Without a session nothing here runs, and the
+-- (`name`, else Wren: a human, as Den Lite's own) and then enters. `pick` (a character's name) enters that one
+-- instead of the last (the launcher's Characters page); `make` ({ name, race, class, sex }: the race's and class's
+-- file names, as GetNameForRace / GetSelectedClass give them) makes that new character first, then enters it
+-- (Quick start). Without a session nothing here runs, and the
 -- screens are the stock ones (or Forever UI's: it keeps the stock screens' names, so the same frames are watched).
 -- Works with or without Forever UI's glue: only stock glue functions and frame names are used.
 --
@@ -173,15 +176,58 @@ local function pickRealm()
 	return ok and hit
 end
 
+local function okName(n) return type(n) == "string" and n:match("^%a+$") and #n >= 2 and #n <= 12 end
+local function upper(v) return type(v) == "string" and v:upper() or "" end
+
+-- The create screen's race (or class) whose file name is `want`: tried by index, as the stock buttons set them.
+local function selectBy(set, get, want, n)
+	if type(want) ~= "string" or want == "" then return true end
+	want = want:upper()
+	for i = 1, n do
+		if pcall(set, i) then
+			local a, b = get()
+			if upper(b) == want or upper(a) == want then return true end
+		end
+	end
+	return false
+end
+
 -- A character like Den Lite's own (a human; 2 male, 3 female), then CreateCharacter, as the stock Create button.
+-- With `make`: its name, race, class and sex (a race or class this realm doesn't offer: false, nothing made).
 local function createCharacter()
-	local name = (type(S.name) == "string" and S.name:match("^%a+$") and #S.name <= 12) and S.name or "Wren"
-	return pcall(function()
-		if SetSelectedRace then SetSelectedRace(1) end
-		if SetSelectedSex then SetSelectedSex(3) end
-		if SetSelectedClass then SetSelectedClass(1) end
+	local m = type(S.make) == "table" and S.make or nil
+	local name = (m and okName(m.name) and m.name) or (okName(S.name) and S.name) or "Wren"
+	local ok, made = pcall(function()
+		if m then
+			if not selectBy(SetSelectedRace, GetNameForRace, m.race, 12) then return false end
+			if SetSelectedSex then SetSelectedSex(m.sex == 2 and 2 or 3) end
+			if not selectBy(SetSelectedClass, GetSelectedClass, m.class, 11) then return false end
+		else
+			if SetSelectedRace then SetSelectedRace(1) end
+			if SetSelectedSex then SetSelectedSex(3) end
+			if SetSelectedClass then SetSelectedClass(1) end
+		end
 		CreateCharacter(name)
+		return true
 	end)
+	if ok and made and m then S.pick = name end   -- then entered by its name
+	return ok and made
+end
+
+-- The character named `S.pick` selected on character select (true), when it is in the list.
+local function selectPicked()
+	if not okName(S.pick) or not GetCharacterInfo or not SelectCharacter then return false end
+	local ok, hit = pcall(function()
+		for i = 1, (GetNumCharacters and GetNumCharacters() or 0) do
+			local name = GetCharacterInfo(i)
+			if type(name) == "string" and name:lower() == S.pick:lower() then
+				SelectCharacter(i)
+				return true
+			end
+		end
+		return false
+	end)
+	return ok and hit
 end
 
 local function step(now)
@@ -214,7 +260,14 @@ local function step(now)
 	elseif L.state == "select" then
 		if not shown(CharacterSelect) then
 			if now - L.t > WAIT_ENTER then giveUp("left character select") end
+		elseif type(S.make) == "table" and not L.created and now - L.t > 1 and SetGlueScreen and CreateCharacter then
+			-- Quick start: the new character first, whatever is in the list
+			L.created = true
+			coverUp("Making your character...")
+			if not pcall(SetGlueScreen, "charcreate") then return giveUp("character create") end
+			L.state, L.t = "create", now
 		elseif (GetNumCharacters and GetNumCharacters() or 0) > 0 and now - L.t > 1 then
+			if S.pick and not selectPicked() and now - L.t < 3 then return end   -- the list may still be filling
 			coverUp("Entering the world...")
 			pcall(EnterWorld)
 			L.state, L.t = "entering", now

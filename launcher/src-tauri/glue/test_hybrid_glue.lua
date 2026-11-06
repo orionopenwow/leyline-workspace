@@ -43,6 +43,11 @@ local function world()
 		SetSelectedSex = function(x) W.sex = x end,
 		SetSelectedClass = function(c) W.class = c end,
 		CreateCharacter = function(n) W.calls[#W.calls + 1] = "create " .. n; if W.onCreate then W.onCreate(n) end end,
+		-- the create screen's lists (index -> file name), as GetNameForRace / GetSelectedClass read the current pick
+		GetNameForRace = function() local r = (W.raceFiles or {})[W.race]; return r, r end,
+		GetSelectedClass = function() local c = (W.classFiles or {})[W.class]; return c, c end,
+		GetCharacterInfo = function(i) return (W.names or {})[i] end,
+		SelectCharacter = function(i) W.calls[#W.calls + 1] = "select " .. i end,
 	}
 	env.AccountLogin, env.CharacterSelect, env.GlueDialog, env.RealmList, env.GlueParent, env.CharacterCreate =
 		frame("AccountLogin"), frame("CharacterSelect"), frame("GlueDialog"), frame("RealmList"), frame("GlueParent"), frame("CharacterCreate")
@@ -247,6 +252,57 @@ case("every stop says why on the normal screen", function()
 	W.load(copy(SESSION))
 	W.tick(1, 25)
 	assert(W.note() and W.note():find("login screen didn't show", 1, true))
+end)
+
+-- The Characters page and Quick start (app.rs world_play): pick enters that character; make makes one first
+local RACES = { "Human", "Orc", "Dwarf", "NightElf", "Scourge", "Tauren", "Gnome", "Troll", nil, "BloodElf", "Draenei" }
+local CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "DEATHKNIGHT", "SHAMAN", "MAGE", "WARLOCK", nil, "DRUID" }
+
+case("pick: the character of that name is selected, then entered", function()
+	local W = world()
+	local s = copy(SESSION); s.enter = true; s.pick = "Brakka"
+	W.load(s)
+	W.names = { "Wren", "Brakka", "Odo" }
+	W.screen("AccountLogin"); W.tick()
+	W.screen("CharacterSelect"); W.chars = 3; W.tick(0.1, 30)
+	eq(W.calls[2], "select 2"); eq(W.calls[3], "enter"); eq(#W.calls, 3)
+end)
+
+case("pick: a name not in the list enters the last one after a moment", function()
+	local W = world()
+	local s = copy(SESSION); s.enter = true; s.pick = "Nobody"
+	W.load(s)
+	W.names = { "Wren" }
+	W.screen("AccountLogin"); W.tick()
+	W.screen("CharacterSelect"); W.chars = 1; W.tick(0.1, 40)
+	eq(W.calls[2], "enter"); eq(#W.calls, 2)
+end)
+
+case("make: a new character of that race, class and sex, even with others in the list, then entered", function()
+	local W = world()
+	local s = copy(SESSION); s.enter = true; s.make = { name = "Tamsin", race = "NightElf", class = "DRUID", sex = 3 }
+	W.load(s)
+	W.raceFiles, W.classFiles = RACES, CLASSES
+	W.names = { "Wren" }
+	W.onScreen = function(n) if n == "charcreate" then W.screen("CharacterCreate") end end
+	W.onCreate = function(n) W.names[#W.names + 1] = n; W.chars = #W.names; W.screen("CharacterSelect") end
+	W.screen("AccountLogin"); W.tick()
+	W.screen("CharacterSelect"); W.chars = 1; W.tick(0.1, 60)
+	eq(W.calls[2], "screen charcreate"); eq(W.calls[3], "create Tamsin")
+	eq(W.race, 4); eq(W.class, 11); eq(W.sex, 3)
+	eq(W.calls[4], "select 2"); eq(W.calls[5], "enter"); eq(#W.calls, 5)
+end)
+
+case("make: a race this realm doesn't offer makes nothing and says why", function()
+	local W = world()
+	local s = copy(SESSION); s.enter = true; s.make = { name = "Tamsin", race = "Goblin", class = "ROGUE", sex = 2 }
+	W.load(s)
+	W.raceFiles, W.classFiles = RACES, CLASSES
+	W.onScreen = function(n) if n == "charcreate" then W.screen("CharacterCreate") end end
+	W.screen("AccountLogin"); W.tick()
+	W.screen("CharacterSelect"); W.chars = 0; W.tick(0.1, 30)
+	for _, c in ipairs(W.calls) do assert(not c:find("^create"), "nothing made") end
+	eq(W.env.LeylineHybrid.why, "character create")
 end)
 
 if failed > 0 then print(failed .. " failed"); os.exit(1) end

@@ -387,8 +387,12 @@ pub struct Setup {
     pub seed: [u8; 32],
     pub name: String,
     pub invite_secret: String,
-    /// Den Lite's Dens folder (`den-lite.remote`, `den-lite.public`).
+    /// Den Lite's Dens folder (`den-lite.remote`, `den-lite.public`); a single player world's share folder
+    /// (host/worldshare.rs) has the same two files.
     pub den_dir: PathBuf,
+    /// The login streams' realm list rewritten to `den-lite.public` (host/worldshare.rs AuthRewriter): for the
+    /// Built-in engine, whose realm list says 127.0.0.1. Den Lite writes the right address itself (false).
+    pub realm_list: bool,
 }
 
 /// Den Lite's friends' listeners (`<dens>/den-lite.remote`: "<login port> <world port>").
@@ -508,9 +512,14 @@ pub fn run_once(s: &Setup, stop: &AtomicBool, state: &Mutex<TunnelState>) -> Res
                             match local.and_then(|lp| TcpStream::connect(("127.0.0.1", lp)).ok()) {
                                 Some(c) => {
                                     let _ = c.set_nodelay(true);
+                                    let rw = if s.realm_list && svc == 3724 {
+                                        std::fs::read_to_string(s.den_dir.join("den-lite.public")).ok().map(|t| crate::host::worldshare::AuthRewriter::new(t.trim()))
+                                    } else {
+                                        None
+                                    };
                                     if let Ok(r) = c.try_clone() {
                                         let tx = tx.clone();
-                                        std::thread::spawn(move || pump(r, sid, tx));
+                                        std::thread::spawn(move || pump(r, sid, tx, rw));
                                     }
                                     locals.insert(sid, c);
                                 }
@@ -594,17 +603,23 @@ pub fn run_once(s: &Setup, stop: &AtomicBool, state: &Mutex<TunnelState>) -> Res
 }
 
 /// A local connection's bytes, up the tunnel, then CLOSE.
-fn pump(mut r: TcpStream, sid: u32, tx: mpsc::Sender<Out>) {
+fn pump(mut r: TcpStream, sid: u32, tx: mpsc::Sender<Out>, mut rw: Option<crate::host::worldshare::AuthRewriter>) {
     let mut b = vec![0u8; MAX_CHUNK];
     loop {
         match r.read(&mut b) {
             Ok(0) | Err(_) => break,
             Ok(n) => {
-                let mut f = vec![DATA];
-                f.extend_from_slice(&sid.to_be_bytes());
-                f.extend_from_slice(&b[..n]);
-                if tx.send(Out::Frame(DATA, f)).is_err() {
-                    return;
+                let data = match rw.as_mut() {
+                    Some(w) => w.feed(&b[..n]),
+                    None => b[..n].to_vec(),
+                };
+                for part in data.chunks(MAX_CHUNK) {
+                    let mut f = vec![DATA];
+                    f.extend_from_slice(&sid.to_be_bytes());
+                    f.extend_from_slice(part);
+                    if tx.send(Out::Frame(DATA, f)).is_err() {
+                        return;
+                    }
                 }
             }
         }

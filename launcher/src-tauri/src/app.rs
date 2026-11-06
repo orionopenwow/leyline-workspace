@@ -348,7 +348,7 @@ async fn play_official(core: &Core, client: &str, realm: &str, app: Option<&AppH
     }
     let session = login.as_ref().ok().map(|l| {
         let _ = crate::herokey::set_account_name(&profile.path, &l.user);
-        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false }
+        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false, pick: None, make: None }
     });
     let pass = login.as_ref().ok().map(|l| l.pass.clone());
     let name = login.as_ref().ok().map(|l| l.user.clone()).unwrap_or_default();
@@ -571,7 +571,7 @@ async fn play_realm_herokey(core: State<'_, Core>, client: String, slug: String)
     let r2 = realm.clone();
     let addr = blocking(move || realms::desktop_address(&r2, |relay| format!("https://{relay}"))).await?;
     // The hybrid client (Settings' hybrid_login, docs/HYBRID-CLIENT.md): the login screen signs in by itself.
-    let s = crate::hybrid::Session { user: login.user.clone(), pass: login.pass.clone(), realm: None, enter: false };
+    let s = crate::hybrid::Session { user: login.user.clone(), pass: login.pass.clone(), realm: None, enter: false, pick: None, make: None };
     let (_, hybrid) = point_and_play_with(&core, &client, &addr, true, Some(s), false)?;
     match hybrid {
         Ok(()) => {
@@ -672,7 +672,7 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
             (list, "Your friend's Den".to_string())
         };
         let _ = crate::herokey::set_login(&profile.path, &user, None);
-        let s = crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: None, enter: false };
+        let s = crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: None, enter: false, pick: None, make: None };
         let (message, hybrid) = point_and_play_with(&core, &client, &address, true, Some(s), true)?;
         let (auto, why) = match hybrid {
             Ok(()) => (true, String::new()),
@@ -832,6 +832,7 @@ fn den_tunnel(l: &crate::host::lite::Binary, root: &Path) -> Result<crate::host:
         name: "Den Lite".into(),
         invite_secret: secret,
         den_dir: l.den_dir(),
+        realm_list: false,
     }))
 }
 
@@ -1152,7 +1153,7 @@ struct SoloPlay {
 /// picked by name, and straight into the world (a character made first when there is none).
 fn den_session() -> crate::hybrid::Session {
     use crate::host::lite;
-    crate::hybrid::Session { user: crate::denclick::GLUE_ACCOUNT.into(), pass: lite::PASSWORD.into(), realm: Some(lite::REALM.into()), enter: true }
+    crate::hybrid::Session { user: crate::denclick::GLUE_ACCOUNT.into(), pass: lite::PASSWORD.into(), realm: Some(lite::REALM.into()), enter: true, pick: None, make: None }
 }
 
 /// Den Lite on this PC, started for this game folder when it isn't running, its login port answering (up to 15 s).
@@ -1622,7 +1623,7 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
     };
     let session = login.as_ref().ok().map(|l| {
         let _ = crate::herokey::set_account_name(&profile.path, &l.user);
-        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: cli.world }
+        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: cli.world, pick: None, make: None }
     });
     let pass = login.as_ref().ok().map(|l| l.pass.clone());
     drop(login);
@@ -2007,7 +2008,7 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
     let realm = eng::Kind::BossRush.realm_name();
     let _ = crate::herokey::set_login(&profile.path, &hero_acc, Some(realm));
     let refused = crate::hybrid::refused_marker(&profile.path).exists();
-    let session = if refused { None } else { Some(crate::hybrid::Session { user: hero_acc.clone(), pass: pass.clone(), realm: Some(realm.into()), enter: true }) };
+    let session = if refused { None } else { Some(crate::hybrid::Session { user: hero_acc.clone(), pass: pass.clone(), realm: Some(realm.into()), enter: true, pick: None, make: None }) };
     let (message, hybrid) = point_and_play_with(&core, &client, eng::REALM, true, session, true)?;
     let auto = hybrid.is_ok();
     Ok(BossRushPlay { message, engine: "exact".into(), hero, made, auto, account: if auto { String::new() } else { hero_acc }, password: if auto { String::new() } else { pass }, code })
@@ -3113,7 +3114,7 @@ mod solo_tests {
         std::fs::write(g.join("ForeverUIGlue.xml"), "<Ui/>").unwrap();
         let l = crate::herokey::parse_game_login(&serde_json::json!({"ok": true, "user": "WR000123", "pass": "Q7W8E9R2T3Y4U5I6"})).unwrap();
         assert!(crate::herokey::set_account_name(d.path(), &l.user).unwrap());
-        let s = crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false };
+        let s = crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false, pick: None, make: None };
         assert!(crate::hybrid::session_lua(Some(&s)).unwrap().contains("enter = false"), "character select, not the world");
         crate::hybrid::write(d.path(), Some(&s)).unwrap();
         assert!(crate::hybrid::has_session(d.path()));

@@ -49,6 +49,33 @@ pub struct Session {
     pub realm: Option<String>,
     /// Enter the world with the last character once character select is up.
     pub enter: bool,
+    /// With `enter`: the character of this name instead of the last (the Characters page).
+    pub pick: Option<String>,
+    /// With `enter`: make this character first, then enter it (Quick start).
+    pub make: Option<NewChar>,
+}
+
+/// A character Quick start makes on the game's own create screen: its name, and the race's and class's file names
+/// as the create screen gives them (GetNameForRace, GetSelectedClass: "NightElf", "DRUID").
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewChar {
+    pub name: String,
+    pub race: String,
+    pub class: String,
+    pub female: bool,
+}
+
+/// A character's name as the game takes it: 2 to 12 letters (A-Z), the first upper case, the rest lower.
+pub fn char_name_ok(n: &str) -> bool {
+    (2..=12).contains(&n.len())
+        && n.bytes().all(|b| b.is_ascii_alphabetic())
+        && n.as_bytes()[0].is_ascii_uppercase()
+        && n.bytes().skip(1).all(|b| b.is_ascii_lowercase())
+}
+
+/// A file name of the create screen's lists: letters only, at most 16.
+fn file_word_ok(w: &str) -> bool {
+    (2..=16).contains(&w.len()) && w.bytes().all(|b| b.is_ascii_alphabetic())
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -85,9 +112,25 @@ pub fn session_lua(s: Option<&Session>) -> Result<String, String> {
         Some(_) => return Err("That realm name can't be handed to the game.".into()),
         None => "nil".into(),
     };
+    let pick = match &s.pick {
+        Some(n) if char_name_ok(n) => format!(", pick = {}", lua_bytes(n)),
+        Some(_) => return Err("That character's name can't be handed to the game.".into()),
+        None => String::new(),
+    };
+    let make = match &s.make {
+        Some(m) if char_name_ok(&m.name) && file_word_ok(&m.race) && file_word_ok(&m.class) => format!(
+            ", make = {{ name = {}, race = {}, class = {}, sex = {} }}",
+            lua_bytes(&m.name),
+            lua_bytes(&m.race),
+            lua_bytes(&m.class),
+            if m.female { 3 } else { 2 }
+        ),
+        Some(_) => return Err("That new character can't be handed to the game.".into()),
+        None => String::new(),
+    };
     Ok(format!(
         "-- Leyline: the sign-in for one start of the game, made by the launcher and removed when the game closes.\r\n\
-         LEYLINE_SESSION = {{ user = {}, pass = {}, realm = {realm}, enter = {} }}\r\n",
+         LEYLINE_SESSION = {{ user = {}, pass = {}, realm = {realm}, enter = {}{pick}{make} }}\r\n",
         lua_bytes(&s.user),
         lua_bytes(&s.pass),
         s.enter
@@ -322,7 +365,22 @@ mod tests {
     }
 
     fn sess() -> Session {
-        Session { user: "HKABCDEFGHIJKLMN".into(), pass: "p@ss\"]]..\\x".into(), realm: Some("Den of \"Q\"".into()), enter: true }
+        Session { user: "HKABCDEFGHIJKLMN".into(), pass: "p@ss\"]]..\\x".into(), realm: Some("Den of \"Q\"".into()), enter: true, pick: None, make: None }
+    }
+
+    #[test]
+    fn pick_and_make_are_handed_over_only_in_the_shapes_the_game_takes() {
+        let mk = |name: &str, race: &str| NewChar { name: name.into(), race: race.into(), class: "DRUID".into(), female: true };
+        let s = session_lua(Some(&Session { pick: Some("Brakka".into()), ..sess() })).unwrap();
+        assert!(s.contains(", pick = \"\\066\\114") && !s.contains("Brakka"), "{s}");
+        assert!(!session_lua(Some(&sess())).unwrap().contains("pick"), "none: no field");
+        let m = session_lua(Some(&Session { make: Some(mk("Tamsin", "NightElf")), ..sess() })).unwrap();
+        assert!(m.contains(", make = { name = ") && m.contains("sex = 3 }") && !m.contains("NightElf"), "{m}");
+        for bad in [Session { pick: Some("brakka".into()), ..sess() }, Session { pick: Some("Bra kka".into()), ..sess() }, Session { pick: Some("A".into()), ..sess() },
+            Session { make: Some(mk("Tamsin", "Night Elf")), ..sess() }, Session { make: Some(mk("TAMSIN", "NightElf")), ..sess() }] {
+            assert!(session_lua(Some(&bad)).is_err(), "{bad:?}");
+        }
+        assert!(char_name_ok("Odo") && !char_name_ok("Thirteenchars") && !char_name_ok("Zoë"));
     }
 
     #[test]

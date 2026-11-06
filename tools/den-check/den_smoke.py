@@ -18,6 +18,7 @@ Nothing here needs the game, Windows, or a window with the keyboard: it is the p
 """
 import json
 import math
+import re
 import os
 import shutil
 import struct
@@ -168,6 +169,21 @@ class Client:
         raise TimeoutError("no addon line %r" % want)
 
 
+def memory_mb(pid, run=subprocess.run):
+    """A process's memory in use now (MB): Windows' tasklist, Linux's /proc; None when it can't be read."""
+    try:
+        if os.name == "nt":
+            out = run(["tasklist", "/fi", "PID eq %d" % pid, "/fo", "csv", "/nh"], capture_output=True, text=True, timeout=15).stdout
+            cells = [c.strip('"') for c in out.strip().split('","')]
+            return round(int(re.sub(r"[^0-9]", "", cells[-1])) / 1024, 1) if cells and re.search(r"[0-9]", cells[-1]) else None
+        for line in Path("/proc/%d/status" % pid).read_text().splitlines():
+            if line.startswith("VmRSS:"):
+                return round(int(line.split()[1]) / 1024, 1)
+    except Exception:  # noqa: BLE001 - not known
+        return None
+    return None
+
+
 def smoke(rep, program):
     den = Den(program)
     try:
@@ -230,6 +246,8 @@ def smoke(rep, program):
         c.say(".den island off")
         c.until_line("Off to your Den")
         rep.ok(True, "home again (.den island off)")
+        mb = memory_mb(den.p.pid)
+        rep.add("INFO", "Den Lite's memory with the island and one player", "%s MB" % mb if mb is not None else "not readable here")
         c.w.close()
     except TimeoutError as e:
         rep.add("FAIL", "the smoke stopped", str(e), "Den Lite didn't answer: build it again (den-lite) and send logs\\den-smoke-latest.txt.")

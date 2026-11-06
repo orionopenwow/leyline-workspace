@@ -2714,7 +2714,15 @@ background:linear-gradient(currentColor,currentColor) center/100% 2px no-repeat}
 .ly-nav .ly-links,.ly-nav .ly-end{display:none;order:3;flex:1 0 100%;flex-direction:column;gap:2px;margin:4px 0 2px}
 .ly-nav .ly-end{order:4;flex-direction:row;margin-left:0}
 .ly-menu-t:checked~.ly-links,.ly-menu-t:checked~.ly-end{display:flex}
-.ly-nav .ly-links a{min-height:42px;font-size:13px}}
+.ly-nav .ly-links a{min-height:44px;font-size:13px}
+/* the open menu scrolls by itself, the page behind stays put (6 Nov, phone sim: inside the sticky bar it was taller than the
+   screen and its last items could not be reached) */
+.ly-nav:has(.ly-menu-t:checked){max-height:100vh;max-height:100dvh;overflow-y:auto;overscroll-behavior:contain}
+html:has(.ly-menu-t:checked){overflow:hidden}
+.ly-menu-b{min-height:44px}}
+/* a link to a #section lands below the sticky bar; room for a finger on touch */
+html{scroll-padding-top:64px}
+@media (pointer:coarse){.ly-share summary,.ly-foot nav a,.ly-nav a{min-height:44px!important}.ly-share summary{display:inline-flex!important;align-items:center}.ly-foot nav a{display:inline-flex;align-items:center}}
 .ly-menu-t:focus-visible+.ly-menu-b{outline:2px solid #5fe3ff;outline-offset:2px}
 .ly-nav a:focus-visible,.ly-foot a:focus-visible,.ly-next a:focus-visible,.ly-share summary:focus-visible,.ly-share code:focus-visible,
 .ly :where(a,button,summary,input,select,textarea,[tabindex]):focus-visible{outline:2px solid #5fe3ff;outline-offset:2px}

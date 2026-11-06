@@ -1036,7 +1036,27 @@ class Hub:
                 '<label for="hb-menu" class="hb-menu-b" aria-hidden="true">Menu</label>'
                 f'<nav class="hb-nav" aria-label="Leyline">{"".join(item(*m) for m in main)}{drop}{extra}'
                 f'<a class="hb-dl-x" href="{e(dl)}"{_ext(dl)}>Download the launcher</a></nav>'
-                f'<div class="hb-end">{dl_a}{acct}<a class="hb-playx" href="/wrath">Play</a></div></header>')
+                f'<div class="hb-end">{dl_a}{acct}<a class="hb-playx" href="/wrath">Play</a></div></header>'
+                + self._tabs(main, more, active))
+
+    def _tabs(self, main: list, more: list, active: str) -> str:
+        """Phones held upright (docs/MOBILE-WEB-OVERHAUL.md, owner 6 Nov: "none of the tabs go to the right area, we need a
+        full mobile browser version overhaul"): a tab bar at the bottom, under the thumb, with the pages people go to
+        most and Menu (the same sheet as the top bar's Menu: every page). Shown by PHONE_CSS only (upright, narrow)."""
+        e = html.escape
+        have = {k: (label, href, icon) for k, label, href, icon in list(main) + list(more)}
+        out = []
+        for key in ("play", "realms", "bossfights", "mods"):
+            if key not in have:
+                continue
+            label, href, icon = have[key]
+            label = {"bossfights": "Bosses"}.get(key, label)
+            on = key == active
+            out.append(f'<a href="{e(href)}"' + (' class="on" aria-current="page"' if on else "")
+                       + f'><svg viewBox="0 0 24 24" aria-hidden="true">{NAV_ICONS[icon]}</svg><span>{e(label)}</span></a>')
+        out.append(f'<label for="hb-menu" class="hb-tab-menu"><svg viewBox="0 0 24 24" aria-hidden="true">{NAV_ICONS["more"]}</svg>'
+                   '<span>Menu</span></label>')
+        return '<nav class="hb-tabs" aria-label="Quick links">' + "".join(out) + "</nav>"
 
     def _shell(self, title: str, body: str, path: str, nonce: str = "", active: str | None = None, css: str = "") -> bytes:
         """The page around body. nonce: the CSP nonce for HUB_JS (the front page and the realm list); "" for no script.
@@ -1076,7 +1096,7 @@ class Hub:
         meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
                 'with mods, addons, realm scripts and tools.">')
         css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
-               + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + self._backdrop() + self._dl_css() + css)
+               + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + PHONE_CSS + self._backdrop() + self._dl_css() + css)
         page = (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
@@ -4683,6 +4703,54 @@ body.hb .hb-hero h1{margin:0 0 4px;font-size:20px}
 body.hb .hb-sec{margin:14px 0}
 body.hb .hb-foot-in{padding:10px 14px 14px}body.hb .hb-foot-links{margin-bottom:8px}
 }
+"""
+
+# Phones (docs/MOBILE-WEB-OVERHAUL.md, the phone sim 6 Nov: stream/tests/phone-site.browser.test.cjs). Found with real
+# touches on an iPhone 13 and a Pixel 7: the Menu sheet grew inside the sticky top bar, taller than the screen, so its last
+# rows (On your phone, News, Join the Discord, Creators, Download) could not be reached and a swipe scrolled the page away
+# under it; a link to a #section put the heading under the top bar; the Mods tabs hid "Loadouts" off the edge; the footer
+# links were 21 px tall. Now: Menu is a sheet of its own (fixed under the top bar, scrolls by itself, the page behind
+# stays put), a tab bar at the bottom upright, #sections land below the bar, every tap target at least 44 px on touch.
+PHONE_CSS = """
+@media (max-width:1080px){
+html{scroll-padding-top:78px}
+body.hb .hb-menu-t:checked~.hb-nav{position:fixed;left:0;right:0;top:var(--hb-top-h,64px);bottom:0;z-index:40;margin:0;padding:12px 14px 24px;
+align-content:start;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+background:var(--lk-bg,#0f1117)!important;border-top:1px solid var(--lk-border)}
+html:has(#hb-menu:checked){overflow:hidden}
+body.hb .hb-nav .hb-ni{flex-direction:row;align-items:center;gap:10px;min-height:52px;padding:8px 12px}
+body.hb .hb-nav .hb-ni svg{width:20px;height:20px}
+body.hb .hb-menu-b{min-height:44px;display:inline-flex;align-items:center}
+html:has(#hb-menu:checked) body.hb .hb-top{transform:none!important;-webkit-backdrop-filter:none;backdrop-filter:none;
+background:var(--lk-chrome,#14171f)}   /* a backdrop filter would hold the fixed sheet inside the bar */
+}
+.hb-tabs{display:none}
+@media (max-width:700px) and (orientation:portrait) and (pointer:coarse){
+html{scroll-padding-bottom:72px}
+body.hb{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+body.hb .hb-menu-t:checked~.hb-nav{bottom:calc(60px + env(safe-area-inset-bottom))}
+.hb-tabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;position:fixed;left:0;right:0;bottom:0;z-index:45;
+padding:4px 4px calc(4px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--lk-chrome,#14171f) 94%,transparent);
+-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-top:1px solid var(--lk-border)}
+.hb-tabs a,.hb-tabs label{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:52px;border-radius:10px;
+color:var(--lk-text-2)!important;text-decoration:none;font:600 11.5px/1.1 system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.hb-tabs svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.hb-tabs a.on,html:has(#hb-menu:checked) .hb-tabs label{color:var(--lk-text)!important;background:var(--lk-accent-soft)}
+.hb-tabs a.on svg{color:var(--lk-accent-strong)}
+}
+/* touch: room for a finger on every link and button that isn't inside a sentence */
+@media (pointer:coarse){
+.hb-foot-links{gap:0 6px}.hb-foot-links a,.hb-foot .hb-social a,.hb-foot a.hb-health,.hb-foot a.hb-brand{display:inline-flex;align-items:center;min-height:44px!important;padding-left:6px;padding-right:6px}
+.hb-play.sm,.hb-inst.sm,.hb-ghost.sm,.hb-copy,.hb .hb-pg .net-filters a,.ly-share summary{min-height:44px!important}
+.hb-rl-mods summary{min-height:36px;align-items:center}
+.hb-coa-dot{position:relative}.hb-coa-dot::after{content:"";position:absolute;inset:-18px -8px}
+.hb-coa-arr{min-width:44px;min-height:44px}
+}
+@media (max-width:640px){
+.hb-seg{flex-wrap:wrap;overflow-x:visible}.hb-seg a{flex:1 1 auto;min-height:44px}
+.hb-frow p,.hb-mk-bar .hb-chips,.hb .hb-pg .net-filters div{-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent);mask-image:linear-gradient(90deg,#000 88%,transparent)}
+}
+@media (orientation:landscape) and (max-height:500px) and (pointer:coarse){html{scroll-padding-top:52px}}
 """
 
 # The drawings of the launcher's own windows (the host console, the in-game realm list) and the realm posters are dark

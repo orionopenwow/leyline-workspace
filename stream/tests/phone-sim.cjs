@@ -152,6 +152,7 @@ async function collect(p, m0, t0node) {
   const firstResponse = [...got.mut.map((m) => m.t), ...got.fs.map((f) => f.t)].sort((a, b) => a - b)[0];
   return {
     from: m0.href, to: navigated ? (navs.at(-1)?.url || got.href) : null, navigated,
+    navs: navs.map((n) => n.url),
     target: got.events.find((e) => e.type === 'touchstart')?.target || got.events[0]?.target || null,
     clickTarget: got.events.find((e) => e.type === 'click')?.target || null,
     sequence: got.events.map((e) => `${e.type}${e.prevented ? '(prevented)' : ''}@${rel(e.t)}`),
@@ -245,16 +246,25 @@ s = ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), wp.PageHandler); s.daem
 print("ready", flush=True); s.serve_forever()
 `;
 
-/** The website on 127.0.0.1:port (as site-phone.browser.test.cjs). Resolves to the child process (kill() it after). */
-function startPortal(port, env = {}) {
+/** A free loopback port (other test runs and other worktrees share this machine). */
+function freePort() {
+  const net = require('node:net');
+  return new Promise((ok, bad) => { const s = net.createServer(); s.unref(); s.on('error', bad); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => ok(port)); }); });
+}
+
+/** The website on 127.0.0.1:port (as site-phone.browser.test.cjs; port 0: a free one, in server.port). Resolves to the
+ *  child process (kill() it after). */
+async function startPortal(port = 0, env = {}) {
+  if (!port) port = await freePort();
   const server = spawn('python3', ['-I', '-c', BOOT, PORTAL, String(port), JSON.stringify(env)], { stdio: ['ignore', 'pipe', 'pipe'] });
   let err = '';
   server.stderr.on('data', (d) => { err = (err + d).slice(-4000); });
   return new Promise((ok, bad) => {
     const t = setTimeout(() => bad(new Error('the portal did not start\n' + err)), 60000);
+    server.port = port;
     server.stdout.on('data', (d) => { if (String(d).includes('ready')) { clearTimeout(t); ok(server); } });
     server.on('exit', (c) => bad(new Error('the portal exited ' + c + '\n' + err)));
   });
 }
 
-module.exports = { DEVICES, phone, setThrottle, tap, touchscreenTap, swipe, timings, describe, startPortal, instrument, centreOf };
+module.exports = { freePort, DEVICES, phone, setThrottle, tap, touchscreenTap, swipe, timings, describe, startPortal, instrument, centreOf };

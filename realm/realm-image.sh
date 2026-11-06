@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Leyline: put the newest realm image live (the C++ modules: mod-leyline-bossfights, mod-sandbox-core, the pinned
-# AzerothCore fork and its modules). The images are built by GitHub (the wu-images workflow, after a "ship" that
+# Leyline: put the newest realm image live (the C++ modules: mod-leyline-bossfights, mod-leyline-qol,
+# mod-sandbox-core, the pinned AzerothCore fork and its modules). The images are built by GitHub (the wu-images workflow, after a "ship" that
 # changed realm/custom/modules or sources.lock) and published as ghcr.io/orionopenwow/wu-ac-wotlk-*:stable.
 # Usage on the server, in /srv/wrath:
 #   bash realm-image.sh            pull :stable, back up, swap, restart, check, roll back by itself on failure
@@ -66,4 +66,7 @@ echo "== 6. self-check"
 line=$(docker logs --since "$(started)" ov-ac-worldserver 2>&1 | grep -F 'mod-leyline-bossfights:' | tail -1 || true)
 if [ -z "$line" ]; then rollback; die "the new image has no mod-leyline-bossfights (old build?); rolled back"; fi
 echo "  mod-leyline-bossfights:${line##*mod-leyline-bossfights:}"
+# mod-leyline-qol (Dalaran instant logout, duels anywhere): reported, not gated (the realm runs fine without it)
+qline=$(docker logs --since "$(started)" ov-ac-worldserver 2>&1 | grep -F 'mod-leyline-qol:' | tail -1 || true)
+if [ -n "$qline" ]; then echo "  mod-leyline-qol:${qline##*mod-leyline-qol:}"; else echo "  NOTE: no mod-leyline-qol line (an image built before it?)"; fi
 echo "REALM IMAGE OK"

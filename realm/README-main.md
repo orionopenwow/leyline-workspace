@@ -118,6 +118,11 @@ Optional: add `main` to the profile list in the comments of `realm\Switch profil
   cat damage kit.
 * **mod-individual-progression is off** on main (it would lock a boosted 80 out of Northrend).
 * Arena points auto-distribute weekly (on, as Brawl).
+* **Dalaran**: logging out is instant anywhere in the city and on the forest floor under it (no countdown; combat,
+  falling and duels still stop it), and duels work anywhere in the city, not only at the duel corner (the city stays
+  a sanctuary for everyone but the two duelists). The owner's call, 5 Nov 2026. C++ module
+  `custom/modules/mod-leyline-qol` (its README), settings `AC_LEYLINE_QOL_DALARAN_*` in `profiles/main.env`;
+  it ships with the next realm image.
 * The menu opens 2.5 s after the first login (`Player:RegisterEvent`), from the player himself, like `.ov`.
 
 ## How the data was made

@@ -47,9 +47,9 @@ env:
   REG: ghcr.io/orionopenwow
 
 jobs:
-  # mod-sandbox-core (realm/custom/modules/mod-sandbox-core): its standalone test, then a syntax-only compile of the
-  # module against the pinned core's own headers (minutes, not the realm job's hours). It doesn't gate the images:
-  # the realm job compiles the module for real.
+  # mod-sandbox-core and mod-leyline-qol (realm/custom/modules/): their standalone tests, then a syntax-only compile
+  # of each module against the pinned core's own headers (minutes, not the realm job's hours). It doesn't gate the
+  # images: the realm job compiles the modules for real.
   sandbox-core:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -58,6 +58,9 @@ jobs:
       - name: unit test (pure helpers)
         working-directory: realm/custom/modules/mod-sandbox-core/tests
         run: g++ -std=c++17 -Wall -Wextra -Werror -I../src test_sandbox_math.cpp -o "$RUNNER_TEMP/sbtest" && "$RUNNER_TEMP/sbtest"
+      - name: unit test (mod-leyline-qol pure helpers)
+        working-directory: realm/custom/modules/mod-leyline-qol/tests
+        run: g++ -std=c++17 -Wall -Wextra -Werror -I../src test_qol_logic.cpp -o "$RUNNER_TEMP/qoltest" && "$RUNNER_TEMP/qoltest"
       - name: headers of the pinned core
         run: |
           set -e
@@ -81,6 +84,13 @@ jobs:
               -I"$C/deps/g3dlite/include" -I"$C/deps/fmt/include" -I"$C/deps/utf8cpp" -I"$C/deps/SFMT" -I"$C/deps/argon2" \
               -I"$C/deps/recastnavigation/Detour/Include" -I"$C/deps/recastnavigation/Recast/Include" -I"$C/deps/jemalloc" \
               -I"$C/deps/stdfs" -I/usr/include/mysql -Irealm/custom/modules/mod-sandbox-core/src "$f"
+          done
+          for f in realm/custom/modules/mod-leyline-qol/src/*.cpp; do
+            echo "== $f"
+            g++ -std=gnu++20 -fsyntax-only -Wall -Wextra -DAZEROTHCORE -DWOTLK $INC \
+              -I"$C/deps/g3dlite/include" -I"$C/deps/fmt/include" -I"$C/deps/utf8cpp" -I"$C/deps/SFMT" -I"$C/deps/argon2" \
+              -I"$C/deps/recastnavigation/Detour/Include" -I"$C/deps/recastnavigation/Recast/Include" -I"$C/deps/jemalloc" \
+              -I"$C/deps/stdfs" -I/usr/include/mysql -Irealm/custom/modules/mod-leyline-qol/src "$f"
           done
 
   small:

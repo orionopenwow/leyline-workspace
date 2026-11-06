@@ -19,3 +19,4 @@ mod-multibot-bridge https://github.com/Wishmaster117/mod-multibot-bridge main eb
 mod-questie-bridge https://github.com/Aldori15/mod-questie-bridge main ad6ebd8fd70270992d0d843f0dc8c73ba924be30
 mod-sandbox-core local - -
 mod-leyline-bossfights local - -
+mod-leyline-qol local - -

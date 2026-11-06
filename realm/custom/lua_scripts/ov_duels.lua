@@ -335,7 +335,7 @@ local function onCommand(event, p, command)
     elseif sub == "loud" then D.quiet[p:GetGUIDLow()] = nil; say(p, "Streak lines on.")
     else
         say(p, "Duels at level 80 count for a rating and points. |cffffff00.duel stats|r [name], |cffffff00.duel top|r (this week), "
-            .. "|cffffff00.duel top all|r. Duel corner: |cffffff00.hub duels|r. Boards: " .. SITE)
+            .. "|cffffff00.duel top all|r. Duel anywhere in Dalaran; the corner: |cffffff00.hub duels|r. Boards: " .. SITE)
     end
     return false
 end

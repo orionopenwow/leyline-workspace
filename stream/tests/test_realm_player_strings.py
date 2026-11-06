@@ -24,7 +24,8 @@ ALLOWED = {
     "ov_names.lua": {"worldofwarcraft", "warcraft", "lichking", "blizzard", "WoW", "wow"},
     "Host.lua": {"world%s*of%s*warcraft", "warcraft", "blizzard", "%f[%a]wow%f[%A]", "cmangos-1.12.1", "cmangos-2.4.3"},
     "Leyline.lua": {"1.12.1", "2.4.3", "3.3.5a", "4.3.4", "5.4.8"},          # BUILDS: the realm list's build badges
-    "WrathUnleashedUI.lua": {"Blizzard_CombatLog"},                            # the stock addon's folder name
+    "WrathUnleashedUI.lua": {"Blizzard_CombatLog"},
+    "BossFights.lua": {"world of warcraft", "warcraft", "lich king", "blizzard", "%f[%a]wow%f[%A]"},  # its word filter                            # the stock addon's folder name
 }
 BRAND = re.compile(r"(?i)world\s*of\s*warcraft|warcraft|lich\s*king|blizzard|\bwow\b")
 VERSION = re.compile(r"\b\d\.\d+\.\d+a?\b|\b1\.12\b|\b3\.3\.5\b")

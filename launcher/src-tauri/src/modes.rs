@@ -483,7 +483,7 @@ mod tests {
             assert!(prepare_desktop(&c, all.iter().find(|x| x.id == id).unwrap(), 1).is_err(), "{id}");
         }
         let old = profile(d.path(), Build::V1121);
-        assert!(prepare_desktop(&old, &golf(), 1).unwrap_err().contains("3.3.5a"));
+        assert!(prepare_desktop(&old, &golf(), 1).unwrap_err().contains("Wrath game folder"));
         let mut odd = golf();
         odd.id = "x\"; os.exit()".into();
         assert!(prepare_desktop(&c, &odd, 1).is_err());

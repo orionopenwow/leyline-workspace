@@ -1193,7 +1193,8 @@ mod tests {
         assert!(text.contains("SET realmList \"logon.example.org\""), "{text}");
         assert!(text.contains("1920x1080") && text.contains("farclip") && !text.contains("800x600"), "{text}");
         assert_eq!(text.matches("realmList").count(), 1, "{text}");
-        assert_eq!(read_realmlist(&p).as_deref(), Some("old.example.org"));
+        // the game reads Config.wtf's realmList line first, so that is the realm it goes back to
+        assert_eq!(read_realmlist(&p).as_deref(), Some("logon.example.org"));
 
         // 4.3.4: the realm file is Config.wtf itself: the same, only its line
         let d = tempfile::tempdir().unwrap();

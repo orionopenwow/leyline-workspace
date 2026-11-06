@@ -259,9 +259,20 @@ def check_hero(value) -> str | None:
     return value if m.group(2) in {k for k, _, _ in HERO_CLASSES[m.group(1)][1]} else None
 
 
+def hero_pick(query: dict) -> str | None:
+    """The hero pick in a query: ?hero=<class>-<spec>, or the picker form's ?cls=<class>&spec-<class>=<spec> (each
+    class keeps its own spec choice, so switching class never sends another class's spec). Checked; else None."""
+    v = (query.get("hero") or [""])[0][:32]
+    if not v:
+        c = (query.get("cls") or [""])[0][:12]
+        sp = (query.get("spec-" + c) or [""])[0][:12] if c in HERO_CLASSES else ""
+        v = f"{c}-{sp}" if sp else ""
+    return check_hero(v)
+
+
 def hero_param(query: dict) -> str:
     """'&hero=<pick>' for a valid pick in the query (carried through Log in like the go), else ''."""
-    v = check_hero((query.get("hero") or [""])[0][:32])
+    v = hero_pick(query)
     return "&hero=" + v if v else ""
 
 
@@ -401,27 +412,58 @@ def hero_href(go: str, pick: str | None, signed_in: bool) -> str:
         return "/wrath/signin?next=" + urllib.parse.quote(link, safe="")
 
 
-def heroes_html(go: str, signed_in: bool, heroes: list[dict] | None) -> str:
-    """The hero picker: the player's heroes (signed in), then every class and spec. No script: plain links."""
+CLASS_TINT = {"warrior": "#c79c6e", "paladin": "#f58cba", "hunter": "#abd473", "rogue": "#fff569", "priest": "#e8e8e8",
+              "deathknight": "#c41f3b", "shaman": "#0070de", "mage": "#69ccf0", "warlock": "#9482c9", "druid": "#ff7d0a"}
+ROLE_MARK = {"tank": "\u25c6", "heal": "\u271a", "dps": "\u2694"}   # small role glyphs (text, no art)
+
+
+def heroes_html(go: str, signed_in: bool, heroes: list[dict] | None, pick: str | None = None) -> str:
+    """The hero picker (owner 5 Nov: "a character creation widget, light, built right into the page, not ugly switches"):
+    one small form, no script (the page's CSP has no nonce here): class tiles (radios), the chosen class's specs as
+    chips (radios, shown by a :has() rule on the chosen class), and one Fight now. GET /wrath?go=..&hero=<class>-<spec>,
+    which keeps the pick through Log in (go_signin). The player's own heroes come first as one-tap links."""
     if not heroes_on():
         return ""
     mine = ""
     if heroes:
         items = "".join(
-            f'<li><a class="bf-hero-me{" on" if h["current"] else ""}" href="{e(hero_href(go, h["class"] + "-" + h["spec"], signed_in))}">'
+            f'<li><a class="bf-hero-me{" on" if h["current"] else ""}" style="--cc:{CLASS_TINT.get(h["class"], "#d9b45a")}" '
+            f'href="{e(hero_href(go, h["class"] + "-" + h["spec"], signed_in))}">'
+            f'<i aria-hidden="true">{e(HERO_CLASSES.get(h["class"], ("?",))[0][:1])}</i>'
             f'<b>{e(h["name"])}</b><span>{e(hero_label(h["class"], h["spec"]))}</span></a></li>' for h in heroes)
-        mine = (f'<p class="hb-fine">Your heroes ({len(heroes)} of {HERO_LIMIT}). Pick one to fight now:</p>'
-                f'<ul class="bf-heroes">{items}</ul>')
-    rows = []
+        mine = (f'<p class="hb-fine">Your heroes ({len(heroes)} of {HERO_LIMIT}): one tap to fight.</p>'
+                f'<ul class="bf-heroes">{items}</ul><p class="hb-fine">Or make a new one:</p>')
+    current = next((h for h in heroes or [] if h.get("current")), None)
+    want = check_hero(pick) or (f'{current["class"]}-{current["spec"]}' if current else "mage-frost")
+    want_cls = want.split("-")[0]
+    tiles, panels = [], []
     for cls, (label, specs) in HERO_CLASSES.items():
-        links = "".join(f'<a href="{e(hero_href(go, cls + "-" + key, signed_in))}" title="{e(ROLE_WORD[role])}">'
-                        f'{e(slab)}<small>{e(ROLE_WORD[role])}</small></a>' for key, slab, role in specs)
-        rows.append(f'<div class="bf-cls"><span class="bf-cls-n">{e(label)}</span><div class="bf-specs">{links}</div></div>')
+        cid = f"bfw-c-{cls}"
+        tiles.append(f'<input type="radio" name="cls" value="{e(cls)}" id="{cid}" class="bfw-r"{" checked" if cls == want_cls else ""}>'
+                     f'<label for="{cid}" class="bfw-c" style="--cc:{CLASS_TINT[cls]}"><i aria-hidden="true">{e(label[:1])}</i>'
+                     f'<span>{e(label)}</span></label>')
+        chips = []
+        for key, slab, role in specs:
+            val = f"{cls}-{key}"
+            sid = f"bfw-s-{val}"
+            on = val == want if cls == want_cls else key == specs[0][0]   # each class starts on a spec of its own
+            chips.append(f'<input type="radio" name="spec-{e(cls)}" value="{e(key)}" id="{sid}" class="bfw-r"{" checked" if on else ""}>'
+                         f'<label for="{sid}" class="bfw-s"><b>{e(slab)}</b><small>{ROLE_MARK[role]} {e(ROLE_WORD[role])}</small></label>')
+        panels.append(f'<fieldset class="bfw-p bfw-p-{cls}"><legend>{e(label)}</legend>{"".join(chips)}</fieldset>')
+    # the chosen class's specs: :has() (the radio sits beside its own tile, so a :checked~ rule can't reach the panels;
+    # Chrome also left stale styles on a :checked~ rule, 5 Nov)
+    style = "".join(f".bfw:has(#bfw-c-{c}:checked) .bfw-p-{c}{{display:flex}}" for c in HERO_CLASSES)
+    form = (f'<form class="bfw" method="get" action="/wrath" aria-label="Make your hero">'
+            f'<input type="hidden" name="go" value="{e(go)}">'
+            + f'<div class="bfw-classes" role="radiogroup" aria-label="Class">{"".join(tiles)}</div>'
+            f'<div class="bfw-panels">{"".join(panels)}</div>'
+            '<div class="bfw-go"><span class="hb-fine">Level 80, geared, every spell on the bars, both specs ready.</span>'
+            '<button type="submit" class="hb-play">Fight now</button></div>'
+            f'<style>{style}</style></form>')
     return ('<section class="bf-sec" aria-labelledby="bf-hero-h"><h2 id="bf-hero-h">Your hero</h2>'
-            '<p class="hb-lede">Boss fights use their own heroes, separate from your characters: level 80, geared for '
-            'the fight, every spell on the bars, both talent specs ready and the rest of the class\'s gear in the bags. '
-            'Pick a class and spec and the fight starts with it at once.</p>'
-            + mine + f'<div class="bf-pick">{"".join(rows)}</div>'
+            '<p class="hb-lede">Boss fights use their own heroes, separate from your characters. Pick a class and a spec: '
+            'the hero is made at once and the fight starts.</p>'
+            + mine + form +
             '<p class="hb-fine">In game: <code>/bf</code> opens the panel, <code>.bf hero</code> lists your heroes, '
             '<code>.bf hero spec &lt;spec&gt;</code> changes talents for free between pulls.</p></section>')
 
@@ -655,16 +697,32 @@ radial-gradient(60% 80% at 90% 80%,rgba(150,110,255,.25),transparent 70%),linear
 .bf-card code,.bf-how code{font-size:13px}
 @media (max-width:640px){.bf-t th,.bf-t td{padding:7px 7px}.bf-t .hide-s{display:none}.bf-acts{flex-direction:column;align-items:stretch}
 .bf-acts .hb-play,.bf-acts .hb-ghost{justify-content:center}.bf-hero img{display:none}}
-.bf-pick{display:grid;gap:8px;margin:12px 0}
-.bf-cls{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center}
-.bf-cls-n{font-weight:600;color:#ece6d6}
-.bf-specs{display:flex;flex-wrap:wrap;gap:6px}
-.bf-specs a,.bf-hero-me{display:inline-flex;flex-direction:column;justify-content:center;min-height:44px;padding:6px 12px;border:1px solid #3a3550;
-border-radius:8px;background:rgba(12,10,24,.6);color:#ece6d6;text-decoration:none;line-height:1.2}
-.bf-specs a:hover,.bf-hero-me:hover,.bf-hero-me.on{border-color:#d9b45a}
-.bf-specs small,.bf-hero-me span{font-size:12px;color:#b4ab96}
 .bf-heroes{list-style:none;padding:0;margin:8px 0 12px;display:flex;flex-wrap:wrap;gap:8px}
-@media (max-width:640px){.bf-cls{grid-template-columns:1fr}}
+.bf-hero-me{display:inline-grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:center;min-height:44px;padding:6px 12px 6px 6px;
+border:1px solid #3a3550;border-radius:10px;background:rgba(12,10,24,.6);color:#ece6d6;text-decoration:none;line-height:1.2}
+.bf-hero-me i{grid-row:span 2;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-weight:700;
+color:#0b0a12;background:var(--cc)}
+.bf-hero-me span{font-size:12px;color:#b4ab96}.bf-hero-me:hover,.bf-hero-me.on{border-color:#d9b45a}
+.bfw{margin:12px 0;padding:14px;border:1px solid #3a3550;border-radius:12px;background:rgba(10,9,20,.55)}
+.bfw-r{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.bfw-classes{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.bfw-r:checked+.bfw-c{border-color:var(--cc);background:color-mix(in srgb,var(--cc) 16%,transparent)}
+.bfw-c{display:flex;flex-direction:column;align-items:center;gap:4px;min-height:64px;padding:8px 4px;border:1px solid #3a3550;
+border-radius:10px;cursor:pointer;color:#ece6d6;font-size:13px;text-align:center;transition:border-color .15s,background .15s}
+.bfw-c:hover{border-color:var(--cc)}
+.bfw-c i{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-weight:700;color:#0b0a12;
+background:var(--cc);box-shadow:0 0 0 2px rgba(0,0,0,.35)}
+.bfw-panels{margin-top:10px}
+.bfw-p{display:none;flex-wrap:wrap;gap:6px;border:0;margin:0;padding:0}
+.bfw-p legend{width:100%;padding:0 0 6px;font-weight:600;color:#ece6d6}
+.bfw-s{display:inline-flex;flex-direction:column;justify-content:center;min-height:44px;min-width:110px;padding:6px 12px;border:1px solid #3a3550;
+border-radius:8px;cursor:pointer;color:#ece6d6;line-height:1.2;background:rgba(12,10,24,.6)}
+.bfw-s small{font-size:12px;color:#b4ab96}
+.bfw-r:checked+.bfw-s{border-color:#d9b45a;background:rgba(217,180,90,.14)}
+.bfw-r:focus-visible+.bfw-s,.bfw-r:focus-visible+.bfw-c{outline:2px solid #d9b45a;outline-offset:2px}
+.bfw-go{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
+.bfw-go .hb-play{min-height:44px}
+@media (max-width:640px){.bfw-c span{font-size:11px}.bfw-go{flex-direction:column;align-items:stretch}}
 """
 
 

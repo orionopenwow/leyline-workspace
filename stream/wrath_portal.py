@@ -4044,7 +4044,7 @@ class PageHandler(BaseHTTPRequestHandler):
             log.error("hero account %s failed: %s %s", hero, e.kind, e.detail[:160])
             self.send(503, error_page("The Wrath realm isn't answering right now. Please try again shortly."))
             return None
-        pick = (query.get("hero") or [""])[0][:32] or None
+        pick = bossfights.hero_pick(query)
         r = bossfights.hero_play(ac_soap, user, go, pick, log)
         if r["state"] == "not-live":
             self.send(200, bf_not_live_page())

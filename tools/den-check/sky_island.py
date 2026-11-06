@@ -34,6 +34,27 @@ def island_code(js=None):
     return m.group(1)
 
 
+def make_code(text):
+    """A Den code for a Den file's text (raw deflate, base64url, the crc: labs/den-lite denpack.rs)."""
+    import base64
+    import zlib
+    data = text.encode("utf-8")
+    c = zlib.compressobj(9, zlib.DEFLATED, -15)
+    z = c.compress(data) + c.flush()
+    return "ley1.den.z.%s.%08x" % (base64.urlsafe_b64encode(z).decode().rstrip("="), zlib.crc32(data) & 0xFFFFFFFF)
+
+
+def set_island_code(code, js_path=None):
+    """ISLAND_CODE in the launcher's ui/denpack.js set to `code`."""
+    p = Path(js_path) if js_path else ROOT / "launcher" / "ui" / "denpack.js"
+    t = p.read_text(encoding="utf-8")
+    new = re.sub(r'const ISLAND_CODE = "[^"]+"', 'const ISLAND_CODE = "%s"' % code, t, count=1)
+    if new == t and code not in t:
+        raise ValueError("no ISLAND_CODE in %s" % p)
+    p.write_text(new, encoding="utf-8")
+    return p
+
+
 def island_file(dens, code=None, now=time.time):
     """`<dens>/sky-island.den.json` (written when missing or different) and `<dens>/open.json` asking Den Lite to open
     it the next time you're in your Den. The file's path."""
@@ -53,7 +74,12 @@ def main(argv=None):
     ap.add_argument("--no-smoke", action="store_true")
     ap.add_argument("--no-play", action="store_true")
     ap.add_argument("--app-dir")
+    ap.add_argument("--make-code", metavar="ISLAND_JSON", help="after a change to skyisland.rs: the island's file (the Den Lite test writes it) made the launcher's ISLAND_CODE")
     a = ap.parse_args(argv)
+    if a.make_code:
+        code = make_code(Path(a.make_code).read_text(encoding="utf-8"))
+        print("ISLAND_CODE set in %s (%d letters)" % (set_island_code(code), len(code)))
+        return 0
     rep = den_check.Report()
     title = "SKY ISLAND"
     print("%s (%s)" % (title, time.strftime("%Y-%m-%d %H:%M")))

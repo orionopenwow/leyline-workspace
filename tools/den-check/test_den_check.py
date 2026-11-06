@@ -1763,6 +1763,16 @@ class Smoke(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
         with self.assertRaises(ValueError):
             sky_island.island_code("no code here")
+        # after a change to the island: its file made the code again, the same text back
+        self.assertEqual(den_smoke.decode_code(sky_island.make_code(text)), ("den", text))
+        d = Path(tempfile.mkdtemp())
+        try:
+            js = d / "denpack.js"
+            js.write_text('  const ISLAND_CODE = "ley1.den.z.OLD.00000000";\n')
+            sky_island.set_island_code("ley1.den.z.NEW.11111111", js)
+            self.assertEqual(sky_island.island_code(js.read_text()), "ley1.den.z.NEW.11111111")
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
     def test_against_a_real_den_lite_when_built_here(self):
         prog = os.environ.get("DEN_LITE_BIN")

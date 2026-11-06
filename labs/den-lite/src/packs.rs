@@ -100,8 +100,14 @@ mod tests {
     fn the_launchers_island_code_is_den_lites_island() {
         let js = include_str!("../../../launcher/ui/denpack.js");
         let code = js.split("const ISLAND_CODE = \"").nth(1).and_then(|r| r.split('"').next()).expect("ISLAND_CODE in denpack.js");
+        let want = crate::skyisland::den_json("sky-island");
         match open(code).unwrap() {
-            Opened::Den(_, text) => assert_eq!(text, crate::skyisland::den_json("sky-island"), "make ISLAND_CODE again"),
+            Opened::Den(_, text) if text == want => {}
+            Opened::Den(..) => {
+                let p = std::env::temp_dir().join("sky-island.den.json");
+                let _ = std::fs::write(&p, &want);
+                panic!("make ISLAND_CODE again: py -3 tools/den-check/sky_island.py --make-code {}", p.display());
+            }
             o => panic!("{o:?}"),
         }
     }

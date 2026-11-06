@@ -3005,7 +3005,7 @@ fn a_practice_run_has_a_number_the_boss_is_kicked_and_a_pet_comes_and_goes() {
 fn sky_island_lands_rescues_places_hits_and_packs() {
     use den_lite::skyisland as sky;
     let t0 = std::time::Instant::now();
-    let (srv, dir) = server("sky", HeroGender::Female);
+    let (srv, dir) = server("skyisland", HeroGender::Female);
     let started = t0.elapsed();
     let mut w = into_world(&srv, 0);
     let entered = t0.elapsed();

@@ -479,6 +479,24 @@
     if (!st.wanted) return;
     if (typeof win.Worker !== 'function' || typeof win.SharedArrayBuffer !== 'function' || win.crossOriginIsolated === false) {
       st.why = 'this browser can\'t run solo here (no shared memory)';
+      // one line, then the page plays on the realm as before (the player asked for solo: say why it isn't)
+      var note = function () {
+        try {
+          if (!win.document.body || win.document.getElementById('wu-solo-off')) return;
+          var n = win.document.createElement('div');
+          n.id = 'wu-solo-off';
+          n.setAttribute('role', 'status');
+          n.setAttribute('style', 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:2147482000;max-width:min(92vw,30rem);'
+            + 'background:#15181f;color:#e8e6ef;border:1px solid #6b5a2e;border-radius:10px;padding:.7rem 1rem;font:14px system-ui,sans-serif;'
+            + 'box-shadow:0 6px 24px rgba(0,0,0,.5)');
+          n.textContent = 'Solo can\'t start in this browser (it needs a newer Chrome, Edge or Safari). You are playing on the realm instead.';
+          win.document.body.appendChild(n);
+          setTimeout(function () { n.remove(); }, 9000);
+        } catch (e) { /* the note is optional */ }
+      };
+      if (win.document && typeof win.document.addEventListener === 'function') {
+        if (win.document.body) note(); else win.document.addEventListener('DOMContentLoaded', note);
+      }
       return;
     }
     env = win.__wenilla_env = env || {};

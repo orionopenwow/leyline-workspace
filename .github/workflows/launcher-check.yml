@@ -40,11 +40,10 @@ jobs:
       - name: TEMP write the den-check fixture (removed once committed)
         working-directory: launcher/src-tauri
         run: LEYLINE_WRITE_FIXTURES=1 cargo test --locked --no-default-features the_den_check_sample
-      - name: TEMP upload the fixture
-        uses: actions/upload-artifact@v4
-        with:
-          name: den-check-fixture
-          path: tools/den-check/fixtures/patch-Z-sample.bin
+      - name: TEMP print the fixture
+        run: |
+          sha256sum tools/den-check/fixtures/patch-Z-sample.bin
+          echo "FIXTURE-BEGIN"; base64 -w 0 tools/den-check/fixtures/patch-Z-sample.bin | fold -w 4000 | sed 's/^/FX:/'; echo; echo "FIXTURE-END"
       - name: cargo test (core, no webview)
         working-directory: launcher/src-tauri
         run: cargo test --locked --no-default-features

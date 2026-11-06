@@ -2141,6 +2141,8 @@ function projectCard(p, c) {
   if (p.source === "upstream" && window.LeylineMarket) return window.LeylineMarket.card(p, c);   // from the author (market.js)
   const card = el("article", "mod-card dc-card" + (p.id === linkedId ? " linked" : ""));
   card.dataset.id = p.id;
+  if (p.kind) card.dataset.kind = p.kind;   // the phone app's "works on your phone" line (phone.js)
+  if (p.category) card.dataset.category = p.category;
   const fits = fitsClient(p, c);
   const thumb = cardThumb(p);
   const cat = catalog.categories.find((k) => k.id === p.category);
@@ -2905,6 +2907,10 @@ function renderRealms() {
     const live = r.state === "live";
     const card = el("article", "realm-card rl" + (r.address && r.address === now ? " on" : "") + (r.featured ? " featured" : "")
       + (r.official ? " official" : "") + (live ? "" : " off"));
+    // what the phone app reads (phone.js): a relay realm's id and its version, to play it in the browser game
+    if (r.realm_id) card.dataset.realmId = r.realm_id;
+    if (r.build) card.dataset.build = r.build;
+    card.dataset.live = live ? "1" : "0";
     // icon · name, version and one tag (Official or Featured) / one line (type · core) · players · PLAY
     const main = el("div", "rl-main");
     const title = el("div", "rl-title");

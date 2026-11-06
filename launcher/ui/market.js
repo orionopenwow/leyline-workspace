@@ -216,6 +216,8 @@
   function card(p, c) {
     const art = el("article", "mod-card dc-card mk-card can-open");
     art.dataset.id = p.id;
+    art.dataset.kind = p.kind || "ui";   // an author's addon (the phone app's line, phone.js)
+    if (p.category) art.dataset.category = p.category;
     const fits = typeof fitsClient === "function" ? fitsClient(p, c) : true;
     const thumb = typeof cardThumb === "function" ? cardThumb(p) : el("div", "dc-thumb");
     const tag = (p.tags || [])[0];

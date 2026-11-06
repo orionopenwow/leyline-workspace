@@ -2562,6 +2562,7 @@ html body :is(.ly-btn,a.btn,button,a.ly-next-go):hover{background:var(--lk-accen
 html body .ly-btn::before{display:none!important}
 html body .ly-btn.violet{background:var(--lk-accent-2)!important;border-color:var(--lk-accent-2)!important}
 html body :is(button.ghost,.btn.off,.ly-btn.hb-alt){background:var(--lk-raised)!important;border-color:var(--lk-border-strong)!important;color:var(--lk-text)!important}
+html body .btn.off{display:inline-flex;align-items:center;min-height:40px;padding:8px 16px;box-sizing:border-box;border:1px dashed var(--lk-border-strong)!important;border-radius:var(--lk-r-sm);color:var(--lk-muted)!important;font-weight:650;cursor:default}
 html body :is(.sub,.fine,label,.tags,.eyebrow,summary,.ly-fine,.ly-lede,.ly-next p,.ly-foot,.hb-count){color:var(--lk-muted)}
 html body .ly-lede{color:var(--lk-text-2)}
 html body :is(.rule,.wu-divider){background:none!important;border:0!important;border-top:1px solid var(--lk-border)!important;height:0!important}

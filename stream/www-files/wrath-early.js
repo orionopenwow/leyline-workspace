@@ -458,6 +458,40 @@
       .catch(function (e) { console.warn('wrath-page.js:', e); });
   } catch (e) { console.warn('wrath-early.js', e); }
 })();
+// >>> leyline-solo (solo on this device, 2026-11-05: docs/PHONE-SOLO.md) ---------------------------------------
+// ?solo=1, ?go=solo (the site's "Play solo on this device", carried through sign-in) or env.solo ("phone": the Android
+// app): the game plays against Den Lite running in this page (solo/solo.js, solo/den-lite-worker.js), no realm.
+// Here, before the hop block below and before the client starts: the env is made this page's own (no hop, the
+// device's login and its ready-made character, so no login form and no character list), then solo.js is written into
+// the page right after this script, so it has replaced WebSocket before the page's module script runs. A browser
+// without shared memory (not cross-origin isolated) can't run it: the page says so and plays as before.
+// window.__wuSoloEarly: {wanted, ok, why} for the tests and wu-diag.
+(function (root) {
+  'use strict';
+  var win = root;
+  var st = { wanted: false, ok: false, why: '' };
+  win.__wuSoloEarly = st;
+  try {
+    var q = String((win.location && win.location.search) || '');
+    var env = win.__wenilla_env;
+    if (/[?&]solo=0\b/.test(q)) return;
+    st.wanted = /[?&]solo=1\b/.test(q) || /[?&]go=solo\b/.test(q) || !!(env && (env.solo === 'phone' || env.solo === '1'));
+    if (!st.wanted) return;
+    if (typeof win.Worker !== 'function' || typeof win.SharedArrayBuffer !== 'function' || win.crossOriginIsolated === false) {
+      st.why = 'this browser can\'t run solo here (no shared memory)';
+      return;
+    }
+    env = win.__wenilla_env = env || {};
+    delete env.hop; delete env.hop_ws; delete env.hop_sso; delete env.hop_home;
+    env.solo = env.solo || 'phone';
+    st.ok = true;
+    if (win.document && typeof win.document.write === 'function' && win.document.readyState === 'loading') {
+      win.document.write('<script src="./solo/solo-ring.js"></script><script src="./solo/solo.js"></script>' +
+        '<script>try{LeylineSolo.install(window)}catch(e){console.warn("leyline solo",e);window.__wuSoloEarly.ok=false;window.__wuSoloEarly.why=String(e)}</script>');
+    }
+  } catch (e) { st.ok = false; st.why = String(e); console.warn('wrath-early.js leyline solo', e); }
+})(typeof window !== 'undefined' ? window : globalThis);
+// <<< leyline-solo -----------------------------------------------------------------------------------
 // >>> leyline-hop (realm hopping, 2026-10-25) ------------------------------------------------------
 // A Leyline hop session (the Leyline window's Join: /wrath?go=r:<realm id>, wrath_portal.py hop_env) gets an
 // env with hop, hop_ws (wss://<relay>/ws/<realm id>) and no login. Before the client starts, this:

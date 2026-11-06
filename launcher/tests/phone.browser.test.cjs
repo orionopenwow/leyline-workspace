@@ -43,6 +43,8 @@ const FAKE = ({ os, gpu, catalog, page }) => {
     Object.assign({}, base, { slug: 'official', name: 'Wrath Unleashed', official: true, address: 'leylinelauncher.com', group: 'official', players: 12, bots: 40 }),
     Object.assign({}, base, { slug: 'c-bbbbbbbbbbbbbbbb', realm_id: 'bbbbbbbbbbbbbbbb', name: 'Busy Den with a long realm name for a small screen',
       tags: ['bots'], players: 30, bots: 40, max_players: 100, address: 'relay.leylinelauncher.com:40002', group: 'community' }),
+    Object.assign({}, base, { slug: 'c-dddddddddddddddd', realm_id: 'dddddddddddddddd', name: 'Old World', build: '1.12.1', version: '1.12.1',
+      core: 'vmangos', address: 'relay.leylinelauncher.com:40020', group: 'community' }),
   ];
   const platform = { os, mobile, node: !mobile };
   const ok = {
@@ -76,7 +78,7 @@ async function open(opts = {}, viewport = PORTRAIT) {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.route(/^https?:\/\//, (r) => (r.request().url() === PLAY_URL || r.request().url() === SOLO_URL
+  await page.route(/^https?:\/\//, (r) => (r.request().url().startsWith(PLAY_URL)
     ? r.fulfill({ contentType: 'text/html', body: `<!doctype html><title>Play</title><p id="game">${r.request().url() === SOLO_URL ? 'solo' : 'the browser game'}</p>` })
     : r.abort()));
   await page.addInitScript(FAKE, Object.assign({ os: 'android', gpu: true }, opts));
@@ -228,17 +230,18 @@ test('no WebGPU in this web view: one line and Open in Chrome, never a black pag
   await ctx.close();
 });
 
-test('Realms: the official realm plays in the app; a community realm and a Den invite say they need a computer', async () => {
+test('Realms: the official realm and a 3.3.5a community realm play in the app; another version and a Den invite need a computer', async () => {
   const { page, ctx, errors } = await open();
   await tab(page, 'realms');
   await page.waitForSelector('#rl-list .realm-card .rl-play');
   const play = await page.$eval('#rl-list .realm-card:has(.rl-bdg.o) .rl-play', (b) => [b.disabled, b.dataset.phone]);
   assert.deepEqual(play, [false, 'browser'], 'no game folder needed for the official realm on a phone');
-  // a community realm
+  // a community realm for another client: on a computer
   await page.click('#rl-tab-community');
-  await page.waitForSelector('#rl-list .realm-card:not(:has(.rl-bdg.o)) .rl-play');
-  await page.click('#rl-list .realm-card:not(:has(.rl-bdg.o)) .rl-play');
-  assert.match(await page.textContent('#rl-status'), /^Community realms play with your own game on a computer/);
+  await page.waitForSelector('#rl-list .realm-card[data-realm-id="dddddddddddddddd"] .rl-play');
+  assert.equal(await page.getAttribute('#rl-list .realm-card[data-realm-id="dddddddddddddddd"] .rl-play', 'data-phone'), 'pc');
+  await page.click('#rl-list .realm-card[data-realm-id="dddddddddddddddd"] .rl-play');
+  assert.match(await page.textContent('#rl-status'), /^This community realm plays with your own game on a computer/);
   // a friend's Den invite: opens, and explains
   await page.click('#rl-other summary');
   await page.fill('#rl-invite', 'DEN-ABCD-EFGH');
@@ -247,6 +250,12 @@ test('Realms: the official realm plays in the app; a community realm and a Den i
   const started = await page.evaluate(() => window.__calls.map(([c]) => c)
     .filter((c) => /^(play|play_realm|play_realm_herokey|join_invite|den_launch|den_join_page|den_invite|host_start|engine_play)$/.test(c)));
   assert.deepEqual(started, [], 'nothing desktop-only was asked of the core');
+  // a community realm for the browser game's client: the site's hop, in the app
+  assert.equal(await page.getAttribute('#rl-list .realm-card[data-realm-id="bbbbbbbbbbbbbbbb"] .rl-play', 'data-phone'), 'hop');
+  await Promise.all([page.waitForURL(PLAY_URL + '?go=r:bbbbbbbbbbbbbbbb'), page.click('#rl-list .realm-card[data-realm-id="bbbbbbbbbbbbbbbb"] .rl-play')]);
+  await page.goBack();
+  await page.waitForFunction(() => window.LeylinePhone && window.LeylinePhone.on);
+  await tab(page, 'realms');
   // the official realm: the browser game in the app
   await page.click('#rl-tab-official');
   await page.waitForSelector('#rl-list .realm-card:has(.rl-bdg.o) .rl-play');
@@ -255,11 +264,23 @@ test('Realms: the official realm plays in the app; a community realm and a Den i
   await ctx.close();
 });
 
-test('Mods: browsing only; the install buttons are hidden and one line says installs need a computer', async () => {
+test('Mods: browsing only; the install buttons are hidden, and each card says whether it works on a phone', async () => {
   const { page, ctx, errors } = await open({ catalog: CATALOG });
   await tab(page, 'mods');
   await page.waitForSelector('#page-mods .dc-card, #page-mods .mod-card', { timeout: 4000 }).catch(() => {});
-  assert.equal(await page.textContent('#ph-mods-note'), 'Browse here. Installing mods, addons, loadouts and looks needs Leyline on your computer for now.');
+  assert.equal(await page.textContent('#ph-mods-note'), "Browse here. Addons work on your phone: add an addon's .zip in the game's Your addons. Mods, loadouts and looks install into a game folder, on your computer.");
+  const fitsOf = () => page.$$eval('#page-mods .dc-card[data-id]', (c) => Object.fromEntries(c.filter((x) => x.offsetParent !== null)
+    .map((x) => [x.dataset.id, (x.querySelector('.ph-fit') || {}).className + ' | ' + (x.querySelector('.ph-fit') || {}).textContent])));
+  await page.waitForFunction(() => [...document.querySelectorAll('#page-mods .dc-card[data-id]')].some((x) => x.offsetParent !== null)
+    && [...document.querySelectorAll('#page-mods .dc-card[data-id]')].every((x) => x.querySelector('.ph-fit')));
+  let fits = await fitsOf();
+  // Discover › Addons: an addon works in the browser game
+  await page.click('#discover-tabs [data-tab="addons"]').catch(() => {});
+  await page.waitForTimeout(300);
+  fits = Object.assign(fits, await fitsOf());
+  assert.match(fits['mod:pings'], /^ph-fit yes \| Works on your phone: add its \.zip in the game's Your addons$/, JSON.stringify(fits));
+  assert.match(fits['mod:dice'], /^ph-fit part \| On your phone: the realm part only/);
+  assert.match(fits['mod:far'], /^ph-fit no \| Needs the game on a computer$/);
   const shownButtons = await page.$$eval('#page-mods button', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.textContent.trim()));
   assert.ok(!shownButtons.some((t) => /^(Install|Update|Use|Remove)$/.test(t)), JSON.stringify(shownButtons));
   assert.ok(!(await page.evaluate(() => window.__calls.some(([c]) => /^mod_install|^addons_install|^looks_apply/.test(c)))));

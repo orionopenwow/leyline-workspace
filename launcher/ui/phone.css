@@ -4,7 +4,9 @@
    menu and the play bar. What needs a computer is hidden. Touch targets are at least 44 px. Clear of the system bars and
    the camera cut-out with the safe-area insets. */
 
-.ph-tabs, #page-phone { display: none; }
+.ph-tabs, #page-phone, .ph-only { display: none; }
+html.phone .pc-only { display: none !important; }
+html.phone .ph-only { display: block; }
 
 html.phone { -webkit-text-size-adjust: 100%; }
 html.phone body.ly { font-size: 15px; user-select: none; -webkit-tap-highlight-color: transparent; }
@@ -91,6 +93,21 @@ html.phone .ph-solo {
   border: 1px solid color-mix(in srgb, var(--t-accent) 55%, transparent);
   background: color-mix(in srgb, var(--t-accent) 14%, var(--t-panel)); color: var(--t-text);
 }
+html.phone .ph-join-box { display: grid; gap: 8px; padding: 12px 14px; border-radius: var(--t-radius); background-color: var(--t-panel); text-align: left; }
+html.phone .ph-join-box h3 { margin: 0; font: 600 11.5px var(--t-font); letter-spacing: 0.09em; text-transform: uppercase; color: var(--t-muted); }
+html.phone .ph-join-box .ph-hint { margin: 0; }
+html.phone .ph-paste { width: 100%; min-height: 48px; }
+html.phone .ph-join-row { display: flex; gap: 8px; }
+html.phone .ph-join-row input { flex: 1 1 auto; min-width: 0; }
+html.phone .ph-say { margin: 0; font-size: 13.5px; color: var(--t-muted); }
+html.phone .ph-say:empty { display: none; }
+html.phone .ph-say.warn { color: var(--t-warn, #e0a030); }
+/* Mods: does this one work on a phone? (phone.js fixMods) */
+html.phone .ph-fit { margin: 4px 0 0; font-size: 12.5px; line-height: 1.3; color: var(--t-muted); }
+html.phone .ph-fit::before { content: "●"; margin-right: 6px; font-size: 10px; vertical-align: 1px; }
+html.phone .ph-fit.yes::before { color: var(--t-ok, #5fbf7f); }
+html.phone .ph-fit.part::before { color: var(--t-warn, #e0a030); }
+html.phone .ph-fit.no::before { color: var(--t-muted); }
 html.phone .ph-nogpu {
   padding: 14px; border-radius: var(--t-radius); text-align: left;
   border: 1px solid color-mix(in srgb, var(--t-warn, #e0a030) 60%, transparent);
@@ -112,7 +129,11 @@ html.phone .ph-note { margin: 10px 0; padding: 10px 12px; border-radius: var(--t
   html.phone .ph-hero { grid-row: 1 / 3; justify-items: start; }
   html.phone .ph-crystal { width: 56px; height: 56px; }
   html.phone .ph-hero h2 { font-size: 24px; }
-  html.phone .ph-hint, html.phone .ph-solo-box, html.phone .ph-nogpu, html.phone .ph-links, html.phone .ph-pc { grid-column: 1 / -1; }
+  html.phone .ph-hint, html.phone .ph-join-box, html.phone .ph-nogpu, html.phone .ph-links, html.phone .ph-pc { grid-column: 1 / -1; }
+  /* solo right under PLAY, beside the hero */
+  html.phone .ph-play { grid-column: 2; grid-row: 1; }
+  html.phone .ph-solo-box { grid-column: 2; grid-row: 2; }
+  html.phone .ph-solo-box .ph-hint { margin: 0; }
 }
 
 /* ---------------------------------------------------------------- touch: every control at least 44 px */
@@ -175,3 +196,9 @@ html.phone .gate { padding: env(safe-area-inset-top) env(safe-area-inset-right) 
 html.phone .gate-bar { display: none; }
 html.phone .gate-card { padding-top: 52px; }
 html.phone .gate-x { top: 4px; right: 4px; }
+
+/* Mods on a phone: one card per row, so a shorter picture (more cards on one screen) */
+html.phone #page-mods .dc-thumb { aspect-ratio: 21 / 8; }
+@media (orientation: landscape) {
+  html.phone #page-mods .dc-grid, html.phone #page-mods .mod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}

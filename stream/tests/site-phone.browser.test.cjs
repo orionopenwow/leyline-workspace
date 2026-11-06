@@ -36,7 +36,7 @@ const PAGES = ['/wrath/leyline', '/wrath/leyline/catalog', '/wrath/leyline/addon
   '/wrath/leyline/loadouts', '/wrath/leyline/realms', '/wrath/leyline/forum', '/wrath/leyline/gallery',
   '/wrath/leyline/news', '/wrath/leyline/creators', '/wrath/leyline/submit', '/wrath/key', '/wrath/signin',
   '/wrath/start', '/wrath/download', '/wrath/looks', '/wrath/docs', '/wrath/docs/launcher', '/wrath/bugs',
-  '/wrath/submit', '/wrath/survivors', '/wrath/leaderboards', '/wrath/host', '/wrath/modes'];
+  '/wrath/submit', '/wrath/survivors', '/wrath/leaderboards', '/wrath/host', '/wrath/modes', '/wrath/mobile', '/wrath/docs/mobile'];
 
 let server, browser;
 test.before(async () => {

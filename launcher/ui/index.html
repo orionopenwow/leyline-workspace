@@ -138,6 +138,14 @@
         <button type="button" class="btn ph-solo" id="ph-solo">Play solo on this phone</button>
         <p class="ph-hint" id="ph-solo-hint">Your own world, run by this phone: no realm, your companion at your side. It is kept on this phone.</p>
       </div>
+      <!-- Join a friend (phone.js join): a friend's invite link to their PC-hosted realm plays it here, in the app -->
+      <section class="ph-join-box" aria-labelledby="ph-join-title">
+        <h3 id="ph-join-title">Join a friend</h3>
+        <p class="ph-hint">Got an invite link from a friend who hosts on their PC? Copy it, then one tap.</p>
+        <button type="button" class="btn primary ph-paste" id="ph-paste-join">Paste invite link and join</button>
+        <div class="ph-join-row"><input id="ph-invite" type="url" inputmode="url" placeholder="https://relay.leylinelauncher.com/join/…" aria-label="Your friend's invite link" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="ph-join">Join</button></div>
+        <p class="ph-say" id="ph-join-say" role="status" aria-live="polite"></p>
+      </section>
       <div class="ph-nogpu" id="ph-nogpu" role="alert" hidden>
         <p><b>This phone's web view can't draw the game yet: open in Chrome.</b></p>
         <button type="button" class="btn primary" id="ph-chrome">Open in Chrome</button>
@@ -149,8 +157,9 @@
       </div>
       <section class="ph-pc" aria-labelledby="ph-pc-title">
         <h3 id="ph-pc-title">On your computer</h3>
-        <p>Your own game folder, hosting a realm, Your Den, installing mods and looks, and Be a node need Leyline on a
-          computer (Windows, Mac or Linux) for now.</p>
+        <p>A phone doesn't host a realm for others: Play solo is this phone's own world, just for you. To play together,
+          a friend hosts on their PC and sends you an invite link. Your own game folder, hosting, Your Den, installing
+          mods and looks, and Be a node need Leyline on a computer (Windows, Mac or Linux).</p>
       </section>
     </div>
   </section>
@@ -406,7 +415,8 @@
       <details class="rl-other" id="rl-other">
         <summary>Got an invite link or another realm address?</summary>
       <h3>A private realm</h3>
-      <p class="lede">Got an invite link? Paste it here and Leyline points your client at that realm. Make your account on the link's page first; a link or code (DEN-…) to a friend's Den needs nothing more.</p>
+      <p class="lede ph-only">Got an invite link from a friend? Paste it and Join: their realm opens in the app. A friend's Den (DEN-…) needs the game on a computer.</p>
+      <p class="lede pc-only">Got an invite link? Paste it here and Leyline points your client at that realm. Make your account on the link's page first; a link or code (DEN-…) to a friend's Den needs nothing more.</p>
       <div class="row"><input id="rl-invite" placeholder="https://relay.leylinelauncher.com/join/…#… or DEN-…" aria-label="An invite link or a friend's Den code" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="rl-join">Join</button></div>
       <h3>Another realm</h3>
       <div class="form">

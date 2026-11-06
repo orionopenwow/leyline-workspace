@@ -89,6 +89,8 @@
     const c = typeof pickedClient === "function" ? pickedClient() : null;
     const art = el("article", "mod-card dc-card gm-card");
     art.dataset.id = g.id;
+    // what it needs, for the phone app's line (phone.js): a Leyline Mode runs on the realm
+    art.dataset.kind = g.kind === "mode" ? "realm" : ((g.project && g.project.kind) || "");
     const thumb = typeof cardThumb === "function" ? cardThumb(g.project || { id: g.id, name: g.name, category: "sandbox" }) : el("div", "dc-thumb");
     thumb.append(el("span", "dc-tag", g.kind === "mode" ? "Leyline Mode" : "Game mode"));
     const body = el("div", "dc-body");
@@ -180,6 +182,7 @@
   function modeCard(m) {
     const art = el("article", "mod-card dc-card gm-card gm-play");
     art.dataset.id = "mode:" + m.id;
+    art.dataset.kind = { realm: "realm", offline: "web", "realm-type": "realm" }[m.kind] || "";
     const thumb = typeof cardThumb === "function" ? cardThumb({ id: "mode:" + m.id, name: m.title, category: "sandbox" }) : el("div", "dc-thumb");
     thumb.append(el("span", "dc-tag", "Game mode"));
     const body = el("div", "dc-body");
@@ -212,6 +215,7 @@
   function denCard() {
     const art = el("article", "mod-card dc-card gm-card gm-den");
     art.dataset.id = "den";
+    art.dataset.kind = "den";
     const thumb = typeof cardThumb === "function" ? cardThumb({ id: "den", name: "Your Den", category: "builds" }) : el("div", "dc-thumb");
     thumb.append(el("span", "dc-tag", "On this PC"));
     const body = el("div", "dc-body");

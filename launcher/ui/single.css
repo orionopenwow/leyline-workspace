@@ -82,3 +82,37 @@
 .sp-manage-h .sp-fine { margin-left: auto; }
 .sp .sp-status { margin-top: 12px; }
 @media (max-width: 900px) { .sp-body { margin-left: 0; } }
+
+/* The original world in one click (vanilla.js #sv) over the Single player page, and the Characters page (characters.js
+   #ch), in the same tokens. */
+.sv-panel { margin-bottom: 14px; }
+.sv { display: grid; gap: 10px; }
+.sv-head { display: flex; align-items: flex-start; gap: 14px; }
+.sv-head h3 { margin: 0; font: 700 17px var(--t-font); color: var(--t-text); }
+.sv-head .sp-dock { margin-left: auto; }
+.sv-tags { display: block; font-size: 12px; color: var(--t-accent-strong, var(--t-accent)); margin: 2px 0 4px; }
+.sv-go { font-size: 14px; }
+.sv-quick { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--t-radius, 10px); border: var(--t-border-w, 1px) solid var(--t-border); }
+.sv-sel, .sv-name { font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 8px; color: var(--t-text); background: var(--t-surface);
+  border: var(--t-border-w, 1px) solid var(--t-border); }
+.sv-name { width: 9em; }
+.sv-other, .sv-docker { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--t-radius, 10px);
+  border: var(--t-border-w, 1px) solid color-mix(in srgb, var(--t-warn, var(--t-accent)) 55%, transparent); }
+.sv-status:empty, .ch-status:empty { display: none; }
+
+.ch-head { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.ch-head h2 { margin: 0; }
+.ch-pane { display: grid; gap: 12px; margin-top: 12px; }
+.ch-lede { margin: 0; font: 600 14px var(--t-font); color: var(--t-text); }
+.ch-fine { font-size: 12px; color: var(--t-muted); margin: 0; }
+.ch-world { display: grid; gap: 8px; padding: 12px 14px; border-radius: var(--t-radius, 10px); background: var(--t-surface);
+  border: var(--t-border-w, 1px) solid var(--t-border); }
+.ch-world-h { display: flex; align-items: center; gap: 10px; }
+.ch-world-h h3 { margin: 0; font: 700 15px var(--t-font); color: var(--t-text); flex: 1; }
+.ch-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.ch-card { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--t-radius, 10px);
+  border: var(--t-border-w, 1px) solid var(--t-border); }
+.ch-card.alliance { border-left: 3px solid color-mix(in srgb, #4a7bd0 70%, var(--t-border)); }
+.ch-card.horde { border-left: 3px solid color-mix(in srgb, #c0453a 70%, var(--t-border)); }
+.ch-card-t { display: grid; gap: 1px; flex: 1; min-width: 0; }
+.ch-card-t b { color: var(--t-text); font-size: 14px; }

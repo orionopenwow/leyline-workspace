@@ -36,7 +36,7 @@ CSS = "/*LEYLINE-CSS*/"
 names = [n for n, _ in d.PAGES]
 
 # ---------------------------------------------------------------- 1. the page list and the files
-check("the pages, in a fixed order", names == ["index", "network", "getting-started", "play", "wrath-unleashed", "commands", "mods", "publishing",
+check("the pages, in a fixed order", names == ["index", "network", "getting-started", "play", "single-player", "wrath-unleashed", "commands", "mods", "publishing",
                                               "hosting", "host-a-realm", "den-invite", "host-for-friends", "always-on", "join-network", "be-a-node", "launcher", "mobile", "den", "agents", "hero-key",
                                               "cross-server", "unite"], names)
 on_disk = sorted(f[:-3] for f in os.listdir(DOCS_DIR) if f.endswith(".md"))
@@ -110,6 +110,11 @@ spec_md = open(os.path.join(ROOT, "mods", "SPEC.md"), encoding="utf-8").read()
 for rule in ("CAN_JOIN_LFG", "10 MB a file, 50 MB a package, 2000 files", "## Interface: 30300", "CREATE TABLE IF NOT EXISTS",
              "string.dump", "RegisterPacketEvent", "WUModCatalog"):
     check(f"mods matches SPEC.md: {rule}", rule in spec_md and html.escape(rule) in pages["mods"])
+sp = visible(pages["single-player"])
+check("single-player: one click, Quick start, Characters on this PC and online, a friend; never ships the game; no client version numbers",
+      all(w in sp for w in ("Play the original world (level 60) with companions", "Quick start", "On this PC", "Online", "Invite a friend",
+                            "never downloads, ships or uploads the game"))
+      and not re.search(r"\b(1\.12|2\.4\.3|3\.3\.5)", sp))
 check("den-invite: the guide's three ways, what the friend needs, what never travels; the same text as docs/DEN-INVITE.md",
       all(w in visible(pages["den-invite"]) for w in ("Same network", "Your own address", "The Leyline relay", "Hero Key", "game files"))
       and open(os.path.join(DOCS_DIR, "den-invite.md"), encoding="utf-8").read() == open(os.path.join(ROOT, "docs", "DEN-INVITE.md"), encoding="utf-8").read())

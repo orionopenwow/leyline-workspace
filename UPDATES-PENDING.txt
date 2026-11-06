@@ -910,3 +910,5 @@
 1350c ship  Save to GitHub: the mobile web overhaul and Phone Lab
 1351a signin  Discord AutoMod lighter: swearing allowed, slurs and your own words still blocked
 1351b ship  Save to GitHub: the lighter AutoMod
+1352a signin  Website: the single player guide page on the docs list
+1352b ship  Save to GitHub: single player original world in one click (level 60, companions), Quick start, Characters (On this PC / Online), Invite a friend from single player worlds

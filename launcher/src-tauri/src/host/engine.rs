@@ -99,19 +99,33 @@ pub enum Kind {
     #[default]
     Single,
     BossRush,
+    /// The original world, single player (docs/SINGLE-PLAYER-ONE-CLICK.md, realm/profiles/solovanilla.env): Single
+    /// player's companions and dungeon buddies with Vanilla+'s rules (the first era held by mod-individual-progression,
+    /// level cap 60). Its own database and saves (`<app>/engine-vanilla/`), Single player's maps (the same full read,
+    /// done once for both) and engine files.
+    Vanilla,
 }
+
+/// The local worlds, in the order the Characters page lists them.
+pub const KINDS: [Kind; 3] = [Kind::Single, Kind::Vanilla, Kind::BossRush];
+
+/// The original world's realm list row and login (TODO(owner): his name for it; solovanilla.env OV_REALM_NAME too).
+pub const VANILLA_REALM_NAME: &str = "Original world";
+pub const VANILLA_ACCOUNT: &str = "ORIGINAL";
 
 impl Kind {
     pub fn profile(self) -> &'static str {
         match self {
             Kind::Single => PROFILE,
             Kind::BossRush => "bossrush",
+            Kind::Vanilla => "solovanilla",
         }
     }
     pub fn account(self) -> &'static str {
         match self {
             Kind::Single => ACCOUNT,
             Kind::BossRush => crate::host::bossrush::ACCOUNT,
+            Kind::Vanilla => VANILLA_ACCOUNT,
         }
     }
     /// Its realm list row's name (Config.wtf picks it by name).
@@ -120,6 +134,7 @@ impl Kind {
             Kind::Single => REALM_NAME,
             // TODO(owner): his name for it (realm/profiles/bossrush.env OV_REALM_NAME says the same)
             Kind::BossRush => "Boss Rush",
+            Kind::Vanilla => VANILLA_REALM_NAME,
         }
     }
     /// What the pages call it.
@@ -127,12 +142,14 @@ impl Kind {
         match self {
             Kind::Single => "Single player",
             Kind::BossRush => "Boss Rush",
+            Kind::Vanilla => "Original world",
         }
     }
     pub fn folder(self) -> &'static str {
         match self {
             Kind::Single => "engine",
             Kind::BossRush => "engine-bossrush",
+            Kind::Vanilla => "engine-vanilla",
         }
     }
     /// The progress line's `kind` (single.js reads "engine").
@@ -140,37 +157,56 @@ impl Kind {
         match self {
             Kind::Single => "engine",
             Kind::BossRush => "bossrush",
+            Kind::Vanilla => "vanilla",
         }
     }
     pub fn bots(self) -> u32 {
         match self {
             Kind::Single => BOTS,
-            Kind::BossRush => 0,
+            // no roaming population: companions and dungeon buddies only (the profile's WU_BOTS says the same)
+            Kind::BossRush | Kind::Vanilla => 0,
         }
     }
     pub fn player_limit(self) -> u32 {
         match self {
             Kind::Single => PLAYER_LIMIT,
             Kind::BossRush => 2,
+            Kind::Vanilla => PLAYER_LIMIT,
         }
     }
     pub fn profile_sql(self) -> &'static [&'static str] {
         match self {
             Kind::Single => &PROFILE_SQL,
-            Kind::BossRush => &[],
+            // no modern race and class combos in the original world
+            Kind::BossRush | Kind::Vanilla => &[],
         }
     }
     /// Only these maps are read from the game folder (None: every map).
     pub fn only_maps(self) -> Option<Vec<u32>> {
         match self {
-            Kind::Single => None,
+            Kind::Single | Kind::Vanilla => None,
             Kind::BossRush => Some(crate::host::bossrush::maps()),
         }
     }
     /// Its profile is layered after modules.env (its own lines win; Single player's profile comes first, as the
     /// Docker kit does).
     pub fn profile_last(self) -> bool {
-        self == Kind::BossRush
+        matches!(self, Kind::BossRush | Kind::Vanilla)
+    }
+    /// Its maps are Single player's own (`<app>/engine/data`): the same whole read, made once for both.
+    pub fn shares_maps(self) -> bool {
+        self == Kind::Vanilla
+    }
+    /// The word the launcher's commands take (`world_*`, the Characters page).
+    pub fn word(self) -> &'static str {
+        match self {
+            Kind::Single => "single",
+            Kind::BossRush => "bossrush",
+            Kind::Vanilla => "vanilla",
+        }
+    }
+    pub fn from_word(w: &str) -> Option<Kind> {
+        KINDS.into_iter().find(|k| k.word() == w.trim())
     }
 }
 
@@ -184,16 +220,16 @@ pub fn active() -> Option<Kind> {
 /// The other realm is the one running on these ports now: this launcher started it, or its own database's pid
 /// file names a live process (a launcher restarted while it ran) and this one's doesn't.
 pub fn other_running(p: &Paths) -> Option<Kind> {
-    let other = match p.kind {
-        Kind::Single => Kind::BossRush,
-        Kind::BossRush => Kind::Single,
-    };
     if !port_answers(DB_PORT) && !port_answers(WORLD_PORT) {
         return None;
     }
-    let o = Paths::for_kind(&p.app, other);
-    let theirs = active() == Some(other) || (active() != Some(p.kind) && read_pid_alive(&o.pid("mysqld")) && !read_pid_alive(&p.pid("mysqld")));
-    theirs.then_some(other)
+    if let Some(a) = active() {
+        return (a != p.kind).then_some(a);
+    }
+    if read_pid_alive(&p.pid("mysqld")) {
+        return None;
+    }
+    KINDS.into_iter().filter(|k| *k != p.kind).find(|k| read_pid_alive(&Paths::for_kind(&p.app, *k).pid("mysqld")))
 }
 
 fn set_active(k: Option<Kind>) {
@@ -234,7 +270,7 @@ impl Paths {
             kind,
             app: app_dir.to_path_buf(),
             dist: app_dir.join(Kind::Single.folder()).join("dist"),
-            data: root.join("data"),
+            data: if kind.shares_maps() { app_dir.join(Kind::Single.folder()).join("data") } else { root.join("data") },
             db: root.join("db"),
             logs: root.join("logs"),
             state: root.join("state"),
@@ -1006,6 +1042,7 @@ pub fn begin_kind(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: boo
         return Err(match kind {
             Kind::Single => "The Built-in engine is made for Windows PCs for now: Docker runs Single player here.".to_string(),
             Kind::BossRush => "Boss Rush's exact engine is made for Windows PCs for now: the light version runs here.".to_string(),
+            Kind::Vanilla => "The Built-in engine is made for Windows PCs for now: Docker runs the original world here.".to_string(),
         });
     }
     let p = Paths::for_kind(app_dir, kind);
@@ -1061,11 +1098,7 @@ pub fn begin_kind(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: boo
 impl Kind {
     /// The realm a progress line's `kind` is of.
     pub fn of_job(k: &str) -> Kind {
-        if k == Kind::BossRush.job_kind() {
-            Kind::BossRush
-        } else {
-            Kind::Single
-        }
+        KINDS.into_iter().find(|x| x.job_kind() == k).unwrap_or(Kind::Single)
     }
 }
 
@@ -1601,6 +1634,38 @@ pub fn console(p: &Paths, command: &str) -> Result<String, String> {
     soap(&s, command).map(|body| crate::host::bossrush::soap_text(&body))
 }
 
+// ------------------------------------------------------------------------------------------------ characters
+
+/// The list of this world's characters kept beside its saves (host/localworld.rs).
+pub fn chars_file(p: &Paths) -> PathBuf {
+    p.state.join("characters.json")
+}
+
+/// The accounts whose characters the Characters page shows: the player's own (Boss Rush: the hero account, where
+/// the heroes are). Never the bots' accounts or a friend's.
+pub fn char_accounts(p: &Paths, s: &State) -> Vec<String> {
+    match p.kind {
+        Kind::BossRush => vec![crate::host::bossrush::hero_account(&s.account)],
+        Kind::Single | Kind::Vanilla => vec![s.account.clone()],
+    }
+}
+
+/// This world's characters read now (it must be the one running), and kept for when it isn't.
+pub fn refresh_chars(p: &Paths) -> Result<Vec<crate::host::localworld::LocalChar>, String> {
+    use crate::host::localworld as lw;
+    let s = load_state(p);
+    if !s.account_made || other_running(p).is_some() || !port_answers(DB_PORT) {
+        return Err(format!("{} isn't running.", p.kind.title()));
+    }
+    let accounts = char_accounts(p, &s);
+    let refs: Vec<&str> = accounts.iter().map(String::as_str).collect();
+    let rows = query(p, "acore_characters", &lw::chars_sql(&refs)?)?;
+    let chars = lw::parse_chars(&rows);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    lw::write_kept(&chars_file(p), &lw::Kept { at: now, chars: chars.clone() })?;
+    Ok(chars)
+}
+
 /// Boss Rush's hero account password: made once and kept in state.json.
 pub fn hero_password(p: &Paths) -> Result<String, String> {
     let mut s = load_state(p);
@@ -1735,6 +1800,10 @@ fn kill_pid(pid: u32) {
 /// Everyone saved and everything down: the world by SOAP's `server shutdown`, the login server, then MySQL by
 /// `mysqladmin shutdown`. Whatever doesn't go in time is ended (ours by its handle, an earlier launcher's by its pid).
 pub fn stop(p: &Paths) -> Result<String, String> {
+    // the characters as they are now, for the Characters page while it is stopped
+    if port_answers(WORLD_PORT) && other_running(p).is_none() {
+        let _ = refresh_chars(p);
+    }
     let s = load_state(p);
     let mut g = PROCS.lock().map_err(|_| "busy")?;
     let mut forced = false;
@@ -1927,6 +1996,61 @@ mod tests {
         assert_eq!(Kind::BossRush.only_maps(), Some(vec![249, 615, 616, 624, 631, 724]));
         assert_eq!(Kind::Single.only_maps(), None);
         assert!(Kind::BossRush.profile_sql().is_empty());
+    }
+
+    #[test]
+    fn the_original_world_has_its_own_saves_and_single_players_maps() {
+        let app = Path::new("/app");
+        let (single, van) = (Paths::new(app), Paths::for_kind(app, Kind::Vanilla));
+        assert_eq!(van.root, Path::new("/app/engine-vanilla"));
+        assert_eq!(van.dist, single.dist, "the engine is downloaded once");
+        assert_eq!(van.data, single.data, "the maps are read once for both");
+        for (a, b) in [(&van.db, &single.db), (&van.state, &single.state), (&van.logs, &single.logs), (&van.backups, &single.backups)] {
+            assert_ne!(a, b, "its own database, saves and logs");
+        }
+        assert_ne!(Paths::for_kind(app, Kind::BossRush).data, single.data, "Boss Rush keeps its own trimmed maps");
+        assert!(required(&van).contains(&van.profile_env("solovanilla")));
+        let mut s = State::default();
+        assert!(ensure_secrets_for(&mut s, Kind::Vanilla).unwrap());
+        assert_eq!(s.account, "ORIGINAL");
+        assert!(realm_sql_named(Kind::Vanilla.realm_name()).contains("name = 'Original world'"));
+        assert_eq!(Kind::of_job("vanilla"), Kind::Vanilla);
+        assert_eq!(Kind::from_word("vanilla"), Some(Kind::Vanilla));
+        assert_eq!(Kind::from_word("single"), Some(Kind::Single));
+        assert_eq!(Kind::from_word("bossrush"), Some(Kind::BossRush));
+        assert_eq!(Kind::from_word("den"), None);
+        assert!(Kind::Vanilla.profile_sql().is_empty(), "no modern combos in the original world");
+        assert_eq!((Kind::Vanilla.bots(), Kind::Vanilla.only_maps()), (0, None));
+        assert_eq!(char_accounts(&van, &s), ["ORIGINAL"]);
+        let rush = Paths::for_kind(app, Kind::BossRush);
+        assert_eq!(char_accounts(&rush, &State { account: "RUSH".into(), ..Default::default() }), ["RUSHBF"], "the heroes");
+        assert_eq!(chars_file(&van), Path::new("/app/engine-vanilla/state/characters.json"));
+        let jobs: Vec<&str> = KINDS.iter().map(|k| k.job_kind()).collect();
+        assert_eq!(jobs, ["engine", "vanilla", "bossrush"], "each world's progress line is its own");
+    }
+
+    #[test]
+    fn the_original_worlds_profile_holds_the_first_era_with_companions() {
+        let p = Paths::for_kind(Path::new("C:\\L"), Kind::Vanilla);
+        let (Ok(van), Ok(modules)) = (
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/profiles/solovanilla.env")),
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/modules.env")),
+        ) else {
+            return;
+        };
+        let v = world_env(&p, &st(), &van, &modules, None);
+        let g = |k: &str| get(&v, k).map(str::to_string);
+        assert_eq!(g("AC_MAX_PLAYER_LEVEL").as_deref(), Some("60"));
+        assert_eq!(g("AC_INDIVIDUAL_PROGRESSION_ENABLE").as_deref(), Some("1"));
+        assert_eq!(g("AC_INDIVIDUAL_PROGRESSION_PROGRESSION_LIMIT").as_deref(), Some("7"));
+        assert_eq!(g("OV_COMPANIONS").as_deref(), Some("1"), "the companions and dungeon buddies");
+        assert_eq!(g("AC_PLAYERBOTS_MIN_RANDOM_BOTS").as_deref(), Some("0"), "no roaming population");
+        assert_eq!(g("AC_PLAYERBOTS_RANDOM_BOT_AUTOLOGIN").as_deref(), Some("0"), "the profile wins over modules.env's 1");
+        assert_eq!(g("AC_PLAYER_LIMIT").as_deref(), Some("5"));
+        assert_eq!(g("OV_REALM_NAME").as_deref(), Some(VANILLA_REALM_NAME));
+        assert!(g("AC_DATA_DIR").unwrap().ends_with("engine/data"), "Single player's maps");
+        assert!(g("AC_LOGIN_DATABASE_INFO").unwrap().contains(";13306;"));
+        assert_eq!(g("AC_BIND_IP").as_deref(), Some("127.0.0.1"), "this PC only: friends come through the launcher");
     }
 
     #[test]

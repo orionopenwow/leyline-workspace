@@ -24,6 +24,8 @@ pub mod denhost; // Hosting friends with no Docker: who's in, kick, build rights
 pub mod creaturemodels; // Your Den's gliding copy: creature rows wearing the props' models in patch-T (host/creaturemodels.rs)
 pub mod denmodels; // My models: kept, listed for Den Lite, put in the Den's patch (host/denmodels.rs)
 pub mod bossrush; // Boss Rush: the catalog, the pick, the hero's console lines, the board, share codes (docs/BOSS-RUSH.md)
+pub mod localworld; // Single player's worlds: their characters (On this PC, Online), Quick start's choices (host/localworld.rs)
+pub mod worldshare; // Play with friends from a single player world: the realm list rewrite, the same-network way (host/worldshare.rs)
 pub mod engine; // Single player's Built-in engine: the realm natively on Windows, no Docker (docs/BUILTIN-ENGINE.md)
 pub mod lite; // Den Lite: the built-in Den server, no Docker (an interface; the program is labs/den-lite)
 pub mod ready; // Ready for friends?: the checklist before an invite, the self-test login through the relay (host/ready.rs)

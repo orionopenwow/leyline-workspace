@@ -93,7 +93,9 @@
          Your Den (den.js) has no item (owner 2026-11-02: "only in the server drop up list next to play"): the play bar's
          realm list (app.js renderRealmMenu) and Home's banner lead there.
          Single player (single.js, owner 4 Nov: the flagship, a top-level choice) has its item under Home, with the sword mark.
-         Boss Rush (bossrush.js, owner 5 Nov: "its own launched mini game mode") has its item under Single player, a shield. -->
+         Boss Rush (bossrush.js, owner 5 Nov: "its own launched mini game mode") has its item under Single player, a shield.
+         Characters (characters.js, docs/SINGLE-PLAYER-ONE-CLICK.md) has no item (the menu matches the website's): the
+         Single player page's Characters button and Home's Single player row lead there. -->
     <button class="nav" data-page="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
     <button class="nav" data-page="single"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/></svg>Single player</button>
     <button class="nav" data-page="bossrush"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.4 7 10 4-1.6 7-5.5 7-10V6z"/><path d="M9.5 12.5 11 14l3.5-3.5"/></svg>Boss Rush</button>
@@ -203,6 +205,9 @@
         <div class="hm-den-txt"><b>Single player</b><span>Just you and your bot companions, on this PC: dungeons and raids with helper bots, levelling at your pace</span></div>
         <div class="hm-den-acts">
           <button type="button" class="btn primary" id="hm-single-go">Start</button>
+          <!-- the original world in one click and every world's characters (vanilla.js, characters.js) -->
+          <button type="button" class="btn small" id="hm-vanilla-go" title="The original world to level 60, with your companions, on this PC">Original world</button>
+          <button type="button" class="btn small" id="hm-chars">Characters</button>
         </div>
       </section>
       <!-- Boss Rush (bossrush.js): Home's row for it -->
@@ -445,9 +450,16 @@
     <div class="panel wide br" id="br"></div>
   </section>
 
-  <!-- SINGLE PLAYER (single.js): your game folder, the engine, Start; then Manage -->
+  <!-- SINGLE PLAYER (single.js): your game folder, the engine, Start; then Manage. Over it, the original world in one
+       click (vanilla.js #sv: Play the original world, Quick start) -->
   <section class="page" id="page-single">
+    <div class="panel wide sv-panel" id="sv"></div>
     <div class="panel wide sp" id="sp"></div>
+  </section>
+
+  <!-- CHARACTERS (characters.js): On this PC (each local world's characters) and Online (the official realm) -->
+  <section class="page" id="page-characters">
+    <div class="panel wide ch" id="ch"></div>
   </section>
 
   <!-- HOST -->
@@ -937,6 +949,8 @@
 <script src="hostfriends.js"></script><!-- Play with friends: Invite a friend in one step, Ready for friends?, the friend's steps (window.LeylineHostFriends; after solo.js and den.js) -->
 <script src="denmarket.js"></script><!-- Mods & Addons › Dens: shared Dens and stamps, Share (window.LeylineDenMarket; after app.js and den.js) -->
 <script src="single.js"></script><!-- Single player: its page, three steps, then Manage (window.LeylineSingle; after app.js, den.js and solo.js) -->
+<script src="vanilla.js"></script><!-- the original world in one click, and window.LeylineWorlds: every local world's play path (after single.js) -->
+<script src="characters.js"></script><!-- Characters: On this PC and Online (window.LeylineCharacters; after vanilla.js) -->
 <script src="bossrush.js"></script><!-- Boss Rush: its page (window.LeylineBossRush; after app.js) -->
 <script src="singleupdate.js"></script><!-- Single player: the bots, always up to date (Update the bots, Bots updated; window.LeylineSingleUpdate) -->
 <script src="gmcenter.js"></script><!-- the GM command center for your own worlds (window.LeylineGM; after den.js) -->

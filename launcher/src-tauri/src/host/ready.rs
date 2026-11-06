@@ -94,11 +94,14 @@ pub const SLOW_PATH_MS: u32 = 400;
 /// The checklist from what was found. The order is the path a friend's game takes.
 pub fn judge(f: &Facts) -> Ready {
     let lite = f.kind != "docker";
-    let world = if lite { "Your Den" } else { "Your realm" };
+    // a single player world on the Built-in engine (app.rs world_invite: "single" / "vanilla") has the Den's tunnel
+    let engine = f.kind == "single" || f.kind == "vanilla";
+    let world = if engine { "Your world" } else if lite { "Your Den" } else { "Your realm" };
     let mut out = Vec::new();
     // 1. the world on this PC
     out.push(match (&f.login, f.running) {
         (Some(Ok(ms)), _) => check("server", "ok", "Your world is running", format!("{world} is running on this PC and its login answers ({ms} ms)."), "", ""),
+        (_, false) if engine => check("server", "bad", "Your world is running", "Your world isn't running on this PC.", "Press Start on its Single player card, then Invite a friend again.", "start"),
         (_, false) if lite => check("server", "bad", "Your world is running", "Your Den isn't running on this PC.", "Press Start again: Leyline starts your Den (no game window needed).", "start"),
         (_, false) => check("server", "bad", "Your world is running", "Your realm isn't running on this PC.", "Open the Host page and press Start (Docker Desktop must be running).", "start"),
         (Some(Err(e)), true) => check("server", "bad", "Your world is running", format!("{world} runs but its login doesn't answer: {e}"), "Restart it: press Start again. If it still doesn't answer, restart your PC.", "start"),
@@ -110,7 +113,7 @@ pub fn judge(f: &Facts) -> Ready {
         Some((true, false, e)) => check("tunnel", "bad", "Connected to the Leyline relay",
             if e.is_empty() { "Connecting to the relay… (it should take a few seconds)".to_string() } else { format!("Not connected to the relay yet: {e}") },
             "Check this PC is online. If a VPN, school or work network blocks it, try another network. Then press Check again.", "retest"),
-        Some((false, _, _)) => check("tunnel", "bad", "Connected to the Leyline relay", "Your Den isn't on the Leyline network.", "Press Invite a friend again: it puts your Den on the network.", "start"),
+        Some((false, _, _)) => check("tunnel", "bad", "Connected to the Leyline relay", format!("{world} isn't on the Leyline network."), "Press Invite a friend again: it puts it on the network.", "start"),
         None => match &f.relay_online {
             Some(Ok(true)) => check("tunnel", "ok", "Connected to the Leyline relay", "Your realm's agent keeps its connection to the relay: no ports needed.", "", ""),
             _ => check("tunnel", "bad", "Connected to the Leyline relay", "Your realm's agent isn't connected to the relay.", "On the Host page, press Restart. The agent connects within a minute of the realm starting.", "start"),
@@ -150,11 +153,12 @@ pub fn judge(f: &Facts) -> Ready {
     // 7. firewall
     out.push(match (lite, f.lan) {
         (true, Some(false)) => check("firewall", "warn", "Firewall", "Nothing to open for the relay. The faster same-network way is off (friends in your home still get in through the relay).",
-            "To let friends on your Wi-Fi use it: allow Den Lite on private networks in your firewall, then press Invite a friend again.", "firewall"),
+            if engine { "To let friends on your Wi-Fi use it: allow Leyline on private networks in your firewall, then press Invite a friend again." }
+            else { "To let friends on your Wi-Fi use it: allow Den Lite on private networks in your firewall, then press Invite a friend again." }, "firewall"),
         _ => check("firewall", "ok", "Firewall", "Nothing to open: the relay needs no ports, and works behind any router or a shared (CGNAT) address.", "", ""),
     });
     let ok = !out.iter().any(|c| c.state == "bad");
-    Ready { kind: if lite { "lite".into() } else { "docker".into() }, ok, checks: out, relay: f.relay.clone(), realm_id: f.realm_id.clone(),
+    Ready { kind: if engine { f.kind.clone() } else if lite { "lite".into() } else { "docker".into() }, ok, checks: out, relay: f.relay.clone(), realm_id: f.realm_id.clone(),
         relay_ms: f.relay_ms, path_ms: f.path.as_ref().and_then(|p| p.as_ref().ok().copied()), os: f.os.clone() }
 }
 
@@ -327,6 +331,18 @@ mod tests {
     }
     fn state(r: &Ready, id: &str) -> &'static str {
         r.checks.iter().find(|c| c.id == id).map(|c| c.state).unwrap()
+    }
+
+    #[test]
+    fn a_single_player_world_is_named_as_one_and_keeps_its_kind() {
+        let r = judge(&Facts { kind: "vanilla".into(), ..green() });
+        assert!(r.ok);
+        assert_eq!(r.kind, "vanilla");
+        assert!(r.checks[0].line.starts_with("Your world is running"), "{}", r.checks[0].line);
+        let r = judge(&Facts { kind: "single".into(), running: false, login: None, ..green() });
+        assert_eq!(state(&r, "server"), "bad");
+        assert!(r.checks[0].fix.contains("Single player card"));
+        assert!(!r.checks.iter().any(|c| c.line.contains("Your Den")), "never called a Den");
     }
 
     #[test]

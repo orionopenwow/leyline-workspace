@@ -13,7 +13,7 @@ use crate::realms::{self, RealmList};
 use crate::settings::{self, Settings, Wine};
 use crate::update::{self, Channel, UpdateInfo};
 use crate::{launch, status, BROWSER_PLAY_URL, OFFICIAL_REALM};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Child;
@@ -348,7 +348,7 @@ async fn play_official(core: &Core, client: &str, realm: &str, app: Option<&AppH
     }
     let session = login.as_ref().ok().map(|l| {
         let _ = crate::herokey::set_account_name(&profile.path, &l.user);
-        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false }
+        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false, pick: None, make: None }
     });
     let pass = login.as_ref().ok().map(|l| l.pass.clone());
     let name = login.as_ref().ok().map(|l| l.user.clone()).unwrap_or_default();
@@ -571,7 +571,7 @@ async fn play_realm_herokey(core: State<'_, Core>, client: String, slug: String)
     let r2 = realm.clone();
     let addr = blocking(move || realms::desktop_address(&r2, |relay| format!("https://{relay}"))).await?;
     // The hybrid client (Settings' hybrid_login, docs/HYBRID-CLIENT.md): the login screen signs in by itself.
-    let s = crate::hybrid::Session { user: login.user.clone(), pass: login.pass.clone(), realm: None, enter: false };
+    let s = crate::hybrid::Session { user: login.user.clone(), pass: login.pass.clone(), realm: None, enter: false, pick: None, make: None };
     let (_, hybrid) = point_and_play_with(&core, &client, &addr, true, Some(s), false)?;
     match hybrid {
         Ok(()) => {
@@ -672,7 +672,7 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
             (list, "Your friend's Den".to_string())
         };
         let _ = crate::herokey::set_login(&profile.path, &user, None);
-        let s = crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: None, enter: false };
+        let s = crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: None, enter: false, pick: None, make: None };
         let (message, hybrid) = point_and_play_with(&core, &client, &address, true, Some(s), true)?;
         let (auto, why) = match hybrid {
             Ok(()) => (true, String::new()),
@@ -832,6 +832,7 @@ fn den_tunnel(l: &crate::host::lite::Binary, root: &Path) -> Result<crate::host:
         name: "Den Lite".into(),
         invite_secret: secret,
         den_dir: l.den_dir(),
+        realm_list: false,
     }))
 }
 
@@ -1038,7 +1039,21 @@ fn host_ready_now(kind: &str, kit: Option<PathBuf>) -> crate::host::ready::Ready
     let t = Duration::from_secs(6);
     let mut f = ready::Facts { kind: kind.to_string(), os: std::env::consts::OS.into(), relay: realms::RELAY.into(), ..Default::default() };
     let mut secret: Option<String> = None;
-    if kind == "docker" {
+    if let Some(k) = crate::host::engine::Kind::from_word(kind).filter(|k| *k != crate::host::engine::Kind::BossRush) {
+        // a single player world on the Built-in engine (world_invite): its login on this PC, the tunnel, the same network
+        let p = crate::host::engine::Paths::for_kind(&settings::app_dir(), k);
+        let login = ready::login_answers(crate::host::engine::REALM, t);
+        f.running = login.is_ok() && crate::host::engine::other_running(&p).is_none();
+        f.login = Some(login);
+        let st = litenet::state();
+        f.tunnel = Some((st.running, st.connected, st.last_error.clone()));
+        let share = crate::host::worldshare::dir(&p.root);
+        if let Ok(pk) = litenet::load_or_create_key(&litenet::key_path(&share)).and_then(|k| litenet::public_key(&k)) {
+            f.realm_id = litenet::realm_id(&pk);
+        }
+        secret = crate::host::worldshare::invite_secret(&share).ok();
+        f.lan = Some(crate::host::worldshare::lan_state().is_some());
+    } else if kind == "docker" {
         if let Some(link) = kit.as_deref().and_then(crate::host::invite) {
             if let Some((relay, rid, s)) = realms::parse_invite(&link) {
                 (f.relay, f.realm_id, secret) = (relay, rid, Some(s));
@@ -1152,7 +1167,7 @@ struct SoloPlay {
 /// picked by name, and straight into the world (a character made first when there is none).
 fn den_session() -> crate::hybrid::Session {
     use crate::host::lite;
-    crate::hybrid::Session { user: crate::denclick::GLUE_ACCOUNT.into(), pass: lite::PASSWORD.into(), realm: Some(lite::REALM.into()), enter: true }
+    crate::hybrid::Session { user: crate::denclick::GLUE_ACCOUNT.into(), pass: lite::PASSWORD.into(), realm: Some(lite::REALM.into()), enter: true, pick: None, make: None }
 }
 
 /// Den Lite on this PC, started for this game folder when it isn't running, its login port answering (up to 15 s).
@@ -1622,7 +1637,7 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
     };
     let session = login.as_ref().ok().map(|l| {
         let _ = crate::herokey::set_account_name(&profile.path, &l.user);
-        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: cli.world }
+        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: cli.world, pick: None, make: None }
     });
     let pass = login.as_ref().ok().map(|l| l.pass.clone());
     drop(login);
@@ -1796,7 +1811,11 @@ fn engine_progress() -> crate::host::engine::Job {
 /// Everyone saved, everything stopped.
 #[tauri::command]
 async fn engine_stop() -> Result<String, String> {
-    blocking(|| crate::host::engine::stop(&engine_paths())).await
+    blocking(|| {
+        world_share_off(crate::host::engine::Kind::Single);
+        crate::host::engine::stop(&engine_paths())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1837,16 +1856,339 @@ fn engine_play(core: State<Core>, client: String) -> Result<EnginePlay, String> 
     if profile.build != clients::Build::V335a {
         return Err("Single player plays with a different game folder: pick one of its version.".into());
     }
-    let st = engine::status(&engine_paths());
+    let _ = profile;
+    let r = world_play_now(&core, &client, engine::Kind::Single, None, None)?;
+    Ok(EnginePlay { message: r.message, account: r.account, password: r.password })
+}
+
+// ---- Single player's worlds by kind (host/engine.rs KINDS; docs/SINGLE-PLAYER-ONE-CLICK.md): the original world in
+// one click, Quick start, the Characters page (On this PC / Online), Invite a friend from a world. The page
+// (single.js, characters.js) names a world by its word: "single", "vanilla", "bossrush".
+
+fn world_kind(kind: &str) -> Result<crate::host::engine::Kind, String> {
+    crate::host::engine::Kind::from_word(kind).ok_or_else(|| "That isn't one of this PC's worlds.".to_string())
+}
+
+fn world_paths(k: crate::host::engine::Kind) -> crate::host::engine::Paths {
+    crate::host::engine::Paths::for_kind(&settings::app_dir(), k)
+}
+
+#[tauri::command]
+async fn world_status(kind: String) -> Result<crate::host::engine::EngineStatus, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || Ok(crate::host::engine::status(&world_paths(k)))).await
+}
+
+/// Set a world up (whatever isn't done: the engine, the maps from this game folder, the database, the login) and
+/// start it; its progress is engine_progress (the line's `kind` says whose).
+#[tauri::command]
+fn world_setup(core: State<Core>, client: String, kind: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err(format!("{} plays with a different game folder: pick one of its version.", k.title()));
+    }
+    crate::host::engine::begin_kind(&settings::app_dir(), k, Some(profile.path), false)
+}
+
+#[tauri::command]
+fn world_start(kind: String) -> Result<String, String> {
+    crate::host::engine::begin_kind(&settings::app_dir(), world_kind(&kind)?, None, false)
+}
+
+/// Everyone saved, everything stopped; sharing it with friends ends with it.
+#[tauri::command]
+async fn world_stop(kind: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        world_share_off(k);
+        crate::host::engine::stop(&world_paths(k))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn world_logs(kind: String, lines: Option<usize>) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || Ok(crate::host::engine::logs(&world_paths(k), lines.unwrap_or(200).clamp(20, 2000)))).await
+}
+
+#[tauri::command]
+async fn world_backup(kind: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || crate::host::engine::backup(&world_paths(k)).map(|p| p.display().to_string())).await
+}
+
+#[derive(Serialize)]
+struct WorldChoices {
+    races: Vec<crate::host::localworld::RaceChoice>,
+    /// The original world: the first era's races and classes only.
+    first_era: bool,
+    /// A free name to suggest.
+    name: String,
+}
+
+/// Quick start's choices for a world.
+#[tauri::command]
+fn world_choices(kind: String) -> Result<WorldChoices, String> {
+    use crate::host::localworld as lw;
+    let k = world_kind(&kind)?;
+    if k == crate::host::engine::Kind::BossRush {
+        return Err("Boss Rush's heroes are made on its own page.".into());
+    }
+    let first_era = k == crate::host::engine::Kind::Vanilla;
+    let taken: Vec<String> = lw::read_kept(&crate::host::engine::chars_file(&world_paths(k))).chars.into_iter().map(|c| c.name).collect();
+    Ok(WorldChoices { races: lw::choices(first_era), first_era, name: lw::name_for("", &taken).unwrap_or_default() })
+}
+
+/// Quick start: a new level-1 character made on the game's own create screen, then entered.
+#[derive(Deserialize, Debug, Clone)]
+struct QuickPick {
+    name: Option<String>,
+    race: u8,
+    class: u8,
+    female: Option<bool>,
+}
+
+#[derive(Serialize)]
+struct WorldPlay {
+    message: String,
+    kind: String,
+    /// Signed in by itself (our login screen code); else the login to type once.
+    auto: bool,
+    account: String,
+    password: String,
+    /// Quick start's character's name.
+    made: String,
+}
+
+/// Play a world that is running: the game signed in by itself (the hybrid login, as Your Den and Boss Rush do: the
+/// world's own login, made by the launcher with a generated password, never one the player typed), the world's
+/// realm picked; `pick` enters that character, `quick` makes a new one first and enters it; neither: character select.
+#[tauri::command]
+async fn world_play(core: State<'_, Core>, client: String, kind: String, pick: Option<String>, quick: Option<QuickPick>) -> Result<WorldPlay, String> {
+    let k = world_kind(&kind)?;
+    world_play_now(&core, &client, k, pick, quick)
+}
+
+fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick: Option<String>, quick: Option<QuickPick>) -> Result<WorldPlay, String> {
+    use crate::host::{bossrush as br, engine as eng, localworld as lw};
+    let profile = core.client(client)?;
+    if profile.build != clients::Build::V335a {
+        return Err(format!("{} plays with a different game folder: pick one of its version.", k.title()));
+    }
+    let p = world_paths(k);
+    let st = eng::status(&p);
     if !st.set_up {
-        return Err("Set Single player up first: press Start on its page.".into());
+        return Err(format!("Set {} up first: press Start on its card.", k.title()));
     }
     if !st.running {
-        return Err("Single player isn't running: press Start first.".into());
+        return Err(format!("{} isn't running: press Start first.", k.title()));
     }
-    let _ = crate::herokey::set_login(&profile.path, &st.account, Some(engine::REALM_NAME));
-    let (message, _) = point_and_play_with(&core, &client, engine::REALM, true, None, false)?;
-    Ok(EnginePlay { message, account: st.account, password: st.password })
+    if let Some(n) = &pick {
+        if !crate::hybrid::char_name_ok(n) {
+            return Err("That character's name doesn't look right.".into());
+        }
+    }
+    let s = eng::load_state(&p);
+    let (user, pass) = if k == eng::Kind::BossRush {
+        // the heroes' account (bossrush_play makes it with the first fight); its password set again, as there
+        if s.hero_password.len() < 8 {
+            return Err("Pick a fight on the Boss Rush page first: it makes your hero.".into());
+        }
+        let hero = br::hero_account(&s.account);
+        let [create, set] = br::account_lines(&hero, &s.hero_password)?;
+        let _ = eng::console(&p, &create);
+        eng::console(&p, &set).map_err(|e| format!("Boss Rush's realm didn't take the hero's login ({e}). Try again in a minute."))?;
+        (hero, s.hero_password.clone())
+    } else {
+        (s.account.clone(), s.password.clone())
+    };
+    let make = match &quick {
+        Some(q) if k != eng::Kind::BossRush => {
+            let (race, class) = lw::quick_ok(q.race, q.class, k == eng::Kind::Vanilla)?;
+            let taken: Vec<String> = eng::refresh_chars(&p).unwrap_or_else(|_| lw::read_kept(&eng::chars_file(&p)).chars).into_iter().map(|c| c.name).collect();
+            let name = lw::name_for(q.name.as_deref().unwrap_or(""), &taken)?;
+            if taken.iter().any(|t| t.eq_ignore_ascii_case(&name)) {
+                return Err(format!("You already have a character named {name} here: pick another name."));
+            }
+            Some(crate::hybrid::NewChar { name, race: race.into(), class: class.into(), female: q.female.unwrap_or(false) })
+        }
+        Some(_) => return Err("Boss Rush's heroes are made on its own page.".into()),
+        None => None,
+    };
+    let made = make.as_ref().map(|m| m.name.clone()).unwrap_or_default();
+    let realm = k.realm_name();
+    let _ = crate::herokey::set_login(&profile.path, &user, Some(realm));
+    let refused = crate::hybrid::refused_marker(&profile.path).exists();
+    let enter = pick.is_some() || make.is_some();
+    let session = (!refused).then(|| crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: Some(realm.into()), enter, pick, make });
+    let (message, hybrid) = point_and_play_with(core, client, eng::REALM, true, session, true)?;
+    let auto = hybrid.is_ok();
+    Ok(WorldPlay { message, kind: k.word().into(), auto, account: user, password: if auto { String::new() } else { pass }, made })
+}
+
+#[derive(Serialize)]
+struct WorldChars {
+    kind: &'static str,
+    title: &'static str,
+    realm: &'static str,
+    supported: bool,
+    set_up: bool,
+    running: bool,
+    /// The world running on this PC now when it is another one (one at a time).
+    other_running: Option<crate::host::engine::Kind>,
+    /// Read from the world just now (else: kept from when it last ran).
+    live: bool,
+    at: u64,
+    chars: Vec<crate::host::localworld::LocalChar>,
+}
+
+/// The Characters page's "On this PC": each local world and its characters (read now from the one running, the
+/// others as they were when they last ran).
+#[tauri::command]
+async fn local_characters() -> Result<Vec<WorldChars>, String> {
+    use crate::host::{engine as eng, localworld as lw};
+    blocking(|| {
+        Ok(eng::KINDS
+            .into_iter()
+            .map(|k| {
+                let p = world_paths(k);
+                let st = eng::status(&p);
+                let fresh = if st.running { eng::refresh_chars(&p).ok() } else { None };
+                let live = fresh.is_some();
+                let kept = lw::read_kept(&eng::chars_file(&p));
+                WorldChars {
+                    kind: k.word(),
+                    title: k.title(),
+                    realm: k.realm_name(),
+                    supported: st.supported,
+                    set_up: st.set_up,
+                    running: st.running,
+                    other_running: st.other_running,
+                    live,
+                    at: kept.at,
+                    chars: fresh.unwrap_or(kept.chars),
+                }
+            })
+            .collect())
+    })
+    .await
+}
+
+#[derive(Serialize)]
+struct OnlineChars {
+    realm: &'static str,
+    chars: Vec<crate::host::localworld::OnlineChar>,
+}
+
+/// The Characters page's "Online": the characters the player's game folders remember on the official realm (their
+/// own settings folders; the realm itself keeps the characters).
+#[tauri::command]
+fn online_characters(core: State<Core>) -> Result<OnlineChars, String> {
+    let s = core.snapshot();
+    let mut chars: Vec<crate::host::localworld::OnlineChar> = Vec::new();
+    for c in s.clients.iter().filter(|c| c.build == clients::Build::V335a) {
+        for x in crate::host::localworld::online_chars(&c.path, &[realms::SAMPLE_NAME]) {
+            if !chars.contains(&x) {
+                chars.push(x);
+            }
+        }
+    }
+    Ok(OnlineChars { realm: realms::SAMPLE_NAME, chars })
+}
+
+/// Invite a friend into a single player world while it runs (host/worldshare.rs): its own key on the Leyline relay
+/// (private, the tunnel Your Den uses: one at a time on this PC), the same network through the launcher's own
+/// forwarder, and one friend's login (a player, made over the world's console) in the link.
+#[tauri::command]
+async fn world_invite(kind: String) -> Result<DenInvite, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || world_invite_now(k)).await
+}
+
+fn world_invite_now(k: crate::host::engine::Kind) -> Result<DenInvite, String> {
+    use crate::host::{denhost, denways, engine as eng, litenet, worldshare as ws};
+    if k == eng::Kind::BossRush {
+        return Err("Boss Rush is for one hero for now: invite a friend from Single player or the original world.".into());
+    }
+    let p = world_paths(k);
+    if !eng::status(&p).running {
+        return Err(format!("Start {} first: friends join it while it runs.", k.title()));
+    }
+    let share = ws::dir(&p.root);
+    std::fs::create_dir_all(&share).map_err(|e| e.to_string())?;
+    std::fs::write(share.join("den-lite.remote"), ws::remote_text()).map_err(|e| e.to_string())?;
+    let seed = litenet::load_or_create_key(&litenet::key_path(&share))?;
+    let secret = ws::invite_secret(&share)?;
+    let mine = litenet::realm_id(&litenet::public_key(&seed)?);
+    // one tunnel on this PC: another world's (or Your Den's, which can't run beside a world: the same login port)
+    // gives way
+    let now = litenet::state();
+    if now.running && now.realm_id != mine {
+        litenet::stop();
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    let mut tunnel = litenet::start(litenet::Setup {
+        endpoint: litenet::Endpoint::relay(realms::RELAY),
+        relay_name: realms::RELAY.into(),
+        seed,
+        name: k.realm_name().into(),
+        invite_secret: secret.clone(),
+        den_dir: share.clone(),
+        realm_list: true,
+    });
+    for _ in 0..40 {
+        if tunnel.connected || !tunnel.last_error.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        tunnel = litenet::state();
+    }
+    // the friend's login
+    let (user, pass) = ws::new_guest()?;
+    let [create, addon] = ws::guest_lines(&user, &pass)?;
+    ws::created(&eng::console(&p, &create)?).map_err(|e| format!("The world didn't make your friend's login: {e}"))?;
+    eng::console(&p, &addon)?;
+    // the same network
+    let (lan, lan_way) = match denways::lan_address() {
+        None => (None, InviteWay { id: "lan", ok: false, line: "Same network: this PC isn't on a home or office network.".into() }),
+        Some(ip) => match ws::lan_start(ip, eng::LOGIN_PORT, eng::WORLD_PORT) {
+            Ok((ip, lp, _)) => (Some(format!("{ip}:{lp}")), InviteWay { id: "lan", ok: true, line: format!("Same network: on, at {ip} (friends at your home or on your network come in here first).") }),
+            Err(e) => (None, InviteWay { id: "lan", ok: false, line: format!("Same network: off ({e}). Allow Leyline on private networks in your firewall, then Invite again.") }),
+        },
+    };
+    let relay_way = if tunnel.last_error.is_empty() {
+        InviteWay { id: "relay", ok: true, line: "Leyline relay: on (works from anywhere; the relay only passes the game's connection through).".into() }
+    } else {
+        InviteWay { id: "relay", ok: false, line: format!("Leyline relay: {}", tunnel.last_error) }
+    };
+    let own_way = InviteWay { id: "own", ok: false, line: "Your own address: not used for a single player world.".into() };
+    let link = litenet::invite_link(realms::RELAY, &tunnel.realm_id, &secret, Some((&user, &pass)));
+    let code = denhost::code_from_link(&link).unwrap_or_default();
+    let link = denways::with_ways(&link, lan.as_deref(), None);
+    Ok(DenInvite { link, code, name: "your friend".into(), expires: 0, tunnel, ways: vec![lan_way, own_way, relay_way] })
+}
+
+/// Sharing a world ends: the same-network way, and its tunnel when the tunnel is this world's.
+fn world_share_off(k: crate::host::engine::Kind) {
+    use crate::host::{litenet, worldshare as ws};
+    let share = ws::dir(&world_paths(k).root);
+    let mine = litenet::load_or_create_key(&litenet::key_path(&share)).and_then(|s| litenet::public_key(&s)).map(|p| litenet::realm_id(&p)).ok();
+    if mine.is_some_and(|m| litenet::state().realm_id == m) {
+        litenet::stop();
+    }
+    ws::lan_stop();
+}
+
+#[tauri::command]
+async fn world_share_stop(kind: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        world_share_off(k);
+        Ok("Sharing stopped: friends' links don't work until you invite again.".to_string())
+    })
+    .await
 }
 
 // ---- Boss Rush (host/bossrush.rs, docs/BOSS-RUSH.md; ui/bossrush.js): the exact engine (the Built-in engine's
@@ -2007,7 +2349,7 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
     let realm = eng::Kind::BossRush.realm_name();
     let _ = crate::herokey::set_login(&profile.path, &hero_acc, Some(realm));
     let refused = crate::hybrid::refused_marker(&profile.path).exists();
-    let session = if refused { None } else { Some(crate::hybrid::Session { user: hero_acc.clone(), pass: pass.clone(), realm: Some(realm.into()), enter: true }) };
+    let session = if refused { None } else { Some(crate::hybrid::Session { user: hero_acc.clone(), pass: pass.clone(), realm: Some(realm.into()), enter: true, pick: None, make: None }) };
     let (message, hybrid) = point_and_play_with(&core, &client, eng::REALM, true, session, true)?;
     let auto = hybrid.is_ok();
     Ok(BossRushPlay { message, engine: "exact".into(), hero, made, auto, account: if auto { String::new() } else { hero_acc }, password: if auto { String::new() } else { pass }, code })
@@ -2967,6 +3309,18 @@ pub fn run() {
             engine_backup,
             engine_update_check,
             engine_play,
+            world_status, // Single player's worlds by kind: the original world, Quick start, Characters, Invite a friend
+            world_setup,
+            world_start,
+            world_stop,
+            world_logs,
+            world_backup,
+            world_choices,
+            world_play,
+            local_characters,
+            online_characters,
+            world_invite,
+            world_share_stop,
             bossrush_catalog, // Boss Rush (host/bossrush.rs, ui/bossrush.js)
             bossrush_setup,
             bossrush_start,
@@ -3113,7 +3467,7 @@ mod solo_tests {
         std::fs::write(g.join("ForeverUIGlue.xml"), "<Ui/>").unwrap();
         let l = crate::herokey::parse_game_login(&serde_json::json!({"ok": true, "user": "WR000123", "pass": "Q7W8E9R2T3Y4U5I6"})).unwrap();
         assert!(crate::herokey::set_account_name(d.path(), &l.user).unwrap());
-        let s = crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false };
+        let s = crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false, pick: None, make: None };
         assert!(crate::hybrid::session_lua(Some(&s)).unwrap().contains("enter = false"), "character select, not the world");
         crate::hybrid::write(d.path(), Some(&s)).unwrap();
         assert!(crate::hybrid::has_session(d.path()));

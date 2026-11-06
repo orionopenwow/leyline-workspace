@@ -595,7 +595,8 @@
     paint();
     // a start still running (begun here, or on the Host page for Docker): followed here too
     if (!jobTimer) {
-      try { const p = await call("engine_progress"); if (p && p.running) { job = Object.assign({}, p, { kind: "engine" }); follow(false); return; } } catch (_) { /* none */ }
+      // only Single player's own line (the original world and Boss Rush have theirs: vanilla.js, bossrush.js)
+      try { const p = await call("engine_progress"); if (p && p.running && (!p.kind || p.kind === "engine")) { job = Object.assign({}, p, { kind: "engine" }); follow(false); return; } } catch (_) { /* none */ }
       try { const p = await call("host_progress"); if (p && p.running && p.kind === "host") { job = p; follow(false); } } catch (_) { /* none */ }
     }
   }

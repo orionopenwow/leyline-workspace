@@ -215,7 +215,7 @@ pub struct Status {
 /// is emptied. `chain` is the verified release log (None without a trusted key: nothing is shared).
 pub fn pass(app_dir: &Path, chain: Option<&Chain>, on: bool, flags: &Flags, swarm: &dyn Swarm) -> (Status, Vec<(Item, Vec<u8>)>) {
     let d = dir(app_dir);
-    let engine = cfg!(feature = "torrent-engine");
+    let engine = cfg!(torrent_engine);
     let (Some(chain), true) = (chain, on) else {
         let _ = fs::remove_dir_all(&d);
         return (Status { on: false, engine, ..Default::default() }, vec![]);
@@ -236,24 +236,77 @@ pub fn run(app_dir: &Path) -> Status {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Status { notes: vec!["already running".into()], ..Default::default() };
     }
-    let site = crate::net::read_cache(&super::flags::cache_path(app_dir))
-        .filter(|(v, _)| super::flags::check(v).is_ok())
-        .map(|(v, _)| super::flags::from_doc(&v))
-        .unwrap_or_default();
+    let site = super::flags::cached_site(app_dir);
+    // Be a node (p2p/node.rs) shares these same files on its own schedule: then this pass leaves the folder and the
+    // seeder alone (it would otherwise empty the folder while "Help share" itself is off)
+    if super::node::owns_share(app_dir, &site) {
+        RUNNING.store(false, Ordering::SeqCst);
+        return Status { on: true, notes: vec!["shared by Be a node".into()], engine: cfg!(torrent_engine), ..Default::default() };
+    }
     let local = super::flags::load_local(app_dir);
     let on = super::flags::share_allowed(&site, &local);
     let flags = super::flags::effective(&site, &local);
     let chain = crate::releaselog::trusted_key().map(|k| crate::releaselog::load(app_dir, k));
     let (st, seeds) = pass(app_dir, chain.as_ref(), on, &flags, &transfer::NoSwarm);
-    #[cfg(feature = "torrent-engine")]
+    #[cfg(torrent_engine)]
     seeder::set(app_dir, seeds, flags.limits.seed_upload_kbps);
-    #[cfg(not(feature = "torrent-engine"))]
+    #[cfg(not(torrent_engine))]
     drop(seeds);
     RUNNING.store(false, Ordering::SeqCst);
     st
 }
 
-#[cfg(feature = "torrent-engine")]
+// ------------------------------------------------------------------------------------------------ for Be a node
+
+/// The torrents of the last node pass (what `node_share` seeds without checking the folder again).
+fn last_seeds() -> &'static std::sync::Mutex<Vec<(Item, Vec<u8>)>> {
+    static LAST: std::sync::OnceLock<std::sync::Mutex<Vec<(Item, Vec<u8>)>>> = std::sync::OnceLock::new();
+    LAST.get_or_init(Default::default)
+}
+
+/// Be a node's sharing (p2p/node.rs): with `refill` (the first time, then every few hours) the full pass (plan, tidy,
+/// fetch what is missing, check each torrent against the log), else the torrents of the last pass; then seed them at
+/// `upload_kbps`. Returns how many files are shared, or None without a trusted release log (nothing is shared).
+pub fn node_share(app_dir: &Path, refill: bool, upload_kbps: u32) -> Option<usize> {
+    let have = last_seeds().lock().map(|l| !l.is_empty()).unwrap_or(false);
+    if refill || !have {
+        let chain = crate::releaselog::trusted_key().map(|k| crate::releaselog::load(app_dir, k))?;
+        let flags = super::flags::current(app_dir);
+        let (_, seeds) = pass(app_dir, Some(&chain), true, &flags, &transfer::NoSwarm);
+        if let Ok(mut l) = last_seeds().lock() {
+            *l = seeds;
+        }
+    }
+    let seeds = last_seeds().lock().map(|l| l.clone()).unwrap_or_default();
+    let n = seeds.len();
+    #[cfg(torrent_engine)]
+    seeder::set(app_dir, seeds, upload_kbps);
+    #[cfg(not(torrent_engine))]
+    drop((seeds, upload_kbps));
+    Some(n)
+}
+
+/// Stop seeding (the node rests, is paused or off). The files stay, so it picks up again without fetching.
+pub fn node_stop(app_dir: &Path) {
+    #[cfg(torrent_engine)]
+    seeder::set(app_dir, vec![], 0);
+    #[cfg(not(torrent_engine))]
+    let _ = app_dir;
+}
+
+/// Bytes uploaded by the seeder since Leyline started (every session added up), and the peers connected now. Zero
+/// without the torrent engine.
+pub fn engine_counts() -> (u64, u32) {
+    use std::sync::atomic::Ordering;
+    (UP_DONE.load(Ordering::Relaxed) + UP_NOW.load(Ordering::Relaxed), PEERS_NOW.load(Ordering::Relaxed))
+}
+
+/// The seeder's counters (engine::seed updates them; finished sessions are added to UP_DONE).
+static UP_DONE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static UP_NOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static PEERS_NOW: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+#[cfg(torrent_engine)]
 mod seeder {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -263,7 +316,11 @@ mod seeder {
 
     /// Seed exactly `seeds` (an empty list stops seeding).
     pub fn set(app_dir: &Path, seeds: Vec<(Item, Vec<u8>)>, upload_kbps: u32) {
-        let names: Vec<String> = seeds.iter().map(|(i, _)| format!("{}:{}", i.file.name, i.file.sha256)).collect();
+        // the upload cap is part of the key: a new cap (Be a node's Limits) restarts the engine with it
+        let mut names: Vec<String> = seeds.iter().map(|(i, _)| format!("{}:{}", i.file.name, i.file.sha256)).collect();
+        if !names.is_empty() {
+            names.push(format!("kbps:{upload_kbps}"));
+        }
         let Ok(mut now) = NOW.lock() else { return };
         if now.as_ref().map(|(n, _)| n) == Some(&names) {
             return;
@@ -285,7 +342,7 @@ mod seeder {
     }
 }
 
-#[cfg(feature = "torrent-engine")]
+#[cfg(torrent_engine)]
 pub mod engine {
     //! Seeding with the librqbit engine (the same one clienttorrent.rs uses), upload capped, for the torrents
     //! `seedable` returned and nothing else. Runs until `stop` is set.
@@ -319,15 +376,39 @@ pub mod engine {
                 Ok(s) => s,
                 Err(_) => Session::new_with_opts(work.clone(), opts(true)).await.map_err(|e| format!("{e:#}"))?,
             };
+            let mut handles = Vec::new();
             for (item, t) in &torrents {
                 let opts = AddTorrentOptions { overwrite: true, output_folder: Some(share_dir.display().to_string()), ..Default::default() };
-                if let Err(e) = session.add_torrent(AddTorrent::TorrentFileBytes(t.clone().into()), Some(opts)).await {
-                    eprintln!("share: {}: {e:#}", item.file.name);
+                match session.add_torrent(AddTorrent::TorrentFileBytes(t.clone().into()), Some(opts)).await {
+                    Ok(r) => handles.extend(r.into_handle()),
+                    Err(e) => eprintln!("share: {}: {e:#}", item.file.name),
                 }
             }
+            // the counters Be a node reads (uploaded bytes, peers now): the same stats clienttorrent.rs reads
+            let mut ticks = 0u32;
             while !stop.load(Ordering::Relaxed) {
                 tokio::time::sleep(Duration::from_millis(500)).await;
+                ticks = ticks.wrapping_add(1);
+                if ticks % 4 == 0 {
+                    let (mut up, mut peers) = (0u64, 0u32);
+                    for h in &handles {
+                        let st = h.stats();
+                        up += st.uploaded_bytes;
+                        if let Some(l) = st.live.as_ref() {
+                            peers += l.snapshot.peer_stats.live;
+                        }
+                    }
+                    UP_NOW.store(up, Ordering::Relaxed);
+                    PEERS_NOW.store(peers, Ordering::Relaxed);
+                }
             }
+            let mut up = 0u64;
+            for h in &handles {
+                up += h.stats().uploaded_bytes;
+            }
+            UP_DONE.fetch_add(up.max(UP_NOW.load(Ordering::Relaxed)), Ordering::Relaxed);
+            UP_NOW.store(0, Ordering::Relaxed);
+            PEERS_NOW.store(0, Ordering::Relaxed);
             session.stop().await;
             Ok::<(), String>(())
         });

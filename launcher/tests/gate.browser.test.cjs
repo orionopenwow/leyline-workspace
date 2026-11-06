@@ -125,7 +125,7 @@ test('signed out: the launcher opens and works; Log In top right invites; the di
   assert.match(await page.textContent('#gate-new'), /Create a guest account/);
   const text = await page.textContent('#gate');
   assert.doesNotMatch(text, /discord/i, 'no Discord sign-in, even when the website offers it');
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.match(text, /Continue with Google/);
   assert.equal(await page.getAttribute('#gate-pwname', 'autocomplete'), 'username', 'a password manager fills it');
   assert.equal(await page.getAttribute('#gate-pw', 'autocomplete'), 'current-password');

@@ -1,0 +1,85 @@
+{
+ "id": "login-to-playing",
+ "kind": "reel",
+ "formats": [
+  "reel",
+  "wide"
+ ],
+ "title": "Log in to playing",
+ "kicker": "Leyline",
+ "sub": "TODO(owner): One launcher. Your own game folder. In the world in seconds.",
+ "end_line": "TODO(owner): Free, and your game files stay yours.",
+ "shots": [
+  {
+   "take": "lf-login",
+   "in": [
+    "gate",
+    -0.3
+   ],
+   "out": [
+    "welcome",
+    0.8
+   ],
+   "caption": "Log in with your Hero Key",
+   "sub": "Google works too",
+   "speed": 1.15
+  },
+  {
+   "take": "lf-login",
+   "in": [
+    "welcome",
+    0.8
+   ],
+   "out": [
+    "home",
+    1.5
+   ],
+   "caption": "Your name, your friends, every realm"
+  },
+  {
+   "take": "lf-play-official",
+   "in": [
+    "picker",
+    -0.4
+   ],
+   "out": [
+    "play",
+    1.6
+   ],
+   "caption": "Pick a realm. Press PLAY."
+  },
+  {
+   "take": "game-official-world",
+   "in": [
+    "started",
+    0
+   ],
+   "out": [
+    "charselect",
+    2.5
+   ],
+   "caption": "It logs you in by itself",
+   "speed": 2.0
+  },
+  {
+   "take": "game-official-world",
+   "in": [
+    "world",
+    -1
+   ],
+   "out": [
+    "world",
+    5
+   ],
+   "caption": "In the world"
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   2,
+   3
+  ],
+  "max_seconds": 8
+ }
+}

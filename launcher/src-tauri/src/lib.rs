@@ -23,8 +23,10 @@ pub mod catalog;
 pub mod clientimport; // drop a game folder, a zip or a link to your own backup on the client list (clientimport.rs)
 pub mod clienttorrent; // magnets and .torrents for game clients: the owner's testing switch, off by default (clienttorrent.rs)
 pub mod clients;
+pub mod combos; // the official realm's race and class choices: CharBaseInfo & co. from the player's own files, patch-Y (combos.rs)
 pub mod cover; // the sign-in cover: Leyline's "Logging you in…" screen over the game while the launcher signs in (cover.rs)
 pub mod deeplink; // leyline://install/<id> (hub rankings agent)
+pub mod denmarket; // Mods & Addons › Dens: shared Dens and stamps, Share, Open in my Den, Add as a stamp (stream/denmarket.py)
 pub mod denclick; // My Den in one click on the desktop game: sign-in keys, the game's asks, the den-play command (denclick.rs)
 pub mod gfx; // Mods & Addons › Graphics: the client's own graphics settings in Config.wtf (gfx.rs)
 pub mod forum; // the Forum page: reading the website's forum (stream/forum.py)
@@ -55,10 +57,46 @@ pub mod themes; // theme packs (themes agent)
 pub mod update;
 pub mod upstream; // upstream addons: curated third-party addons installed from the author's repo (ui/market.js)
 
-#[cfg(feature = "app")]
+// The app: on a computer the whole launcher (app.rs); on a phone the short list of shared commands (mobile.rs,
+// docs/ANDROID.md). `desktop` and `mobile` come from build.rs.
+#[cfg(all(feature = "app", desktop))]
 mod app;
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))]
 pub use app::{den_play_cli, play_test_cli, run};
+#[cfg(all(feature = "app", mobile))]
+mod mobile;
+#[cfg(all(feature = "app", mobile))]
+pub use mobile::run;
+
+/// What the UI is running on (the `platform` command; ui/platform.js reads it before it lays the page out): the
+/// phone app hides everything that needs a computer (game folders, the native game, hosting, Your Den, Docker,
+/// patches, Project Reforged) and shows the phone layout.
+#[derive(serde::Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct Platform {
+    /// "windows", "macos", "linux", "android" or "ios".
+    pub os: &'static str,
+    /// A phone or tablet: the phone layout, and only the shared features.
+    pub mobile: bool,
+    /// Be a node on this device (p2p/node.rs). Off on phones for now: the node needs a computer.
+    pub node: bool,
+}
+
+/// This build's [`Platform`].
+pub fn platform() -> Platform {
+    let os = if cfg!(target_os = "android") {
+        "android"
+    } else if cfg!(target_os = "ios") {
+        "ios"
+    } else if cfg!(windows) {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    };
+    let mobile = cfg!(mobile);
+    Platform { os, mobile, node: !mobile }
+}
 
 /// The official realm's realmlist (desktop players): `leylinelauncher.com`. `play.openvanilla.app` reaches the same
 /// server forever; `addresses::official_realm()` picks the old one on a computer that cannot resolve the new one yet.
@@ -112,6 +150,20 @@ pub const LINKS: &[(&str, &str)] = &[
 /// The address for a named link, if it is one of `LINKS`.
 pub fn link(name: &str) -> Option<&'static str> {
     LINKS.iter().find(|(n, _)| *n == name).map(|(_, u)| *u)
+}
+
+#[cfg(test)]
+mod platform_tests {
+    #[test]
+    fn a_computer_is_not_a_phone_and_keeps_be_a_node() {
+        let p = super::platform();
+        assert!(["windows", "macos", "linux"].contains(&p.os), "{p:?}");
+        assert!(!p.mobile);
+        assert!(p.node);
+        let j = serde_json::to_value(&p).unwrap();
+        assert_eq!(j["mobile"], false);
+        assert!(j["os"].is_string());
+    }
 }
 
 #[cfg(test)]

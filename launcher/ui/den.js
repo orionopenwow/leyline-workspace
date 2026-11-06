@@ -5,9 +5,14 @@
 // Where the Den runs (host/yourden.rs, host/lite.rs):
 //   * Den Lite, the built-in Den server: no Docker, straight into the room. Only when the program is on this PC
 //     (den_state().lite.available); else the Docker Den below is the way in.
-//   * the Docker Den (the Host pack's "den" profile): what friends join through the Leyline network. "Share with friends"
-//     moves the Lite Den there (den_share_move: the same files, the newest opened there unchanged) through three steps:
-//     the Host pack, Docker Desktop, Start. Then Invite a friend.
+//   * the Docker Den (the Host pack's "den" profile): the bigger server. "Move to a full server" moves the Lite Den
+//     there (den_share_move: the same files, the newest opened there unchanged) through three steps: the Host pack,
+//     Docker Desktop, Start. Then Invite a friend.
+// Share with friends on Den Lite needs no Docker (owner 4 Nov: "easy Den hosting for friends ... one click"; docs/
+// DEN-HOSTING.md): Invite a friend puts this Den on the Leyline relay (no port forwarding, no home address shown) and
+// copies a link with a login for one friend, and a code to paste; the Friends list (den_friends, host/denhost.rs)
+// shows who is in, with Build, Keep and Kick for each friend, and the links that still work. Sharing stays on across
+// restarts until Stop sharing.
 // Saved Dens, Packs and Share on the Workshop work the same for both (den_text / den_add / den_open / den_fetch on
 // whichever Den is in use). Playing the Docker Den is app.js's own (playLocal(DEN): the relay's knock, then PLAY), with
 // its account filled in on the login screen (den_prefill_account).
@@ -47,13 +52,16 @@
   let jobTimer = null;
   let sharing = false;  // the Share with friends steps are open
   let busy = false;
-  let hint = "";        // one line under the status after Play solo (how to skip typing next time)
+  let hint = "";        // one line under the status after Open my Den (how to skip typing next time)
   let forge = null;     // forge_state
   let forgeBusy = "";   // "get" while Forge downloads
   let forgeGpl = false; // the GPL notice is open
   let forgeTimer = null;
   const FORGE_GPL = "leyline.forgeGplSeen";
   let invited = null;   // den_invite: the link and its ways (host/denways.rs), shown under the buttons
+  let friends = null;   // den_friends: who's in, the friends' logins, sharing (host/denhost.rs)
+  let friendsTimer = null;
+  let friendBusy = "";  // the friend whose button is working
   let models = null;    // den_models: the player's own models (host/denmodels.rs)
   let modelsBusy = false;
   let modelName = "";
@@ -90,11 +98,12 @@
     if (forge && forge.running) followForge();
     try { net = await call("den_net_state"); } catch (_) { net = null; }
     if (net && net.running) { paint(); followNet(); }
+    if (where() === "lite") loadFriends();
     try { models = await call("den_models"); paint(); } catch (_) { models = null; }
-    // Docker on this PC: Solo leveling is offered as the bigger way to play alone (never waited for)
+    // Docker on this PC: Single player is offered as the bigger way to play alone (never waited for)
     if (!dock) call("docker_info").then((d) => { dock = d; paint(); }).catch(() => { /* no Docker: not offered */ });
   }
-  // Solo leveling (app.js LOCAL.solo, the Host kit's "solo" ruleset): the Host page with it picked, or played when hosted
+  // Single player (app.js LOCAL.solo, the Host kit's "solo" ruleset): its own page (single.js) until it is set up, then played
   function soloLeveling() {
     if (typeof localGo === "function" && typeof LOCAL !== "undefined" && LOCAL.solo) localGo(LOCAL.solo);
     else if (window.LeylineNav) window.LeylineNav.show("host");
@@ -115,7 +124,7 @@
   }
   async function openForge() {
     const c = own();
-    if (!c) { say("Your Den's ground is made from your own game folder. Add it on the Clients page first.", "warn"); return; }
+    if (!c) { say("Your Den's ground is made from your own game folder. Add it on the Game folders page first.", "warn"); return; }
     try { say(await call("forge_open", { client: c.id }), "ok"); }
     catch (e) { say(oops(e, "Forge didn't open. Try again."), "bad"); }
     try { forge = await call("forge_state"); } catch (_) { /* as it was */ }
@@ -185,7 +194,7 @@
     const c = own();
     if (!c) {
       if (typeof addGameFolder === "function") addGameFolder("Your Den plays with your own game folder. Add it, then press Your Den again.", BUILD);
-      say("Your Den plays with your own game folder. Add it on the Clients page, then press Your Den again.", "warn", BUILD);
+      say("Your Den plays with your own game folder. Add it on the Game folders page, then press Your Den again.", "warn", BUILD);
       return;
     }
     const w = where();
@@ -334,12 +343,13 @@
       let copied = true;
       try { await navigator.clipboard.writeText(r.link); } catch (_) { copied = false; }
       // TODO(owner): the words
-      say(copied ? `Invite link copied: send it to one friend. In their Leyline they paste it under Realms › Got an invite link?, press Join, and play as ${r.name}. It works for 24 hours.`
+      say(copied ? `Invite link copied: send it to one friend. In their Leyline they paste it (or the code below) under Realms › Got an invite link?, press Join, and play as ${r.name}. It works for 24 hours (Keep makes it last).`
         : `Send this link to one friend: ${r.link}`, "ok");
     } catch (e) { say(oops(e, "Your Den couldn't go on the network. Try again."), "bad"); }
     busy = false;
     paint();
     followNet();
+    loadFriends();
   }
   let netTimer = null;
   function followNet() {
@@ -354,7 +364,108 @@
   async function stopSharing() {
     try { await call("den_net_stop"); net = null; invited = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
     catch (e) { say(oops(e), "bad"); }
+    await loadFriends();
     paint();
+  }
+
+  // ---------------------------------------------------------------- the Friends list (host/denhost.rs)
+  // read when the page opens and every few seconds while it is open and the Den runs (Den Lite rewrites who is in
+  // within a second of a change)
+  async function loadFriends() {
+    let f = null;
+    try { f = await call("den_friends"); } catch (_) { f = null; /* an older core: no list */ }
+    const before = JSON.stringify(friends);
+    friends = f;
+    if (JSON.stringify(friends) !== before) paint();
+    if (friendsTimer) clearTimeout(friendsTimer);
+    friendsTimer = friends && (friends.running || friends.sharing) && page.classList.contains("on") ? setTimeout(loadFriends, 3000) : null;
+  }
+  async function friendDo(action, who, on, label) {
+    friendBusy = who + ":" + action; paint();
+    try { say(await call("den_friend", { action, who, on: !!on }) || "Done.", "ok"); }
+    catch (e) { say(oops(e, `${label || "That"} didn't work. Try again.`), "bad"); }
+    friendBusy = "";
+    await loadFriends();
+    paint();
+  }
+  const sinceText = (t) => {
+    const m = Math.max(0, Math.round((Date.now() / 1000 - (t || 0)) / 60));
+    return !t ? "" : m < 1 ? "just came in" : m < 60 ? `in for ${m} min` : `in for ${Math.round(m / 60)} h`;
+  };
+  const untilText = (t) => {
+    const h = Math.round(((t || 0) - Date.now() / 1000) / 3600);
+    return h <= 0 ? "ends soon" : h < 48 ? `works for ${h} more hour${h === 1 ? "" : "s"}` : `works for ${Math.round(h / 24)} more days`;
+  };
+  // one friend's row: their name and state, then Build, Keep and Kick (or Take back for a link not in use)
+  function friendRow(f, inv, inNow) {
+    const li = mk("li", "yd-friend" + (inNow ? " in" : ""));
+    const who = (inv && inv.user) || f.user || f.name;
+    li.dataset.who = f.name;
+    const t = mk("div", "yd-li-t");
+    const builds = inNow ? !!f.builds : !!(inv && inv.build);
+    const keep = inNow ? !!f.keep : !!(inv && inv.keep);
+    t.append(mk("b", "", f.name), mk("span", "yd-hint", [inNow ? sinceText(f.since) : "not in now", builds ? "can build" : "looks around",
+      keep ? "kept" : inv ? untilText(inv.expires) : ""].filter(Boolean).join(" · ")));
+    const acts = mk("div", "yd-row");
+    const busyHere = (a) => friendBusy === who + ":" + a;
+    const b = btn(builds ? "Can build" : "Let build", "btn small yd-f-build" + (builds ? " on" : ""), () => friendDo("build", who, !builds, "Build"));
+    b.title = builds ? "They build with you. Press to make them a visitor again." : "Let this friend build in your Den (kept for next time).";
+    b.setAttribute("aria-pressed", String(builds));
+    const k = btn(keep ? "Kept" : "Keep", "btn small yd-f-keep" + (keep ? " on" : ""), () => friendDo("keep", who, !keep, "Keep"));
+    k.title = keep ? "Their link works for a week from their last visit." : "Keep this friend: their link keeps working (a week from each visit) instead of 24 hours.";
+    k.setAttribute("aria-pressed", String(keep));
+    const x = btn(inNow ? "Kick" : "Take back", "btn small yd-f-kick", () => friendDo("kick", who, true, inNow ? "Kick" : "Take back"));
+    x.title = inNow ? "Out of your Den now; their link stops working." : "Their link stops working.";
+    for (const [el, a] of [[b, "build"], [k, "keep"], [x, "kick"]]) if (busyHere(a)) el.disabled = true;
+    acts.append(b, k, x);
+    li.append(t, acts);
+    return li;
+  }
+  function friendsBox() {
+    const box = mk("div", "yd-friends");
+    box.id = "yd-friends-list";
+    const f = friends || { online: { players: [] }, invites: [] };
+    const here = ((f.online && f.online.players) || []).filter((p) => !p.host);
+    const invites = f.invites || [];
+    const head = mk("div", "yd-row yd-friends-head");
+    head.append(mk("b", "", here.length ? `In your Den now: ${here.length}` : "Nobody is in yet"));
+    const all = !!(f.online && f.online.all_build);
+    if (f.running) {
+      const ab = btn(all ? "Everyone builds" : "Let everyone build", "btn small yd-f-all" + (all ? " on" : ""), () => friendDo("build", "all", !all, "Build"));
+      ab.id = "yd-f-all";
+      ab.setAttribute("aria-pressed", String(all));
+      ab.title = all ? "Every friend builds now (until your Den restarts). Press for only the ones you picked." : "Every friend in your Den may build, until your Den restarts.";
+      head.append(ab);
+    }
+    box.append(head);
+    const ul = mk("ul", "yd-list");
+    ul.id = "yd-friends-in";
+    for (const p of here) ul.append(friendRow(p, invites.find((i) => i.user === p.user) || null, true));
+    // the links that still work for friends who aren't in
+    for (const i of invites.filter((i) => !here.some((p) => p.user === i.user))) ul.append(friendRow({ name: i.name, user: i.user }, i, false));
+    if (!ul.children.length) ul.append(mk("li", "yd-hint", "Invite a friend: they show here when they come in, with Build, Keep and Kick."));
+    box.append(ul);
+    const tn = f.online && f.online.tourney;
+    if (tn && tn.title) {
+      const tl = mk("p", "yd-hint yd-f-tourney");
+      tl.id = "yd-f-tourney";
+      // TODO(owner): the words
+      tl.textContent = tn.champion ? `${tn.title}: ${tn.champion} is the champion.` : `${tn.title}: ${tn.players} signed up (${tn.phase === "signup" ? "sign-ups open" : "under way"}). Run it in your game: the Tournament button on the Den bar.`;
+      box.append(tl);
+    }
+    return box;
+  }
+  // the invite code (the same way in as the link, to paste in Realms › Got an invite link?)
+  function codeRow() {
+    const r = mk("div", "yd-row yd-code-row");
+    const ci = mk("input", "");
+    ci.id = "yd-code"; ci.readOnly = true; ci.value = invited.code; ci.setAttribute("aria-label", "The invite code");
+    const cc = btn("Copy code", "btn small", async () => {
+      try { await navigator.clipboard.writeText(invited.code); say("Invite code copied: your friend pastes it in Leyline under Realms › Got an invite link?", "ok"); } catch (_) { ci.select(); }
+    });
+    cc.id = "yd-code-copy";
+    r.append(ci, cc);
+    return r;
   }
   // the ways in the link (app.rs InviteWay): same network, your own address, the relay, in the order a friend's
   // Leyline tries them; the link to copy again; your own address (optional)
@@ -434,7 +545,7 @@
       const m = await call("den_models_add", { files: payload, label: modelName.trim() || null });
       const miss = (m.missing || []).length;
       // TODO(owner): the words
-      say(`${m.name} is in your Den's gallery under My models ${liteUp() ? "after you close your game and press Play solo again" : "the next time you press Play solo"}.`
+      say(`${m.name} is in your Den's gallery under My models ${liteUp() ? "after you close your game and press Open my Den again" : "the next time you press Open my Den"}.`
         + (miss ? ` ${miss} texture${miss === 1 ? "" : "s"} it names weren't in your drop: they stay as they are (your game may have them).` : ""), "ok");
       modelName = "";
     } catch (e) { say(oops(e, "That model couldn't be added."), "bad"); }
@@ -443,7 +554,7 @@
     paint();
   }
   async function removeModel(m) {
-    try { await call("den_models_remove", { slug: m.slug }); say(`${m.name} is out of your Den's gallery (from the next Play solo).`, "ok"); }
+    try { await call("den_models_remove", { slug: m.slug }); say(`${m.name} is out of your Den's gallery (from the next Open my Den).`, "ok"); }
     catch (e) { say(oops(e), "bad"); }
     try { models = await call("den_models"); } catch (_) { /* as it was */ }
     paint();
@@ -554,6 +665,13 @@
   // ---------------------------------------------------------------- Share on the Workshop
   function workshop(f) {
     const d = mk("div", "yd-share");
+    // Shared Dens (denmarket.js, docs/DEN-MARKETPLACE.md): one step, pictures from the game, a moderator's look
+    if (window.LeylineDenMarket) {
+      const one = btn("Share it on Leyline", "btn small primary", () => window.LeylineDenMarket.share(f.name));
+      one.className = "btn small primary yd-share-dm";
+      d.append(mk("p", "", `Share '${f.name}' with every Leyline player: a title, pictures your game takes, and a moderator's look.`), one,
+        mk("p", "yd-hint", "Or on your own GitHub, for the Workshop:"));
+    }
     d.append(mk("p", "", `To share '${f.name}' on the Workshop:`));
     const ol = mk("ol", "yd-steps-s");
     ol.append(mk("li", "", "Save a copy (below): the file lands in your Downloads."),
@@ -635,8 +753,9 @@
     const chip = mk("span", "yd-chip " + kind, line);
     chip.id = "yd-state";
     head.append(h, chip);
-    // TODO(owner): "Play solo", his words
-    const play = btn(busy ? "Opening…" : "Play solo", "btn primary yd-play", go);
+    // "Open my Den", not "Play solo" (4 Nov: it clashed with Single player, the bots game on this PC)
+    // TODO(owner): "Open my Den", his words
+    const play = btn(busy ? "Opening…" : "Open my Den", "btn primary yd-play", go);
     play.id = "yd-play";
     play.disabled = busy;
     // the three things to do with your Den, one click each (owner 1 Nov: "invite friends, connect Claude to edit it")
@@ -651,7 +770,7 @@
     const acts = mk("div", "yd-row yd-acts");
     acts.append(play, invite, claude);
     root.append(head, mk("p", "lede", "Just you, on this PC: no internet or sign-in needed. A quiet green world to build in, with your companion to help. Invite friends when you like."),
-      acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Play solo starts your own server on this PC, signs you in and takes you into your Den, with your look and addons." : where() === "docker" ? "Play solo starts it if it's stopped, then plays." : "Play solo sets it up once, then plays."), status);
+      acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Open my Den starts your own server on this PC, signs you in and takes you into your Den, with your look and addons." : where() === "docker" ? "Open my Den starts it if it's stopped, then plays." : "Open my Den sets it up once, then plays."), status);
     if (hint) { const hl = mk("p", "yd-hint", hint); hl.id = "yd-login-hint"; root.append(hl); }
     // on the network (Den Lite's tunnel): one line, and Stop sharing
     if (net && net.running) {
@@ -664,16 +783,16 @@
       root.append(nl);
     }
     if (invited && where() === "lite") root.append(waysBox());
-    // the bigger way to play alone, only where Docker runs (or Solo leveling is already hosted here)
+    // the bigger way to play alone, only where Docker runs (or Single player is already hosted here)
     const soloHosted = typeof kit !== "undefined" && kit && kit.realm && kit.realm.profile === "solo";
     if (soloHosted || (dock && dock.state === "ready")) {
       const sl = mk("div", "yd-row yd-solo");
       sl.id = "yd-solo";
-      const b = btn(soloHosted ? "Play Solo leveling" : "Solo leveling", "btn small", soloLeveling);
+      const b = btn(soloHosted ? "Play Single player" : "Single player", "btn small", soloLeveling);
       b.id = "yd-solo-go";
       // TODO(owner): the words
       sl.append(mk("span", "yd-hint", soloHosted ? "Level from 1 on your own realm on this PC, with helper bots."
-        : "Want to level from 1 instead? Solo leveling is a full realm on this PC with helper bots and dungeons sized for you. It uses Docker; the first start takes 5 to 20 minutes."), b);
+        : "Want to level from 1 instead? Single player is a full realm on this PC with helper bots and dungeons sized for you. It uses Docker; the first start takes 5 to 20 minutes."), b);
       root.append(sl);
     }
     const grid = mk("div", "yd-grid");
@@ -684,6 +803,28 @@
       const jp = btn("Make my account", "btn small"); jp.addEventListener("click", () => joinPage(jp));
       b.append(inv, jp);
       grid.append(tile("Friends", "Copies your invite link. Friends open it once and make their own account.", b));
+    } else if (where() === "lite") {
+      // no Docker (host/denhost.rs): the relay, a link and a code per friend, the Friends list
+      const sb = mk("div", "");
+      const row1 = mk("div", "yd-row");
+      const inv = btn(busy ? "Opening…" : "Invite a friend", "btn small primary", inviteLite);
+      inv.id = "yd-share-invite";
+      inv.disabled = busy;
+      inv.title = "Copies a link for one friend: your Den goes on the Leyline network from this PC. No Docker, no router settings.";
+      row1.append(inv);
+      sb.append(row1);
+      if (invited && invited.code) sb.append(codeRow());
+      sb.append(friendsBox());
+      // the bigger server, for a Den that should run without this PC's Den Lite (the Host pack, Docker)
+      const more = mk("div", "yd-row yd-share-more");
+      const open = btn(sharing ? "Hide the steps" : "Move to a full server…", "link-s", () => { sharing = !sharing; paint(); if (sharing) loadSetup(); });
+      open.id = "yd-share";
+      open.title = "Moves this Den to the full Den server on this PC (needs Docker Desktop): combat, duels with ratings, more players.";
+      more.append(open);
+      sb.append(more);
+      if (sharing) { const steps = mk("div", "yd-steps"); paintSteps(steps); paintJob(steps); sb.append(steps); }
+      // TODO(owner): the hint, his words
+      grid.append(tile("Share with friends", "Friends join this Den through the Leyline relay: no Docker, no port forwarding, and your home address is never shown.", sb, "wide"));
     } else {
       const sb = mk("div", "");
       const open = btn(sharing ? "Hide the steps" : "Share with friends", "btn small" + (sharing ? "" : " primary"), () => {
@@ -692,7 +833,7 @@
       open.id = "yd-share";
       sb.append(open);
       if (sharing) { const steps = mk("div", "yd-steps"); paintSteps(steps); paintJob(steps); sb.append(steps); }
-      grid.append(tile("Share with friends", liteHas() ? "Moves this Den to a server friends can join. Needs Docker Desktop." : "Your Den on a server friends can join. Needs Docker Desktop.", sb, sharing ? "wide" : ""));
+      grid.append(tile("Share with friends", "Your Den on a server friends can join. Needs Docker Desktop.", sb, sharing ? "wide" : ""));
     }
     // Saved Dens
     const sd = mk("div", "");
@@ -705,6 +846,8 @@
       const t = mk("div", "yd-li-t");
       t.append(mk("b", "", f.name === "backup" ? "backup (before the last open)" : f.name === "autosave" ? "autosave (your Den as you left it)" : f.name),
         mk("span", "yd-hint", [`${f.props} prop${f.props === 1 ? "" : "s"}`, denDate(f.saved)].filter(Boolean).join(" · ")));
+      // the last duel tournament fought in it (labs/den-lite tourney.rs; host/dens.rs champion_line)
+      if (f.champion) { const c = mk("span", "yd-hint yd-champ", "Champion: " + f.champion); t.append(c); }
       const acts = mk("div", "yd-row");
       const o = btn("Open", "btn small primary"); o.addEventListener("click", () => openDen(f, o));
       acts.append(o, btn("Save a copy", "btn small", () => saveCopy(f)), btn("Share", "btn small", () => {

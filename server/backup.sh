@@ -93,6 +93,7 @@ if [[ -n "${RESTIC_REPOSITORY:-}" ]]; then
   restic backup --tag wrath --host wrath "$dest"
   restic forget --tag wrath --keep-daily 14 --keep-weekly 8 --keep-monthly 6 --prune
 else
-  log "RESTIC_REPOSITORY not set: off-site copy skipped"
+  # loud on purpose (review 4 Nov): with no off-site copy, a lost box loses the backups with it
+  log "WARNING: NO OFF-SITE COPY. RESTIC_REPOSITORY is not set in /srv/wrath/backup.env, so this backup lives only on this box."
 fi
 log "done"

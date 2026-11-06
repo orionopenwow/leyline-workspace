@@ -293,13 +293,15 @@
   adv.append(mk("h3", "", "Advanced: peer-to-peer"),
     mk("p", "lede", "Off unless you or the website turn them on. Peer-to-peer never shares game files or a game client. It only shares Leyline itself, checked mods, theme packs and the Host pack, and each file is checked before it is used."),
     advList, natLine, advStatus);
-  if (setPanel) setPanel.append(adv);   // last: the advanced part after the everyday settings (3 Nov: Settings opened on it)
+  // last: the advanced part after the everyday settings (3 Nov: Settings opened on it), only About after it
+  if (setPanel) setPanel.insertBefore(adv, byId("set-about"));
 
   async function loadFlags() {
     let v;
     try { v = await call("p2p_flags"); } catch (e) { note(advStatus, oops(e), "bad"); return; }
     advList.replaceChildren();
     for (const [name, label] of v.known) {
+      if (name === "be_a_node") continue; // its switch is the Host page's Be a node card (node.js): the site offers, each PC turns it on there
       const row = mk("label", "inline");
       const sel = mk("select", "");
       const local = Object.prototype.hasOwnProperty.call(v.local.overrides, name) ? v.local.overrides[name] : null;

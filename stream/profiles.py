@@ -339,7 +339,7 @@ def match(path: str) -> bool:
 
 
 def host() -> str:
-    return P("PUBLIC_HOST") or "play.openvanilla.app"
+    return P("PUBLIC_HOST") or "leylinelauncher.com"
 
 
 def _ratelimit():
@@ -625,7 +625,7 @@ ICON = {
     "google": '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>',
     "discord": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.32 4.37A19.8 19.8 0 0 0 15.43 2.8a13.7 13.7 0 0 0-.63 1.29 18.4 18.4 0 0 0-5.6 0 13 13 0 0 0-.64-1.29 19.7 19.7 0 0 0-4.89 1.52C.56 9.04-.28 13.6.14 18.1a19.9 19.9 0 0 0 6.02 3.04c.49-.66.92-1.36 1.29-2.1a12.9 12.9 0 0 1-2.03-.97c.17-.13.34-.26.5-.39a14.2 14.2 0 0 0 12.16 0c.17.14.33.27.5.39-.65.38-1.33.71-2.04.97.37.74.8 1.44 1.29 2.1a19.8 19.8 0 0 0 6.03-3.04c.5-5.22-.84-9.74-3.54-13.73ZM8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42Zm7.97 0c-1.19 0-2.16-1.08-2.16-2.42 0-1.33.95-2.42 2.16-2.42 1.2 0 2.18 1.1 2.16 2.42 0 1.34-.95 2.42-2.16 2.42Z"/></svg>',
 }
-WAY_LABEL = {"herokey": "Sign in with your Hero Key", "google": "Continue with Google", "discord": "Continue with Discord"}
+WAY_LABEL = {"herokey": "Log in with your Hero Key", "google": "Continue with Google", "discord": "Continue with Discord"}
 
 
 def _shell(h, title: str, inner: str, path: str, who=None, status: int = 200, cookies: list[str] | None = None) -> None:
@@ -703,7 +703,7 @@ def _same_site(h) -> bool:
 
 
 def _steps(on: int) -> str:
-    names = ("Sign in", "Your profile", "Play")
+    names = ("Log in", "Your profile", "Play")
     return ('<ol class="pf-steps" aria-label="Steps">' + "".join(
         f'<li data-n="{i + 1}" class="{"on" if i + 1 == on else ("done" if i + 1 < on else "")}"'
         + (' aria-current="step"' if i + 1 == on else "") + f'><span>{n}</span></li>' for i, n in enumerate(names)) + "</ol>")
@@ -732,15 +732,15 @@ def page_signin(h, query: dict, note: str = "") -> None:
     launcher = nxt.startswith(LINK_PAGE)
     msg = f'<p class="pf-msg err" role="alert">{e(note)}</p>' if note else ""
     # TODO(owner): the sign-in page's words
-    lead = ("Sign in to link the Leyline launcher on this computer." if launcher else
+    lead = ("Log in to link the Leyline launcher on this computer." if launcher else
             "One account for the website, the launcher and the forum.")
-    inner = (f'<section class="pf-card">{_steps(1)}{msg}<h1>Sign in</h1><p>{e(lead)}</p>'
+    inner = (f'<section class="pf-card">{_steps(1)}{msg}<h1>Log in</h1><p>{e(lead)}</p>'
              f'<div class="pf-ways">{btns}</div>'
              '<p class="pf-fine">New here? Create a guest account: free, one click, no email; play at once'
              + (", or continue with Google" if w.get("google") else "") + '. A Hero Key signs you in to the account it belongs to. '
              "We never see your password.</p>"
              '</section>')
-    _shell(h, "Sign in · Leyline", inner, SIGNIN, None)
+    _shell(h, "Log in · Leyline", inner, SIGNIN, None)
 
 
 def go_way(h, way: str, query: dict) -> None:
@@ -790,7 +790,7 @@ def page_welcome(h, note: str = "", form: dict | None = None, status: int = 200)
     try:
         who = viewer(h)
     except OSError:
-        return _shell(h, "Sign in · Leyline", '<section class="pf-card"><h1>Sign in</h1><p>The website\'s sign-in isn\'t answering '
+        return _shell(h, "Log in · Leyline", '<section class="pf-card"><h1>Log in</h1><p>The website\'s sign-in isn\'t answering '
                       'right now. Try again shortly.</p></section>', SIGNIN, None, 503)
     if not who:
         return page_signin(h, {"next": [nxt]}, "The sign-in didn't finish. Try again.")
@@ -820,9 +820,9 @@ def page_profile(h, note: str = "", ok: str = "", form: dict | None = None, stat
     if name_generated(who["name"]) and not note:   # a guest's (or the default) name: say plainly that it can change
         msg += ('<p class="pf-msg" role="note">Your name was made for you. Pick your own name and a picture below: others '
                 'see them on the forum, in the launcher and on your realm. Playing as a guest? Save your Hero Key '
-                '(Ways to sign in) so you can always come back to this account.</p>')
+                '(Ways to log in) so you can always come back to this account.</p>')
     bio = f'<p style="margin-top:6px;white-space:pre-wrap">{e(pr["bio"])}</p>' if pr["bio"] else ""
-    ways_rows = ['<li><span><b>Hero Key</b><br><span class="pf-fine">Your key: sign in on any device, and the launcher.</span></span>'
+    ways_rows = ['<li><span><b>Hero Key</b><br><span class="pf-fine">Your key: log in on any device, and the launcher.</span></span>'
                  '<a href="/wrath/key">Your Hero Key</a></li>']
     if w.get("google"):
         ways_rows.append('<li><span><b>Google</b></span><a href="/auth/google/start?link=1">Link Google</a></li>')
@@ -831,7 +831,7 @@ def page_profile(h, note: str = "", ok: str = "", form: dict | None = None, stat
     inner = (f'<section class="pf-card"><div class="pf-me"><img src="{e(avatar_url(who["acct"]))}" alt="" width="64" height="64">'
              f'<div><b>{e(who["name"])}</b><small>#{e(who["tag"])}</small><p class="pf-fine">Signed in</p></div></div>{bio}</section>'
              f'{msg}<section class="pf-card"><h2>Edit your profile</h2>' + _profile_form(who, "profile", PROFILE, "Save", "", form)
-             + '</section><section class="pf-card"><h2>Ways to sign in</h2><p class="pf-fine">Linking another way lets it sign in to '
+             + '</section><section class="pf-card"><h2>Ways to log in</h2><p class="pf-fine">Linking another way lets it log in to '
              'this same account.</p>'
              f'<ul class="pf-list">{"".join(ways_rows)}</ul></section>'
              '<section class="pf-card"><h2>Log out</h2><p class="pf-fine">Logs this browser out. Your launcher stays logged in '

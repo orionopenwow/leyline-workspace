@@ -13,6 +13,9 @@
 //! * `share`: "Help share Leyline's own files" (`share_own_files`): seed only what the signed release log names
 //!   (installers, Host packs, addons, upstream server source). See docs/RESILIENCE.md.
 //!
+//! * `node`: "Be a node" (`be_a_node`): the Host page's one switch. While on, the launcher shares Leyline's own files
+//!   with no game running, within caps, only while idle and plugged in. See docs/BE-A-NODE.md.
+//!
 //! See docs/P2P-AND-TORRENT.md.
 
 pub mod bencode;
@@ -22,10 +25,11 @@ pub mod flags;
 pub mod magnet;
 pub mod mesh;
 pub mod nat;
+pub mod node;
 pub mod sha1;
 pub mod share;
 pub mod torrent;
 pub mod transfer;
 
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))] // desktop only (mobile.rs)
 pub mod cmds;

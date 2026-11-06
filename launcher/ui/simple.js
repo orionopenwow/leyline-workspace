@@ -124,6 +124,23 @@
       sec.append(head, grid);
       kids.push(sec);
     }
+    // the list still on its way (app.js catalogIn): two rows of placeholder cards, so the tab isn't bare while it loads
+    // (review 4 Nov); they say nothing a screen reader would read but the one line
+    if (!kids.length && typeof catalogIn !== "undefined" && !catalogIn) {
+      const wait = el("div", "dc-skel");
+      wait.setAttribute("role", "status");
+      wait.append(el("p", "sr", sh === "addons" ? "Loading the addons…" : "Loading the mods…"));
+      for (let r = 0; r < 2; r++) {
+        const sec = el("section", "dc-srow dc-srow-skel");
+        sec.setAttribute("aria-hidden", "true");
+        sec.append(el("div", "skel skel-h"));
+        const grid = el("div", "mod-grid dc-grid dc-big");
+        for (let i = 0; i < ROW_N; i++) grid.append(el("div", "card skel skel-card"));
+        sec.append(grid);
+        wait.append(sec);
+      }
+      kids.push(wait);
+    }
     if (!kids.length) kids.push(el("p", "hint dc-empty", sh === "addons" ? "The addons list is not here yet." : "The mods list is not here yet."));
     box.replaceChildren(...kids);
   }

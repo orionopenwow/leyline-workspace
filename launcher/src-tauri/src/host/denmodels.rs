@@ -133,11 +133,58 @@ pub fn remove(dens: &Path, slug: &str) -> Result<bool, String> {
 /// leaves the table alone).
 pub fn table(dens: &Path, stock: &[u8]) -> Option<Vec<u8>> {
     let models = list(dens);
-    if models.is_empty() {
+    let places = place_rows(dens);
+    if models.is_empty() && places.is_empty() {
         return None;
     }
-    let rows: Vec<(u32, String, [f32; 6])> = models.iter().map(|m| (m.display, m.model.clone(), m.bbox)).collect();
-    denfiles::table_with(stock, &rows).ok()
+    let mine: Vec<(u32, String, [f32; 6])> = models.iter().map(|m| (m.display, m.model.clone(), m.bbox)).collect();
+    let mut rows = mine.clone();
+    rows.extend(places.into_iter().filter(|r| !mine.iter().any(|m| m.0 == r.0)));
+    // a bad place row never costs the player's own models their rows
+    denfiles::table_with(stock, &rows).ok().or_else(|| (!mine.is_empty()).then(|| denfiles::table_with(stock, &mine).ok()).flatten())
+}
+
+/// `<dens>/place-models.json` (tools/den-places den_places.py `--add-models`, made on this PC from the player's own
+/// game files): a display row for a model of their own game that their table has none for, so a place rebuilt in
+/// the Den (`.den load <place>`) shows every piece. Each row only names a file the player's game already has (no file
+/// goes in the patch for it). Display ids 62001 to 69999; paths as models.rs `clean` takes them, `.wmo` too.
+pub const PLACE_ROWS: &str = "place-models.json";
+pub const PLACE_ROWS_FORMAT: &str = "leyline-den-place-models";
+pub const PLACE_IDS: std::ops::RangeInclusive<u32> = 62_001..=69_999;
+/// At most this many (a Den holds 800 props; several places).
+pub const MAX_PLACE_ROWS: usize = 4000;
+
+pub fn place_rows(dens: &Path) -> Vec<(u32, String, [f32; 6])> {
+    let Ok(t) = fs::read_to_string(dens.join(PLACE_ROWS)) else { return Vec::new() };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(t.trim_start_matches('\u{feff}')) else { return Vec::new() };
+    if v["format"] != PLACE_ROWS_FORMAT {
+        return Vec::new();
+    }
+    let ok_path = |p: &str| {
+        !p.is_empty()
+            && p.len() <= 200
+            && !p.contains("..")
+            && !p.starts_with('\\')
+            && p.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '\\' | '_' | '-' | '.' | ' ' | '\''))
+            && [".m2", ".mdx", ".mdl", ".wmo"].iter().any(|e| p.to_ascii_lowercase().ends_with(e))
+    };
+    let mut out: Vec<(u32, String, [f32; 6])> = Vec::new();
+    for r in v["models"].as_array().map(Vec::as_slice).unwrap_or(&[]).iter().take(MAX_PLACE_ROWS) {
+        let id = r["display"].as_u64().and_then(|n| u32::try_from(n).ok()).filter(|n| PLACE_IDS.contains(n));
+        let path = r["model"].as_str().map(|p| p.replace('/', "\\")).filter(|p| ok_path(p));
+        let mut bbox = [0f32; 6];
+        if let Some(b) = r["box"].as_array().filter(|b| b.len() == 6) {
+            for (i, x) in b.iter().enumerate() {
+                bbox[i] = x.as_f64().map(|f| f as f32).filter(|f| f.is_finite() && f.abs() < 10_000.0).unwrap_or(0.0);
+            }
+        }
+        if let (Some(id), Some(path)) = (id, path) {
+            if !out.iter().any(|o| o.0 == id) {
+                out.push((id, path, bbox));
+            }
+        }
+    }
+    out
 }
 
 /// What the Den's patch-T gets for the models: every kept file, and the table (when `stock` is the player's own).
@@ -189,5 +236,32 @@ mod tests {
         assert!(!d.path().join("my-models/keep").exists());
         assert!(!remove(d.path(), "keep").unwrap());
         assert!(table(&tempfile::tempdir().unwrap().path().join("none"), &stock).is_none(), "no models: the table as it is");
+    }
+
+    #[test]
+    fn a_rebuilt_places_rows_join_the_table_and_a_bad_one_costs_nothing() {
+        let d = tempfile::tempdir().unwrap();
+        let stock = fake::table(19, &[1, 9000]);
+        let rows = r#"{"format": "leyline-den-place-models", "version": 1, "models": [
+            {"display": 62001, "model": "World\\Azeroth\\Rock.mdx", "box": [-1, -1, 0, 1, 1, 2]},
+            {"display": 62002, "model": "World\\wmo\\Inn.wmo", "box": [0, 0, 0, 0, 0, 0]},
+            {"display": 62002, "model": "World\\again.m2"},
+            {"display": 5, "model": "World\\Low.m2"},
+            {"display": 62003, "model": "..\\up.m2"},
+            {"display": 62004, "model": "World\\Readme.txt"}]}"#;
+        fs::write(d.path().join(PLACE_ROWS), rows).unwrap();
+        let got = place_rows(d.path());
+        assert_eq!(got.iter().map(|r| r.0).collect::<Vec<_>>(), vec![62001, 62002], "ours only, once each, files only");
+        assert_eq!(got[0].2, [-1.0, -1.0, 0.0, 1.0, 1.0, 2.0]);
+        let t = table(d.path(), &stock).unwrap();
+        assert_eq!(u32::from_le_bytes(t[4..8].try_into().unwrap()), 4, "the stock two and the place's two");
+        // with a dropped model too: all of them; a stock table already past our numbers: the player's own models still
+        let drop = vec![("Tower.m2".to_string(), fake::m2(1, &["x\\tower.blp"])), ("Tower00.skin".to_string(), b"SKIN".to_vec()), ("tower.blp".to_string(), fake::blp())];
+        add(d.path(), &drop, Some("Tower")).unwrap();
+        assert_eq!(u32::from_le_bytes(table(d.path(), &stock).unwrap()[4..8].try_into().unwrap()), 5);
+        let big = fake::table(19, &[1, 63000]);
+        assert!(table(d.path(), &big).is_none() || u32::from_le_bytes(table(d.path(), &big).unwrap()[4..8].try_into().unwrap()) == 3);
+        fs::write(d.path().join(PLACE_ROWS), "{}").unwrap();
+        assert!(place_rows(d.path()).is_empty());
     }
 }

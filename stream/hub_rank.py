@@ -434,7 +434,7 @@ def _our_origin(origin: str) -> bool:
         known = _get("SITE_ORIGINS")
     except Exception:   # noqa: BLE001
         known = None
-    return origin in (known or {f"https://{_get('PUBLIC_HOST') or 'play.openvanilla.app'}"})
+    return origin in (known or {f"https://{_get('PUBLIC_HOST') or 'leylinelauncher.com'}"})
 
 
 def bind(getter) -> None:
@@ -446,6 +446,17 @@ def bind(getter) -> None:
         except Exception:   # noqa: BLE001
             return None
     _get = get
+
+def _signin(path: str) -> str:
+    """The Leyline Log in page (the portal's signin_url: stream/profiles.py), coming back to path. Review 4 Nov: these
+    links still said /login?next=, the old sign-in that Caddy now only redirects."""
+    fn = _get("signin_url")
+    if callable(fn):
+        try:
+            return fn(path)
+        except Exception:   # noqa: BLE001
+            pass
+    return "/wrath/signin?next=" + urllib.parse.quote(path, safe="")
 
 
 def setup() -> Ranks | None:
@@ -583,7 +594,7 @@ def get(h, path: str, query: dict) -> None:
     if store is None:
         return _json(h, 404, {"error": "Rankings are off here."})
     if path == FEED:
-        return _json(h, 200, feed_doc(query, _get("PUBLIC_HOST") or "play.openvanilla.app"), cors=True)
+        return _json(h, 200, feed_doc(query, _get("PUBLIC_HOST") or "leylinelauncher.com"), cors=True)
     sub = path[len(API):].strip("/")
     if sub == "me":
         mid = (query.get("id") or [""])[0]
@@ -668,8 +679,8 @@ def _rate(h, doc: dict, form: bool) -> None:
         return fail(503, "The website isn't answering right now.")
     if v is None:
         if form:
-            return _redirect(h, "/login?next=" + urllib.parse.quote(back, safe=""))
-        return _json(h, 401, {"error": "Sign in first."})
+            return _redirect(h, _signin(back))
+        return _json(h, 401, {"error": "Log in first."})
     acct, how, sess = v
     if how == "cookie":
         if _cross_site(h):
@@ -729,8 +740,8 @@ def item_panel(h, i: dict, query: dict | None = None) -> str:
     except (RankError, OSError):
         v = None
     if v is None or v[1] != "cookie":
-        parts.append(f'<p class="hb-fine"><a href="/login?next={e(urllib.parse.quote("/wrath/leyline-preview/p/" + i["id"].replace(":", "-", 1), safe=""))}">'
-                     'Sign in</a> to rate it.</p>')
+        parts.append(f'<p class="hb-fine"><a href="{e(_signin("/wrath/leyline-preview/p/" + i["id"].replace(":", "-", 1)))}">'
+                     'Log in</a> to rate it.</p>')
     else:
         mine = store.mine(i["id"], v[0])
         btns = "".join(f'<button class="hb-star{" on" if mine == s else ""}" name="stars" value="{s}" '

@@ -1,0 +1,50 @@
+#
+# mod-leyline-bossfights: Leyline's Boss fights mode (docs/BOSS-FIGHTS.md). The realm runs on environment settings
+# (AzerothCore reads AC_<KEY> for every key: LeylineBossfight.Bots is AC_LEYLINE_BOSSFIGHT_BOTS); the defaults below
+# are built into the module, so a realm without this file behaves exactly as described here.
+#
+[worldserver]
+
+#    LeylineBossfight.Enable
+#        1 = the .bossfight commands answer and the module records runs; 0 = off.
+LeylineBossfight.Enable = 1
+
+#    LeylineBossfight.Bots
+#        1 = boss fights may add bots (mod-playerbots addclass bots), only for their own raids, even when
+#            Playerbots.MaxAddedBots is 0; 0 = no bots: "bots" is refused and "group" waits for real players.
+#        The plain environment variable LEYLINE_BOSSFIGHT_BOTS (realm/profiles/main.env) wins over this key.
+#        The owner's decision (bots are off everywhere else on the official realm since 31 Oct).
+LeylineBossfight.Bots = 1
+
+#    LeylineBossfight.MinLevel
+LeylineBossfight.MinLevel = 80
+
+#    LeylineBossfight.LobbyWaitSec
+#        A "group" lobby that isn't full after this many seconds (counted from its first player) fills with bots.
+LeylineBossfight.LobbyWaitSec = 180
+
+#    LeylineBossfight.LobbyMaxWaitSec
+#        A "group-only" lobby (or any lobby when bots are off) closes after this many seconds.
+LeylineBossfight.LobbyMaxWaitSec = 1800
+
+#    LeylineBossfight.BotGearLevel
+#        The item level every bot is geared to, each fight (251 = 10-player tier 10). Same kit for everyone.
+LeylineBossfight.BotGearLevel = 251
+
+#    LeylineBossfight.BotWaitSec
+#        How long a start waits for its bots to log in and join the raid.
+LeylineBossfight.BotWaitSec = 45
+
+#    LeylineBossfight.ReturnAfterClearSec
+#        After a clear, players are sent back to where they joined from after this many seconds.
+LeylineBossfight.ReturnAfterClearSec = 120
+
+#    LeylineBossfight.WipeIdleSec
+#        A wiped raid that never tries again is sent home after this many seconds.
+LeylineBossfight.WipeIdleSec = 900
+
+#    LeylineBossfight.BotSeats
+#        The 10 seats bots fill, class:spec:role (spec = mod-playerbots' premade spec number, realm/playerbots-specs.env),
+#        in order; each real player takes the first seat of their role. Empty = the default:
+#        1:2:tank,2:1:tank,2:0:heal,5:0:heal,7:2:heal,6:2:dps,8:1:dps,9:0:dps,3:1:dps,4:1:dps
+LeylineBossfight.BotSeats = ""

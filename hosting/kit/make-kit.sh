@@ -18,6 +18,7 @@ done
 # the realm's build recipe, for hosts who build the realm images themselves (when the published ones are missing)
 mkdir -p "$KIT/realm-files/build/patches"
 cp "$REALM/custom/sources.lock" "$REALM/custom/fetch.sh" "$KIT/realm-files/build/"
+[ -f "$REALM/bots.json" ] && cp "$REALM/bots.json" "$KIT/realm-files/"   # the bots' pins (launcher: Update the bots)
 cp "$REALM"/custom/patches/*.patch "$KIT/realm-files/build/patches/" 2>/dev/null || true
 sed -i 's/\r$//' "$KIT"/realm-files/profiles/*.env "$KIT/realm-files/modules.env" "$KIT/realm-files/build/fetch.sh" \
   "$KIT/realm-files/build/sources.lock"

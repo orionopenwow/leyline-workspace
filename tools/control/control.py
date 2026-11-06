@@ -15,6 +15,9 @@ Serves a page on http://127.0.0.1:8097 (this PC only) and opens it. The page sho
   * Discord: the Discord redo's bot token (pasted once, saved on this PC only in tools/discord-leyline/token.txt,
     git-ignored, never shown back, never in a log), Preview (read-only), and Do it: only after a fresh preview, and
     only when the owner types YES under it; never from Autopilot, Launch all or a Waiting on you button.
+    Its Pending announcements list (tools/discord-leyline/announce/pending, README "Announcements"): each draft Claude
+    wrote, exactly as it would post, with Check, Reject and "Post to #announcements" (only after a typed YES, and only
+    the draft as the owner read it: its sha256 goes with the YES). discord-announce is never a queued step.
   * Kill switch (docs/KILL-SWITCH.md, tools/killswitch): the farewell message and the parts to take down; Pause, Undo
     and Delete, each only after its own fresh preview and a typed phrase (SHUT DOWN LEYLINE, BRING LEYLINE BACK,
     DELETE LEYLINE FOREVER), from this card only: it is not a step, so never the queue, Autopilot or a button elsewhere.
@@ -67,6 +70,7 @@ DISCORD_DIR = ROOT / "tools" / "discord-leyline"
 DISCORD_TOKEN = DISCORD_DIR / "token.txt"            # git-ignored; the script reads it; Control never shows it
 DISCORD_DOC = ROOT / "control" / "discord.json"      # the last preview's summary, the last do it and bot settings
 DISCORD_FRESH = 3600                                  # Do it needs a preview from the last hour
+ANNOUNCE_DIR = DISCORD_DIR / "announce"              # announcement drafts: pending/, posted/, rejected/ (announce.py)
 # The kill switch (docs/KILL-SWITCH.md): its card's message, choices, last preview and runs (no secrets in it)
 KS_DIR = ROOT / "tools" / "killswitch"
 KS_DOC = ROOT / "control" / "killswitch.json"
@@ -134,6 +138,9 @@ STEPS = {
     # Builds the browser client on this PC (client/build-browser-client.sh under Git Bash): tools once, benilla-wotlk
     # with client/patches/series.txt, the fat-LTO release build, packed into play\ like every build. Then "client" ships it.
     "client-build": ("client/Build browser client.bat", "Build the browser client on this PC (about an hour; then the client step)", False),
+    # only Den Lite's editor tests (gizmo.rs, pick.rs): the quick loop for the mouse and the arrows (owner 4 Nov: "one test at a time")
+    "den-lite-test": ("tools/den-lite/Den Lite editor tests.bat", "Den Lite editor tests only: click to carry, the arrows, the ground, the debug line (a few minutes)", False),
+    "den-lite-all": ("tools/den-lite/Den Lite all tests.bat", "Every Den Lite test: units and the test client (several minutes)", False),
     "den-lite": ("tools/den-lite/Build Den Lite.bat", "Build Den Lite on this PC (the instant Den server, no Docker) for the launcher's Your Den", False),
     # My Den, one click into the world on this PC's own game (tools/den-check/den_check.py): den-check looks (read-only:
     # the game folder, Leyline's login archive, Config.wtf, Den Lite and a sign-in through the exact steps on a Den Lite
@@ -153,6 +160,11 @@ STEPS = {
     "fresh-sandbox": ("tools/first-run/Fresh computer test - sandbox.bat", "Fresh computer test in Windows Sandbox: a brand-new Windows with your game folder copied in (yours mapped read-only); the report lands in tools\\first-run\\logs\\sandbox\\out (needs Windows Sandbox on)", False),
     "den-test-variants": ("tools/den-check/Den test - variants.bat", "The Den test once (since 3 Nov the Den is the game's own grass and sky: nothing left to vary)", False),
     "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test (the same as den-test: it always invites a test friend now)", False),
+    "ui-local": ("tools/den-check/UI into my game.bat", "The newest in-game UI into this PC's game folder for testing (backup first; players still get it from addons)", False),
+    # the gliding copy's creature rows from this PC's own game tables (labs/den-lite gliderows.rs), before a launcher
+    # with them is out; den-move makes them itself when they're missing
+    "den-glide": ("tools/den-check/Den glide rows.bat", "The gliding copy in Your Den: Den Lite makes each prop model's creature rows from your own game's tables into Data\\patch-S.MPQ (backup first; den-glide-undo takes them away). Run den-lite first; close the game", False),
+    "den-glide-undo": ("tools/den-check/Den glide rows - undo.bat", "Takes the gliding copy's rows away (our Data\\patch-S.MPQ and the marker): the copy is a gameobject made anew again", False),
     "den-move": ("tools/den-check/Den move.bat", "The one Den test for now: select and move (build mode, a prop placed and selected, hover glow, click selects, press and drag moves it, snap out and back, zoom far and back; pictures in tools\\den-check\\logs\\den-move)", False),
     "den-features": ("tools/den-check/Den features.bat", "The Den editor's feature test: den-test, then the gallery (do the tiles show models?), five props placed, select, move, turn, copy, paste, delete, undo, redo, save and open, every panel and play mode, through the editor's own buttons; a screenshot after each (tools\\den-check\\logs\\den-features)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
@@ -197,12 +209,25 @@ STEPS = {
     "scripts-reload": ("realm/Reload realm scripts.bat", "Realm scripts reloaded live even when unchanged (for a script that is there but silent)", False),
     "scripts": ("realm/Server pass - finder 10 and bug reports.bat", "Realm scripts (live reload)", False),
     "realm":   ("realm/Server pass - finder 10 and bug reports.bat", "Realm settings (5-min restart)", False),
+    # A new realm image (C++ modules, e.g. mod-leyline-bossfights; docs/BOSS-FIGHTS.md): the build GitHub made after a
+    # ship (wu-images), pulled on the server; backup, :rollback kept, 5-min warning, self-check, rollback on failure.
+    "realm-image": ("realm/Update realm image.bat", "New realm image: the C++ modules GitHub built after the last ship, live (backup, 5-min restart, self-check, rollback)", False),
+    # Race/class pairs at character creation (docs/RACE-CLASS-COMBOS.md): the realm's preset, its world tables, the
+    # website's copy (the browser page and the launcher follow it). "combos" keeps the realm's preset (modern the
+    # first time); the other two switch it. Backup first; "realm/Rollback character fix.bat" undoes it.
+    "combos": ("realm/Fix character create.bat", "Race/class combos: the realm's preset (modern: today's 83 retail pairs), start data, website told (world server restart)", False),
+    "combos-all": ("realm/Race class combos - all.bat", "Race/class combos: every race with every class (100 pairs; world server restart)", False),
+    "combos-modern": ("realm/Race class combos - modern.bat", "Race/class combos: back to today's 83 retail pairs (world server restart)", False),
+    "combos-check": ("realm/Diagnose character create.bat", "Race/class combos: what the realm has now (read-only)", False),
     "foreverui": ("stream/Add Forever UI to the stream.bat", "Forever UI look (menus and character select)", False),
     "slice":   ("stream/Make mini slice.bat", "Streamed game files (30-60 min)", False),
     # docs/INCIDENT-2026-11-01-SLICE.md: the streamed slice's files on the server, checked (read-only)
     "slice-health": ("stream/Slice health - check.bat", "Read-only: is the streamed slice whole (key files, its tier lists, what wu-play answers)", False),
     "ship":    ("Ship to GitHub.bat", "Save everything to GitHub", True),
     "ship-again": ("tools/ship/Save again as one fresh commit.bat", "Save to GitHub again as one fresh commit (after GitHub refused a save)", False),
+    # the bot smoke test (docs/BOTS-UPDATES.md): a throwaway realm from the canary images (bots-canary.yml) on this PC's
+    # own extracted game data, a headless player, the bots checked, all removed after. Touches no realm of yours.
+    "bots-smoke": ("realm/Bots smoke test.bat", "Bot smoke test: a throwaway realm from the newest canary bots, a test player, bots join, go into a dungeon, follow, fight one pull, leave; then removed (report in logs\\bots-smoke-latest.json)", False),
     "check":   ("realm/Server check.bat", "Server check (read-only)", False),
     # The release audit (docs/AUDIT.md): every feature as a new player meets it, the report in logs/audit-latest.html.
     # Read only but for the audit's own AUDIT account and its test characters, and a Den Lite temp folder on this PC.
@@ -309,6 +334,11 @@ STEPS = {
     "discord-read": ("tools/discord-leyline/Control - Discord read.bat", "Discord read (read-only): the newest messages in every channel since the last read, into tools\\discord-leyline\\live\\inbox-latest.md on this PC", False),
     "discord-bridge": ("tools/discord-leyline/Control - Discord bridge.bat", "Link World chat to Discord: finds #world-chat, installs the bridge on the server with the saved bot token and turns it on (token never shown)", False),
     "discord-check": ("tools/discord-leyline/Control - Discord bot settings.bat", "Discord bot settings: the channel ids for the website bot and the game bridge (read-only)", False),
+    # Milestone announcements (tools/discord-leyline/README.md "Announcements"): Claude drafts into announce/pending/,
+    # the owner reads each one on the Discord card and posts it there after typing YES (discord-announce, OWNER_ONLY:
+    # never from the queue). announce-check only checks the drafts (read-only, needs no token), so it may be queued.
+    "discord-announce": ("tools/discord-leyline/Control - Discord announce.bat", "Post one announcement you approved to #announcements (only from the Discord card, after you type YES)", False),
+    "announce-check": ("tools/discord-leyline/Control - Announce check.bat", "Announcement drafts check (read-only): length, words, links and ping rules for each draft waiting; posts nothing", False),
     # Quick Claude edits (tools/control/quick.py, README.md "Quick edits"): control/quick/<id>.json names the files, their
     # sha256 and one deploy step (signin, addons, scripts or none); apply-check only checks it, apply checks it again and
     # runs that step's own .bat. Anything else in a manifest is refused. No new .bat for each small change.
@@ -319,20 +349,83 @@ STEPS = {
     "hq-inbox": ("tools/hq/HQ sync.bat", "Leyline HQ: fetch the owner's notes to Claude (and sync)", False),
     # The commons kit (tools/commons, docs/BLANK-SLATE.md): the directory and "Make my own Leyline" check themselves.
     "commons-check": ("tools/commons/Commons check.bat", "Commons kit check: the directory and Make my own Leyline's tests (read-only, a temp folder)", False),
+    # The reel kit (tools/reels, docs/growth/README.md; owner 4 Nov: reels showing features in Leyline's style, a launch
+    # video kept up to date, flow videos). reel-record plays the takes on this PC through the launcher's own tests (your
+    # game, Your Den: saved first and put back) and records them with ffmpeg; reel-record-hand shows a box per take you
+    # play yourself (OK starts it, it stops by itself); reel-make cuts everything recorded into the finished videos.
+    # Nothing is ever posted: the videos wait in tools\reels\out for you.
+    "reel-record": ("tools/reels/Reel record.bat", "Reels: record the takes (the launcher's own tests start your game: PLAY into the world, Your Den, carry a piece, free flight; the launcher's pages if node is here) into tools\\reels\\takes", False),
+    "reel-record-hand": ("tools/reels/Reel record - hand takes.bat", "Reels: the takes you play yourself (a community realm, Single player with bots, HD before and after): a box says what to do, OK records a set time", False),
+    "reel-make": ("tools/reels/Reel make.bat", "Reels: cut the recorded takes into the reels, flow videos and the launch video (9:16 and 16:9 MP4s, a GIF for Reddit) in tools\\reels\\out; nothing is posted", False),
 }
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
+# How long a step may run before Control stops it (review 4 Nov: a step waiting on a question, such as an ssh asking
+# about a host key, blocked every later step and Autopilot until the window was closed). Minutes; the long builds,
+# exports and uploads get more, and LEYLINE_STEP_TIMEOUT_MIN changes the default.
+STEP_TIMEOUT_MIN = {"client-build": 360, "slice": 360, "slice-sampler": 360, "sampler": 240, "sv-record": 180,
+                    "sv-export": 240, "client": 120, "ship": 120, "ship-again": 120, "leyline": 120,
+                    "leyline-launcher": 120, "release-mirror": 180, "audit": 60, "den-test-variants": 120,
+                    "fresh-test": 180, "fresh-sandbox": 180, "first-run-test": 180, "mods-daily": 180, "thumbs": 120,
+                    "addons-curate": 120, "ov112-data-remove": 120, "foreverui": 120}
+
+
+def step_timeout_s(step: str) -> int:
+    try:
+        default = int(os.environ.get("LEYLINE_STEP_TIMEOUT_MIN") or 90)
+    except ValueError:
+        default = 90
+    return max(1, STEP_TIMEOUT_MIN.get(step, default)) * 60
+
+
+def kill_tree(p) -> None:
+    """Stop a step's process and everything it started (cmd -> bat -> ssh, python, ...)."""
+    pid = getattr(p, "pid", None)
+    if os.name == "nt" and pid:
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        p.kill()
+    except (OSError, AttributeError):
+        pass
+
+
+def watch_step(p, step: str, why: dict) -> threading.Event:
+    """A watchdog for one running step: it stops the step at its time limit, or when Stop is pressed
+    (state["stop"]); `why` says which. Set the returned event when the step ends by itself."""
+    done = threading.Event()
+    limit = time.monotonic() + step_timeout_s(step)
+
+    def watch():
+        while not done.wait(1.0):
+            if state.get("stop"):
+                why["reason"] = "stopped"
+            elif time.monotonic() > limit:
+                why["reason"] = "timeout"
+            else:
+                continue
+            kill_tree(p)
+            return
+    threading.Thread(target=watch, daemon=True).start()
+    return done
+
+
 # Autopilot runs only these by itself; anything else waits for "Launch all".
-READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
+READ_ONLY = {"check", "combos-check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
-             "discord-preview", "discord-check", "discord-read", "apply-check", "feedback"}
+             "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make", "announce-check"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
-OWNER_ONLY = {"discord-apply"}
+OWNER_ONLY = {"discord-apply", "discord-announce"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).
 SECRET_RES = [
-    (re.compile(r"(?i)\b([A-Z0-9_]*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|API_?KEY|PRIVATE_?KEY)(?:_[A-Z0-9_]*)?\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|\S+)"), r"\1[hidden]"),
+    # review 4 Nov: also *_KEY names (RELAY_BLOCK_FEED_KEY, HMAC_KEY...) and JSON's "token": "..." (the quote before the colon)
+    (re.compile(r"(?i)\b([A-Z0-9_]*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|API_?KEY|PRIVATE_?KEY|_KEY)(?:_[A-Z0-9_]*)?[\"']?\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|\S+)"), r"\1[hidden]"),
+    (re.compile(r"\bGOCSPX-[A-Za-z0-9_-]{10,}"), "[hidden]"),                 # a Google OAuth client secret
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[hidden]"),                      # an AWS access key id
+    (re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}"), "[hidden]"),           # API keys of the sk- shape
+    (re.compile(r"(?i)(discord(?:app)?\.com/api/webhooks/\d+/)[A-Za-z0-9_-]+"), r"\1[hidden]"),   # a webhook's secret half
     (re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}"), "[hidden]"),
     (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), "[hidden]"),
     (re.compile(r"(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}"), r"\1 [hidden]"),
@@ -418,6 +511,12 @@ def history() -> list[dict]:
     out = []
     for sid in reversed([d for d in done if d]):
         step, note = notes.get(sid, ("?", ""))
+        if sid not in notes:
+            # the lines run_all adds by itself after a ship (review 4 Nov: they showed as "?" with no log)
+            if sid.endswith("-leyline-launcher"):
+                step, note = "leyline-launcher", "follows the Leyline repo"
+            elif sid.endswith("-leyline"):
+                step, note = "leyline", "follows Save to GitHub"
         log = LOGS / f"{sid}-{step}.log"
         out.append({"id": sid, "step": step, "note": note, "log": log.name if log.exists() else ""})
     return out[:30]
@@ -494,16 +593,30 @@ except OSError:
 
 def restart_if_updated() -> None:
     """When Claude ships a new control.py, the window restarts itself (minimised, Autopilot as it was) once idle."""
-    try:
-        if SELF.stat().st_mtime == SELF_MTIME or state["running"]:
+    # checked and claimed under the lock that start_run takes, so a step starting in the same second is never killed by
+    # the restart (review 4 Nov): once claimed, "running" says restarting and nothing else can start
+    with lock:
+        try:
+            if SELF.stat().st_mtime == SELF_MTIME or state["running"]:
+                return
+        except OSError:
             return
-    except OSError:
-        return
+        state["running"] = {"id": "", "step": "restarting", "title": "Restarting Leyline Control"}
     emit("line", "== The control window was updated: restarting it (a few seconds).")
     flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
     subprocess.Popen([sys.executable, str(SELF), "--quiet", "--wait-port"], cwd=str(ROOT), creationflags=flags)
     time.sleep(0.5)
     os._exit(0)
+
+
+def autopilot_safe(items: list) -> list:
+    """With "Ask before deploys" on: the read-only steps at the front of the queue, up to the first one that isn't."""
+    safe = []
+    for it in items:
+        if it["step"] not in READ_ONLY:
+            break
+        safe.append(it)
+    return safe
 
 
 def autopilot_loop() -> None:
@@ -518,11 +631,7 @@ def autopilot_loop() -> None:
             items = pending()
             failed = state.get("auto_failed")
             if confirm_on():   # "Ask before deploys": only the read-only steps at the front run by themselves
-                safe = []
-                for it in items:
-                    if it["step"] not in READ_ONLY:
-                        break
-                    safe.append(it)
+                safe = autopilot_safe(items)
                 if items and not safe and state.get("asked") != pending_stamp():
                     state["asked"] = pending_stamp()
                     emit("line", "== Ask before deploys is on: the next step waits for you (Launch all).")
@@ -564,8 +673,9 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                 write_last([item["id"]], False, item["step"])
                 return
             if item["step"] in OWNER_ONLY and not item.get("owner_confirmed"):
-                emit("line", f"!! '{item['step']}' runs only from Leyline Control's Discord panel, after you read the "
-                             "preview and type YES there. It was not run.")
+                what = "the draft (Pending announcements)" if item["step"] == "discord-announce" else "the preview"
+                emit("line", f"!! '{item['step']}' runs only from Leyline Control's Discord panel, after you read "
+                             f"{what} and type YES there. It was not run.")
                 emit("result", {"ok": False, "step": item["step"]})
                 if record:
                     state["auto_failed"] = pending_stamp()
@@ -597,7 +707,7 @@ def run_all(ship_message: str, items=None, record=True) -> None:
             # which line this is (quick.py finds its manifest by it: control/quick/<id>.json, or "quick:<name>" in the note)
             env["LEYLINE_CONTROL_ID"] = str(item.get("id") or "")
             env["LEYLINE_CONTROL_NOTE"] = str(item.get("note") or "")[:200]
-            for k in ("LEYLINE_DISCORD_OLD", "LEYLINE_DISCORD_PINS"):
+            for k in ("LEYLINE_DISCORD_OLD", "LEYLINE_DISCORD_PINS", "LEYLINE_ANNOUNCE_ID", "LEYLINE_ANNOUNCE_SHA"):
                 env.pop(k, None)
             if item["step"].startswith("discord-"):
                 env["LEYLINE_CONTROL_STEP"] = item["step"]
@@ -610,6 +720,9 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                 env["LEYLINE_DISCORD_PINS"] = "1" if opts["pins"] else "0"
                 if item["step"] == "discord-apply":
                     env["LEYLINE_DISCORD_EXPECT_CHANGES"] = str(int(item["expect"]))
+                if item["step"] == "discord-announce":     # the one draft the owner read and typed YES under
+                    env["LEYLINE_ANNOUNCE_ID"] = str(item.get("announce_id") or "")
+                    env["LEYLINE_ANNOUNCE_SHA"] = str(item.get("announce_sha") or "")
             log = LOGS / f"{item['id']}-{item['step']}.log"
             with open(log, "w", encoding="utf-8") as lf:
                 p = subprocess.Popen(["cmd", "/c", "call", str(ROOT / bat)], cwd=str(ROOT), env=env,
@@ -620,13 +733,26 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                     p.stdin.close()
                 except OSError:
                     pass
-                for raw in iter(p.stdout.readline, b""):
-                    line = scrub(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
-                    if line.strip().lower().startswith("press any key"):
-                        continue
-                    lf.write(line + "\n")
-                    emit("line", line)
-                rc = p.wait()
+                why = {}
+                state["stop"] = False
+                ended = watch_step(p, item["step"], why)
+                try:
+                    for raw in iter(p.stdout.readline, b""):
+                        line = scrub(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+                        if line.strip().lower().startswith("press any key"):
+                            continue
+                        lf.write(line + "\n")
+                        emit("line", line)
+                    rc = p.wait()
+                finally:
+                    ended.set()
+                if why.get("reason"):
+                    rc = rc or 1
+                    msg = ("!! Stopped by you." if why["reason"] == "stopped" else
+                           f"!! Stopped: it ran past its {step_timeout_s(item['step']) // 60} minutes (it may be waiting "
+                           "on a question, such as ssh asking about a host key). Run it by hand to see, or ask Claude.")
+                    lf.write(msg + "\n")
+                    emit("line", msg)
             if item["step"] == "check":
                 write_last_check(item["id"], rc == 0)
             if item["step"].startswith("discord-"):
@@ -759,11 +885,14 @@ def discord_summary(log: Path) -> dict:
 def discord_record(item: dict, rc: int, log: Path) -> None:
     """After a Discord step: the preview's summary (for the panel and for Do it), or how the last do it / bot
     settings went. A successful do it uses the preview up, so the next one needs a new preview."""
-    key = {"discord-preview": "preview", "discord-apply": "apply", "discord-check": "check"}.get(item["step"])
+    key = {"discord-preview": "preview", "discord-apply": "apply", "discord-check": "check",
+           "discord-announce": "announce"}.get(item["step"])
     if not key:
         return
     d = discord_doc()
     rec = {"id": item["id"], "at": time.time(), "ok": rc == 0, "log": log.name}
+    if key == "announce":
+        rec["draft"] = str(item.get("announce_id") or "")
     if key == "preview":
         rec.update(discord_summary(log))
         rec["ok"] = rc == 0 and rec["changes"] is not None
@@ -815,7 +944,66 @@ def discord_state() -> dict:
             r = dict(d[k])
             r["when"] = time.strftime("%d %b %H:%M", time.localtime(float(r.get("at") or 0)))
             out[k] = r
+    out["announce"] = announce_state(d)
     return out
+
+
+# ------------------------------------------------------------------ announcements (README "Announcements")
+# Claude writes drafts into tools/discord-leyline/announce/pending/ on this PC; the Discord card lists each one exactly
+# as it would post, checked by announce.py's own rules. Check and Reject happen here (no network); Post runs the
+# discord-announce step with the draft's id and sha256, only after the owner typed YES under that draft.
+_ANN = {}
+
+
+def announce_mod():
+    """tools/discord-leyline/announce.py, loaded once (it is the one place the rules live)."""
+    if "mod" not in _ANN:
+        import importlib.util
+        try:
+            spec = importlib.util.spec_from_file_location("leyline_announce", DISCORD_DIR / "announce.py")
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            _ANN["mod"], _ANN["error"] = m, ""
+        except Exception as e:                  # the card says so instead of breaking the page
+            _ANN["mod"], _ANN["error"] = None, f"{type(e).__name__}: {e}"[:200]
+    return _ANN["mod"]
+
+
+def announce_view(dr: dict) -> dict:
+    f = dr["front"]
+    return {"id": dr["id"], "title": f.get("title", ""), "kind": f.get("kind", ""), "ping": f.get("ping", ""),
+            "created": f.get("created", ""), "message": dr["message"], "length": len(dr["message"]),
+            "limit": 2000, "problems": dr["problems"], "sha": dr["sha"]}
+
+
+def announce_state(d: dict | None = None) -> dict:
+    """The pending drafts for the card (at most 20), and how the last post went."""
+    m = announce_mod()
+    out = {"drafts": [], "error": _ANN.get("error", "")}
+    if m is not None:
+        try:
+            out["drafts"] = [announce_view(x) for x in m.pending(ANNOUNCE_DIR)[:20]]
+        except Exception as e:
+            out["error"] = f"{type(e).__name__}: {e}"[:200]
+    last = (d if d is not None else discord_doc()).get("announce")
+    if isinstance(last, dict):
+        r = dict(last)
+        r["when"] = time.strftime("%d %b %H:%M", time.localtime(float(r.get("at") or 0)))
+        out["last"] = r
+    return out
+
+
+def announce_load(draft_id: str):
+    """(the draft, "") or (None, why)."""
+    m = announce_mod()
+    if m is None:
+        return None, "announce.py didn't load: " + _ANN.get("error", "")
+    if not m.valid_id(draft_id):
+        return None, "That isn't a draft id."
+    try:
+        return m.load(draft_id, ANNOUNCE_DIR), ""
+    except OSError:
+        return None, "That draft isn't waiting any more (posted, rejected or removed). Refresh."
 
 
 # ------------------------------------------------------------------ the kill switch (docs/KILL-SWITCH.md)
@@ -1415,6 +1603,12 @@ class H(http.server.BaseHTTPRequestHandler):
             if not start_run(msg):
                 return self._send(409, '{"error":"already running"}')
             return self._send(200, '{"ok":true}')
+        if self.path == "/api/stop":   # the Stop button: the running step is stopped (its whole process tree)
+            if not state.get("running"):
+                return self._send(409, '{"error":"nothing is running"}')
+            state["stop"] = True
+            emit("line", "== Stopping the running step...")
+            return self._send(200, '{"ok":true}')
         if self.path == "/api/confirm":
             set_autopilot(confirm=bool(body.get("on")))
             emit("state", {})
@@ -1545,6 +1739,35 @@ class H(http.server.BaseHTTPRequestHandler):
                     "owner_confirmed": True, "expect": int(p["changes"]),
                     "options": clean_discord_options(p.get("options"))}
             if not start_run("", [item], False, "Discord redo"):
+                return self._send(409, '{"error":"already running"}')
+            return self._send(200, '{"ok":true}')
+        if self.path in ("/api/discord/announce-check", "/api/discord/announce-reject", "/api/discord/announce-post"):
+            dr, why = announce_load(str(body.get("id") or ""))
+            if not dr:
+                return self._send(409, json.dumps({"error": why}))
+            if self.path == "/api/discord/announce-check":        # no network: the same rules announce.py posts by
+                return self._send(200, json.dumps({"ok": not dr["problems"], "draft": announce_view(dr)}))
+            if self.path == "/api/discord/announce-reject":
+                try:
+                    dest = announce_mod().reject(dr["id"], ANNOUNCE_DIR, str(body.get("why") or "")[:200])
+                except OSError as e:
+                    return self._send(500, json.dumps({"error": f"Couldn't move it ({type(e).__name__})."}))
+                emit("state", {})
+                return self._send(200, json.dumps({"ok": True, "moved": dest.name}))
+            # Post: a token, a draft with no problems, this very draft as the owner read it, and a typed YES
+            if not discord_token_status()["saved"]:
+                return self._send(409, json.dumps({"error": "Save the bot token first."}))
+            if dr["problems"]:
+                return self._send(409, json.dumps({"error": "This draft can't be posted yet: " + " ".join(dr["problems"])}))
+            if str(body.get("confirm") or "").strip() != "YES":
+                return self._send(400, json.dumps({"error": "Type YES under the draft to post it."}))
+            if str(body.get("sha") or "") != dr["sha"]:
+                return self._send(409, json.dumps({"error": "The draft changed since you read it. Read it again, then "
+                                                            "type YES again."}))
+            item = {"id": "discord-announce-" + time.strftime("%Y%m%d-%H%M%S"), "step": "discord-announce",
+                    "title": STEPS["discord-announce"][1], "note": f"draft {dr['id']}", "known": True,
+                    "owner_confirmed": True, "announce_id": dr["id"], "announce_sha": dr["sha"]}
+            if not start_run("", [item], False, "Discord announcement"):
                 return self._send(409, '{"error":"already running"}')
             return self._send(200, '{"ok":true}')
         return self._send(404, '{"error":"not found"}')
@@ -1710,7 +1933,10 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
 .youbox h2+p{margin:0 0 6px;color:var(--dim);font-size:12.5px}
 #dtok.ok{color:var(--ok)}#dtok.no{color:var(--warn)}
 .dsum{margin-top:10px}.dsum ul{margin:4px 0 0;padding-left:18px;max-height:260px;overflow:auto}.dsum li.n{color:var(--dim);list-style:none}
-.dsum .sec{font-weight:600;margin-top:6px}.dgo{margin-top:10px;padding:10px;border:1px solid #8a6a2c;border-radius:8px;background:rgba(242,201,76,.06)}
+.dsum .sec{font-weight:600;margin-top:6px}.ann{margin-top:12px}.ann>.sec{font-weight:600}
+.anitem{margin-top:10px;padding:10px;border:1px solid var(--edge);border-radius:8px}
+.anmsg{height:auto;max-height:320px;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.anbad{margin:4px 0;padding-left:18px;color:var(--bad)}
+.dgo{margin-top:10px;padding:10px;border:1px solid #8a6a2c;border-radius:8px;background:rgba(242,201,76,.06)}
 .dgo input{max-width:140px;flex:0 1 140px}
 .dopt{margin-top:10px;display:flex;flex-direction:column;gap:6px}.dopt select{font:inherit;background:rgba(0,0,0,.5);color:var(--text);border:1px solid #0a0908;border-radius:7px;padding:4px 8px}
 .dopt .chk{display:flex;gap:8px;align-items:center}
@@ -1757,7 +1983,12 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
     <div class="dgo" id="dgo" hidden><div id="dask"></div>
       <div class="launch"><input id="dyes" autocomplete="off" placeholder="Type YES"><button class="primary" id="dapply">Do it</button></div>
       <div class="sub" id="dgonote">It backs up the server to your Desktop first (Leyline-discord-backup-...).</div></div>
-    <div class="sub" id="dwhy"></div><div class="dsum" id="dlast"></div></section>
+    <div class="sub" id="dwhy"></div><div class="dsum" id="dlast"></div>
+    <div class="ann" id="ann"><div class="sec">Pending announcements</div>
+      <div class="sub">Claude's drafts for #announcements (tools\discord-leyline\announce\pending). Nothing is posted
+        until you type YES under one and press Post. Milestones, big community bug fixes, long-standing bugs and schedule
+        updates; minor fixes don't get one. A draft with TODO(owner) in it can't be posted.</div>
+      <div id="anlist"></div><div class="sub" id="anlast"></div></div></section>
   <section class="card" id="gmcard"><h2>Discord &amp; GM</h2>
     <div class="sub">Read-only: the server, the Discord bridge and bot, open bug reports and what waits for your review, from
       this PC's latest checks. Each button runs an existing step, only when you press it.</div>
@@ -1789,7 +2020,7 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
     <div class="sub" id="kswhy"></div><div class="dsum" id="kslast"></div></details></section>
 </div>
 <div class="stack">
-  <section class="card"><h2>Live output</h2><div class="status" id="run"></div><div class="console" id="con"></div></section>
+  <section class="card"><h2>Live output</h2><div class="status" id="run"></div><button id="stop" hidden title="Stops the running step and everything it started">Stop</button><div class="console" id="con"></div></section>
 </div></main>
 <script>
 const T="__TOKEN__",H={"X-Token":T};
@@ -1833,11 +2064,11 @@ $("cupd").textContent=c.updated?`Updated ${c.updated}`:"";
 list($("pending"),(s.pending||[]).map(p=>({tag:p.step,text:p.title,detail:p.note})),"","Nothing to launch. You're up to date.");
 const a=$("auto");a.textContent=s.autopilot?"Autopilot: ON":"Autopilot: OFF";a.className=s.autopilot?"primary":"";a.dataset.on=s.autopilot?"1":"";
 const q=$("ask");q.textContent=s.confirm?"Ask before deploys: ON":"Ask before deploys: OFF";q.dataset.on=s.confirm?"1":"";
-$("go").disabled=!!s.running||!(s.pending||[]).length;$("audit").disabled=!!s.running;
+$("go").disabled=!!s.running||!(s.pending||[]).length;$("stop").hidden=!s.running||s.running.step==="restarting";$("audit").disabled=!!s.running;
 const ar=$("areport");if(s.audit){ar.hidden=false;ar.href=`/audit?t=${T}`;ar.textContent=`Last audit ${s.audit.at}: ${s.audit.green?"all green":s.audit.result}`;ar.style.color=s.audit.green?"var(--ok)":"var(--bad)"}else ar.hidden=true;
 $("run").innerHTML=s.running?`<span class="spinner"></span>${esc(s.running.title||"Running")}…`:'<span class="sub">Idle</span>';
 $("hist").innerHTML=(s.history||[]).map(x=>`<div class="item fin"><span class="tag">${esc(x.step)}</span><div>${esc(x.note||x.id)} ${x.log?`<a href="/api/log?t=${T}&name=${encodeURIComponent(x.log)}" target="_blank">log</a>`:""}</div></div>`).join("")||'<div class="empty">No runs yet.</div>';
-discordPanel(s);ksPanel(s);gmPanel(gmBusy&&!s.running);gmBusy=!!s.running;
+discordPanel(s);annPanel(s);ksPanel(s);gmPanel(gmBusy&&!s.running);gmBusy=!!s.running;
 document.querySelectorAll("#gmacts [data-gmrun]").forEach(b=>{b.disabled=!!s.running});
 if(!$("con").childElementCount&&s.lines)s.lines.forEach(line)}
 let gmAt=0,gmBusy=false;
@@ -1892,6 +2123,27 @@ const dopt=()=>dpost("/api/discord/options",{old:$("dold").value,pins:$("dpins")
 $("dold").onchange=dopt;$("dpins").onchange=dopt;
 $("dapply").onclick=async()=>{const p=(last&&last.discord||{}).preview;if(!p)return;$("con").innerHTML="";
 if(await dpost("/api/discord/apply",{preview:p.id,confirm:$("dyes").value.trim()}))$("dyes").value=""};
+let annKey="";
+function annPanel(s,force){const d=s.discord||{},a=d.announce||{},busy=!!s.running,tok=!!(d.token||{}).saved,ds=a.drafts||[];
+const key=JSON.stringify([ds.map(x=>[x.id,x.sha,x.problems.length]),busy,tok,a.error||""]);
+if(key!==annKey||force){annKey=key;
+$("anlist").innerHTML=a.error?`<div class="empty">The drafts didn't load: ${esc(a.error)}</div>`:ds.length?ds.map(x=>{const ok=!x.problems.length;
+return `<div class="anitem" data-id="${esc(x.id)}" data-sha="${esc(x.sha)}"><div><b>${esc(x.title||x.id)}</b> <span class="tag">${esc(x.kind||"?")}</span>
+ ${x.ping==="everyone"?"pings @everyone":"no ping"} · ${x.length}/${x.limit} characters${x.created?` · ${esc(x.created)}`:""} <span class="sub">${esc(x.id)}</span></div>
+<pre class="console anmsg">${esc(x.message)}</pre>
+${ok?'<div style="color:var(--ok)">Passes the checks.</div>':`<ul class="anbad">${x.problems.map(p=>`<li>${esc(p)}</li>`).join("")}</ul>`}
+<div class="launch"><button data-an="check">Check</button><input data-an="yes" autocomplete="off" placeholder="Type YES"${ok&&tok?"":" disabled"}>
+<button class="primary" data-an="post"${ok&&tok&&!busy?"":" disabled"} title="${ok?(tok?"Posts exactly this to #announcements":"Save the bot token first"):"Fix the problems first"}">Post to #announcements</button>
+<button data-an="reject"${busy?" disabled":""}>Reject</button></div></div>`}).join(""):'<div class="empty">No drafts waiting.</div>'}
+const l=a.last;$("anlast").innerHTML=l?`Last announcement ${esc(l.when)} (${esc(l.draft||"")}): ${l.ok?'<span style="color:var(--ok)">posted</span>':'<span style="color:var(--bad)">not posted</span>'}${logLink(l.log)}`:""}
+async function anpost(u,b){const r=await fetch(u,{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify(b||{})});
+let j={};try{j=await r.json()}catch(e){}if(!r.ok)alert(j.error||"That didn't work.");return r.ok?j:null}
+$("anlist").addEventListener("click",async e=>{const t=e.target.closest("button[data-an]");if(!t||t.disabled)return;
+const it=t.closest(".anitem"),id=it.dataset.id,sha=it.dataset.sha,act=t.dataset.an;
+if(act==="check"){const j=await anpost("/api/discord/announce-check",{id});if(j)alert(j.ok?"Passes every check. Nothing was posted.":"Not ready:\n- "+j.draft.problems.join("\n- "));annKey="";refresh()}
+else if(act==="reject"){if(!confirm("Reject this draft? It moves to announce\\rejected. Nothing is posted."))return;await anpost("/api/discord/announce-reject",{id});annKey="";refresh()}
+else if(act==="post"){const y=it.querySelector('input[data-an="yes"]').value.trim();if(y!=="YES"){alert("Type YES under the draft to post it.");return}
+$("con").innerHTML="";if(await anpost("/api/discord/announce-post",{id,sha,confirm:y}))annKey="";refresh()}});
 const KS_WORD={pause:"Pause",resume:"Undo pause",delete:"Delete"};let ksKey="",ksCfg="";
 function ksPanel(s){const k=s.killswitch||{};if(k.error){$("kswhy").textContent="The kill switch didn't load: "+k.error;return}
 const c=k.config||{},busy=!!s.running,ck=JSON.stringify(c);
@@ -1924,6 +2176,7 @@ $("ksdo").onclick=async()=>{const k=(last&&last.killswitch)||{},p=k.preview;if(!
 if(await dpost("/api/killswitch/go",{stage:p.stage,preview:p.id,phrase:$("ksphrase").value.trim()}))$("ksphrase").value=""};
 $("go").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/launch",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({message:$("msg").value})});if(!r.ok)alert("Couldn't start: "+(await r.text()));refresh()};
 $("audit").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/audit",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};
+$("stop").onclick=async()=>{if(!confirm("Stop the running step? It is marked failed and Autopilot pauses."))return;const r=await fetch("/api/stop",{method:"POST",headers:H});if(!r.ok)alert("Couldn't: "+(await r.text()));refresh()};
 $("check").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/check",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};
 $("auto").onclick=async()=>{await fetch("/api/autopilot",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({on:!$("auto").dataset.on})});refresh()};
 $("gmc").onclick=async()=>{const r=await fetch("/api/gm-console",{method:"POST",headers:H});if(!r.ok)alert("Couldn't open it: "+(await r.text()))};

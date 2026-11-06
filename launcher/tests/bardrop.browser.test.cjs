@@ -259,7 +259,7 @@ test('Testing switch: off, a magnet gets the refusal; on (Settings › Testing),
   assert.match(settings, /Allow torrent downloads of game folders \(testing only\)/);
   assert.equal(await page.isChecked('#set-ctorrent'), false);
   assert.equal(await page.isDisabled('#set-cshare'), true);
-  assert.doesNotMatch(settings, /world of warcraft|\bwow\b|warcraft|lich king|blizzard|magnet:\?/i);
+  assert.doesNotMatch(settings, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard|magnet:\?/i);
   await page.check('#set-ctorrent');
   await page.waitForFunction(() => window.__testing.client_torrents === true);
   assert.equal(await page.isDisabled('#set-cshare'), false);

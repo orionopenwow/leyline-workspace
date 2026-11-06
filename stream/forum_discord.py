@@ -1048,7 +1048,7 @@ class Link:
                 return say(f"You're linked to the Leyline account {esc(pr[0] if pr else 'Player')}. Your replies in the forum threads "
                            "here reach the forum. /unlink undoes it.")
             code = self.new_code(did, dname)
-            return say(f"Open this link and sign in on the Leyline website to link your account (good for 15 minutes, once): "
+            return say(f"Open this link and log in on the Leyline website to link your account (good for 15 minutes, once): "
                        f"{self.link_url(code)}")
         if name == "unlink":
             return say("Unlinked. Your messages here no longer reach the forum." if self.unlink(discord_id=did)
@@ -1167,7 +1167,7 @@ def page(fm, h, who, query: dict, note: str = "", ok: str = "", status: int = 20
                          '<p>You signed in to the website with Discord. Link that Discord account, so your replies there reach the forum?</p>'
                          '<div class="fm-acts"><button class="fm-btn" type="submit" name="do" value="site">Link my Discord</button></div></form>')
         parts.append('<p>In our Discord, type <b>/link</b> in any channel and open the link it gives you (only you see it).'
-                     + ('' if site_id or not _site_offers_discord(fm) else ' Or link Discord as a way to sign in on <a href="/wrath/profile">your profile</a>, then come back here.')
+                     + ('' if site_id or not _site_offers_discord(fm) else ' Or link Discord as a way to log in on <a href="/wrath/profile">your profile</a>, then come back here.')
                      + '</p>')
     if cur and link.growth is not None:   # Find a group (WU_DISCORD_LFG=1)
         parts.append(link.growth.group_form(who, query, fm.form_token(who, "dlink"), path))

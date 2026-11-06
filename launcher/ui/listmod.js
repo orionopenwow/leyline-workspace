@@ -37,7 +37,7 @@
   const failed = (e, fb) => {
     const m = String(e);
     if (m === "signed_out") { if (S() && S().refresh) S().refresh(); return "You were signed out. Log in again from Manage account."; }
-    return oops(e, m || fb);
+    return oops(e, fb);   // the fallback is ours, never the raw text
   };
 
   // its few styles, in the theme's tokens (themes/themes.css), so style.css stays as it is

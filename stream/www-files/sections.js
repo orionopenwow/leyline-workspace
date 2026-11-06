@@ -27,7 +27,9 @@ const META = '/__sections/tier/';   // synthetic cache keys: what each tier down
 const INDEX_URL = '/data/__tier/index.json';
 const CONCURRENCY = 6;
 const ARENA_INITIAL = 8 * 1024 * 1024;
-const SYNC_TIMEOUT_MS = 60000;
+// a blocking read spins the page's main thread, so a worker that stopped answering must not cost a minute a file
+// (review 4 Nov): 10 s once, then the downloaded copies are skipped for this page (the network answers instead)
+const SYNC_TIMEOUT_MS = 10000;
 
 const state = {
   installed: false,
@@ -39,6 +41,7 @@ const state = {
   index: null,           // [{tier, name, files, bytes}]
   running: null,         // the tier being downloaded
   abort: false,
+  syncDead: false,       // the worker missed a blocking read: the rest of this page load reads from the network
 };
 
 function canRun() {
@@ -100,13 +103,18 @@ function startWorker() {
 /// A blocking read of one downloaded file through the worker: {status, body} or null (not in the
 /// cache after all, timeout: the caller falls back to the network).
 function syncRead(path, method) {
+  if (state.syncDead) return null;
   const ctl = state.ctl;
   for (let attempt = 0; attempt < 3; attempt++) {
     Atomics.store(ctl, 0, 0);
     state.worker.postMessage({ type: 'get', path, method });
     const t0 = performance.now();
     while (Atomics.load(ctl, 0) === 0) {
-      if (performance.now() - t0 > SYNC_TIMEOUT_MS) return null;
+      if (performance.now() - t0 > SYNC_TIMEOUT_MS) {
+        state.syncDead = true;
+        console.warn('[sections] the downloads worker did not answer in ' + SYNC_TIMEOUT_MS / 1000 + ' s: reading from the network for this visit');
+        return null;
+      }
     }
     const status = Atomics.load(ctl, 1);
     const len = Atomics.load(ctl, 2);
@@ -227,6 +235,44 @@ function installShim() {
   state.installed = true;
 }
 
+// World data never changes under its name within a slice (the same list as wrath-sw.js KEEP and stream-up.sh's
+// @dataworld); everything else (Interface\, DBFilesClient\, Fonts\, WTF\...) can change with a new slice or a Forever UI
+// update, so a download made for another slice must not keep answering it.
+const WORLD_DATA = /^(world|creature|character|item|spells|sound|dungeons|environments|tileset|textures|xtextures|particles)[\\/]/i;
+const SLICE_KEY = '/__sections/slice';
+
+/// The slice a download belongs to: the tier index as the host lists it (a new export changes its sizes).
+export function sliceStamp(index) {
+  return JSON.stringify((index || []).map((t) => [t.tier, t.files, t.bytes]));
+}
+
+/// A new slice since the last visit: drop the downloaded files that may have changed under their names (all but
+/// world data) and mark every section partly downloaded, so its Download button fetches the new ones.
+async function forgetOtherSlice(index) {
+  const c = await caches.open(CACHE);
+  const stamp = sliceStamp(index);
+  const kept = await c.match(SLICE_KEY);
+  let old = null;
+  try { old = kept ? (await kept.json()).stamp : null; } catch (_) { old = null; }
+  if (old === stamp) return 0;
+  let dropped = 0;
+  for (const req of await c.keys()) {
+    const p = new URL(req.url).pathname;
+    if (p.startsWith(META)) {
+      const m = await c.match(req).then((r) => r.json()).catch(() => null);
+      if (m && m.done) await c.put(req, new Response(JSON.stringify({ ...m, done: false, stale: true }), { headers: { 'content-type': 'application/json' } }));
+      continue;
+    }
+    if (!p.startsWith('/data/')) continue;
+    let name = '';
+    try { name = decodeURIComponent(p.slice(6)); } catch (_) { name = ''; }
+    if (!WORLD_DATA.test(name)) { await c.delete(req); dropped++; }
+  }
+  await c.put(SLICE_KEY, new Response(JSON.stringify({ stamp, at: Date.now() }), { headers: { 'content-type': 'application/json' } }));
+  if (dropped) console.info(`sections: a new slice; ${dropped} downloaded interface and table files will load again`);
+  return dropped;
+}
+
 /// Install the cache-backed reads when this origin streams a slice with tier lists. Never throws.
 export async function installSections() {
   try {
@@ -234,6 +280,7 @@ export async function installSections() {
     const index = await loadIndex();
     if (!index) return { installed: false };
     state.index = index;
+    await forgetOtherSlice(index).catch((e) => console.warn('sections: slice check', e));
     state.have = await loadHave();
     if (!(await startWorker())) return { installed: false };
     installShim();

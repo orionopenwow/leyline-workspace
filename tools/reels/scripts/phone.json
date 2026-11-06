@@ -1,0 +1,43 @@
+{
+ "id": "phone",
+ "kind": "reel",
+ "formats": [
+  "reel"
+ ],
+ "title": "On your phone",
+ "kicker": "In the browser",
+ "sub": "TODO(owner): No download needed to have a look.",
+ "end_line": "TODO(owner): Open leylinelauncher.com on your phone.",
+ "shots": [
+  {
+   "take": "phone-play",
+   "in": [
+    "top",
+    -0.2
+   ],
+   "out": [
+    "play",
+    -0.2
+   ],
+   "caption": "leylinelauncher.com on a phone"
+  },
+  {
+   "take": "phone-play",
+   "in": [
+    "play",
+    -0.2
+   ],
+   "out": -0.2,
+   "caption": "Play in the browser"
+  }
+ ],
+ "gif": {
+  "format": "reel",
+  "shots": [
+   0,
+   1
+  ],
+  "max_seconds": 8,
+  "width": 360
+ }
+}

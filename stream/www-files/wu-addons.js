@@ -191,7 +191,7 @@ function mountDrop() {
   if (document.getElementById('wu-drop')) return;
   css();
   const box = el('div', { class: 'box' }, el('h2', {}, 'Drop an addon or your game folder'),
-    el('p', {}, 'An addon\'s .zip or folder installs in this browser. Your 3.3.5a game folder opens the whole world.'),
+    el('p', {}, 'An addon\'s .zip or folder installs in this browser. Your Wrath game folder opens the whole world.'),
     el('p', {}, 'Nothing is uploaded: it all stays on this computer.'));
   const overlay = el('div', { id: 'wu-drop', 'aria-hidden': 'true' }, box);
   document.body.append(overlay);

@@ -83,7 +83,7 @@ def check(name, cond, extra=""):
 st, h, b = get("/wrath")
 check("signed out /wrath: saved-key sign-in page", st == 200 and b"AUTO" not in b and b"/auth/key" in b and "connect-src 'self'" in (h.get("content-security-policy") or h.get("Content-Security-Policy") or ""))
 st, h, b = get("/wrath/play?mini=mini")
-check("signed out: sign-in page", st == 200 and b">Sign in</a>" in b and (b"/login?next=" in b or b"/wrath/signin" in b))
+check("signed out: the Log in page", st == 200 and b">Log in</a>" in b and (b"/login?next=" in b or b"/wrath/signin" in b))
 check("signed out: no realm mark", not any(c.startswith("ovstream") for c in soap["commands"]))
 
 # --- unknown slice
@@ -135,6 +135,9 @@ check("env: global name the client reads", txt.startswith("window.__wenilla_env 
 env = json.loads(txt.split("\n")[0][len("window.__wenilla_env = "):].rstrip(";"))
 check("env: Forever UI on by default", env.get("foreverui") == "1")
 check("env: ?foreverui= on the page is copied over the env (the env outranks the query)", "get('foreverui')" in txt and "e.foreverui=v" in txt)
+check("env: the realm's race/class pairs on by default (modern: today's 83)", env.get("moderncombos") == "1" and "allcombos" not in env, env)
+check("env: ?moderncombos= / ?allcombos= on the page are copied over the env, and =0 turns both off",
+      "['moderncombos','allcombos']" in txt and "if(e.moderncombos==='0')e.allcombos='0'" in txt)
 check("env: user/pass/host", env["user"] == "WR000123" and env["pass"] == "Pa55word1234abcd" and env["host"] == "play.openvanilla.app", env)
 check("env: no dev_query_creds", "dev_query_creds" not in env)
 check("env: no-store + same-origin", h.get("cache-control") == "no-store" and h.get("cross-origin-resource-policy") == "same-origin")
@@ -197,7 +200,7 @@ st, h, b = get("/wrath/account", cookie="wr_session=good")
 check("own: realm list shows both ways to play", b"<h2>Dalaran</h2>" in b and b"Play in the browser with my game folder" in b
       and b"/wrath/play?mode=own" in b and b"/wrath/play?mini=mini" in b)
 st, h, b = get("/wrath/play?mode=own", ip="10.1.0.1")
-check("own: signed out -> sign-in page", st == 200 and b">Sign in</a>" in b and (b"/login?next=" in b or b"/wrath/signin" in b))
+check("own: signed out -> the Log in page", st == 200 and b">Log in</a>" in b and (b"/login?next=" in b or b"/wrath/signin" in b))
 stream_code = wp.sessions.create("WR000123", "Pa55word1234abcd", "mini", 4)
 stream_sid = wp.sessions.redeem(stream_code)
 before = len(soap["commands"])

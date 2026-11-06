@@ -35,6 +35,11 @@ class Setup(unittest.TestCase):
         self.assertEqual(keys.realm_id(keys.public_key(sec)), cfg["realm_id"])
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(st, "realm.key")).st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.kit, ".env")).st_mode), 0o600)
+        # review 4 Nov: the private invite holds the realm's secret, so it is owner-only like the others
+        inv = os.path.join(st, "invite.txt")
+        if os.path.exists(inv):
+            self.assertEqual(stat.S_IMODE(os.stat(inv).st_mode), 0o600)
+            self.assertIn(cfg["invite_secret"], open(inv).read())
         self.assertEqual(res["invite"], f"https://relay.leylinelauncher.com/join/{cfg['realm_id']}#{cfg['invite_secret']}")
         self.assertFalse(cfg["warden"])                      # private: browser client friendly
         env = open(os.path.join(self.kit, ".env")).read()

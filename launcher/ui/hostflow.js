@@ -225,7 +225,7 @@
     loadReady();
   });
 
-  // the play bar's My Den / Solo leveling asks the Host page for its ruleset (hostconsole.js applyWant): the ruleset
+  // the play bar's My Den / Single player asks the Host page for its ruleset (hostconsole.js applyWant): the ruleset
   // picker shows it with its own facts, so this flow steps aside
   document.addEventListener("leyline:host-ruleset", () => {
     if (!(kit && kit.realm) && view === "flow") away(() => window.LeylineHostModes && window.LeylineHostModes.rulesets());
@@ -343,8 +343,8 @@
     s1.append(pick);
     if (vis === "public") {
       const node = mk("p", "hst-fine hst-node");
-      node.append(document.createTextNode("Optional: help carry other players' connections from this PC. "));
-      node.append(btn("Be a node ›", "hc-more hst-node-b", () => { const t = page.querySelector('.page-tab[data-hc="network"]'); if (t) t.click(); else call("open_link", { name: "beanode" }).catch(() => {}); }));
+      node.append(document.createTextNode("Optional: let this PC help the network while you're not playing. "));
+      node.append(btn("Be a node ›", "hc-more hst-node-b", () => { if (window.LeylineNode) window.LeylineNode.focus(); else call("open_link", { name: "beanode" }).catch(() => {}); }));
       s1.append(node);
     }
     root.append(s1);
@@ -978,7 +978,7 @@
       "Either way the settings land in the panel for you to check before you host. Unknown settings are left out, numbers are kept inside their range, and who can join is always your own choice. Nothing secret goes into the prompt.");
     ch("Invite friends", "Private realms: copy your invite link from the realm's card or Realm tools > Invite links. Friends open it once and make their own account there. Leyline never makes accounts or sees passwords.");
     ch("Go public", "Realm tools > Public or private. A public realm is on the Community realms list within a minute. Claim it with your Hero Key so it shows as yours.");
-    ch("Be a node", "Optional: let this PC carry other players' connections to the network. Host > Network, or the website's guide.");
+    ch("Be a node", "Optional: let this PC help the network while you're not playing. The switch is at the top of the Host page; carrying players is under Advanced.");
     ch("Backups and updates", "Stop the realm, then copy the Host pack folder: its state folder holds your realm's key and links. When a new Host pack is out, update it under Host pack & settings, then start again: your realm and its links are kept.");
     ch("When something's wrong", "Run the health check on the console: each line says what to fix. Docker not running? The line at the top of Host starts it. Server logs are in Realm tools.");
     guidePane.prepend(box);

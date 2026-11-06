@@ -1,4 +1,8 @@
--- The Bots window (3.3.5a API): your bots at a glance and your orders in one click.
+-- The Bots window (3.3.5a API): your bots at a glance and your orders in one click. Tabs:
+--   Your bots  the roster and the orders below; Party (Fill my party with a class and spec per slot), Raid (fill a
+--   10-player raid), Your alts (bring your own characters, save them as your usual party), Buddy (one levelling
+--   buddy), Dungeons (CompanionsTabs.lua: pick a dungeon for your level, bots fill the party and meet you at the
+--   door). The bar of your bots, the orders bar and the first-time tips are BotBar.lua.
 --   Roster:  each bot's role icon, name in its class colour (always tagged a bot), spec, item level, health and
 --            mana, and what it is doing (following, staying, passive, dead). Click a bot for its own menu:
 --            a spec from the realm's premade specs, a role swap (tank, healer, damage), fresh gear, follow, stay,
@@ -10,9 +14,10 @@
 --
 -- Nothing goes through chat. The realm (realm/custom/lua_scripts/ov_companions.lua) does everything and checks
 -- everything (your bot, combat, cooldowns); this file only asks. OVMOD channel, mod "wucomp":
---   client -> server   roster | order <what> <name|all> | formation <name> | prepare | fill <party|raid> | usual |
---                      dismiss <name|all> | spec <name>\t<spec> | role <name> <tank|healer|dps> | gear <name>
---   server -> client   roster (H/B/S lines, see ov_companions.lua) | msg <text>
+--   client -> server   roster | order <what> <name|all> | formation <name> | prepare | fill <party|raid>[\t<picks>] |
+--                      usual | dismiss <name|all> | spec <name>\t<spec> | role <name> <tank|healer|dps> | gear <name> |
+--                      alts | alt <name> | save | buddy <class|any|off> | dungeon <id>[\t<picks>]
+--   server -> client   roster (H/B/S lines, see ov_companions.lua) | alts (A/U lines) | msg <text>
 -- Health and mana come from the game's own unit functions (party1-4, raid1-40), so they move live.
 --
 -- Bot chatter: the core tells everyone nearby when a bot earns an achievement, and bots answer orders in
@@ -21,7 +26,8 @@
 
 local W = WrathUnleashedUI
 local PREFIX, MOD = "OVMOD", "wucomp"
-local WIN_W, WIN_H = 540, 612
+local WIN_W, WIN_H = 540, 650
+local PAGE_TOP = 36   -- the pages start under the title bar; the tab row sits in their top strip
 local ROWS, ROW_H = 9, 36
 local QUIET_ORDER, QUIET_JOIN = 8, 25   -- seconds of hidden bot whispers after an order / after a bot joins
 local ASK_DEBOUNCE, ANSWER_WAIT = 1.5, 6
@@ -47,10 +53,12 @@ local BG = W.Style and W.Style.C.bg or { 0.05, 0.06, 0.08, 0.95 }
 
 -- State, and the functions the tests reach (W.Companions).
 local C = { bots = {}, specs = {}, names = {}, count = 0, cap = 4, raid = false, formation = "chaos", assist = false,
-    cc = false, state = nil, status = "", quietUntil = 0, offset = 0 }
+    cc = false, state = nil, status = "", quietUntil = 0, offset = 0, buddyOn = true, raidsOn = true,
+    alts = {}, usual = {}, hooks = {}, tabs = {} }
 W.Companions = C
 
 local win, menu, picker
+local build   -- the window (below)
 
 local function now() return (GetTime and GetTime()) or 0 end
 local function tidy(s) return (tostring(s or ""):gsub("|", "")) end
@@ -71,6 +79,15 @@ local function status(text)
     C.status = text or ""
     if win then win.status:SetText(C.status) end
 end
+C.SetStatus = status
+
+-- A short answer when the window is closed (an order from the orders bar or a key): the screen's own error line,
+-- not the chat.
+function C.Notice(text)
+    status(text)
+    if win and win:IsShown() then return end
+    if UIErrorsFrame and UIErrorsFrame.AddMessage then UIErrorsFrame:AddMessage(text, ACCENT[1], ACCENT[2], ACCENT[3], 1, 3) end
+end
 
 function C.Ask()
     C.askedAt = now()
@@ -78,22 +95,39 @@ function C.Ask()
 end
 
 -- Every order: the bots' whispered answers stay hidden for a moment; the realm's answer lands in the window.
-local function act(name, data, note)
+local function act(name, data, note, fromBar)
     C.quietUntil = math.max(C.quietUntil, now() + QUIET_ORDER)
     C.waiting, C.actedAt = true, now()
+    C.lastMsg, C.fromBar = nil, fromBar and now() or nil
     status(note or "Asking the realm...")
     return send(name, data)
 end
 
-function C.Order(what, target) return act("order", what .. " " .. (target or "all")) end
+function C.Order(what, target, fromBar) return act("order", what .. " " .. (target or "all"), nil, fromBar) end
 function C.Formation(f) return act("formation", f) end
 function C.Prepare() return act("prepare", "", "Getting your bots ready...") end
-function C.Fill(kind) return act("fill", kind, "Asking for bots...") end
+function C.Fill(kind, picks)
+    return act("fill", kind .. ((picks and picks ~= "") and ("\t" .. picks) or ""), "Asking for bots...")
+end
 function C.Usual() return act("usual", "", "Bringing your usual party...") end
 function C.Dismiss(name) return act("dismiss", name or "all") end
 function C.SetSpec(name, spec) return act("spec", name .. "\t" .. spec) end
 function C.SetRole(name, role) return act("role", name .. " " .. role) end
 function C.Gear(name) return act("gear", name) end
+function C.AskAlts() return send("alts", "") end
+function C.Alt(name) return act("alt", name, "Bringing " .. tidy(name) .. "...") end
+function C.Save() return act("save", "", "Saving your usual party...") end
+function C.Buddy(arg) return act("buddy", arg or "any", arg == "off" and "Sending your buddy home..." or "Asking for a buddy...") end
+function C.Dungeon(id, picks)
+    return act("dungeon", id .. ((picks and picks ~= "") and ("\t" .. picks) or ""), "Getting your party ready...")
+end
+-- From the orders bar or a key: the answer shows on screen (C.Notice) rather than in the chat when the window is shut.
+function C.BarOrder(what)
+    if (what == "attack" or what == "pull") and UnitExists and not UnitExists("target") then
+        return C.Notice("Target something first.")
+    end
+    return C.Order(what, "all", true)
+end
 
 -- ---------------------------------------------------------------- reading the realm's answers
 
@@ -136,9 +170,36 @@ function C.ParseRoster(data)
     C.formation = FORMATION_LABEL[head[5] or ""] and head[5] or "chaos"
     C.assist, C.cc = head[6] == "1", head[7] == "1"
     C.state = head[8] or "on"
+    C.buddyOn, C.raidsOn = head[9] ~= "0", head[10] ~= "0"
     C.askedAt = nil
     if C.offset > math.max(0, #bots - ROWS) then C.offset = math.max(0, #bots - ROWS) end
     return true
+end
+
+-- The Your alts tab's list: A\t<name>\t<level>\t<class>\t<with you>\t<online> and U\t<name>.
+function C.ParseAlts(data)
+    local alts, usual, seen = {}, {}, {}
+    for line in tostring(data or ""):gmatch("[^\n]+") do
+        local f = split(line)
+        if f[1] == "A" and #alts < 20 then
+            local nm = tidy(f[2]):sub(1, 24)
+            if nm ~= "" and not seen[nm] then
+                seen[nm] = true
+                alts[#alts + 1] = { name = nm, level = tonumber(f[3]) or 0, cls = tonumber(f[4]), with = f[5] == "1",
+                    online = f[6] == "1" }
+            end
+        elseif f[1] == "U" and #usual < 10 then
+            usual[#usual + 1] = tidy(f[2]):sub(1, 24)
+        end
+    end
+    C.alts, C.usual = alts, usual
+    return true
+end
+
+-- Other files (BotBar.lua, the tabs) hear about every new roster here.
+function C.OnRoster(fn) C.hooks[#C.hooks + 1] = fn end
+local function fireHooks()
+    for _, fn in ipairs(C.hooks) do pcall(fn) end
 end
 
 function C.Dispatch(name, data)
@@ -147,11 +208,21 @@ function C.Dispatch(name, data)
         if C.state == "on" and C.ShowMinimapButton then C.ShowMinimapButton() end
         if menu and menu:IsShown() and not C.names[menu.botName or ""] then menu:Hide() end
         C.Refresh()
+        fireHooks()
+    elseif name == "alts" then
+        C.ParseAlts(data)
+        C.Refresh()
     elseif name == "msg" then
         local text = tidy(data):sub(1, 200)
         C.waiting = nil
+        -- two answers in a row (a fill, then the trip) both stay readable
+        local shown = text
+        if C.lastMsg and C.lastMsgAt and now() - C.lastMsgAt < 3 then shown = C.lastMsg .. "\n" .. text end
+        C.lastMsg, C.lastMsgAt = text, now()
         if win and win:IsShown() then
-            status(text)
+            status(shown)
+        elseif C.fromBar and now() - C.fromBar < 4 then
+            C.Notice(text)
         elseif DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage(TAG .. text)
         end
@@ -285,7 +356,16 @@ local function classColour(cls)
     return 1, 1, 1
 end
 
-local function hex(r, g, b) return string.format("|cff%02x%02x%02x", r * 255, g * 255, b * 255) end
+local function hex(r, g, b)
+    local function c(v) return math.max(0, math.min(255, math.floor((tonumber(v) or 1) * 255 + 0.5))) end
+    return string.format("|cff%02x%02x%02x", c(r), c(g), c(b))
+end
+
+-- What the other files build with (CompanionsTabs.lua, BotBar.lua): one look everywhere.
+C.UI = { label = label, button = button, fill = fill, panel = panel, section = section, bar = bar,
+    classColour = classColour, hex = hex, now = now, tidy = tidy, specLabel = specLabel, db = db,
+    ACCENT = ACCENT, BG = BG, CLASS_TOKEN = CLASS_TOKEN, CLASS_NAME = CLASS_NAME, ROLE_LABEL = ROLE_LABEL,
+    ROLE_ICON = ROLE_ICON, ROLE_COORDS = ROLE_COORDS, KIND_TAG = KIND_TAG, WIN_W = WIN_W }
 
 -- ---------------------------------------------------------------- the per-bot menu
 
@@ -322,8 +402,15 @@ local function buildMenu()
     section(menu, "Orders", -212)
     menu.follow = button(menu, "Follow", 68, function() C.Order("follow", menu.botName); menu:Hide() end, "TOPLEFT", 20, -232)
     menu.stay = button(menu, "Stay", 68, function() C.Order("stay", menu.botName); menu:Hide() end, "TOPLEFT", 90, -232)
-    menu.gear = button(menu, "New gear", 72, function() C.Gear(menu.botName); menu:Hide() end, "TOPLEFT", 160, -232)
-    menu.dismiss = button(menu, "Send home", 102, function() C.Dismiss(menu.botName); menu:Hide() end, "TOPLEFT", 20, -258)
+    menu.attack = button(menu, "Attack", 72, function()
+        if UnitExists and not UnitExists("target") then status("Target something first."); return menu:Hide() end
+        C.Order("attack", menu.botName); menu:Hide()
+    end, "TOPLEFT", 160, -232)
+    menu.passive = button(menu, "Passive", 68, function(self)
+        C.Order(self.what or "passive", menu.botName); menu:Hide()
+    end, "TOPLEFT", 20, -258)
+    menu.gear = button(menu, "Gear up", 68, function() C.Gear(menu.botName); menu:Hide() end, "TOPLEFT", 90, -258)
+    menu.dismiss = button(menu, "Send home", 72, function() C.Dismiss(menu.botName); menu:Hide() end, "TOPLEFT", 160, -258)
     tinsert(UISpecialFrames, "WrathUnleashedBotMenu")
     menu:Hide()
 end
@@ -354,6 +441,8 @@ function C.OpenMenu(name, anchor)
         if own and roles[rb.role] and rb.role ~= b.role then rb:Enable() else rb:Disable() end
     end
     if own then menu.gear:Enable() else menu.gear:Disable() end
+    menu.passive.what = b.status == "passive" and "active" or "passive"
+    menu.passive:SetText(b.status == "passive" and "Fight" or "Passive")
     menu.note:SetText(own and "" or "Your own character keeps its own talents and gear.")
     menu:ClearAllPoints()
     if anchor then menu:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0) else menu:SetPoint("CENTER") end
@@ -387,7 +476,7 @@ end
 -- ---------------------------------------------------------------- the window
 
 local function buildRow(i)
-    local row = CreateFrame("Button", nil, win)
+    local row = CreateFrame("Button", nil, win.page)
     row:SetWidth(WIN_W - 40); row:SetHeight(ROW_H - 2)
     row:SetPoint("TOPLEFT", 20, -78 - (i - 1) * ROW_H)
     if i % 2 == 0 then fill(row, 1, 1, 1, 0.025) end
@@ -482,45 +571,68 @@ function C.Refresh()
     win.formation:SetText("Formation: " .. FORMATION_LABEL[C.formation])
     local has = n > 0
     for _, b in ipairs(win.needBots) do if has then b:Enable() else b:Disable() end end
+    if win.fillRaid then if C.raidsOn then win.fillRaid:Enable() else win.fillRaid:Disable() end end
     if win.quiet then win.quiet:SetChecked(C.HideChatter()) end
     updateBars()
+    local t = C.tabs[C.tab or 1]
+    if t and t.page and t.refresh and t.key ~= "bots" then pcall(t.refresh, t.page) end
 end
 
-local function build()
-    win = panel(UIParent, "WrathUnleashedBotsFrame", WIN_W, WIN_H)
-    win:SetPoint("CENTER")
-    win:SetFrameStrata("DIALOG")
-    win:EnableMouse(true)
-    win:SetMovable(true)
-    win:RegisterForDrag("LeftButton")
-    win:SetScript("OnDragStart", win.StartMoving)
-    win:SetScript("OnDragStop", win.StopMovingOrSizing)
-    tinsert(UISpecialFrames, "WrathUnleashedBotsFrame")   -- Esc closes it
+-- Tabs: CompanionsTabs.lua adds Party, Raid, Your alts, Buddy and Dungeons with C.AddTab before the window is
+-- first built. build(page) makes the tab's page once; refresh(page) runs on show and on each new roster.
+function C.AddTab(key, text, w, buildFn, refreshFn, onShow)
+    for _, t in ipairs(C.tabs) do if t.key == key then return t end end
+    local t = { key = key, text = text, w = w or 80, build = buildFn, refresh = refreshFn, onShow = onShow }
+    C.tabs[#C.tabs + 1] = t
+    return t
+end
 
-    local title = (W.Style and W.Style.Window(win, "Bots") or label(win, "Bots", "GameFontNormalLarge", "TOPLEFT", 22, -20))
-    title:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
-    win.sub = label(win, "", "GameFontHighlightSmall", "TOPLEFT", 22, -42)
-    local close = (W.Style and W.Style.Close(win) or CreateFrame("Button", nil, win, "UIPanelCloseButton"))
-    close:SetPoint("TOPRIGHT", -6, -6)
-    win.refresh = button(win, "Refresh", 76, function() C.Ask() end, "TOPRIGHT", -40, -18)
+function C.ShowTab(key)
+    if not win then build() end
+    local at = 1
+    for i, t in ipairs(C.tabs) do if t.key == key or i == key then at = i end end
+    C.tab = at
+    for i, t in ipairs(C.tabs) do
+        if i == at then t.page:Show() else t.page:Hide() end
+        if W.Style then W.Style.Tab(t.btn, i == at) elseif t.btn.SetAlpha then t.btn:SetAlpha(i == at and 1 or 0.6) end
+    end
+    local t = C.tabs[at]
+    if t.onShow then pcall(t.onShow, t.page) end
+    C.Refresh()
+    return t.page
+end
+function C.Tab() local t = C.tabs[C.tab or 1]; return t and t.key end
 
-    section(win, "Your bots", -60)
+local function newPage()
+    local page = CreateFrame("Frame", nil, win)
+    page:SetPoint("TOPLEFT", 0, -PAGE_TOP); page:SetPoint("BOTTOMRIGHT", 0, 0)
+    page:Hide()
+    return page
+end
+
+-- The Your bots tab: the roster, the orders, the group buttons (the window as it always was).
+local function buildBots(page)
+    win.page = page
+    win.sub = label(page, "", "GameFontHighlightSmall", "TOPLEFT", 22, -40)
+    win.refresh = button(page, "Refresh", 76, function() C.Ask() end, "TOPRIGHT", -20, -34)
+
+    section(page, "Your bots", -60)
     win.rows = {}
     for i = 1, ROWS do win.rows[i] = buildRow(i) end
-    win:EnableMouseWheel(true)
-    win:SetScript("OnMouseWheel", function(_, delta)
+    page:EnableMouseWheel(true)
+    page:SetScript("OnMouseWheel", function(_, delta)
         C.offset = math.max(0, math.min(math.max(0, #C.bots - ROWS), C.offset - delta)); C.Refresh()
     end)
     local listBottom = -78 - ROWS * ROW_H
-    win.empty = label(win, "", "GameFontDisable", "TOP", 0, -140)
-    win.more = label(win, "", "GameFontDisableSmall", "TOPRIGHT", -24, listBottom + 2)
+    win.empty = label(page, "", "GameFontDisable", "TOP", 0, -140)
+    win.more = label(page, "", "GameFontDisableSmall", "TOPRIGHT", -24, listBottom + 2)
 
     -- orders for everyone
     local y = listBottom - 10
-    section(win, "Orders", y)
+    section(page, "Orders", y)
     win.needBots = {}
     local function order(text, w, x, yy, fn)
-        local b = button(win, text, w, fn, "TOPLEFT", x, yy)
+        local b = button(page, text, w, fn, "TOPLEFT", x, yy)
         win.needBots[#win.needBots + 1] = b
         return b
     end
@@ -538,13 +650,43 @@ local function build()
 
     -- the group
     y = y - 82
-    section(win, "Group", y)
-    button(win, "Fill party", 96, function() C.Fill("party") end, "TOPLEFT", 20, y - 22)
-    button(win, "Fill raid", 96, function() C.Fill("raid") end, "TOPLEFT", 118, y - 22)
-    button(win, "My usual party", 120, function() C.Usual() end, "TOPLEFT", 216, y - 22)
+    section(page, "Group", y)
+    button(page, "Fill party", 96, function() C.Fill("party", C.Picks and C.Picks()) end, "TOPLEFT", 20, y - 22)
+    win.fillRaid = button(page, "Fill raid", 96, function() C.Fill("raid") end, "TOPLEFT", 118, y - 22)
+    button(page, "My usual party", 120, function() C.Usual() end, "TOPLEFT", 216, y - 22)
     order("Dismiss all", 110, 338, y - 22, function() C.Dismiss("all") end)
+end
+C.AddTab("bots", "Your bots", 84, buildBots)
 
-    -- footer: chatter switch and the realm's answers
+build = function()
+    win = panel(UIParent, "WrathUnleashedBotsFrame", WIN_W, WIN_H)
+    win:SetPoint("CENTER")
+    win:SetFrameStrata("DIALOG")
+    win:EnableMouse(true)
+    win:SetMovable(true)
+    win:RegisterForDrag("LeftButton")
+    win:SetScript("OnDragStart", win.StartMoving)
+    win:SetScript("OnDragStop", win.StopMovingOrSizing)
+    tinsert(UISpecialFrames, "WrathUnleashedBotsFrame")   -- Esc closes it
+
+    local title = (W.Style and W.Style.Window(win, "Bots") or label(win, "Bots", "GameFontNormalLarge", "TOPLEFT", 22, -20))
+    title:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+    local close = (W.Style and W.Style.Close(win) or CreateFrame("Button", nil, win, "UIPanelCloseButton"))
+    close:SetPoint("TOPRIGHT", -6, -6)
+
+    -- the tab row, then each tab's page under it
+    local x = 16
+    for i, t in ipairs(C.tabs) do
+        t.btn = button(win, t.text, t.w, function() C.ShowTab(i) end, "TOPLEFT", x, -PAGE_TOP - 4)
+        t.btn.tabKey = t.key
+        x = x + t.w + 3
+        t.page = newPage()
+        local ok, err = pcall(t.build, t.page)
+        if not ok and DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage(TAG .. "a tab failed to load: " .. tostring(err)) end
+    end
+    win.tabs = C.tabs
+
+    -- footer: chatter switch and the realm's answers (every tab)
     local quiet = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
     quiet:SetWidth(22); quiet:SetHeight(22)
     quiet:SetPoint("BOTTOMLEFT", 18, 38)
@@ -552,7 +694,7 @@ local function build()
     win.quiet = quiet
     label(win, "Hide bot chatter (their achievements, and whispers right after an order)", "GameFontHighlightSmall",
         "LEFT", quiet, "RIGHT", 2, 0)
-    win.status = label(win, C.status, "GameFontHighlightSmall", "BOTTOMLEFT", 22, 20)
+    win.status = label(win, C.status, "GameFontHighlightSmall", "BOTTOMLEFT", 22, 14)
     win.status:SetWidth(WIN_W - 44)
 
     win:SetScript("OnUpdate", function(self, elapsed)
@@ -568,18 +710,24 @@ local function build()
     win:SetScript("OnShow", function()
         if PlaySound then pcall(PlaySound, "igCharacterInfoOpen") end
         C.Ask()
-        C.Refresh()
+        C.ShowTab(C.tab or 1)
     end)
     win:SetScript("OnHide", function()
         if menu then menu:Hide() end
         if picker then picker:Hide() end
+        if C.HideChooser then C.HideChooser() end
     end)
     win:Hide()
 end
 
 function C.Window() return win end
-function C.Toggle()
+function C.Toggle(tab)
     if not win then build() end
+    if tab then
+        if not win:IsShown() then C.tab = nil; for i, t in ipairs(C.tabs) do if t.key == tab then C.tab = i end end; win:Show()
+        else C.ShowTab(tab) end
+        return
+    end
     if win:IsShown() then win:Hide() else win:Show() end
 end
 W.ToggleBots = C.Toggle
@@ -670,5 +818,14 @@ if ChatFrame_AddMessageEventFilter then
     end
 end
 
+-- /comp opens the window; /comp party|raid|alts|buddy|dungeons opens that tab; /comp bar and /comp orders switch the
+-- bar of your bots and the orders bar on or off; /comp tips shows the first-time tips again (BotBar.lua).
+local SLASH_TABS = { party = "party", raid = "raid", alts = "alts", alt = "alts", buddy = "buddy", dungeons = "dungeons",
+    dungeon = "dungeons", bots = "bots" }
 SLASH_WUCOMPANIONS1, SLASH_WUCOMPANIONS2 = "/companions", "/comp"
-SlashCmdList["WUCOMPANIONS"] = function() C.Toggle() end
+SlashCmdList["WUCOMPANIONS"] = function(msg)
+    local word = tostring(msg or ""):lower():match("^%s*(%S*)")
+    if SLASH_TABS[word] then return C.Toggle(SLASH_TABS[word]) end
+    if word ~= "" and C.Slash and C.Slash(word) then return end
+    C.Toggle()
+end

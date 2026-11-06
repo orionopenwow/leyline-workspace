@@ -197,6 +197,14 @@ def get(h, path: str, query: dict) -> None:
     h.redirect(f"{url}__gate?code={urllib.parse.quote(code)}")
 
 
+def _site_host() -> str:
+    """The site's new name (ADDRESSES["site"][0]); PUBLIC_HOST only when it is already a leylinelauncher.com name."""
+    pub = portal("PUBLIC_HOST") or ""
+    addrs = portal("ADDRESSES") or {}
+    new = (addrs.get("site") or ("leylinelauncher.com",))[0] if isinstance(addrs, dict) else "leylinelauncher.com"
+    return pub if pub == new or pub.endswith("." + new) else new
+
+
 def site_auth(h) -> None:
     """GET /__auth?site=survivors: Caddy's forward_auth on the Survivors address. The original request is in
     X-Forwarded-Uri."""
@@ -214,7 +222,10 @@ def site_auth(h) -> None:
         h.send(200, b"", "text/plain")
         return
     if data:
-        h.send(403, b"sign in on the Leyline site first\n", "text/plain")
+        h.send(403, b"log in on the Leyline site first\n", "text/plain")
         return
-    pub = portal("PUBLIC_HOST") or "leylinelauncher.com"
+    # The Survivors address is a leylinelauncher.com name, so its sign-in is the new site name too, whatever
+    # PUBLIC_HOST says (it was still the old name live: players bounced to play.openvanilla.app; handoff item 5,
+    # site review 4 Nov). Both names share one sign-in service, so the cookie made there counts here.
+    pub = _site_host()
     h.redirect(f"https://{pub}/wrath/survivors" + ("" if _off() else "/play"))

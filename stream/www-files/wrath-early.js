@@ -69,10 +69,16 @@
         h.textContent = 'This realm needs your own game folder.';
         var p = document.createElement('p');
         p.setAttribute('style', 'margin:0 0 1rem;color:#ccc');
-        p.textContent = 'It no longer streams game files. Drop your 3.3.5a game folder on the next page: it is read on your computer and never uploaded.';
+        // a phone or tablet has no folder to drop (no directory picker, no folder drop): say so plainly instead of
+        // offering a way that can't work there (review 4 Nov)
+        var phone = false;
+        try { phone = !('showDirectoryPicker' in window) && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (e) { /* desktop */ }
+        p.textContent = phone
+          ? 'It no longer streams game files. Your own game folder works on a computer (Chrome or Edge): play from there for now.'
+          : 'It no longer streams game files. Drop your Wrath game folder on the next page: it is read on your computer and never uploaded.';
         var a = document.createElement('a');
-        a.href = '/?ownfiles=1';
-        a.textContent = 'Use my game folder';
+        a.href = phone ? '/wrath' : '/?ownfiles=1';
+        a.textContent = phone ? 'Back to Leyline' : 'Use my game folder';
         a.setAttribute('style', 'display:inline-block;padding:.5rem 1rem;background:#c9a24a;color:#111;border-radius:4px;text-decoration:none;font-weight:600');
         card.appendChild(h); card.appendChild(p); card.appendChild(a); box.appendChild(card);
         document.body.appendChild(box);
@@ -81,6 +87,69 @@
     } catch (e) { /* the note is optional */ }
   };
   window.__wuGamedataGone = gamedataGone;
+  // The graphics check (5 Nov: "someone said they can't see anything"). The browser client draws with WebGPU
+  // only (client/build-browser-client.sh builds `--features webgpu`: the world needs storage buffers, WebGL2
+  // has none), so a browser without WebGPU, or with graphics acceleration off, used to get a dark page and no
+  // word why. Now the page asks for a GPU adapter first thing and, when there is none, says so with the fix
+  // for this browser and the desktop app. "Try anyway" closes the note (the page carries on loading under it).
+  // window.__wuGpu = {ok, why} for the smoke tests and wu-diag. ?nogpucheck=1 skips it.
+  var gpuNote = function (why) {
+    try {
+      window.__wuGpu = { ok: false, why: why };
+      var show = function () {
+        if (!document.body || document.getElementById('wu-gpu-off')) return;
+        var ua = String((navigator && navigator.userAgent) || '');
+        var phone = false;
+        try { phone = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (e) { /* desktop */ }
+        var fix;
+        if (/Firefox\//.test(ua)) fix = 'Firefox can\'t draw the game on this computer yet. Open this page in Chrome or Edge.';
+        else if (/Safari\//.test(ua) && !/Chrome\/|Chromium\/|Edg\//.test(ua)) fix = 'Safari needs its newest update to draw the game. Update it, or open this page in Chrome.';
+        else if (phone) fix = 'This phone\'s browser can\'t draw the game yet. Try Chrome, updated, or play on a computer.';
+        else fix = 'Turn on graphics acceleration: in your browser\'s Settings > System, switch on "Use graphics acceleration when available", restart the browser, and make sure it is up to date.';
+        var site = /openvanilla/.test(location.hostname) ? 'play.openvanilla.app' : 'leylinelauncher.com';
+        var box = document.createElement('div');
+        box.id = 'wu-gpu-off';
+        box.setAttribute('role', 'alertdialog');
+        box.setAttribute('style', 'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;'
+          + 'background:rgba(0,0,0,.86);color:#eee;font:15px system-ui,sans-serif;text-align:center;padding:16px');
+        var card = document.createElement('div');
+        card.setAttribute('style', 'max-width:30rem;background:#15121c;border:1px solid #6b5a2e;border-radius:8px;padding:1.4rem');
+        var h = document.createElement('p');
+        h.setAttribute('style', 'font-size:18px;margin:0 0 .6rem');
+        h.textContent = 'Your browser can\'t draw the game';
+        var p = document.createElement('p');
+        p.setAttribute('style', 'margin:0 0 .6rem;color:#ccc');
+        p.textContent = 'The game draws with WebGPU, and this browser has it switched off or doesn\'t have it yet.';
+        var p2 = document.createElement('p');
+        p2.setAttribute('style', 'margin:0 0 1rem;color:#ccc');
+        p2.textContent = fix;
+        var a = document.createElement('a');
+        a.href = 'https://' + site + '/wrath/download';
+        a.textContent = 'Get the Leyline desktop app';
+        a.setAttribute('style', 'display:inline-block;margin:.2rem;padding:.5rem 1rem;background:#c9a24a;color:#111;border-radius:4px;text-decoration:none;font-weight:600');
+        var b = document.createElement('button');
+        b.textContent = 'Try anyway';
+        b.setAttribute('style', 'margin:.2rem;padding:.5rem 1rem;background:transparent;color:#ddd;border:1px solid #666;border-radius:4px;cursor:pointer');
+        b.addEventListener('click', function () { box.remove(); });
+        card.appendChild(h); card.appendChild(p); card.appendChild(p2); card.appendChild(a); card.appendChild(b); box.appendChild(card);
+        document.body.appendChild(box);
+      };
+      if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+    } catch (e) { /* the note is optional */ }
+  };
+  window.__wuGpuNote = gpuNote;
+  try {
+    if (!/[?&]nogpucheck=1\b/.test(location.search)) {
+      var gpu = navigator && navigator.gpu;
+      if (!gpu || typeof gpu.requestAdapter !== 'function') gpuNote('no WebGPU in this browser');
+      else {
+        gpu.requestAdapter().then(function (ad) {
+          if (ad) window.__wuGpu = { ok: true };
+          else gpuNote('no GPU adapter (graphics acceleration off or this GPU is blocked)');
+        }, function (e) { gpuNote('the GPU adapter failed: ' + String((e && e.message) || e).slice(0, 120)); });
+      }
+    }
+  } catch (e) { /* the check is optional */ }
   try {
     if (!/[?&]noretry=1\b/.test(location.search)) {
       var stats = { retried: 0, recovered: 0, failed: 0, last: [] };

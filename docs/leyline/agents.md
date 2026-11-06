@@ -52,7 +52,7 @@ open it. One card at a time.
 
 **Never:**
 
-- Sign in, see or change a password, a Hero Key or your account
+- Log in, see or change a password, a Hero Key or your account
 - Anything with money
 - Delete files, remove a game folder, wipe a realm
 - Make your realm public, open its sign-up, or make invites

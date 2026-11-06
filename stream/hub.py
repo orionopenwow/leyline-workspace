@@ -962,10 +962,22 @@ class Hub:
                 ("looks", "Looks", "/wrath/looks", "looks"),   # owner 1 Nov 14:38: graphics and UI looks, a main part of the site
                 ("host", "Host", "/wrath/host", "host"),
                 ("forum", "Forum", FORUM, "forum")]   # owner 2026-10-30: "change community to forum"
+        sp = self.portal("site_pages")
+        try:
+            # Single player beside Realms, where the ways to play live (owner 4 Nov: a blatant, top-level choice), only
+            # once its flag is on (stream/site_pages.py SINGLE_PLAYER_PUBLIC: dark until the grand release)
+            if sp is not None and sp.single_public():
+                main.insert(2, ("single", "Single player", sp.SINGLE, "single"))
+        except Exception:   # noqa: BLE001
+            pass
         # the duel leaderboards (stream/duels.py; owner 2026-10-31: "leaderboards on site") lead the More menu
         more = [("leaderboards", "Leaderboards", "/wrath/leaderboards", "leaderboards"),
+                # instant boss fights and the 1v1 arena queue (stream/bossfights.py; owner 5 Nov: "these modes on the site")
+                ("bossfights", "Boss fights", "/wrath/bossfights", "bossfights"),
+                ("arena", "Duels and arena", "/wrath/arena", "arena"),
                 ("forge", "Forge", BASE + "/forge", "forge"), ("agents", "Agents", BASE + "/agents", "agents"),
-                ("docs", "Docs", "/wrath/docs", "docs"), ("news", "News", BASE + "/news", "news"),
+                ("docs", "Docs", "/wrath/docs", "docs"), ("guides", "Guides", "/wrath/guides", "guides"),   # the guide series (stream/site_pages.py)
+                ("news", "News", BASE + "/news", "news"),
                 ("creators", "Creators", BASE + "/creators", "creators")]   # Modes, Gallery and Status left the menu (owner 2026-10-30)
         return main, more
 
@@ -1042,8 +1054,10 @@ class Hub:
         flag = '<p class="hb-flag">Preview: this page is hidden while it is being built.</p>' if not front_on() else ""
         repo = self.portal("LEYLINE_REPO") or "https://github.com/orionopenwow/Leyline"
         discord = self.portal("DISCORD_URL") or ""
-        foot_links = [("Docs", "/wrath/docs"), ("Download", dl), ("Forum", FORUM), ("Status", f"{home}#status"),
-                      ("Mods", f"{BASE}/catalog"), ("Creators", f"{BASE}/creators"), ("Submit a mod", f"{BASE}/submit")]
+        foot_links = [("Docs", "/wrath/docs"), ("Guides", "/wrath/guides"), ("Modes", "/wrath/modes"), ("Download", dl),
+                      ("Forum", FORUM), ("Status", f"{home}#status"),
+                      ("Mods", f"{BASE}/catalog"), ("Creators", f"{BASE}/creators"), ("Submit a mod", f"{BASE}/submit"),
+                      ("Press", "/wrath/press")]
         social = [("GitHub", repo)]
         hs = self.health_state()
         health = (f'<a class="hb-health {hs}" href="{home}#status"><span class="hb-hdot" aria-hidden="true"></span>'
@@ -1062,13 +1076,19 @@ class Hub:
                 'with mods, addons, realm scripts and tools.">')
         css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
                + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + self._backdrop() + self._dl_css() + css)
-        return (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
+        page = (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
                 f'<body class="hb"><a class="hb-skip" href="#main">Skip to content</a>{top}{self._turn_hint(path)}'
                 f'<main id="main" class="hb-main{" hb-front" if front else ""}">{flag}{sub}{body}</main>{foot}'
                 + (f'<script nonce="{e(nonce)}">{HUB_JS}</script>' if nonce else "") + '</body></html>').replace(
-                    LIGHT_MQ, LIGHT_OFF).encode("utf-8")
+                    LIGHT_MQ, LIGHT_OFF)
+        # With the front door on, the frame's own links (header, footer) say /wrath/leyline: pages other modules draw in
+        # this frame (the Hero Key, Sign in, the leaderboards) don't pass through _Live, and sent every visitor through a
+        # 301 from the preview address (site review 4 Nov). Same swap as _Live and wrath_portal.hub_frame: idempotent.
+        if front_on():
+            page = page.replace(BASE, FRONT)
+        return page.encode("utf-8")
 
     def _dl_css(self) -> str:
         dm = self.portal("downloads_mod")
@@ -2269,10 +2289,21 @@ class Hub:
             # mod, four feature sections, the forum and the status bar. The counters, the community posters, the Hero
             # Key line and Mods in play repeated what is already above them (their methods stay, off the page, to bring back).
             + self.realm_section(got) + self.how_strip() + den_week_html() + self.featured_mod(items)
+            + self.site_sections()   # Ways to play and (flag on) Single player, after the featured mod (stream/site_pages.py)
+           
             + self.features(got) + self.community(items) + status +
             '<p class="hb-fine">Community projects are links: nothing of theirs is hosted here. Each belongs to its '
             'authors, under the licence they chose. Leyline is an independent open-source project.</p>')
         return self._shell("Leyline", body, path, nonce)
+
+    def site_sections(self) -> str:
+        """The front page's Ways to play (the Modes shelf) and, once its flag is on, Single player (stream/site_pages.py,
+        owner 4 Nov); "" without that module."""
+        sp = self.portal("site_pages")
+        try:
+            return sp.front_sections() if sp is not None else ""
+        except Exception:   # noqa: BLE001
+            return ""
 
     def _network(self):
         """(network module, realms, ok, the sample's status) from the portal, or None when it has no realm list."""
@@ -4398,7 +4429,7 @@ border:1px solid var(--lk-border);border-radius:12px;background:linear-gradient(
 .hb-main:has(>.hb-pg),.hb-main:has(>.fm),.hb-main:has(>.hf){padding:16px 16px 32px}
 .hb-pg-h{padding:14px 16px}.hb-pg-b{padding:16px}
 .hb-pg-h h1{font-size:20px}
-.hb-seg{display:flex;flex-wrap:nowrap;width:100%}.hb-seg a{flex:1 1 auto;justify-content:center;padding:0 10px;white-space:nowrap;font-size:14px}
+.hb-seg{display:flex;flex-wrap:nowrap;width:100%;overflow-x:auto;scrollbar-width:none}.hb-seg::-webkit-scrollbar{display:none}.hb-seg a{flex:1 0 auto;justify-content:center;padding:0 10px;white-space:nowrap;font-size:14px}
 .hb-pg-x{display:none}
 .hb-frow{grid-template-columns:minmax(0,1fr);gap:4px}.hb-flabel{padding-top:0}
 .hb-frow p,.hb-mk-bar .hb-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px 2px}
@@ -4972,6 +5003,9 @@ BACKDROP = "leyline-shot-backdrop.webp"   # the site backdrop (Hub._backdrop)
 # The header's line icons (the launcher's sidebar style: 24x24 strokes, currentColor).
 NAV_ICONS = {
     "play": '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>',
+    # the launcher's sword mark for Single player (launcher/ui/single.js SWORD), and a book with a play mark for Guides
+    "single": '<path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/>',
+    "guides": '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M10.5 7.5v5l4-2.5z"/>',
     "realms": ICONS["realms"], "mods": ICONS["mods"], "modes": ICONS["modes"], "host": ICONS["host"], "looks": ICONS["looks"],
     "community": ICONS["community"], "forge": ICONS["forge"], "agents": ICONS["agents"],
     "forum": '<path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>'
@@ -4988,6 +5022,8 @@ NAV_ICONS = {
     "discord": '<path d="M4 6.5C4 5.1 5.1 4 6.5 4h11C18.9 4 20 5.1 20 6.5v8c0 1.4-1.1 2.5-2.5 2.5H11l-4.5 3.5V17h0C5.1 17 4 15.9 4 14.5z"/>'
                '<circle cx="9" cy="10.5" r="1.2"/><circle cx="15" cy="10.5" r="1.2"/>',
     "leaderboards": '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4"/>',
+    "bossfights": '<path d="M12 3l2.2 4.6 5 .5-3.8 3.4 1.1 5L12 14l-4.5 2.5 1.1-5L4.8 8.1l5-.5z"/><path d="M8 20h8"/>',
+    "arena": '<path d="M5 19L15 9M15 5l4 4M9 5l-4 4M19 19L9 9"/><path d="M4 20l2-2M20 20l-2-2"/>',
 }
 # The gallery (Hub.gallery_tiles). Our in-game screenshots (stream/www-files/art, checked by eye: no logo, no game name;
 # behind the game data killswitch): name -> (width, height, title, line, alt). Words only; no client numbers, no game name.
@@ -5376,7 +5412,8 @@ def get(handler, path: str, query: dict) -> None:
         handler.end_headers()
         return
     limit = hub.portal("browse_limit")
-    if limit is not None and not limit.hit(handler.ip(), 600):
+    bucket = hub.portal("rl_bucket")   # one IPv6 /64 is one visitor, like every other limit (site review 4 Nov)
+    if limit is not None and not limit.hit(bucket(handler.ip()) if callable(bucket) else handler.ip(), 600):
         handler.send(429, b"too many requests\n", "text/plain")
         return
     if path == FEED:
@@ -5457,11 +5494,18 @@ def post(handler, path: str) -> None:
     if path != BASE + "/submit":
         handler.send(405, b"method not allowed\n", "text/plain")
         return
+    same = hub.portal("same_site")   # site review 4 Nov: any site could queue an entry through this anonymous form
+    if callable(same) and not same(handler):
+        handler.send(403, b"that form came from another site\n", "text/plain")
+        return
     try:
         length = int(handler.headers.get("Content-Length", "0"))
     except ValueError:
         length = -1
-    if length < 0 or length > MAX_FORM:
+    if length < 0:   # a missing number or a negative one is a bad request, not a big one
+        handler.send(400, b"bad request\n", "text/plain")
+        return
+    if length > MAX_FORM:
         handler.send(413, b"too large\n", "text/plain")
         return
     raw = handler.rfile.read(length).decode("utf-8", "replace")

@@ -1198,6 +1198,12 @@ local function doBoost(player, state)
         return false
     end
     if player:IsInCombat() then say(player, "Not in combat."); return false end
+    -- Review 4 Nov: a ghost would be teleported to Dalaran away from its body, and a level 55-57 Death Knight can be
+    -- in a battleground or arena (the boost's teleport would pull it out mid-match).
+    if try(player, "IsDead") == true then say(player, "Not while dead: release and get back to your body first."); return false end
+    if try(player, "InBattleground") == true or try(player, "InArena") == true then
+        say(player, "Not in a battleground or arena."); return false
+    end
     local kit = kitFor(player, state.spec)
     if not kit then return false end
 
@@ -1707,8 +1713,8 @@ local function onCommand(event, player, command)
     local cmd = (command or ""):gsub("^[%.!]", ""):lower():gsub("%s+$", "")
     -- WrathUnleashedUI (Modes.lua, "the start-choice window") answers the choice menu, which a client closes without
     -- telling the realm: "boost seen" = it arrived (no more resends this session: touched, above); "boost later" =
-    -- closed with Goodbye without a pick: kept for the character (choice "later"), so no login opens it again.
-    -- .boost still opens it while the character may boost.
+    -- closed with Goodbye without a pick: kept for the character (choice "later"); the next login at level 1 opens it
+    -- again (onLogin, owner 4 Nov), and .boost still opens it while the character may boost.
     if cmd == "boost seen" or cmd == "boost later" then
         if not on() then return end
         local guid = player:GetGUIDLow()

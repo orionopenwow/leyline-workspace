@@ -1,0 +1,82 @@
+# Jaina's lines in Den Lite (jaina.rs reads this file into the program at build time; edit here, nothing else).
+# One line each:   <key> | <what she says>
+# A key may have several lines: she picks one (seeded, never the same one twice running). Up to 120 letters, plain
+# words: no game-brand names, no client version numbers, no links. {n} {theme} {name} {fav} are filled in.
+# The words she answers commands with ("I'll wait here.", "Right behind you.") stay in companion.rs: the full Den
+# says the same ones.
+#
+# TODO(owner): a voice pass on every line below (his words; these are drafts in the style of cheers.rs). The ones
+# that carry her personality most: idle.*, offer, place.again, guest.
+
+# ---- reactions (unprompted: a toast in the Den bar, never more than one every few minutes; none when quiet)
+place.first   | Your first piece today. Good start.
+place.first   | There we go. The room's waking up.
+place         | That fits nicely.
+place         | Good spot for it.
+place         | I like where this is going.
+place.lots    | That's a lot at once. It's filling up.
+place.lots    | Look at all of it!
+place.again   | Another {fav}? You do like those.
+place.again   | {fav} again. I see a favourite.
+delete        | Gone. Undo brings it back if you miss it.
+delete.lots   | Clearing out? Undo remembers, if you change your mind.
+fly           | Up we go!
+fly           | Wait for me!
+land          | Nice landing.
+fight         | Show them what you've got.
+fight.won     | Well fought!
+fight.lost    | Shake it off. Again?
+guest         | Someone's here! Say hello.
+guest         | A visitor. I'll keep out of the way.
+guest.left    | They've gone. Just us again.
+save          | Saved. Good habit.
+grow          | More room. I have ideas already.
+built         | There. Do you like it?
+
+# ---- idle (when you stand still a while; mostly a gesture, rarely a word)
+idle.calm     | Quiet in here. I like it.
+idle.calm     | Take your time.
+idle.cheerful | This place is coming along.
+idle.excited  | What do we build next?
+idle.curious  | I wonder what this corner needs.
+idle.sleepy   | Long day? Your Den keeps itself.
+explore       | Just looking around.
+
+# ---- helping build: a preview copy (it sparkles) you keep or send away
+offer         | How about a {theme} here? Say "Jaina, yes" to keep it, or "Jaina, no".
+offer         | I had an idea: a {theme}. Yes to keep it, no and it's gone.
+offer.season  | It's the season for it: a {theme}? Yes to keep it, no and it's gone.
+offer.accept  | Done. It's yours now: move it, change it, undo takes it back.
+offer.accept  | Kept. One undo takes the whole set back.
+offer.reject  | No problem. Gone.
+offer.reject  | Fair enough. Another time.
+offer.expired | I'll put that idea away for now.
+offer.off     | I won't suggest things by myself. Say "Jaina, help" when you'd like an idea.
+offer.none    | Nothing to say yes to. Say "Jaina, help" and I'll suggest something.
+offer.busy    | One idea at a time: yes or no to this one first.
+offer.limit   | I've put down plenty already. "Jaina, tidy up" takes mine away.
+offer.nospace | There's no room for it here. Try nearer the middle.
+theme.unknown | I don't know that one. Try a corner, lights, flowers, picnic, stall, harvest, candles or winter.
+
+# ---- cleaning up (only what she put down; never your own pieces)
+tidy.ask      | I put down {n} pieces you haven't touched. Take them away? Say "Jaina, yes".
+tidy.done     | Tidied: {n} pieces gone. Undo puts them back.
+tidy.none     | Nothing of mine to tidy. What you moved or made is yours.
+tidy.cancel   | Leaving it all as it is.
+
+# ---- critters (small friendly animals, a few at most; they go when you leave or say "Jaina, pets away")
+critter.new   | Meet the {name}.
+critter.new   | A {name} for your Den.
+critter.full  | That's enough critters for one Den.
+critter.gone  | The critters have gone home.
+critter.none  | There are no critters out.
+
+# ---- how she talks (Den panel: Quiet; chat: "Jaina, quiet", "Jaina, talk", "Jaina, chatty")
+talk.quiet    | I'll keep quiet. I still answer when you talk to me.
+talk.normal   | I'll chime in now and then.
+talk.chatty   | Oh good, I had things to say.
+
+# ---- what she remembers of this visit ("Jaina, what did I build?")
+memory.none   | Nothing yet this visit. Place a piece and I'll remember it.
+memory        | This visit: {n} pieces placed. Your favourite looks like the {fav}.
+memory.nofav  | This visit: {n} pieces placed, no favourite yet.

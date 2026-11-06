@@ -43,6 +43,14 @@
 #      which writes /srv/wrath/portal/duels/leaderboards.json (wu-portal's /app/duels) from cron every 5 minutes, and
 #      runs it once. Read only, names only (no account details), bots and opted-out characters left out.
 #      OV_DUELS = 1 (owner 2026-10-31): ov_duels.lua's ratings and points (a new setting: the world server restarts).
+#   1g. The Boss fights boards (docs/BOSS-FIGHTS.md), when bossfights-export.py rides along: makes
+#      mod-leyline-bossfights' two tables (bossfights-export.py --schema, the module's own text, so the export works
+#      before the new realm image runs), installs /srv/wrath/bossfights-export.py, which writes bossfights.json and
+#      arena.json into /srv/wrath/portal/duels (wu-portal's /app/duels, next to the duel boards) from cron every
+#      5 minutes, and runs it once. Read only, names only, GM runs and opted-out characters left out.
+#      Boss fight settings (realm/profiles/main.env): AC_PLAYERBOTS_ENABLE_ICCBUFFS = 0 (no bot-module assist
+#      auras, so times compare), AC_AUTO_BALANCE_DISABLE_PER_INSTANCE = 631 (a fixed 10-player fight),
+#      LEYLINE_BOSSFIGHT_BOTS = 1 (the module may add bots to its own fights only; the owner's call).
 #   4. Announces a restart (SERVERPASS_WARN_MIN, default 5) and recreates the world server; if only the Lua
 #      changed, a live "reload ale" instead.
 # Never prints a password: MySQL runs in its container with the container's own root password.
@@ -56,17 +64,27 @@ PF=profiles/main.env
 BK=/root/serverpass-backups/$(date +%Y%m%d-%H%M%S); mkdir -p "$BK"
 cp -p "$PF" "$BK/profile.env"
 sqlq() { docker exec -i ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -N -B acore_world' <<<"$1"; }
+# Review 4 Nov: a restart that never reported ready left the new scripts and profile in place (only the reload path
+# put things back). put_back restores both from $BK and moves this pass's brand-new scripts aside, so docker's own
+# restart of the world server loads what ran before. The profile's keys take effect at the next recreate.
+put_back() {
+  for b in "$BK"/*.lua; do [ -f "$b" ] && cp -p "$b" "$DST/"; done
+  mkdir -p "$BK/added-by-this-pass"
+  for b in $ADDED; do [ -f "$DST/$b" ] && mv -f "$DST/$b" "$BK/added-by-this-pass/$b"; done
+  cp -p "$BK/profile.env" "$PF"
+  echo "  put back: the previous scripts and $PF from $BK (this pass's new scripts are in $BK/added-by-this-pass)" >&2
+}
 
 echo "== 1. realm scripts"
 DST=custom/lua_scripts
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 tar -x -C "$T" -f -
-n=0; changed=0; NEW=""
+n=0; changed=0; NEW=""; ADDED=""   # ADDED: scripts this pass put there for the first time (no backup to restore)
 for f in "$T"/*.lua; do
   [ -f "$f" ] || continue
   b=$(basename "$f"); sed -i 's/\r$//' "$f"; n=$((n+1))
   if [ -f "$DST/$b" ] && cmp -s "$f" "$DST/$b"; then echo "  $b unchanged"; continue; fi
-  if [ -f "$DST/$b" ]; then cp -p "$DST/$b" "$BK/$b"; else NEW="$NEW $b"; fi
+  if [ -f "$DST/$b" ]; then cp -p "$DST/$b" "$BK/$b"; else NEW="$NEW $b"; ADDED="$ADDED $b"; fi
   install -m 644 "$f" "$DST/$b"; echo "  $b installed"; changed=$((changed+1))
 done
 [ "$n" -gt 0 ] || die "no .lua files in the upload"
@@ -162,6 +180,26 @@ if [ -f "$T/duels-export.py" ]; then
   fi
 fi
 
+# The Boss fights boards' export (see 1g above). Safe to run again: CREATE TABLE IF NOT EXISTS, install, one cron file.
+if [ -f "$T/bossfights-export.py" ]; then
+  echo "== 1g. boss fights boards export"
+  sed -i 's/\r$//' "$T/bossfights-export.py"
+  if python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$T/bossfights-export.py"; then
+    [ -f /srv/wrath/bossfights-export.py ] && cp -p /srv/wrath/bossfights-export.py "$BK/bossfights-export.py"
+    [ -f /etc/cron.d/wu-bossfights ] && cp -p /etc/cron.d/wu-bossfights "$BK/cron.wu-bossfights"
+    python3 -I "$T/bossfights-export.py" --schema | docker exec -i ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -N -B acore_characters' \
+      || die "could not make the boss fight tables"
+    install -m 755 "$T/bossfights-export.py" /srv/wrath/bossfights-export.py
+    install -d -m 755 /srv/wrath/portal/duels
+    printf '*/5 * * * * root python3 -I /srv/wrath/bossfights-export.py >/dev/null 2>&1\n' > /etc/cron.d/wu-bossfights
+    chmod 644 /etc/cron.d/wu-bossfights
+    if out=$(python3 -I /srv/wrath/bossfights-export.py 2>&1); then echo "  $out (cron every 5 min)"
+    else echo "  NOTE: the first boss fights export failed (${out:0:200}); cron tries again in 5 minutes"; fi
+  else
+    echo "  NOTE: bossfights-export.py doesn't parse; skipped"
+  fi
+fi
+
 # 1f. Blocked names (owner 2026-10-31: "username blocks, in game name blocks"; ov_names.lua, stream/namecheck.py): the
 # one blocklist's whole names go into AzerothCore's reserved_name (names that pass for the team) and profanity_name
 # (the rest), so character create, guild charters and pet names refuse them (the world server reads both at a start:
@@ -218,7 +256,13 @@ docker exec ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldum
   | gzip > "$BK/dungeon_access_template.sql.gz"
 gzip -dc "$BK/dungeon_access_template.sql.gz" | grep -q 'CREATE TABLE' || die "could not back up dungeon_access_template; nothing changed in the database"
 MAPS="389,43,36,33"
+# the exact undo, row by row, before the change (review 4 Nov: the backup was there, the way back wasn't written down)
+sqlq "SELECT CONCAT('UPDATE dungeon_access_template SET min_level = ', min_level, ' WHERE map_id = ', map_id, ' AND difficulty = 0;') FROM dungeon_access_template WHERE map_id IN ($MAPS) AND difficulty = 0 AND min_level > 10" \
+  > "$BK/UNDO-dungeon-levels.sql" || true
 sqlq "UPDATE dungeon_access_template SET min_level = 10 WHERE map_id IN ($MAPS) AND difficulty = 0 AND min_level > 10" >/dev/null
+if [ -s "$BK/UNDO-dungeon-levels.sql" ]; then
+  echo "  undo: docker exec -i ov-ac-database sh -c 'MYSQL_PWD=\"\$MYSQL_ROOT_PASSWORD\" exec mysql -uroot acore_world' < $BK/UNDO-dungeon-levels.sql"
+fi
 sqlq "SELECT map_id, min_level, max_level FROM dungeon_access_template WHERE map_id IN ($MAPS) AND difficulty = 0 ORDER BY map_id" \
   | while read -r m lo hi; do echo "  map $m: levels $lo-$hi"; done
 missing=$(sqlq "SELECT COUNT(*) FROM (SELECT 389 m UNION SELECT 43 UNION SELECT 36 UNION SELECT 33) w WHERE m NOT IN (SELECT map_id FROM dungeon_access_template WHERE difficulty = 0)")
@@ -271,7 +315,8 @@ for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SID
     AC_CHAT_STRICT_LINK_CHECKING_SEVERITY=1 AC_CHAT_STRICT_LINK_CHECKING_KICK=0 \
     AC_ALLOW_TWO_SIDE_INTERACTION_CHAT=1 AC_ALLOW_TWO_SIDE_INTERACTION_CHANNEL=1 AC_ALLOW_TWO_SIDE_INTERACTION_GUILD=1 \
     AC_ALLOW_TWO_SIDE_INTERACTION_ARENA=1 AC_ALLOW_TWO_SIDE_INTERACTION_AUCTION=1 AC_ALLOW_TWO_SIDE_INTERACTION_CALENDAR=1 \
-    AC_ALWAYS_MAX_SKILL_FOR_LEVEL=1 AC_MIN_PETITION_SIGNS=0 AC_MAIL_DELIVERY_DELAY=0; do
+    AC_ALWAYS_MAX_SKILL_FOR_LEVEL=1 AC_MIN_PETITION_SIGNS=0 AC_MAIL_DELIVERY_DELAY=0 \
+    AC_PLAYERBOTS_ENABLE_ICCBUFFS=0 AC_AUTO_BALANCE_DISABLE_PER_INSTANCE=631 LEYLINE_BOSSFIGHT_BOTS=1; do
   k=${kv%%=*}; v=${kv#*=}
   if grep -qE "^$k=" "$PF"; then sed -i "s#^$k=.*#$k=$v#" "$PF"; else printf '%s=%s\n' "$k" "$v" >> "$PF"; fi
   [ "$(docker exec ov-ac-worldserver printenv "$k" 2>/dev/null || true)" = "$v" ] || need=1
@@ -607,19 +652,23 @@ else
     docker restart ov-ac-worldserver >/dev/null
   fi
   sleep 3
-  [ "$(started)" != "$before" ] || die "the world server did not restart. Backups: $BK"
+  [ "$(started)" != "$before" ] || { put_back; die "the world server did not restart. The previous scripts and profile are back in place. Backups: $BK"; }
   ok=0
   for i in $(seq 1 120); do
     if docker logs --since "$(started)" ov-ac-worldserver 2>&1 | grep -F 'ready...' >/dev/null; then ok=1; break; fi
     if (( i % 6 == 0 )); then echo "  still starting ($((i * 10 / 60)) min)..."; fi
     sleep 10
   done
-  [ "$ok" = 1 ] || die "the world server did not report ready in 20 min: docker logs --tail 80 ov-ac-worldserver. Backups: $BK"
+  [ "$ok" = 1 ] || { put_back; die "the world server did not report ready in 20 min: docker logs --tail 80 ov-ac-worldserver. The previous scripts and profile are back in place (docker restarts it with them). Backups: $BK"; }
   echo "  world server ready"
   mark_loaded
 fi
 sleep 2
-if docker logs --since 60s ov-ac-worldserver 2>&1 | grep -iE 'lua.*(error|failed)|ALE.*error' | tail -5 | grep . ; then
+# the scripts load at the start of a 2-10 minute boot: after a restart read the log from the server's start, not the
+# last 60 s (review 4 Nov: load errors were older than that and were missed)
+LOG_SINCE=60s
+[ -n "${before:-}" ] && LOG_SINCE=$(docker inspect -f '{{.State.StartedAt}}' ov-ac-worldserver 2>/dev/null || echo 60s)
+if docker logs --since "$LOG_SINCE" ov-ac-worldserver 2>&1 | grep -iE 'lua.*(error|failed)|ALE.*error' | tail -5 | grep . ; then
   echo "  (the lines above are Lua errors: check them)"
 fi
 echo "  backups: $BK"

@@ -50,6 +50,13 @@ tool that is on in gold.
   6-letter code), **Prefab** (the selection by name: Save, Paste, Share) and **Plot** (Claim, Info, Add a friend or a
   Visitor, Remove).
 
+**The mouse and the camera (4 Nov, Den Lite).** You arrive in Build mode at your own character: W A S D walk. A prop
+glows under the mouse; a click picks it up where it stands and it follows the mouse over the ground; a click puts it
+down (one undo), Esc puts it back. The wheel or Q / E turn what you hold (Shift+wheel a little, Ctrl+wheel zooms). A
+left-drag on the ground turns you with the camera, so the cursor's ray and W stay on what you see. Roll the wheel out
+past the game's own end and the far view takes over (W A S D fly it, Space / X up and down, Shift faster); roll back in
+to come back. The whole placement chain, what was wrong with it and what changed: docs/DEN-PLACEMENT.md.
+
 `/builder` opens the same gallery anywhere you may build (the strip then says "BUILD"); `/den` is the Den panel
 (invite a friend, who may build, save and load); its **Home** button (or `/denhome`) opens the home panel: the start
 choice, stamps, the grid, visiting and the mailbox. In edit mode hold Q: the gallery, until you let go.

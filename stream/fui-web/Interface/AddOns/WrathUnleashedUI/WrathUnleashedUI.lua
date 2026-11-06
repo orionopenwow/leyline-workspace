@@ -586,8 +586,12 @@ function W.LeylineDefaults()
             pcall(SetCVar, "UnitNameFriendlyPlayerName", "1")
         end
     end
-    -- Talent planner: 3.3.5's own preview mode (plan points, then Learn), on for everyone.
-    if SetCVar then pcall(SetCVar, "previewTalents", "1"); pcall(SetCVar, "previewPetTalents", "1") end
+    -- Talent planner: the game's own preview mode (plan points, then Learn), on once per character like the names above,
+    -- so a player who turns it off keeps it off (review 4 Nov: it was forced on at every login).
+    if not c.previewTalentsOn then
+        c.previewTalentsOn = true
+        if SetCVar then pcall(SetCVar, "previewTalents", "1"); pcall(SetCVar, "previewPetTalents", "1") end
+    end
     -- (No UIParent:SetScale here any more: on the desktop UIParent's scale is the game's UI size, and setting it
     -- back to 1 made the UI jump bigger after every login; the size is the game's own setting, see "UI size".)
     WrathUnleashedUIDB.scale = nil

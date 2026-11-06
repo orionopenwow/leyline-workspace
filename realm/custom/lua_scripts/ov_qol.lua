@@ -98,7 +98,9 @@ local function respecOn()    return flag("OV_FREE_RESPEC", true) end
 local function xpToggleOn()  return flag("OV_XP_TOGGLE", true) end
 local function restedOn()    return flag("OV_RESTED_NOTE", true) end
 local function hearthOn()    return flag("OV_HEARTH_RESET", true) end
-local function summonOn()    return flag("OV_BOT_SUMMON", true) end
+-- .summon is for bots: with none allowed on the realm (AC_PLAYERBOTS_MAX_ADDED_BOTS=0, main since the owner's "no
+-- bots", 31 Oct) it is off too, so .qol never advertises it there (review 4 Nov)
+local function summonOn()    return flag("OV_BOT_SUMMON", true) and os.getenv("AC_PLAYERBOTS_MAX_ADDED_BOTS") ~= "0" end
 local function duelResetOn() return flag("OV_DUEL_RESET", isBrawl()) end
 local function hubOn()       return flag("OV_QOL_HUB", isBrawl()) end
 local function repairOn()    return flag("OV_FREE_REPAIR", isBrawl()) end
@@ -660,8 +662,10 @@ table.insert(TIPS, { text = "Dungeons scale to the group you bring, even just yo
 -- .solo (owner 4 Nov, the Wrath+ sprint): every dungeon and raid already scales to the group (mod-autobalance, minimum
 -- one player) and the Dungeon Finder queues one player alone (mod-solo-lfg); this says so, with the dungeons for your
 -- level. Names and level ranges are the dungeons' usual ones (plain words, no game data).
+-- From level 10: realm/serverpass.sh puts these four at min_level 10 (dungeon_access_template) and the finder gate is 10
+-- (ov_slices.lua), so a level 10-12 can queue them; .solo said "none yet" there (review 4 Nov).
 local SOLO_DUNGEONS = {
-    { 13, 18, "Ragefire Chasm, Wailing Caverns, the Deadmines" },
+    { 10, 18, "Ragefire Chasm, Wailing Caverns, the Deadmines, Shadowfang Keep" },
     { 18, 26, "Shadowfang Keep, Blackfathom Deeps, the Stockade" },
     { 26, 36, "Gnomeregan, Razorfen Kraul, the Scarlet Monastery" },
     { 36, 46, "Razorfen Downs, Uldaman, Zul'Farrak" },
@@ -674,7 +678,7 @@ local SOLO_DUNGEONS = {
 }
 local function soloCommand(player)
     local lvl = player:GetLevel()
-    local list = "none yet: dungeons open at level 13 (the Dungeon Finder from 10)"
+    local list = "none yet: the Dungeon Finder opens at level 10"
     for _, d in ipairs(SOLO_DUNGEONS) do
         if lvl >= d[1] and lvl < d[2] then list = d[3] end
     end

@@ -152,6 +152,26 @@ check(".discord on shows them again", alice.msgs[#alice.msgs]:match("B: back$"))
 events[42](42, alice, ".discord")
 check(".discord explains, with the Leyline name", alice.msgs[#alice.msgs]:match("Leyline Discord"))
 
+-- review 4 Nov: Discord -> game goes through the name guard's chat filter (ov_names.lua OVNames.Mask) like game chat
+clock = clock + 120
+OVNames = { Mask = function(t) return (t:gsub("[Bb]adword", "*******")) end }
+console("wudiscord say " .. T.hex("Badword") .. " " .. T.hex("you badword"))
+check("Discord name and text are starred like game chat", alice.msgs[#alice.msgs] == "|cff7289da[Discord]|r *******: you *******",
+    alice.msgs[#alice.msgs])
+OVNames = { Mask = function(t) return t end, NameHit = function(n) if n:lower():find("admin") then return "staff", "admin" end end }
+console("wudiscord say " .. T.hex("Admin Orion") .. " " .. T.hex("free gold here"))
+check("a staff-like Discord name is shown as Discord user", alice.msgs[#alice.msgs] == "|cff7289da[Discord]|r Discord user: free gold here",
+    alice.msgs[#alice.msgs])
+console("wudiscord say " .. T.hex("Rowan") .. " " .. T.hex("hi all"))
+check("an ordinary Discord name is kept", alice.msgs[#alice.msgs]:match("Rowan: hi all$"))
+OVNames = { Mask = function(t) return t end, NameHit = function() error("broken") end }
+console("wudiscord say " .. T.hex("Dee") .. " " .. T.hex("still here"))
+check("a broken name check never drops the line", alice.msgs[#alice.msgs]:match("Dee: still here$"))
+OVNames = { Mask = function() error("broken filter") end }
+console("wudiscord say " .. T.hex("C") .. " " .. T.hex("still shown"))
+check("a broken filter never drops the line", alice.msgs[#alice.msgs]:match("C: still shown$"))
+OVNames = nil
+
 -- stops queueing when the daemon stops pulling
 clock = clock + 120
 local n = #T.queue()

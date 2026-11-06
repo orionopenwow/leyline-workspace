@@ -99,7 +99,7 @@ test('the picker: the client and its version; the drop-up list in its three grou
   assert.equal(await page.textContent('#pb-realm-ver'), '3.3.5a', 'the official realm runs 3.3.5a: the chip beside its name');
   assert.equal(await page.textContent('#pb-detail'), 'Pick My Wrath');
   const text = await page.evaluate(() => document.body.innerText);
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -145,7 +145,7 @@ test('no clients: every family greyed; a greyed row opens Find your game files; 
   assert.match(guide, /Windows[\s\S]*Mac[\s\S]*Linux/);
   assert.match(guide, /backup/i);
   assert.match(guide, /friend/i);
-  assert.doesNotMatch(guide, /world of warcraft|\bwow\b|warcraft|lich king|blizzard|torrent/i);
+  assert.doesNotMatch(guide, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard|torrent/i);
   // the only ways out: the Discord (people help find or restore files) and the player guide; never a download
   assert.deepEqual(await page.$$eval('#page-findfiles a, #page-findfiles [data-link]', (l) => l.map((x) => x.dataset.link || x.href)), ['discord', 'gettingstarted']);
   assert.equal(await page.locator('#page-findfiles .ff-card').count(), 5);
@@ -224,17 +224,17 @@ const rrows = (page) => page.$$eval('#pb-rmenu > li', (l) => l.map((x) => (x.cla
   : [x.querySelector('.pb-opt-name').textContent, (x.querySelector('.rl-ver') || {}).textContent || '', (x.querySelector('.pb-opt-sub') || {}).textContent || '',
     x.getAttribute('aria-selected'), x.getAttribute('aria-disabled') || ''].join('|'))));
 
-test('the realm picker: Wrath Unleashed and Your Den, Host a server…, Play in your browser, one game client row', async () => {
+test('the realm picker: Wrath Unleashed, Your Den and Single player, Host a server…, Play in your browser, one game client row', async () => {
   const { page, ctx, errors } = await openNet();
   assert.equal(await page.isVisible('#pb-rmenu'), false);
   await page.click('#pb-realm-btn');
   assert.equal(await page.getAttribute('#pb-realm-btn', 'aria-expanded'), 'true');
   assert.equal(await page.getAttribute('#pb-rmenu', 'role'), 'listbox');
   assert.deepEqual(await rrows(page), [
-    'Wrath Unleashed|3.3.5a|5 playing|true|', 'Your Den||Make your Den|false|', '---',
-    'Host a server…|||false|', 'Play in your browser|||false|', '---',
+    'Wrath Unleashed|3.3.5a|5 playing|true|', 'Your Den||Make your Den|false|', 'Single player||Set it up once|false|', '---',
+    'Host a server…|||false|', 'Play in your browser|||false|', "Join a friend's Den…|||false|", '---',
     'My Wrath|3.3.5a|Game client|false|',
-  ], 'no realms of the network, no Solo leveling, no Make a realm or Find more; the client the realm plays with nearest the button');
+  ], 'no realms of the network, Single player under Your Den (owner 4 Nov: the flagship), no Make a realm or Find more; the client the realm plays with nearest the button');
   assert.equal(await page.getAttribute('#pb-rmenu .pb-client-opt', 'title'), 'My Wrath · C:\\Games\\Wrath\nPick another game client or add a folder', 'its path only in the tooltip');
   assert.doesNotMatch(await page.textContent('#pb-rmenu'), /Builders|Busiest|Solo leveling|Find more|Make a realm|Add a game folder/);
   assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Wrath Unleashed', 'the picked row has the focus');
@@ -277,9 +277,9 @@ test('the realm picker: Your realms only when there are any, the community realm
   const { page, ctx, errors } = await openNet(NET, 'relay.openvanilla.app:40002');
   await page.click('#pb-realm-btn');
   assert.deepEqual(await rrows(page), [
-    'Wrath Unleashed|3.3.5a|5 playing|false|', 'Your Den||Make your Den|false|', '---',
+    'Wrath Unleashed|3.3.5a|5 playing|false|', 'Your Den||Make your Den|false|', 'Single player||Set it up once|false|', '---',
     '# Your realms', 'Busy Den|3.3.5a|30 playing|true|', '---',
-    'Host a server…|||false|', 'Play in your browser|||false|', '---',
+    'Host a server…|||false|', 'Play in your browser|||false|', "Join a friend's Den…|||false|", '---',
     'My Wrath|3.3.5a|Game client|false|',
   ]);
   await page.click('#pb-rmenu >> text=Wrath Unleashed');
@@ -300,9 +300,10 @@ test('the realm picker: the official lineup first, Wrath Unleashed labelled Offi
   const { page, ctx, errors } = await openNet([Object.assign({}, NET[0], { name: 'Leyline Sample Hangout' }), NET[1], NET[2], vr, NET[3]]);
   await page.click('#pb-realm-btn');
   const rows = await rrows(page);
-  assert.deepEqual(rows.slice(0, 4), ['Wrath Unleashed|3.3.5a|5 playing|true|', 'Vanilla Remastered|1.12.1|2 playing|false|', 'Your Den||Make your Den|false|', '---'],
+  assert.deepEqual(rows.slice(0, 5), ['Wrath Unleashed|3.3.5a|5 playing|true|', 'Vanilla Remastered|1.12.1|2 playing|false|', 'Your Den||Make your Den|false|',
+    'Single player||Set it up once|false|', '---'],
     'one name for the official realm whatever the list calls it; the lineup pinned under it');
-  assert.ok(!rows.slice(4).some((x) => x.startsWith('Vanilla Remastered')), 'not twice');
+  assert.ok(!rows.slice(5).some((x) => x.startsWith('Vanilla Remastered')), 'not twice');
   assert.equal(await page.textContent('#pb-rmenu .pb-opt-kind'), 'Official realm');
   assert.equal(await page.locator('#pb-rmenu .pb-opt-kind').count(), 1, 'only the Hangout has the label');
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#pb-rmenu .pb-opt-kind'), '::before').content), '"· "');
@@ -323,6 +324,7 @@ test('the realm picker by keyboard: Up opens, arrows and Home / End, Enter picks
   assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'My Wrath');
   await page.keyboard.press('Home');
   await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');   // Single player (owner 4 Nov), under Your Den
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');

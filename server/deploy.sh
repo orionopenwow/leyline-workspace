@@ -125,6 +125,20 @@ for f in $WORLD_SQL; do
   docker exec -i ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot acore_world' < "$f"
   echo "  applied $f"
 done
+# The race/class preset (docs/RACE-CLASS-COMBOS.md): "all" adds mod-arac's own arac.sql (the copy fetch.sh put beside
+# the realm's sources) after the 83; the website is told either way. Control "combos-all" does the same later.
+COMBOS=$(grep -E '^OV_RACE_CLASS_COMBOS=' "profiles/$PROFILE.env" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '\r"')
+ARAC=custom/acore/modules/mod-arac/data/sql/db-world/arac.sql
+if [ "${COMBOS:-modern}" = all ]; then
+  if [ -f "$ARAC" ]; then
+    docker exec -i ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot acore_world' < "$ARAC"
+    echo "  applied $ARAC (all races, all classes)"
+  else
+    echo "  $ARAC missing: the realm keeps the 83 modern pairs; run Control's combos-all step once"
+  fi
+fi
+install -d -m 755 /srv/wrath/portal-data/leyline
+printf '%s\n' "${COMBOS:-modern}" > /srv/wrath/portal-data/leyline/race-class-combos.txt
 
 log "8/10 Realm address and restart"
 # The Leyline brand switch (realm/brand.sh): while it is on, the realm list keeps "Wrath Unleashed" (brand.sh NAME).

@@ -5,7 +5,7 @@
 // after its online button (Play / Host), and one line under it saying where it runs and what it needs. The worlds
 // it opens, all on this PC with the player's own game folder (Leyline never ships game files):
 //   * Your Den: Den Lite, a small server built into Leyline. Nothing else to install (den.js, app.js LOCAL.den).
-//   * Solo leveling: a full realm from the Host pack, in Docker (app.js LOCAL.solo).
+//   * Single player: a full realm from the Host pack, in Docker (app.js LOCAL.solo).
 //   * a mode package (docs/MODES.md, hosting/kit/modes): the same realm, private, with that mode's ruleset and scripts
 //     (hostmodes.js open(id, {solo})); a catalog mode that runs on one (stream/playmodes.json) gets its pick written
 //     so it starts after you log in (modes.rs mode_prepare_desktop) once that realm runs here.
@@ -48,13 +48,15 @@
   // why a catalog mode has no solo world yet (the official realm's hub, or more than one player by design)
   const ONLINE_WHY = {
     "arena-1v1": "Two players by design: it pairs you with someone on the official realm.",
+    "arena-queue": "Two players by design: it pairs you with someone on the official realm.",
+    "frozen-throne": "It lives on the official realm for now: a raid of 10, with companions or players.",
     keystones: "It lives on the official realm's hub for now.",
     transmog: "It lives on the official realm's hub for now.",
     hardcore: "It lives on the official realm's hub for now.",
   };
   // a game version -> the Host pack profile that runs it (host/profiles.rs)
   const PROFILE_FOR_BUILD = { "3.3.5a": "solo", "1.12.1": "cmangos-1.12.1", "2.4.3": "cmangos-2.4.3", "4.3.4": "tcpp-4.3.4" };
-  const PACK_NAMES = { "minigolf-night": "Minigolf night", "duel-ladder": "Duel ladder", "solo-leveling": "Solo leveling",
+  const PACK_NAMES = { "minigolf-night": "Minigolf night", "duel-ladder": "Duel ladder", "solo-leveling": "Single player",
     levelling: "Classic levelling", "hide-and-seek": "Hide and seek" };
 
   // ---------------------------------------------------------------- Docker, asked once (and again after a setup)
@@ -73,7 +75,7 @@
   // ---------------------------------------------------------------- what Play solo opens
   // { kind: "den" | "realm" | "browser" | "none", name, profile, pack, pick, mode, why, coming }
   const DEN = { kind: "den", name: "Your Den" };
-  const SOLO_LEVELING = { kind: "realm", name: "Solo leveling", profile: "solo" };
+  const SOLO_LEVELING = { kind: "realm", name: "Single player", profile: "solo" };
   function forMode(m) {
     if (!m || !m.id) return null;
     if (m.kind === "offline") return { kind: "browser", name: m.title, mode: m.id, coming: m.status !== "live" };
@@ -188,7 +190,7 @@
       return;
     }
     if (t.kind !== "realm") return;
-    // Solo leveling: app.js's own steps (game folder, set up, switch, knock, PLAY)
+    // Single player: app.js's own steps (game folder, set up, switch, knock, PLAY)
     if (t.profile === "solo" && !t.pack) {
       const L = local("solo");
       if (typeof localGo === "function" && L) { localGo(L); return; }
@@ -339,7 +341,7 @@
     const ways = mk("div", "solo-ways");
     const way = (label, title, on) => { const b = mk("button", "link-s solo-way", label); b.type = "button"; b.title = title; b.addEventListener("click", on); return b; };
     ways.append(mk("span", "solo-ways-h", "More on your own:"),
-      way("Solo leveling ›", "A full realm on this PC with helper bots (Docker)", (ev) => go(SOLO_LEVELING, ev.currentTarget)),
+      way("Single player ›", "Just you and your bot companions, on this PC (Docker)", (ev) => go(SOLO_LEVELING, ev.currentTarget)),
       way("Modes ›", "Every mode, with Play solo where it runs on this PC", () => nav("modes")),
       way("Your own realm ›", "Any ruleset, private, on this PC (Docker)", () => nav("host")),
       way("GM command center ›", "Teleport, spawn, time, weather, fly: full control of your own worlds", () => { if (window.LeylineGM) window.LeylineGM.open(); }));

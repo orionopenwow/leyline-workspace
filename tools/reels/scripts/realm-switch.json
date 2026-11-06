@@ -1,0 +1,53 @@
+{
+ "id": "realm-switch",
+ "kind": "reel",
+ "formats": [
+  "reel",
+  "wide"
+ ],
+ "title": "Official and community realms",
+ "kicker": "Realms",
+ "sub": "TODO(owner): One launcher for every realm on the network.",
+ "end_line": "TODO(owner): Find a realm, or host your own.",
+ "shots": [
+  {
+   "take": "lf-switch",
+   "in": [
+    "community",
+    -0.3
+   ],
+   "out": [
+    "play-community",
+    1.2
+   ],
+   "caption": "Community realms, run by players"
+  },
+  {
+   "take": "hand-community",
+   "in": 2,
+   "out": 14,
+   "caption": "PLAY logs you in by itself",
+   "speed": 1.5
+  },
+  {
+   "take": "lf-switch",
+   "in": [
+    "official",
+    -0.3
+   ],
+   "out": [
+    "play-official",
+    1.4
+   ],
+   "caption": "Back to Wrath Unleashed: nothing to change by hand"
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   0,
+   2
+  ],
+  "max_seconds": 8
+ }
+}

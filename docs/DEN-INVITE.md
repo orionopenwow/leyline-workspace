@@ -79,5 +79,5 @@ passes your friend's game connection through it.
 ## In your Den
 
 - Friends see you, your props and what you say.
-- Only you build, unless you type `.den friends build on`.
+- Only you build, unless you let a friend (the Friends list on Your Den, see DEN-HOSTING.md) or type `.den friends build on`.
 - Each friend's character is made for them when they come in.

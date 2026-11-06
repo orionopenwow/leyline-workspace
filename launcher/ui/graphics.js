@@ -21,7 +21,8 @@
     return s ? Array.from(s.options).filter((o) => o.value).map((o) => ({ id: o.value, name: o.textContent })) : [];
   }
   function friendly(e) {
-    return window.LeylineFriendly && window.LeylineFriendly.say ? window.LeylineFriendly.say(e) : String(e);
+    // friendly.js: never the raw error (there is no .say: the old check always fell through to the raw text)
+    return window.LeylineFriendly ? window.LeylineFriendly(e) : "Something went wrong. Try again.";
   }
 
   async function load(box) {

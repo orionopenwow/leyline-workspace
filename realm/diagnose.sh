@@ -15,7 +15,13 @@ since=$(docker inspect -f '{{.State.StartedAt}}' ov-ac-worldserver 2>/dev/null)
  | grep -aiE 'Create Character|invalid race/class|race/class pair|tried to Create|playercreateinfo|CharStartOutfit|charstartoutfit|skillraceclassinfo|Player Create|heroic|CHAR_CREATE|hacking' \
  | tail -n 200
 
-h "playercreateinfo (want 83 pairs; 62 = only the stock 3.3.5a pairs, the create error)"
+h "Race/class preset (docs/RACE-CLASS-COMBOS.md)"
+pf=profiles/$(grep -E '^OV_PROFILE=' .env 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '\r"').env
+echo "  realm profile $pf: OV_RACE_CLASS_COMBOS=$(grep -E '^OV_RACE_CLASS_COMBOS=' "$pf" 2>/dev/null | tail -1 | cut -d= -f2) (none: modern)"
+echo "  website (portal-data/leyline/race-class-combos.txt): $(cat portal-data/leyline/race-class-combos.txt 2>/dev/null || echo 'none: modern')"
+[ -f sql/arac.sql ] && echo "  sql/arac.sql is there (the all preset ran)"
+
+h "playercreateinfo (want 83 pairs, 100 with the all preset; 62 = only the stock 3.3.5a pairs, the create error)"
 q "USE acore_world;
 SELECT COUNT(*) AS pairs, SUM(class = 6) AS death_knights, SUM(map = 571) AS in_northrend, SUM(map = 609) AS in_acherus FROM playercreateinfo;
 SELECT GROUP_CONCAT(CONCAT(r.race, '/', r.class) ORDER BY r.race, r.class SEPARATOR ' ') AS retail_pairs_without_a_row FROM (

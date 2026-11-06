@@ -96,12 +96,12 @@ It covers:
 The PC copy must match git before you overwrite it. Every time:
 
 1. **Commit** in `wt-theme` and push to `feat-dark-light`.
-2. **List the changed files** since the last commit that is already on the PC (`git diff --name-status <base> HEAD`). The PC is at **6aa1a06** as of 22:20 on 2 Nov.
+2. **List the changed files** since the last commit that is already on the PC (`git diff --name-status <base> HEAD`). The PC is at **the commit after cf92c12** (export.py comment fix) as of 22:45 on 2 Nov.
 3. **Stage the PC copies** with `device_stage_files` (paths like `C:\Users\campw\Desktop\Leyline\...`). They land in `/mnt/user-data/uploads/Leyline/...`.
 4. **Check the PC copy equals `git show <base>:<file>`**, with CR characters stripped. If it differs, the owner changed it: stop and look.
-5. **Export the new versions** with `git show HEAD:<file>` into `/mnt/user-data/outputs/rNN/...`. Keep CRLF if the PC file had it; new `.bat` files always get CRLF. The last folder used was `r64`.
+5. **Export the new versions** with `git show HEAD:<file>` into `/mnt/user-data/outputs/rNN/...`. Keep CRLF if the PC file had it; new `.bat` files always get CRLF. The last folder used was `r65`.
 6. **Write the files** with `device_commit_files`, with `expectedMtimeMs` taken from the stage. New files need no mtime.
-7. **Queue the Control steps last.** Stage `UPDATES-PENDING.txt`, append lines `"<id> <step>  <what it brings>"` (CRLF), write it back with its mtime guard. Ids are date-ish and increasing; the last used was **1309a**. Use **1310a** next.
+7. **Queue the Control steps last.** Stage `UPDATES-PENDING.txt`, append lines `"<id> <step>  <what it brings>"` (CRLF), write it back with its mtime guard. Ids are date-ish and increasing; the last used was **1310c**. Use **1311a** next.
 
 ## 6. Leyline Control: steps, autopilot, logs
 
@@ -127,6 +127,7 @@ The PC copy must match git before you overwrite it. Every time:
 | `sv-site` (also `sv-record`, `sv-export`, `sv-preview`) | Azeroth Survivors site and recording |
 | `addons-curate`, `mods-daily`, `thumbs` | Mods discovery (approves nothing; plan in docs/MODS-DAILY.md) |
 | `discord-preview` / `discord-apply` / `discord-check` | Discord redo. The owner pastes the bot token in Control's Discord card; it is kept in `tools/discord-leyline/token.txt`, git-ignored, never logged. `discord-apply` only runs from the card after a fresh preview and a typed YES, never from the queue |
+| `announce-check` / `discord-announce` | Milestone announcements: Claude writes drafts into `tools/discord-leyline/announce/pending/` (deploy pattern); `announce-check` is read-only; the owner posts each from Control > Discord > Pending announcements after a typed YES (README "Announcements") |
 | `fresh-leyline-check` / `fresh-leyline`, `fresh-check` / `fresh-history` | Rewrite repo history to one Orion commit (to wipe Chumpton). Needs CONFIRM files the owner makes; see §8 |
 | `worldlog`, `bugs`, `gm` | Diagnostics, the bug manifest, and the GM console |
 

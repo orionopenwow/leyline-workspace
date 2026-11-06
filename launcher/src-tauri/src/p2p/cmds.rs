@@ -44,6 +44,54 @@ pub async fn hostpack_install() -> Result<(Installed, String), String> {
     .await
 }
 
+// ---------------------------------------------------------------- the bots (host/bots.rs, ui/singleupdate.js)
+
+/// The bots' pins listed with the Host pack, and whether that pack is newer than the installed one.
+fn listed_bots() -> (Option<host::bots::Pins>, bool) {
+    let info = pack::info(&settings::app_dir(), pack::FALLBACK_URL);
+    (info.available.and_then(|d| d.bots), info.update)
+}
+
+fn labels(image_ref: &str) -> Option<String> {
+    match docker::run_docker(&["image", "inspect", "--format", "{{json .Config.Labels}}", image_ref], None, Duration::from_secs(20)) {
+        Some((0, out)) => Some(out),
+        _ => None,
+    }
+}
+
+/// Which bots this PC's realm runs and whether newer ones are out (the Single player page's Manage card).
+#[tauri::command]
+pub async fn bots_status() -> Result<host::bots::BotsStatus, String> {
+    blocking(|| {
+        let k = kit()?;
+        let (listed, pack_update) = listed_bots();
+        Ok(host::bots::status(&k, listed, pack_update, &labels))
+    })
+    .await
+}
+
+/// Update the bots: the kit's own realm images, pulled. Only when the player presses it; a running realm keeps the
+/// old ones until it is restarted (the page offers that; never automatic). A newer Host pack goes first
+/// (`hostpack_install`, called by the page).
+#[tauri::command]
+pub async fn bots_update() -> Result<String, String> {
+    blocking(|| {
+        let k = kit()?;
+        let (listed, pack_update) = listed_bots();
+        let st = host::bots::status(&k, listed, pack_update, &labels);
+        let run = |a: &[&str]| -> Result<String, String> {
+            match docker::run_docker(a, Some(&k), Duration::from_secs(1800)) {
+                None => Err("Docker is not installed (or not on PATH)".into()),
+                Some((0, out)) => Ok(out),
+                Some((-2, _)) => Err("Docker took too long".into()),
+                Some((_, out)) => Err(docker::plain(&out).lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("an error").trim().to_string()),
+            }
+        };
+        host::bots::pull(&k, st.latest.as_ref(), &run)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn docker_info() -> Result<DockerInfo, String> {
     blocking(|| Ok(docker::check(Duration::from_secs(15)))).await
@@ -568,4 +616,74 @@ pub async fn host_carry_set(settings: host::network::CarrySettings) -> Result<St
         Ok(r)
     })
     .await
+}
+
+// ------------------------------------------------------------------------------------------------ Be a node
+// (p2p/node.rs, docs/BE-A-NODE.md): the card at the top of the Host page.
+
+#[derive(serde::Serialize, Default)]
+pub struct CarryLite {
+    /// The website offers the full community relay (`relay_volunteer`).
+    pub offered: bool,
+    /// This PC's full relay is switched on (Host > Network, Help carry the network).
+    pub on: bool,
+    pub running: bool,
+    pub players: u64,
+}
+
+#[derive(serde::Serialize)]
+pub struct NodeView {
+    #[serde(flatten)]
+    pub node: crate::p2p::node::View,
+    /// Advanced: the full relay (Docker, a public name), whose players carried show on the card.
+    pub carry: CarryLite,
+}
+
+fn node_view(dir: &std::path::Path) -> NodeView {
+    use crate::p2p::node;
+    let v = node::view(dir, &node::Real, node::started_as_node(std::env::args()));
+    let c = host::network::load_carry(dir);
+    let st = kit().map(|k| host::network::node_status(&k, crate::p2p::mesh::now_secs())).unwrap_or_default();
+    NodeView { node: v, carry: CarryLite { offered: flags::cached_site(dir).relay_volunteer, on: c.on, running: c.on && st.running, players: if c.on { st.players } else { 0 } } }
+}
+
+/// Be a node: the switch, its state, the caps and the stats.
+#[tauri::command]
+pub async fn node_state() -> Result<NodeView, String> {
+    blocking(|| Ok(node_view(&settings::app_dir()))).await
+}
+
+/// Change Be a node (the switch, Pause or Resume, the caps, keep running, start with Windows). Returns the line to
+/// show and the card's view after the change.
+#[tauri::command]
+pub async fn node_set(settings: crate::p2p::node::NodeSettings) -> Result<(String, NodeView), String> {
+    blocking(move || {
+        let dir = crate::settings::app_dir();
+        let line = crate::p2p::node::set(&dir, &crate::p2p::node::Real, settings)?;
+        crate::p2p::node::start(dir.clone());
+        Ok((line, node_view(&dir)))
+    })
+    .await
+}
+
+/// "Can other players reach this PC?": the NAT check (two STUN answers). Only the kind is kept and shown, never the
+/// address.
+#[tauri::command]
+pub async fn node_check_network() -> Result<String, String> {
+    blocking(|| {
+        let dir = settings::app_dir();
+        let f = flags::current(&dir);
+        let servers = if f.stun.is_empty() { vec!["stun.cloudflare.com:3478".to_string(), "stun.l.google.com:19302".to_string()] } else { f.stun.clone() };
+        let kind = serde_json::to_value(nat::check(&servers, Duration::from_secs(2)).kind).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+        crate::p2p::node::remember_network(&dir, &kind);
+        Ok(kind)
+    })
+    .await
+}
+
+/// Quit Leyline for real (the card's button while "keep running when the window closes" is on).
+#[tauri::command]
+pub fn node_quit(app: tauri::AppHandle) {
+    crate::p2p::node::stop_now(&settings::app_dir());
+    app.exit(0);
 }

@@ -116,6 +116,10 @@ html body #wenilla-boot .ly-tip.out, #wu-loading .ly-tip.out { opacity: 0; trans
 @media (prefers-reduced-motion: reduce) { html body #wenilla-boot .ly-tip, #wu-loading .ly-tip { animation: none; } }
 
 /* "Slow loading?" (wu-loading.js addSlowHelp): one quiet line under the tips after 20 s */
+/* the session's go (wu-loading.js addGoNote): "Boss fight: The Frozen Throne — getting your raid ready" */
+html body #wenilla-boot .ly-go, #wu-loading .ly-go {
+  margin-top: 10px; font: 600 13px/1.35 system-ui, sans-serif; letter-spacing: .04em; color: #bfe6ff; text-align: center;
+}
 html body #wenilla-boot .ly-slow, #wu-loading .ly-slow {
   margin-top: 14px; max-width: 34rem; font: 13px/1.45 system-ui, sans-serif; color: rgba(255,255,255,.82); text-align: center;
 }

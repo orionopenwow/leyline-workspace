@@ -26,7 +26,7 @@
 /** 3.3.5a's default keys for the commands touch.js sends (builtin_default_bindings.wtf). */
 export const KEYMAP = {
   MOVEFORWARD: 'w', MOVEBACKWARD: 's', TURNLEFT: 'a', TURNRIGHT: 'd', STRAFELEFT: 'q', STRAFERIGHT: 'e',
-  JUMP: ' ', TOGGLEAUTORUN: 'NumLock', TARGETNEARESTENEMY: 'Tab', ATTACKTARGET: 't',
+  JUMP: ' ', TOGGLEAUTORUN: 'NumLock', TARGETNEARESTENEMY: 'Tab', TARGETPREVIOUSENEMY: 'S-Tab', ATTACKTARGET: 't',
   ACTIONBUTTON1: '1', ACTIONBUTTON2: '2', ACTIONBUTTON3: '3', ACTIONBUTTON4: '4', ACTIONBUTTON5: '5',
   ACTIONBUTTON6: '6', ACTIONBUTTON7: '7', ACTIONBUTTON8: '8', ACTIONBUTTON9: '9', ACTIONBUTTON10: '0',
   ACTIONBUTTON11: '-', ACTIONBUTTON12: '=',
@@ -38,6 +38,7 @@ const WHEEL = { CAMERAZOOMIN: -120, CAMERAZOOMOUT: 120 };
 
 /** The KeyboardEvent fields for one key as a US keyboard sends it. */
 export function keyFields(key) {
+  if (/^S-./.test(key)) return { ...keyFields(key.slice(2)), shiftKey: true };   // "S-Tab": with Shift held
   if (key === ' ') return { key: ' ', code: 'Space' };
   if (/^[a-z]$/i.test(key)) return { key: key.toLowerCase(), code: 'Key' + key.toUpperCase() };
   if (/^\d$/.test(key)) return { key, code: 'Digit' + key };

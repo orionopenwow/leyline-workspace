@@ -463,8 +463,10 @@ def host_link(cfg):
 
 
 def write_links(cfg):
-    with open(path("invite.txt"), "w", encoding="utf-8") as f:
-        f.write(invite_link(cfg) + "\n")
+    # a private realm's invite holds its secret: owner-only like the other secret files (review 4 Nov)
+    if os.path.exists(path("invite.txt")):
+        os.remove(path("invite.txt"))   # O_CREAT keeps an old file's wider mode: start it fresh
+    write_private("invite.txt", invite_link(cfg) + "\n")
     if cfg.get("host_secret"):
         write_private("host-link.txt", host_link(cfg) + "\n")
     write_den_invite(cfg)

@@ -1,0 +1,36 @@
+/* Leyline: "Be a node", the card at the top of the Host page (node.js). Theme colours only. */
+.node-card { margin: 0 0 14px; padding: 14px 16px; border-radius: var(--t-radius-sm); background: var(--t-surface-2);
+  border: 1px solid var(--t-border); }
+.node-card.on { border-color: color-mix(in srgb, var(--t-ok) 45%, var(--t-border)); }
+.node-top { display: flex; align-items: flex-start; gap: 16px; }
+.node-t { flex: 1; min-width: 0; }
+.node-h { margin: 0 0 4px; font-size: 16px; }
+.node-pitch { margin: 0; color: var(--t-text-2); font-size: 13px; line-height: 1.45; }
+/* the big switch: a track with a knob, the word beside it */
+.node-switch { display: inline-flex; align-items: center; gap: 10px; flex: none; padding: 6px 12px 6px 6px; border-radius: 999px;
+  border: 1px solid var(--t-border-strong); background: var(--t-raised); color: var(--t-text); font: inherit; font-weight: 600; cursor: pointer; }
+.node-switch .node-knob { position: relative; width: 46px; height: 26px; border-radius: 999px; background: var(--t-border-strong); transition: background .15s; }
+.node-switch .node-knob::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--t-text); transition: transform .15s; }
+.node-switch[aria-checked="true"] .node-knob { background: var(--t-ok); }
+.node-switch[aria-checked="true"] .node-knob::after { transform: translateX(20px); }
+.node-switch:disabled { opacity: .5; cursor: not-allowed; }
+.node-switch:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+.node-line { margin: 10px 0 0; font-size: 13px; }
+.node-line.muted { color: var(--t-muted); }
+.node-line.node-on { color: var(--t-ok); }
+.node-line.node-rest { color: var(--t-warn); }
+.node-line.node-off { color: var(--t-muted); }
+.node-stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.node-stat { display: flex; flex-direction: column; min-width: 110px; padding: 8px 10px; border-radius: var(--t-radius-xs); background: var(--t-surface); }
+.node-stat b { font-size: 16px; }
+.node-stat span { font-size: 12px; color: var(--t-muted); }
+.node-row { margin-top: 10px; }
+.node-more { margin-top: 10px; }
+.node-more summary { cursor: pointer; color: var(--t-text-2); font-size: 13px; }
+.node-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 10px 0; }
+.node-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.node-field small, .node-fine { color: var(--t-muted); font-size: 12px; }
+.node-check { display: block; margin: 6px 0; font-size: 13px; }
+.node-status { margin: 8px 0 0; font-size: 13px; min-height: 1em; }
+.node-status.bad { color: var(--t-bad); }

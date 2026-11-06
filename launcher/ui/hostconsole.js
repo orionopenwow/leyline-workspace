@@ -72,7 +72,7 @@
   const RULESETS = {
     vanillaplus: ["Vanilla+", "The original world to 60, made to stay up.", "Always on"],
     den: ["My Den", "A private room to build in: you and the friends you invite. No bots.", "Private"],
-    solo: ["Solo leveling", "Just you, levelling from 1 at 2x. Helper bots fill your group; dungeons scale to you.", "Private"],
+    solo: ["Single player", "Just you, levelling from 1 at 2x. Helper bots fill your group; dungeons scale to you.", "Private"],
     dalaran: ["Dalaran hangout", "Light: a one-time boost, no bots."],
     main: ["Classic levelling", "From level 1 at 3x, or a one-time boost."],
     brawl: ["Brawl", "Everyone starts at the top level."],
@@ -86,7 +86,7 @@
   // most 10 players (the kit writes those; host/profiles.rs starts it with --private). No bots or max-players choice.
   const DEN = "den";
   const DEN_FACTS = [["Private", "only friends with your invite link"], ["Sign-up", "from your invite link only"], ["No bots", "just you and your friends"]];
-  // Solo leveling (realm/profiles/solo.env, owner 2026-10-31): private like a Den, helper bots on, at most 5 players
+  // Single player (realm/profiles/solo.env, owner 2026-10-31): private like a Den, helper bots on, at most 5 players
   const SOLO = "solo";
   const SOLO_FACTS = [["Private", "just you, on this PC"], ["Helper bots", "type .recruit party to fill your group"], ["Dungeons", "scaled to the group you bring"]];
   const FACTS = { den: DEN_FACTS, solo: SOLO_FACTS };
@@ -181,7 +181,7 @@
   let autoTab = true;
   let openTool = null;
   let timer = null;
-  let askedFor = null;        // a ruleset asked for from elsewhere (the play bar's My Den / Solo leveling): picked once offered
+  let askedFor = null;        // a ruleset asked for from elsewhere (the play bar's My Den / Single player): picked once offered
   let askedHow = {};          // and how: { switch: from the other local realm, start: it didn't answer, why }
   const ui = {};
 
@@ -194,7 +194,7 @@
     if (want !== mode) { mode = want; build(); if (autoTab) { tab("main"); autoTab = false; } }
     if (mode === "console") { refresh(); applyWant(); } else loadSetup();
   });
-  // the play bar's My Den / Solo leveling not on this PC: the Host page with that ruleset picked; the other one on
+  // the play bar's My Den / Single player not on this PC: the Host page with that ruleset picked; the other one on
   // this PC: switch to it; it didn't answer: say so beside Start
   document.addEventListener("leyline:host-ruleset", (e) => {
     askedFor = (e.detail && e.detail.profile) || null;
@@ -232,7 +232,7 @@
     });
   }
 
-  // My Den <-> Solo leveling on this PC's one realm: asked first, then the kit runs the other ruleset (no window)
+  // My Den <-> Single player on this PC's one realm: asked first, then the kit runs the other ruleset (no window)
   async function switchTo(id, cur) {
     const to = rsName(id), from = cur.name || rsName(cur.profile);
     if (!(await ask(`Switch to ${to}?`, `This PC runs one realm at a time, and it runs ${from} now. ${to} takes its place: your account and characters stay, and you can switch back any time. Make a new character for ${to}. It takes a few minutes.`, `Switch to ${to}`))) {
@@ -279,7 +279,7 @@
     ui.refresh.setAttribute("aria-label", "Refresh");
     ui.refresh.title = "Refresh";
     ui.refresh.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    // My Den / Solo leveling: play it from here too (app.js window.LeylineLocal: the invite knock, then PLAY)
+    // My Den / Single player: play it from here too (app.js window.LeylineLocal: the invite knock, then PLAY)
     ui.play = btn("Play", "btn small primary", () => { if (con && window.LeylineLocal) window.LeylineLocal.play(con.profile); });
     ui.play.id = "hc-play";
     ui.play.hidden = true;
@@ -540,7 +540,7 @@
   function paint() {
     const c = con || { services: [], docker: false };
     if (c.name) ui.name.textContent = c.name;
-    ui.kicker.textContent = c.linked ? "Your server, linked" : c.profile === DEN ? "Your Den" : c.profile === SOLO ? "Your solo realm" : "Your realm console";
+    ui.kicker.textContent = c.linked ? "Your server, linked" : c.profile === DEN ? "Your Den" : c.profile === SOLO ? "Single player" : "Your realm console";
     // the badge
     if (stat && stat.online) {
       setBadge("ok", stat.listed ? "Online · listed" : (stat.visibility === "private" || c.visibility === "private") ? "Online · private" : "Online");
@@ -895,7 +895,7 @@
     ui.form.append(nameL, ui.visL, ui.gmL);
     ui.prog = mk("div", "hc-prog");
     ui.prog.hidden = true;
-    // My Den / Solo leveling: what the kit sets for it, in place of choices (paintGo fills it for the one picked)
+    // My Den / Single player: what the kit sets for it, in place of choices (paintGo fills it for the one picked)
     ui.den = mk("ul", "hc-den");
     ui.den.setAttribute("aria-label", "My Den");
     ui.den.hidden = true;
@@ -971,7 +971,7 @@
 
   // the form: a name for the ruleset (until one is typed), who can join (a Den is always friends only), and on a Mac or
   // Linux the host's own account name (`leyline host` never makes accounts; the Windows kit makes a GM login itself)
-  const NAMES = { den: "My Den", solo: "Solo leveling", dalaran: "Dalaran Hangout", vanillaplus: "Vanilla Plus" };
+  const NAMES = { den: "My Den", solo: "Single player", dalaran: "Dalaran Hangout", vanillaplus: "Vanilla Plus" };
   const needsGm = !/Windows/i.test(navigator.userAgent || "");
   let visPick = "private";
   function paintForm() {
@@ -1199,7 +1199,7 @@
       : why ? why
       : picked === "vanillaplus" ? "Always on: it comes back after a reboot."
       : picked === DEN ? "Then invite friends with your invite link. The first start takes 5 to 20 minutes."
-      : picked === SOLO ? "Then pick Solo leveling in the play bar. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.";
+      : picked === SOLO ? "Then pick Single player in the play bar. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.";
     paintDenStart();
     paintSteps();
     if (ui.den) {

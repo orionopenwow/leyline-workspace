@@ -141,7 +141,7 @@ test('the gallery: every slide with its data, a title, one line and one button; 
   assert.deepEqual(await current(page), { on: ['hangout'], dot: 0, i: 0 });
   assert.equal(await page.locator('.hero-slide[inert]').count(), 5, 'the hidden slides take no focus');
   const text = await page.evaluate(() => document.body.innerText);
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -544,6 +544,26 @@ test('no home.json on the site: every slide keeps its gradient and no screenshot
   await page.waitForTimeout(400);
   assert.deepEqual(window_requests, ['home.json']);
   assert.equal(await page.locator('#hero .hs-photo, #hero .has-photo').count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the first slide is never bare at start: Leyline\'s own night sky at once, and the last screenshot again before the site answers', async () => {
+  const { page, ctx, errors } = await open({ ms: 600000, homeArt: HOME });
+  // the night sky shipped with the app, under the launch slide's wash, from the first paint
+  assert.match(await page.evaluate(() => getComputedStyle(document.querySelector('.hero-slide[data-key="hangout"]')).backgroundImage), /art\/leyline-bg\.webp/);
+  await page.waitForFunction(() => document.querySelector('.hero-slide[data-key="hangout"].has-photo'));
+  // the gallery is rebuilt as the realms, mods and news come in: a picture already shown stays, no fade from bare
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent('leyline:news')));
+  assert.equal(await page.evaluate(() => document.querySelector('.hero-slide[data-key="hangout"]').classList.contains('has-photo')), true, 'kept through a rebuild');
+  // next start: home.json is slow to answer, the kept copy builds the screenshot slide at once
+  await page.route('https://leylinelauncher.com/wrath/art/home/home.json', async (r) => { await new Promise((ok) => setTimeout(ok, 9000)); r.fulfill({ status: 404, body: '' }); });
+  await page.reload();
+  await page.waitForFunction(() => window.LeylineHome && document.querySelector('.hero-slide[data-key="hangout"] .hs-photo'), null, { timeout: 7000 });
+  assert.ok(await page.evaluate(() => !!localStorage.getItem('leyline.homeArt')), 'built before the site answered');
+  assert.equal(await page.getAttribute('.hero-slide[data-key="hangout"] .hs-photo', 'src'), 'https://leylinelauncher.com/wrath/art/home/hangout.webp');
+  // the site says there is none any more: forgotten for next time
+  await page.waitForFunction(() => !localStorage.getItem('leyline.homeArt'), null, { timeout: 15000 });
   assert.deepEqual(errors, []);
   await ctx.close();
 });

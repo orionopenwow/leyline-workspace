@@ -73,3 +73,12 @@
 .yd-drop.over, .yd-drop:focus-visible { border-color: var(--t-accent, #c9a64b); outline: none; }
 .yd-drop.busy { cursor: progress; opacity: .7; }
 #yd-model-name { width: 100%; max-width: 320px; margin-bottom: 6px; }
+
+/* Share with friends on Den Lite: the code, the Friends list (den.js friendsBox; host/denhost.rs) */
+.yd-code-row input { flex: 1 1 260px; min-width: 0; font-family: var(--t-mono, monospace); font-size: 12px; }
+.yd-friends { margin-top: 10px; padding: 10px 12px; border: var(--t-border-w) solid var(--t-border); border-radius: var(--t-radius); background: var(--t-surface); }
+.yd-friends-head { justify-content: space-between; align-items: center; }
+.yd-friend.in b::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--t-ok, #6c6); vertical-align: middle; }
+.yd-friends .btn.on { border-color: var(--t-accent); color: var(--t-accent); }
+.yd-share-more { margin-top: 8px; }
+.yd-champ { display: block; color: var(--t-accent); }

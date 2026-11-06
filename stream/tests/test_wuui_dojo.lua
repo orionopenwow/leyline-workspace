@@ -112,7 +112,12 @@ local function fireClient(msg)
         if f.events.CHAT_MSG_ADDON then f:Fire("OnEvent", "CHAT_MSG_ADDON", "OVMOD", msg, "WHISPER", "Wren") end
     end
 end
-local sent, cmds = {}, {}
+local sent, cmds, jcmds = {}, {}, {}
+-- Jaina's brain on Den Lite (jaina.rs): her line after each word
+local jaina = { talk = "normal", doing = "follow", offer = "-", ask = "-" }
+local function jainaLine()
+    return string.format("talk=%s;doing=%s;mood=calm;offer=%s;ask=%s;mine=0;critters=0;placed=0;fav=-", jaina.talk, jaina.doing, jaina.offer, jaina.ask)
+end
 local server = "lite"
 local state = { fly = 0, speed = 1, dummies = 0, ring = 0, combat = 0, fight = 0, god = 0 }
 local function line()
@@ -130,6 +135,16 @@ function SendAddonMessage(prefix, msg, channel, target)
     if name == "hello" then
         -- only a Den answers (elsewhere nobody does, so the bar stays shut)
         if realm == "Your Den" then fireClient("wuden\tstatus\t1/1\trole=owner;props=0;saved=-") end
+    elseif name == "cmd" and data:match("^jaina") then
+        jcmds[#jcmds + 1] = data
+        local w = data:match("^jaina (%S+)") or ""
+        if server ~= "lite" then return end
+        if w == "quiet" then jaina.talk = "quiet" elseif w == "talk" then jaina.talk = "normal"
+        elseif w == "stay" then jaina.doing = "stay" elseif w == "follow" then jaina.doing = "follow"
+        elseif w == "idea" then jaina.offer = "corner"; jaina.ask = "offer"
+        elseif w == "yes" or w == "no" then jaina.offer = "-"; jaina.ask = "-"
+        elseif w == "tidy" then jaina.ask = "tidy4" end
+        fireClient("wuden\tjaina\t1/1\t" .. jainaLine())
     elseif name == "cmd" and data:match("^dojo") then
         cmds[#cmds + 1] = data
         local w = data:match("^dojo (%S+)") or ""
@@ -144,8 +159,10 @@ function SendAddonMessage(prefix, msg, channel, target)
             fireClient("wuden\tloadout\t1/1\tclass=mage;spec=fire;specs=arcane,fire,frost;bars=aoe;saved=single,aoe;set=t10;tiers=1,10;mine=raid")
         end
         fireClient("wuden\tdojo\t1/1\t" .. line())
+        if w == "status" and server == "lite" then fireClient("wuden\tjaina\t1/1\t" .. jainaLine()) end
     end
 end
+local function lastJ() return jcmds[#jcmds] end
 local function lastCmd() return cmds[#cmds] end
 local function fire(event, ...)
     for _, f in ipairs(frames) do if f.events[event] then f:Fire("OnEvent", event, ...) end end
@@ -175,8 +192,16 @@ local p = J.Panel()
 check("it opens the Dojo panel beside the rail", J.IsOpen() and p:IsShown() and p.head:GetText() == "DOJO" and bar.dojo:IsActive())
 check("and asks for the Dojo's line", lastCmd() == "dojo status" and J.line.server == "lite")
 check("Den Lite: its note", p.note:GetText():find("^Den Lite: the ring, dummies"))
-check("the sections: Training, Moving, Jaina builds, Full Den", p.training:GetText() == "TRAINING" and p.moving:GetText() == "MOVING"
-    and p.builds:GetText() == "JAINA BUILDS" and p.full:GetText() == "FULL DEN ONLY")
+check("the sections: Training, Moving, Builds, Full Den", p.training:GetText() == "TRAINING" and p.moving:GetText() == "MOVING"
+    and p.builds:GetText() == "BUILDS" and p.full:GetText() == "FULL DEN")
+-- owner 5 Nov: "FULL DEN ONLY" greyed buttons on Den Lite were clutter; the row is not there at all
+check("Den Lite: the full Den's row hidden, not greyed", not p.full:IsShown() and not p.bossPick:IsShown() and not p.look:IsShown()
+    and p.fullRow.hidden == true)
+check("five tabs in their own row, under the title", (function()
+    local n = 0
+    for _, t in ipairs(J.TABS) do if p.tabs[t[1]] then n = n + 1 end end
+    return n == 5 and p.tabs.jaina:GetText() == "Jaina" and p.tabs.practice:GetText() == "Practice" end)())
+-- (the label column measured: test_wuui_denlayout.lua, whose fake measures text)
 check("on Den Lite what needs combat is off, saying why", p.bossPick.enabled == false and p.fight.enabled == false and p.duel.enabled == false
     and p.look.enabled == false and p.fight.edLabel:find("full Den") and p.ring.enabled ~= false and p.fly.enabled ~= false)
 check("speed 1 is on", p.speeds[1]:IsActive() and not p.speeds[2]:IsActive())
@@ -194,6 +219,36 @@ p.stamps[1]:Fire("OnClick")
 check("Jaina builds a garden: dojo build garden", lastCmd() == "dojo build garden" and p.stamps[1]:GetText() == "Garden")
 p.clear:Fire("OnClick")
 check("Clear: dojo clear", lastCmd() == "dojo clear" and not p.dummies:IsActive())
+
+-- Jaina's rows (owner 4 Nov: "the player can talk to her via the Den panel (buttons)")
+check("the Jaina rows", p.jainaRow:GetText() == "ORDERS" and p.ideasRow:GetText() == "HER IDEAS"
+    and p.jFollow:GetText() == "Follow" and p.jIdea:GetText() == "Idea" and p.jYes:GetText() == "Keep")
+check("her line came with the Dojo's: following, talking", J.jaina.talk == "normal" and p.jFollow:IsActive() and not p.jStay:IsActive()
+    and not p.jQuiet:IsActive())
+check("nothing to answer: Keep and No off", p.jYes.enabled == false and p.jNo.enabled == false and p.jIdea.enabled ~= false)
+before = #cmds
+p.jStay:Fire("OnClick")
+check("Stay: .den jaina stay (not a dojo command), lit from her line", lastJ() == "jaina stay" and #cmds == before and p.jStay:IsActive()
+    and not p.jFollow:IsActive())
+p.jFollow:Fire("OnClick")
+check("Follow: jaina follow", lastJ() == "jaina follow" and p.jFollow:IsActive())
+p.jQuiet:Fire("OnClick")
+check("Quiet: jaina quiet, and it lights up", lastJ() == "jaina quiet" and p.jQuiet:IsActive())
+p.jQuiet:Fire("OnClick")
+check("Quiet again: jaina talk", lastJ() == "jaina talk" and not p.jQuiet:IsActive())
+p.jIdea:Fire("OnClick")
+check("Idea: jaina idea; Keep and No on, the idea in the readout", lastJ() == "jaina idea" and p.jYes.enabled == true and p.jNo.enabled == true
+    and p.readout:GetText():find("Jaina's idea: Corner"))
+p.jYes:Fire("OnClick")
+check("Keep: jaina yes; nothing open again", lastJ() == "jaina yes" and p.jYes.enabled == false and not (p.readout:GetText() or ""):find("idea"))
+p.jTidy:Fire("OnClick")
+check("Tidy: jaina tidy; she asks first", lastJ() == "jaina tidy" and p.jYes.enabled == true and p.readout:GetText():find("tidy up%?"))
+p.jNo:Fire("OnClick")
+check("No: jaina no", lastJ() == "jaina no" and p.jNo.enabled == false)
+p.jPet:Fire("OnClick")
+check("Pet: jaina pet", lastJ() == "jaina pet")
+fireClient("wuden\tjaina\t1/1\ttalk=loud;doing=|cffff0000x")
+check("a line with no talk word is left out", J.jaina.talk == "normal")
 before = #cmds
 check("Next boss cycles the pick, sending nothing", J.NextBoss() == "vancleef" and p.bossPick:GetText() == "Vancleef" and #cmds == before)
 
@@ -222,9 +277,16 @@ check("Mounts: dojo mounts", lastCmd() == "dojo mounts")
 
 -- ---------------------------------------------------------------- 1c. the pages, the range, the loadout (owner 3 Nov:
 -- "spellbook placement loadout instant on bars, gear sets selector ... test range dojo features")
-check("two pages: Train shown, Loadout hidden", p.pages.train:IsShown() and not p.pages.loadout:IsShown()
+check("the tabs: Train shown, Loadout hidden", p.pages.train:IsShown() and not p.pages.loadout:IsShown()
     and p.tabs.train:IsActive() and not p.tabs.loadout:IsActive() and p.tabs.train:GetText() == "Train")
-check("Train's rows are visible, Loadout's are not", p.practiceChips[1]:IsVisible() and not p.classBe:IsVisible())
+check("Train's rows are visible, Practice's and Loadout's are not", p.ring:IsVisible() and not p.practiceChips[1]:IsVisible() and not p.classBe:IsVisible())
+p.tabs.practice:Fire("OnClick")
+check("the Practice tab: the practice dummies and the range", J.page == "practice" and p.practiceChips[1]:IsVisible() and p.safe:IsVisible()
+    and not p.ring:IsVisible() and p.tabs.practice:IsActive())
+p.tabs.session:Fire("OnClick")
+check("the Session tab: the parses", J.page == "session" and p.sessionChips[1]:IsVisible() and p.fightBack:IsVisible() and not p.practiceChips[1]:IsVisible())
+p.tabs.jaina:Fire("OnClick")
+check("the Jaina tab: her builds, orders, ideas", J.page == "jaina" and p.stamps[1]:IsVisible() and p.jFollow:IsVisible() and p.jIdea:IsVisible())
 p.tabs.loadout:Fire("OnClick")
 check("the Loadout tab: its page", J.page == "loadout" and p.pages.loadout:IsShown() and not p.pages.train:IsShown()
     and p.tabs.loadout:IsActive() and p.classBe:IsVisible() and not p.practiceChips[1]:IsVisible())
@@ -281,8 +343,13 @@ state.combat = 0
 -- ---------------------------------------------------------------- 2. the full Den
 server = "full"
 J.Cmd("status")
-check("the full Den: everything on", J.line.server == "full" and p.fight.enabled == true and p.look.enabled == true
-    and p.full:GetText() == "FULL DEN" and p.note:GetText():find("count your damage"))
+J.jaina = {}
+J.Paint()
+check("without her line (the full Den): Follow and Stay only", p.jFollow.enabled ~= false and p.jStay.enabled ~= false and p.jIdea.enabled == false
+    and p.jPet.enabled == false and p.jYes.enabled == false and p.jIdea.edLabel:find("Den Lite"))
+J.Page("train")
+check("the full Den: everything on, its row shown", J.line.server == "full" and p.fight.enabled == true and p.look.enabled == true
+    and p.full:GetText() == "FULL DEN" and p.full:IsShown() and p.bossPick:IsShown() and p.note:GetText():find("count your damage"))
 p.fight:Fire("OnClick")
 check("Fight: dojo boss <the pick>", lastCmd() == "dojo boss vancleef")
 p.duel:Fire("OnClick")

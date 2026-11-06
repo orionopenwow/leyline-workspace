@@ -211,7 +211,13 @@ check(".solo handled", cmd(so, ".solo") == false)
 check(".solo: scaling and this level's dungeons", last(so):find("scales to the group", 1, true) and last(so):find("Utgarde Keep", 1, true))
 local so2 = player({ guid = 41, level = 5 })
 cmd(so2, "solo")
-check(".solo below 13: says when they open", last(so2):find("level 13", 1, true))
+check(".solo below 10: says when they open", last(so2):find("opens at level 10", 1, true))
+-- review 4 Nov: serverpass.sh opens Ragefire Chasm, Wailing Caverns, the Deadmines and Shadowfang Keep at 10
+for _, lvl in ipairs({ 10, 11, 12 }) do
+    local s10 = player({ guid = 41 + lvl, level = lvl })
+    cmd(s10, "solo")
+    check(".solo at level " .. lvl .. ": the level-10 dungeons", last(s10):find("Ragefire Chasm", 1, true) and not last(s10):find("none yet", 1, true))
+end
 
 -- .learnall with a 60 s guard
 local la = player({ guid = 27, level = 10 })
@@ -342,6 +348,15 @@ clock = clock + 31
 cmd(so, "summon")
 check("OV_BOT_SUMMON=0: off", last(so):match("off"))
 env.OV_BOT_SUMMON = nil
+env.AC_PLAYERBOTS_MAX_ADDED_BOTS = "0"   -- no bots on the realm (main): .summon is off too (review 4 Nov)
+local nb = player({ guid = 79 }); nb.group = owner.group
+clock = clock + 31
+cmd(nb, "summon")
+check("AC_PLAYERBOTS_MAX_ADDED_BOTS=0: .summon off", last(nb):match("off"))
+cmd(nb, "qol")
+local qolText = table.concat(nb.msgs or {}, "\n")
+check("AC_PLAYERBOTS_MAX_ADDED_BOTS=0: .qol doesn't advertise .summon", not qolText:find("%(%.summon%)"))
+env.AC_PLAYERBOTS_MAX_ADDED_BOTS = nil
 
 -- the rest stays as it was --------------------------------------------------------------------------------------
 local q = player()

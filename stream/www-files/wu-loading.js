@@ -76,6 +76,36 @@ export function addSlowHelp(box, ms = SLOW_MS) {
   }, ms);
 }
 
+// What this visit is getting ready (owner 5 Nov: boss fights), from the session's go link (wrath-page.js goLink, kept on
+// window.wuGo; stream/bossfights.py describes the same kinds): one quiet line over the tips. Names only, never a seat
+// count or a place in a queue.
+export const BOSS_NAMES = { 'frozen-throne': 'The Frozen Throne' };
+/** The note for a go ({ kind, id } or 'kind:id'), else null. */
+export function goNote(go) {
+  let kind = null, id = null;
+  if (typeof go === 'string') { const i = go.indexOf(':'); if (i > 0) { kind = go.slice(0, i); id = go.slice(i + 1); } }
+  else if (go && typeof go === 'object') { kind = go.kind; id = go.id; }
+  if (typeof id !== 'string') return null;
+  if (kind === 'bf') {
+    const m = /^([a-z0-9-]{2,24}):(normal|heroic):(?:bots|group|group-only)$/.exec(id);
+    if (!m || !Object.hasOwn(BOSS_NAMES, m[1])) return null;
+    return `Boss fight: ${BOSS_NAMES[m[1]]}${m[2] === 'heroic' ? ' (heroic)' : ''} \u2014 getting your raid ready`;
+  }
+  if (kind === 'arena' && id === '1v1') return '1v1 arena \u2014 getting you into the queue';
+  return null;
+}
+/** Put the go note in `box` (once), first in the box's lines under the bar; nothing without a note. */
+export function addGoNote(box, go = (typeof window !== 'undefined' ? window.wuGo : null)) {
+  const text = goNote(go);
+  if (!box || !text || box.querySelector(':scope > .ly-go')) return null;
+  const line = document.createElement('div');
+  line.className = 'ly-go';
+  line.textContent = text;
+  const tip = box.querySelector(':scope > .ly-tip');
+  if (tip) box.insertBefore(line, tip); else box.append(line);
+  return line;
+}
+
 /** Put a rotating tip line in `box` (once); it stops when the box leaves the page. */
 export function addTips(box, start = Math.floor(Math.random() * TIPS.length)) {
   if (!box || box.querySelector(':scope > .ly-tip')) return null;
@@ -122,6 +152,7 @@ export function installLoading(opts = {}) {
   const bar = cover.querySelector('.bar'), fill = cover.querySelector('.bar > i');
   const stage = cover.querySelector('.stage');
   addTips(cover.querySelector('.box'));
+  addGoNote(cover.querySelector('.box'));
   // wu-loading.css draws the line from data-line (its ::after); the text node keeps it for readers.
   const setLine = (text) => {
     // unchanged: touch nothing (a write is a DOM mutation, and the page-wide observer below calls back in here)
@@ -140,6 +171,7 @@ export function installLoading(opts = {}) {
     st.on = true;
     if (!measured) { bar.classList.add('pulse'); fill.style.width = ''; }
     cover.classList.add('on');
+    addGoNote(cover.querySelector('.box'));   // window.wuGo may be set after this module first ran
     addSlowHelp(cover.querySelector('.box'));
     clearTimeout(safety);
     safety = setTimeout(() => hide('safety'), SAFETY_MS);
@@ -241,7 +273,7 @@ export function installLoading(opts = {}) {
   }
   st.mirror = mirrorClient;
   // the boot overlay gets the same tips
-  const bootTips = () => { const b = document.querySelector('#wenilla-boot .box'); if (b) { addTips(b); addSlowHelp(b); } };
+  const bootTips = () => { const b = document.querySelector('#wenilla-boot .box'); if (b) { addTips(b); addGoNote(b); addSlowHelp(b); } };
 
   try {
     const mo = new MutationObserver(() => { readCorner(); mirrorClient(); bootTips(); busy(); });

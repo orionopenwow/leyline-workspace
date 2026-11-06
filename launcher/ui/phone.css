@@ -1,0 +1,171 @@
+/* Leyline Launcher: the phone app's layout (docs/ANDROID.md). Everything here is under html.phone (platform.js sets it
+   when the core says the launcher runs on a phone; phone.js does the rest), so the desktop launcher never sees it.
+   One column: a slim title bar, the page, and a tab bar at the bottom (Play, Realms, Mods, Account) in place of the side
+   menu and the play bar. What needs a computer is hidden. Touch targets are at least 44 px. Clear of the system bars and
+   the camera cut-out with the safe-area insets. */
+
+.ph-tabs, #page-phone { display: none; }
+
+html.phone { -webkit-text-size-adjust: 100%; }
+html.phone body.ly { font-size: 15px; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+/* ---------------------------------------------------------------- the frame: title bar, page, tab bar */
+html.phone .frame {
+  height: 100vh; height: 100dvh; border: 0; border-image: none;   /* no window edge: the phone's screen is the edge */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: calc(52px + env(safe-area-inset-top)) minmax(0, 1fr) calc(60px + env(safe-area-inset-bottom));
+}
+html.phone .titlebar {
+  grid-column: 1; padding: env(safe-area-inset-top) calc(10px + env(safe-area-inset-right)) 0 calc(6px + env(safe-area-inset-left));
+  gap: 8px;
+}
+html.phone .frame::before { grid-column: 1; }
+html.phone .brand { width: auto; padding-left: 4px; gap: 8px; }
+html.phone .brand .ly-spin { transform: scale(0.8); }
+html.phone .brand b { font-size: 20px; }
+html.phone .brand i { display: none; }
+html.phone .backdrop { grid-column: 1; grid-row: 1 / 3; }
+html.phone main {
+  grid-column: 1; grid-row: 2; padding: 12px calc(12px + env(safe-area-inset-right)) 16px calc(12px + env(safe-area-inset-left));
+  overflow: hidden auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+}
+
+/* what a phone has no use for: the window buttons, the side menu, the play bar, the search and the update lines */
+html.phone .side,
+html.phone .playbar,
+html.phone .winbtns,
+html.phone .gate-winbtns,
+html.phone .titlebar .search,
+html.phone #tb-modupd,
+html.phone #tb-update,
+html.phone #tb-status,
+html.phone .tb-me .hf-code,
+html.phone .pb-queue { display: none !important; }
+
+/* the pages that need a computer never show (phone.js sends them to Play) */
+html.phone #page-clients,
+html.phone #page-host,
+html.phone #page-den,
+html.phone #page-single,
+html.phone #page-findfiles,
+html.phone #page-agents,
+html.phone #page-settings,
+html.phone #page-play { display: none !important; }
+
+/* the tab bar */
+html.phone .ph-tabs {
+  grid-column: 1; grid-row: 3; position: relative; z-index: 5;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border-top: var(--t-border-w) solid var(--t-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--t-chrome) 92%, var(--t-accent)), var(--t-chrome) 60%);
+}
+html.phone .ph-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 56px; min-width: 44px; padding: 4px 2px; border: 0; background: transparent; cursor: pointer;
+  color: var(--t-muted); font: 600 12px/1.1 var(--t-font); letter-spacing: 0.02em;
+}
+html.phone .ph-tab svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+html.phone .ph-tab[data-ph-tab="phone"] svg { fill: currentColor; stroke: none; }
+html.phone .ph-tab[aria-current="page"] { color: var(--t-accent); }
+
+/* ---------------------------------------------------------------- Play (#page-phone) */
+html.phone #page-phone.on { display: block; }
+html.phone .ph { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; align-items: stretch; gap: 14px; text-align: center; }
+html.phone .ph-hero { display: grid; justify-items: center; gap: 4px; padding-top: 6px; }
+html.phone .ph-crystal { width: 88px; height: 88px; filter: drop-shadow(0 0 18px color-mix(in srgb, var(--t-accent) 45%, transparent)); }
+html.phone .ph-hero h2 { margin: 0; font: 800 30px/1.1 var(--t-font-display); color: var(--t-text); }
+html.phone .ph-lede { margin: 0; color: var(--t-muted); }
+html.phone .ph-play {
+  min-height: 64px; border-radius: 14px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--t-accent) 70%, black);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--t-accent) 92%, white), var(--t-accent));
+  color: var(--t-on-accent); font: 800 24px/1 var(--t-font-display); letter-spacing: 0.12em; text-transform: uppercase;
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--t-accent) 35%, transparent);
+}
+html.phone .ph-play:active { transform: translateY(1px); }
+html.phone .ph-hint { margin: -4px 0 0; color: var(--t-muted); font-size: 13px; }
+html.phone .ph-nogpu {
+  padding: 14px; border-radius: var(--t-radius); text-align: left;
+  border: 1px solid color-mix(in srgb, var(--t-warn, #e0a030) 60%, transparent);
+  background: color-mix(in srgb, var(--t-warn, #e0a030) 12%, var(--t-panel));
+}
+html.phone .ph-nogpu p { margin: 0 0 10px; }
+html.phone .ph-nogpu .btn { width: 100%; }
+html.phone .ph-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+html.phone .ph-pc { padding: 12px 14px; border-radius: var(--t-radius); background-color: var(--t-panel); text-align: left; }
+html.phone .ph-pc h3 { margin: 0 0 6px; font: 600 11.5px var(--t-font); letter-spacing: 0.09em; text-transform: uppercase; color: var(--t-muted); }
+html.phone .ph-pc p { margin: 0; color: var(--t-muted); font-size: 13.5px; }
+html.phone .ph-note { margin: 10px 0; padding: 10px 12px; border-radius: var(--t-radius-sm); background: var(--t-surface-2); color: var(--t-muted); font-size: 13.5px; }
+
+/* landscape: the hero beside PLAY */
+@media (orientation: landscape) {
+  html.phone .frame { grid-template-rows: calc(44px + env(safe-area-inset-top)) minmax(0, 1fr) calc(52px + env(safe-area-inset-bottom)); }
+  html.phone .ph-tab { min-height: 48px; flex-direction: row; gap: 8px; font-size: 13px; }
+  html.phone .ph { max-width: 760px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; text-align: left; gap: 12px 18px; }
+  html.phone .ph-hero { grid-row: 1 / 3; justify-items: start; }
+  html.phone .ph-crystal { width: 56px; height: 56px; }
+  html.phone .ph-hero h2 { font-size: 24px; }
+  html.phone .ph-hint, html.phone .ph-nogpu, html.phone .ph-links, html.phone .ph-pc { grid-column: 1 / -1; }
+}
+
+/* ---------------------------------------------------------------- touch: every control at least 44 px */
+html.phone :is(main, .gate, .ph-tabs, .titlebar) :is(button, .btn, select, input:not([type="checkbox"]):not([type="radio"]), summary, .page-tab, .ly-tab, .chip) {
+  min-height: 44px;
+}
+html.phone :is(main, .gate, .titlebar) :is(button, .btn, .page-tab, .ly-tab, .icon-btn) { min-width: 44px; }
+html.phone :is(main, .gate) input:not([type="checkbox"]):not([type="radio"]), html.phone :is(main, .gate) select { font-size: 16px; }   /* no zoom on focus */
+html.phone :is(main, .gate) label.check { min-height: 44px; display: flex; align-items: center; gap: 10px; }
+
+/* ---------------------------------------------------------------- the pages in one column */
+html.phone .panel, html.phone .panel.wide { max-width: none; padding: 14px 12px; }
+html.phone .panel > h2, html.phone .panel > .panel-head { margin: -14px -12px 12px; padding: 12px; }
+html.phone .panel-head { gap: 8px; }
+html.phone .panel-head h2 { font-size: 20px; }
+html.phone .page-tabs { flex-wrap: wrap; }
+html.phone .row { flex-wrap: wrap; }
+html.phone .row input:not([type="checkbox"]):not([type="radio"]) { min-width: 0; flex: 1 1 160px; }
+html.phone .toolbar { flex-wrap: wrap; gap: 8px; }
+html.phone .toolbar input[type="search"] { flex: 1 1 100%; min-width: 0; }
+
+/* Realms: no game folder picker, no hosting, no realmlist menu, no paste-a-realm (they play with a game on a computer) */
+html.phone .rl-client,
+html.phone #rl-more,
+html.phone .rl-pop-wrap:has(#rl-more),
+html.phone #rl-paste,
+html.phone #rl-host-cta,
+html.phone #rl-other .form,
+html.phone #rl-other h3 + p + .row + h3,
+html.phone .realm-card .acts > :not(.rl-play) { display: none !important; }
+html.phone .realm-card .solo-note,
+html.phone .realm-card .solo-none { display: none !important; }
+html.phone .realm-list { display: grid; gap: 10px; }
+html.phone .realm-card.rl .name { white-space: normal; }
+html.phone .realm-card.rl .rl-title { flex-wrap: wrap; row-gap: 4px; }
+@media (max-width: 600px) {
+  html.phone .realm-card.rl {
+    grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "ic main" "pop pop" "acts acts";
+    gap: 8px 12px; padding: 12px;
+  }
+  html.phone .realm-card.rl .rl-pop { min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: center; justify-items: start; text-align: left; gap: 10px; }
+}
+html.phone .realm-card .rl-note { display: none; }
+html.phone .realm-card.rl > .acts { display: flex; }
+html.phone .realm-card.rl .acts .rl-play { flex: 1; height: auto; min-height: 44px; font-size: 14px; }
+
+/* Mods & Addons: Discover only; no Installed, Game modes or Dens tab; no Themes or Graphics (they change this computer's
+   game or launcher); no List your mod, no install from a file */
+html.phone .page-tab[data-group="mods"]:not([data-tab="discover"]),
+html.phone #discover-tabs [data-tab="themes"],
+html.phone #discover-tabs [data-tab="graphics"],
+html.phone #page-mods .lk-go,
+html.phone #page-mods [id^="mods-pick"],
+html.phone #page-mods #dc-list-mod,
+html.phone #nav-mods-count { display: none !important; }
+html.phone #page-mods .dc-grid, html.phone #page-mods .mod-grid { grid-template-columns: minmax(0, 1fr) !important; }
+
+/* the sign-in dialog: full screen on a phone */
+html.phone .gate { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+html.phone .gate-bar { display: none; }
+html.phone .gate-card { padding-top: 52px; }
+html.phone .gate-x { top: 4px; right: 4px; }

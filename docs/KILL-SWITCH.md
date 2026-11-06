@@ -85,6 +85,33 @@ The GitHub bundles are always taken before any Delete. If any check fails, Delet
 Commands: `status`, `pause`, `resume`, `backup`, `wipe` (`--dry-run` on all that write). `wipe` refuses without a
 backup from the last hour whose sha256 it is given.
 
+## Readiness (review 4 Nov)
+
+Before launch week, and again after any change to the card:
+
+1. **A dry run of Pause.** Tick every part and Dry run, write a test message, press Preview, then Pause. Save the
+   list it shows (the log in `logs\`). Nothing changes.
+2. **A second copy of the backup.** The backup folder is on the Desktop. Copy it to a drive that isn't this PC
+   after any Delete backup; it holds the website's player data, so keep that copy private.
+3. **Game data only.** If only the streamed game data must go, the `gamedata-off` step is enough (fast, undone by
+   `gamedata-on`). The Website's `/data` must then answer 410: the `signin` step's self-check now fails when it doesn't.
+
+## If the PC is gone (pause by hand)
+
+The card needs Leyline Control on the owner's PC. Without it, the same Pause by hand, in this order:
+
+1. **Discord** (the app on any device): post the farewell in the announcements channel and pin it. Server
+   Settings > Roles > @everyone: turn off Send Messages, Create Threads, Add Reactions and Connect.
+2. **Website** (SSH from any computer with the server key): write
+   `{"mode":"closed","message":"<the farewell>"}` to `/srv/wrath/portal-data/leyline/shutdown.json`. Every page
+   shows the farewell; the launcher's feeds, status.json and HQ keep working. Deleting the file undoes it.
+3. **Game data**: `bash /srv/wrath/stream/gamedata-switch.sh off` on the server (410 for every /data read).
+4. **Realms and network**: in HQ (`/wrath/admin`, signed in as the owner), the network's "Stop every node now" button.
+5. **GitHub** (github.com, signed in as orionopenwow): each repo's Settings > Archive this repository. Never the
+   other account.
+
+Nothing here deletes anything: everything can be undone the same way.
+
 ## Owner decisions
 
 - The farewell text (`TODO(owner)`).

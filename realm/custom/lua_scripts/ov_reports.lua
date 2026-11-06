@@ -100,6 +100,14 @@ local function unstick(player)
         say(player, "You're dead: release your spirit, or ask a party member for a resurrection.")
         return
     end
+    -- Review 4 Nov: the triggered hearth skips the cast and the cooldown, so from a battleground or arena it was a free,
+    -- instant way out of a match (the battleground's own Leave does that, with its rules).
+    local okBg, inBg = pcall(function() return player.InBattleground and player:InBattleground() end)
+    local okAr, inAr = pcall(function() return player.InArena and player:InArena() end)
+    if (okBg and inBg == true) or (okAr and inAr == true) then
+        say(player, "Not from a battleground or arena: leave it from its own menu.")
+        return
+    end
     local guid, now = player:GetGUIDLow(), os.time()
     local last = stuckAt[guid]
     if last and now - last < STUCK_COOLDOWN then

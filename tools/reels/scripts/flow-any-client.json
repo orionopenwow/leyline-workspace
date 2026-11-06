@@ -1,0 +1,71 @@
+{
+ "id": "flow-any-client",
+ "kind": "flow",
+ "formats": [
+  "wide",
+  "reel"
+ ],
+ "title": "Play with your own game folder",
+ "kicker": "How to",
+ "sub": "Add the folder you already have, then PLAY.",
+ "end_line": "TODO(owner): Leyline never downloads the game for you: it uses yours.",
+ "shots": [
+  {
+   "take": "lf-add-folder",
+   "in": [
+    "find",
+    -0.3
+   ],
+   "out": [
+    "picked",
+    0.6
+   ],
+   "caption": "1. Find your game files: pick the folder"
+  },
+  {
+   "take": "lf-add-folder",
+   "in": [
+    "picked",
+    0.6
+   ],
+   "out": [
+    "added",
+    1.6
+   ],
+   "caption": "2. Leyline reads its version and names it"
+  },
+  {
+   "take": "lf-add-folder",
+   "in": [
+    "added",
+    1.6
+   ],
+   "out": [
+    "play",
+    1.4
+   ],
+   "caption": "3. PLAY"
+  },
+  {
+   "take": "game-official-world",
+   "in": [
+    "started",
+    0
+   ],
+   "out": [
+    "world",
+    4
+   ],
+   "caption": "4. Logged in by itself, into the world",
+   "speed": 2.5
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   0,
+   1
+  ],
+  "max_seconds": 8
+ }
+}

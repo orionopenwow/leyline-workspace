@@ -1,5 +1,5 @@
 // The launcher's side menu, page tabs and backdrop (ui/index.html, ui/app.js, ui/style.css) in Chromium with a fake
-// Tauri core: the menu matches the website's (Home, Realms, Mods, Host, Forum, News; then Your realms, Settings,
+// Tauri core: the menu matches the website's (Home, Realms, Modes, Mods, Host, Forum, News, with Single player under Home; then Your realms, Settings,
 // Help), Mods has the tabs Installed and Discover, the Forum replaced Community (Friends and Hub) and the old page ids
 // (mymods, discover, friends, community, hub, mods) still land on the right page and tab, the arrow keys move between tabs, the
 // Your realms rows carry the realm's icon and client version, and the website's backdrop sits behind the content area
@@ -74,9 +74,10 @@ const where = (page) => page.evaluate(() => ({
 test('the side menu matches the website, with the same line icons', async () => {
   const { page, ctx, errors } = await open();
   const items = await page.$$eval('aside nav .nav[data-page]', (b) => b.map((x) => [x.dataset.page, x.textContent.trim().replace(/\d+$/, '')]));
-  // no Your Den item (owner 2026-11-02): it is in the play bar's realm list next to PLAY
-  assert.deepEqual(items, [['play', 'Home'], ['realms', 'Realms'], ['mods', 'Mods & Addons'], ['host', 'Host'], ['forum', 'Forum'], ['news', 'News']]);
-  assert.equal(await page.locator('aside nav .nav[data-page] svg').count(), 6, 'each with its line icon');
+  // no Your Den item (owner 2026-11-02): it is in the play bar's realm list next to PLAY; Single player under Home
+  // (owner 4 Nov: the flagship, a top-level choice; single.js)
+  assert.deepEqual(items, [['play', 'Home'], ['single', 'Single player'], ['realms', 'Realms'], ['modes', 'Modes'], ['mods', 'Mods & Addons'], ['host', 'Host'], ['forum', 'Forum'], ['news', 'News']]);
+  assert.equal(await page.locator('aside nav .nav[data-page] svg').count(), 8, 'each with its line icon');
   // owner 31 Oct 21:59: Join the Discord under News (a link, not a page)
   assert.equal(await page.$eval('aside nav .nav:last-child', (b) => b.id + '|' + b.dataset.link + '|' + b.textContent.trim()), 'tb-discord|discord|Join the Discord');
   const foot = await page.$$eval('.side-foot .nav:not([hidden])', (b) => b.map((x) => x.dataset.page));
@@ -90,7 +91,7 @@ test('the side menu matches the website, with the same line icons', async () => 
   assert.equal(await page.textContent('#pb-realm-ver'), '3.3.5a', 'the play bar too');
   assert.equal(await page.locator('#page-play #srv-name, #page-play #client-now').count(), 0, 'no SERVER or GAME CLIENT card on Home');
   const text = await page.evaluate(() => document.body.innerText);
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -99,7 +100,7 @@ test('Mods & Addons: Installed and Discover tabs, each with Mods | Addons; the F
   const { page, ctx, errors } = await open();
   await page.click('.nav[data-page="mods"]');
   assert.deepEqual(await where(page), { nav: ['mods'], page: ['page-mods'], panes: ['pane-discover'] }, 'Mods opens on Discover');
-  assert.deepEqual(await page.$$eval('.page-tab[data-group="mods"]', (b) => b.map((x) => x.dataset.tab)), ['discover', 'installed', 'gamemodes'], 'Discover is the first tab');
+  assert.deepEqual(await page.$$eval('.page-tab[data-group="mods"]', (b) => b.map((x) => x.dataset.tab)), ['discover', 'installed', 'gamemodes', 'dens'], 'Discover is the first tab; Dens last (shared Dens, denmarket.js)');
   assert.equal(await page.textContent('#page-mods h2'), 'Mods & Addons');
   await page.click('#tab-mods-installed');
   assert.deepEqual(await page.$$eval('#inst-tabs .ly-tab', (b) => b.map((x) => x.textContent.replace(/\d+$/, ''))), ['Mods', 'Addons'], 'Installed is split too');
@@ -123,6 +124,8 @@ test('Mods & Addons: Installed and Discover tabs, each with Mods | Addons; the F
   await page.keyboard.press('ArrowRight');
   assert.deepEqual((await where(page)).panes, ['pane-gamemodes'], 'then Game modes (owner 3 Nov)');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-mods-gamemodes');
+  await page.keyboard.press('ArrowRight');
+  assert.deepEqual((await where(page)).panes, ['pane-dens'], 'then Dens (shared Dens)');
   await page.click('#tab-mods-installed');
   // FIND ADDONS on Installed › Addons goes to Discover › Addons
   await page.click('#pane-installed [data-page-go="discover"]');

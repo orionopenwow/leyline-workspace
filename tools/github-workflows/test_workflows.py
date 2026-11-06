@@ -3,6 +3,7 @@ host kit pulls, with only the built-in token, from the realm's own build recipe,
 
     python3 tools/github-workflows/test_workflows.py        (needs PyYAML)
 """
+import json
 import os
 import re
 import unittest
@@ -31,7 +32,7 @@ def steps(doc, job):
 class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
-        self.assertEqual(names, ["den-lite.yml", "forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
+        self.assertEqual(names, ["bots-canary.yml", "den-lite.yml", "engine-windows.yml", "forge.yml", "hub-index.yml", "leyline-android.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
                                  "survivors.yml", "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
@@ -93,6 +94,51 @@ class Workflows(unittest.TestCase):
             self.assertIn(f'"{name}"', lite, f"the launcher downloads {name}")
             self.assertNotRegex(run, r"(?i)\.mpq|\bData/")
         self.assertIn('releases/download/den-lite-latest/"', lite)
+
+    def test_engine_windows(self):
+        """Single player's Built-in engine (docs/BUILTIN-ENGINE.md): the realm's own sources (fetch.sh at the pinned
+        commits, the same paths as wu-images) built natively for Windows; versions pinned; the built-in token only; no
+        game data in the sources or the package (checked before the zip); a smoke before the release; the zip, its
+        sha256 and engine.json on the rolling release engine-latest at the names the launcher downloads; the .github
+        copy byte for byte the source copy."""
+        text, doc = load("engine-windows.yml")
+        self.assertEqual((REPO / ".github" / "workflows" / "engine-windows.yml").read_text(encoding="utf-8"), text)
+        paths = doc["on"]["push"]["paths"]
+        for p in ("realm/custom/sources.lock", "realm/custom/patches/**", "realm/custom/fetch.sh", "realm/custom/modules/**",
+                  "realm/custom/lua_scripts/**", "realm/profiles/**", "realm/modules.env", ".github/workflows/engine-windows.yml"):
+            self.assertIn(p, paths)
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertNotIn("pull_request", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        self.assertEqual(doc["env"]["MYSQL_VERSION"], "8.4.9")   # the host kit runs mysql:8.4; the fork's own CI links 8.4.9
+        self.assertRegex(doc["env"]["BOOST_VERSION"], r"^\d+\.\d+\.\d+$")
+        job = doc["jobs"]["windows"]
+        self.assertEqual(job["runs-on"], "windows-2022")
+        self.assertEqual(job["permissions"], {"contents": "write"})
+        names = [s.get("name", "") for s in job["steps"]]
+        run = "\n".join(s.get("run", "") for s in job["steps"])
+        self.assertIn('FETCH_DIR="$PWD/realm/custom" sh realm/custom/fetch.sh', run)
+        self.assertIn('cd "${FETCH_DIR:-/w}"', (REPO / "realm" / "custom" / "fetch.sh").read_text(encoding="utf-8"),
+                      "fetch.sh still runs in the Docker container at /w")
+        self.assertIn("rm -rf realm/custom/acore/modules/mod-arac/patch-contents", run)
+        for flag in ("-DTOOLS_BUILD=all", "-DSCRIPTS=static", "-DMODULES=static", "-DWITH_WARNINGS=OFF", "-DCMAKE_BUILD_TYPE=Release"):
+            self.assertIn(flag, run)
+        order = [next(i for i, n in enumerate(names) if n.startswith(k)) for k in
+                 ("Sources", "No game data in the sources", "Configure", "Build", "Package", "No game data in the package", "Smoke",
+                  "Zip", "Put it on engine-latest")]
+        self.assertEqual(order, sorted(order))
+        for prog in ("worldserver", "authserver", "dbimport", "map_extractor", "mmaps_generator", "mysqld.exe", "mysqldump.exe"):
+            self.assertIn(prog, run)
+        self.assertIn("-mm=Deflate", run, "the launcher's unzip has deflate only")
+        self.assertIn("gh release upload engine-latest leyline-engine-win64.zip leyline-engine-win64.zip.sha256 leyline-engine-win64.json", run)
+        self.assertIn("SOURCES.txt", run)
+        self.assertIn("bind-address=127.0.0.1", run)
+        eng = (REPO / "launcher" / "src-tauri" / "src" / "host" / "engine.rs").read_text(encoding="utf-8")
+        self.assertIn('"leyline-engine-win64.zip"', eng)
+        self.assertIn('releases/download/engine-latest/"', eng)
+        self.assertNotRegex(run, r"(?i)\bData/|common\.mpq")
 
     def test_survivors(self):
         """Azeroth Survivors (docs/SURVIVORS.md): only when its lock or build script changes, or by hand; only upstream's
@@ -228,6 +274,46 @@ class Workflows(unittest.TestCase):
         owners = set(re.findall(r"ghcr\.io/([a-z0-9-]+)/", text)) | set(re.findall(r"github\.com/([A-Za-z0-9-]+)/", text))
         self.assertEqual(owners, {"orionopenwow"})
 
+    def test_bots_canary(self):
+        """Bots always up to date (docs/BOTS-UPDATES.md): weekly and by hand; the compat guard before the long build;
+        canary tags only (never :stable); the smoke test only on the self-hosted runner with the owner's own game
+        data, when BOTS_SMOKE_RUNNER is on; a pull request (draft while the smoke test is pending), never a merge;
+        the built-in token only."""
+        text, doc = load("bots-canary.yml")
+        self.assertEqual((REPO / ".github" / "workflows" / "bots-canary.yml").read_text(encoding="utf-8"), text)
+        self.assertIn("schedule", doc["on"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertNotIn("push", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        jobs = doc["jobs"]
+        self.assertEqual(list(jobs), ["bump", "images", "smoke", "propose"])
+        bump = "\n".join(s.get("run", "") for s in steps(doc, "bump"))
+        self.assertLess(bump.index("compat.py"), bump.index("pins.py bump"))
+        self.assertIn("pins.py same", bump)
+        # canary tags only
+        tags = [t.strip() for s in steps(doc, "images") if s.get("uses", "").startswith("docker/build-push-action")
+                for t in s["with"]["tags"].splitlines() if t.strip()]
+        self.assertEqual(len(tags), 6)
+        self.assertTrue(all(":canary" in t for t in tags), tags)
+        code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+        self.assertNotIn(":stable", code)
+        self.assertEqual(jobs["images"]["permissions"], {"contents": "read", "packages": "write"})
+        img = "\n".join(s.get("run", "") for s in steps(doc, "images"))
+        self.assertIn("rm -rf realm/custom/acore/modules/mod-arac/patch-contents", img)
+        # the smoke test: the owner's own data on his own runner, only when switched on
+        self.assertEqual(jobs["smoke"]["runs-on"], ["self-hosted", "leyline-bots-smoke"])
+        self.assertIn("vars.BOTS_SMOKE_RUNNER == 'on'", jobs["smoke"]["if"])
+        self.assertIn("realm/bots/bots-smoke.sh", "\n".join(s.get("run", "") for s in steps(doc, "smoke")))
+        # the proposal: a pull request, never a merge; as Orion
+        self.assertEqual(jobs["propose"]["permissions"], {"contents": "write", "pull-requests": "write"})
+        run = "\n".join(s.get("run", "") for s in steps(doc, "propose"))
+        self.assertIn("gh pr create --draft", run)
+        self.assertNotIn("gh pr merge", text)
+        self.assertNotIn("git push origin main", text)
+        self.assertIn("user.name=Orion", run)
+        self.assertIn("needs.smoke.result == 'success' || needs.smoke.result == 'skipped'", jobs["propose"]["if"])
+
     def test_hosting_tests(self):
         text, doc = load("wu-hosting.yml")
         self.assertEqual(doc["permissions"], {"contents": "read"})
@@ -266,6 +352,77 @@ class Workflows(unittest.TestCase):
         # the update check reads the same (public) repo's releases
         upd = (REPO / "launcher" / "src-tauri" / "src" / "update.rs").read_text()
         self.assertIn('"https://api.github.com/repos/orionopenwow/Leyline/releases', upd)
+
+    def test_android(self):
+        """The phone app (docs/ANDROID.md): on launcher changes and by hand; the Android project made fresh by
+        `tauri android init` (gen/ never committed), the crystal icon and the full-screen activity; a debug APK for arm64
+        and x86_64, the release APK only with the release key in the secrets (never in a file); an API 34 x86_64
+        emulator starts it, takes the screenshots and fails on a crash; no game data in the APK."""
+        text, doc = load("leyline-android.yml")
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        self.assertIn("launcher/**", doc["on"]["push"]["paths"])
+        self.assertIn(".github/workflows/leyline-android.yml", doc["on"]["push"]["paths"])
+        self.assertEqual(doc["on"]["pull_request"]["paths"], ["launcher/**"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.(\w+)", text)),
+                         {"ANDROID_KEYSTORE_B64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"})
+        jobs = doc["jobs"]
+        self.assertEqual(list(jobs), ["apk", "smoke"])
+        apk = jobs["apk"]
+        self.assertNotIn("permissions", apk, "no write access: artifacts only")
+        names = [s.get("name", s.get("uses", "")) for s in apk["steps"]]
+        run = "\n".join(s.get("run", "") for s in apk["steps"])
+        java = next(s for s in apk["steps"] if s.get("uses", "").startswith("actions/setup-java"))
+        self.assertEqual(java["with"]["java-version"], "17")
+        rust = next(s for s in apk["steps"] if s.get("uses", "").startswith("dtolnay/rust-toolchain"))
+        self.assertEqual(set(rust["with"]["targets"].split(",")), {"aarch64-linux-android", "armv7-linux-androideabi", "x86_64-linux-android"})
+        self.assertIn("sdkmanager", run)
+        self.assertRegex(str(doc["env"]["ANDROID_NDK"]), r"^\d+\.\d+\.\d+$")
+        self.assertEqual(doc["env"]["ANDROID_API"], "34")
+        self.assertIn("npm ci --no-audit --no-fund", run)
+        self.assertNotRegex(run, r"npm install\b")
+        # the Android project is made here, never committed; the activity and the icon are ours
+        self.assertIn("npx tauri android init", run)
+        self.assertIn("src-tauri/gen/", (REPO / "launcher" / ".gitignore").read_text(encoding="utf-8"), "gen/ is never committed")
+        self.assertIn("src-tauri/mobile/android/MainActivity.kt", run)
+        self.assertTrue((REPO / "launcher" / "src-tauri" / "mobile" / "android" / "MainActivity.kt").is_file())
+        self.assertIn("npx tauri icon ../stream/www-files/art/leyline-crystal-512.png", run)
+        self.assertTrue((REPO / "stream" / "www-files" / "art" / "leyline-crystal-512.png").is_file())
+        order = [next(i for i, n in enumerate(names) if n.startswith(k)) for k in
+                 ("Android SDK", "Install the Tauri CLI", "The Android project", "The app icon", "Build the debug APK", "No game data in the APK")]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("npx tauri android build --debug --apk --target aarch64 --target x86_64", run)
+        self.assertRegex(run, r"(?i)\\\.\(mpq\|m2\|wmo\|adt\|blp\|dbc")
+        # release signing: only with the key in the secrets, decoded to the runner's temp and deleted
+        rel = [s for s in apk["steps"] if "apksigner" in s.get("run", "")]
+        self.assertEqual(len(rel), 1)
+        self.assertEqual(rel[0]["if"], "env.HAS_RELEASE_KEY == 'true'")
+        self.assertEqual(apk["env"]["HAS_RELEASE_KEY"], "${{ secrets.ANDROID_KEYSTORE_B64 != '' }}")
+        self.assertIn('trap \'rm -f "$ks"\' EXIT', rel[0]["run"])
+        self.assertIn('"$RUNNER_TEMP/leyline-release.jks"', rel[0]["run"])
+        self.assertIn("apksigner\" verify", rel[0]["run"])
+        ups = {s["with"]["name"]: s for s in apk["steps"] if s.get("uses", "").startswith("actions/upload-artifact")}
+        self.assertEqual(set(ups), {"leyline-android-debug", "leyline-android-release"})
+        self.assertEqual(ups["leyline-android-release"]["if"], "env.HAS_RELEASE_KEY == 'true'")
+        for f in (".jks", ".keystore", "keystore.properties"):
+            self.assertNotIn(f, " ".join(str(s.get("with", {}).get("path", "")) for s in ups.values()))
+        # the emulator: Android 14 x86_64, our smoke script, its screenshots kept even when it fails
+        smoke = jobs["smoke"]
+        self.assertEqual(smoke["needs"], "apk")
+        emu = next(s for s in smoke["steps"] if s.get("uses", "").startswith("reactivecircus/android-emulator-runner"))
+        self.assertEqual((emu["with"]["api-level"], emu["with"]["arch"]), (34, "x86_64"))
+        self.assertIn("launcher/scripts/android-smoke.sh apk/Leyline-debug.apk", emu["with"]["script"])
+        self.assertIn("com.leylinelauncher.app", emu["with"]["script"])
+        art = [s for s in smoke["steps"] if s.get("uses", "").startswith("actions/upload-artifact")][0]
+        self.assertEqual(art["if"], "always()")
+        sh = (REPO / "launcher" / "scripts" / "android-smoke.sh").read_text(encoding="utf-8")
+        for bit in ("adb install", "screencap -p", "FATAL EXCEPTION", "Fatal signal", "pidof", "user_rotation 1"):
+            self.assertIn(bit, sh)
+        conf = json.loads((REPO / "launcher" / "src-tauri" / "tauri.android.conf.json").read_text(encoding="utf-8"))
+        self.assertEqual(conf["identifier"], doc["env"]["APP_ID"])
+        self.assertGreaterEqual(conf["bundle"]["android"]["minSdkVersion"], 26)
+        self.assertNotRegex(run, r"(?i)\bData/")
 
     def test_launcher_every_ship_is_a_release_for_everyone(self):
         # owner 31 Oct: "any update to this launcher from now on is auto queued for restart update for everyone"

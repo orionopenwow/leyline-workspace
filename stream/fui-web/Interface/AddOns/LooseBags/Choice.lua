@@ -18,12 +18,19 @@ local function Choose(which)
 		frame.chose = true
 		frame:Hide()
 	end
+	-- Not a word in Your Den (owner 5 Nov, live: "/lbags off switches to the..." bled in over the Den's editor at the
+	-- bottom left): the choice still counts, the line waits for nothing.
+	local quiet = LB.InDen()
 	if which == "standard" then
 		LB.TurnOff(true)
-		LB.Say("Standard bags. /lbags on switches to Loose Bags.")
+		if not quiet then
+			LB.Say("Standard bags. /lbags on switches to Loose Bags.")
+		end
 	else
 		LB.TurnOn(true, false)
-		LB.Say("Loose Bags on. Press B to open it. /lbags off switches to the standard bags.")
+		if not quiet then
+			LB.Say("Loose Bags on. Press B to open it. /lbags off switches to the standard bags.")
+		end
 	end
 end
 LB.Choose = Choose
@@ -115,8 +122,19 @@ function LB.ChoicePending()
 	return char.chosen ~= true
 end
 
+-- Not in Your Den (the launcher's Den Lite realm, WrathUnleashedUI W.DEN_REALM): a building room, where the window
+-- came up over the editor at the first visit (review 4 Nov). The choice waits, still pending, for a real realm.
+LB.DEN_REALM = "Your Den"
+function LB.InDen()
+	if not GetRealmName then
+		return false
+	end
+	local ok, name = pcall(GetRealmName)
+	return ok and name == LB.DEN_REALM
+end
+
 function LB.OfferChoice()
-	if not LB.ChoicePending() then
+	if not LB.ChoicePending() or LB.InDen() then
 		return false
 	end
 	local frame = Ensure()

@@ -855,3 +855,30 @@
 1329b ship  Save as Orion: HTTP/3 off steps, speed check
 1330a signin  Website: Project Reforged credited with their own screenshots (no Conquest of Azeroth left), the launch queue (100 seats, 30 starting at a time, no seat numbers)
 1330b ship  Save as Orion: Project Reforged, the spike queue and spike-test step, the name blocks
+1331a den-lite  Build Den Lite: click to carry (the prop follows the cursor over the ground, a click puts it down), arrows on a left click, the debug line
+1331b addons  Addon pack: the Den builder's click to carry, the faster cursor, /wudebug
+1332a den-lite  Build Den Lite: the Den review's fixes (a carried prop stays inside the Den at the edge, picking by nearest)
+1332b addons  Addon pack: build mode waits for Den Lite's state; the hover lets go after carrying; Q/E turn the carried prop
+1333a den-lite  Build Den Lite: the card in hand is drawn at the Den's edge, the build view's pan stays over the Den
+1333b addons  Addon pack: the build view recentres for the test, the new hint line (click picks up, click puts down)
+1333c den-move  The one Den test again
+1334a den-lite  Build Den Lite: the build view's free flight (glides from where it is, up and down, faster with Shift)
+1334b addons  Addon pack: free flight keys (W A S D, Space, X, Shift), the flight line in /wudebug
+1336c den-lite  Grand release: build Den Lite again (the three borrow errors fixed)
+1336d den-lite-test  Den Lite editor tests
+1338a den-lite  Den editor like LANDSCAPE: props not usable in build mode, card glides at once, click picks up, ring, Noggit-style flight
+1338b den-lite-test  Den Lite editor tests
+1339a ui-local  The newest in-game UI into this PC's game (matches the new Den Lite; backup first)
+1340a den-lite  Den Lite with the gliding copy (no flicker), hover light, den-move fixes
+1340b ui-local  The newest in-game UI into this PC's game: the tidy Den layout, A / D slide (backup first)
+1341a den-lite  Den Lite with the Noggit keys (frame, view marks, fly speed, slope, duplicate, select near)
+1341b ui-local  The newest in-game UI: Play vs Build, editor keys (1/2/3, Ctrl+C/V/D, G, R, L, F, Home), Esc steps
+1341e den-lite-all  All Den Lite tests (the new Noggit and glide tests)
+1342a den-lite  Den Lite: layout stamps, empty-Den tests, glide rows, selection trace
+1342b ui-local  The newest in-game UI (selection trace, Play/Build report)
+1342c den-lite-all  All Den Lite tests (layout stamps, glide rows)
+1343a signin  Website: boss fights and arena pages, leaderboard, phone fixes, combos setting
+1343b page  Browser page: touch controls, boss fight loading, add to home screen
+1343c foreverui  In-game UI in the browser: the boss fight panel, realm guide line
+1343d addons  Desktop addon pack: the boss fight panel, realm guide line
+1343e ship  Save to GitHub: boss fights, Dalaran logout and duels, race/class combos, Android app, export fix

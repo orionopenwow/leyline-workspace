@@ -1,0 +1,84 @@
+/* Single player (single.js): its page (three steps with their states and one progress line, then Manage) and Home's
+   row, in the theme's tokens (themes/themes.css). Home's row borrows Your Den's banner look (den.css .hm-den). */
+.sp .sp-head { display: flex; align-items: center; gap: 14px; }
+.sp .sp-head h2 { margin: 0; }
+.sp-mark { width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: 12px;
+  background: var(--t-accent-soft, transparent); border: var(--t-border-w, 1px) solid color-mix(in srgb, var(--t-accent) 45%, transparent); }
+.sp-mark svg, .hm-single .hm-den-ic svg { width: 28px; height: 28px; fill: none; stroke: var(--t-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.sp-head-t { min-width: 0; }
+.sp .sp-title { margin: 2px 0 0; }
+
+/* the progress line over the steps */
+.sp-progress { display: grid; gap: 6px; margin: 16px 0 10px; }
+.sp-progress-t { font-size: 12.5px; color: var(--t-muted); }
+.sp-bar { height: 6px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--t-muted) 22%, transparent); }
+.sp-bar i { display: block; height: 100%; background: var(--t-accent); border-radius: inherit; transition: width .3s ease; }
+
+/* the three steps */
+.sp-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.sp-step { background: var(--t-surface); border: var(--t-border-w, 1px) solid var(--t-border); border-radius: var(--t-radius, 10px); padding: 12px 14px; }
+.sp-step.now, .sp-step.run { border-color: var(--t-accent); }
+.sp-step.todo { opacity: .75; }
+.sp-step-h { display: flex; align-items: center; gap: 10px; }
+.sp-step-h b { font: 700 15px var(--t-font); color: var(--t-text); flex: 1; min-width: 0; }
+.sp-num { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 50%; font-size: 12px; font-weight: 700;
+  border: 1px solid color-mix(in srgb, var(--t-muted) 50%, transparent); color: var(--t-muted); }
+.sp-step.now .sp-num, .sp-step.run .sp-num { border-color: var(--t-accent); color: var(--t-accent); }
+.sp-step.done .sp-num { background: var(--t-accent); border-color: var(--t-accent); color: var(--t-on-accent); }
+.sp-chip, .sp-dock { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--t-muted) 40%, transparent); color: var(--t-muted); }
+.sp-chip.done, .sp-dock.ok { color: var(--t-good, var(--t-accent)); border-color: color-mix(in srgb, var(--t-good, var(--t-accent)) 55%, transparent); }
+.sp-chip.now, .sp-chip.run { color: var(--t-accent-strong, var(--t-accent)); border-color: var(--t-accent); }
+.sp-dock.warn { color: var(--t-warn, var(--t-accent)); border-color: color-mix(in srgb, var(--t-warn, var(--t-accent)) 55%, transparent); }
+.sp-dock.bad { color: var(--t-bad); border-color: color-mix(in srgb, var(--t-bad) 55%, transparent); }
+.sp-body { margin: 10px 0 0 34px; display: grid; gap: 8px; }
+.sp-line { margin: 0; font-size: 12.5px; color: var(--t-muted); }
+.sp-fine { font-size: 12px; color: var(--t-muted); }
+.sp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* step 1: the folders, and the drop area */
+.sp-folders { display: grid; gap: 6px; }
+.sp-folder { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 4px 10px; text-align: left; cursor: pointer;
+  padding: 8px 10px; border-radius: var(--t-radius, 10px); background: transparent; color: var(--t-text);
+  border: var(--t-border-w, 1px) solid var(--t-border); font: inherit; }
+.sp-folder:hover { border-color: var(--t-accent); }
+.sp-folder.on { border-color: var(--t-accent); background: var(--t-accent-soft, transparent); }
+.sp-path { font-size: 11.5px; color: var(--t-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sp-drop { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--t-radius, 10px);
+  border: 1.5px dashed color-mix(in srgb, var(--t-muted) 45%, transparent); font-size: 12.5px; color: var(--t-muted); }
+.sp-drop.drag { border-color: var(--t-accent); background: var(--t-accent-soft, transparent); color: var(--t-text); }
+
+/* step 2: the engines */
+.sp-engines { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.sp-engine { display: grid; gap: 4px; align-content: start; padding: 10px 12px; border-radius: var(--t-radius, 10px);
+  border: var(--t-border-w, 1px) solid var(--t-border); }
+.sp-engine.on { border-color: var(--t-accent); }
+.sp-engine.off { opacity: .6; cursor: not-allowed; border-style: dashed; }
+.sp-engine[tabindex] { cursor: pointer; }
+.sp-engine[tabindex]:hover { border-color: color-mix(in srgb, var(--t-accent) 60%, var(--t-border)); }
+.sp-engine[tabindex]:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+.sp-engine-h { display: flex; align-items: center; gap: 8px; }
+.sp-engine-h b { font-size: 13.5px; color: var(--t-text); }
+.sp-engine-h em { font-style: normal; font-size: 11px; color: var(--t-muted); padding: 1px 6px; border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--t-muted) 45%, transparent); }
+.sp-engine-l { font-size: 12px; color: var(--t-muted); }
+
+/* step 3: the start's own steps */
+.sp-prog { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--t-radius, 10px); border: 1px solid var(--t-border); }
+.sp-prog.bad { border-color: var(--t-bad); }
+.sp-prog-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.sp-prog-d { font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Manage */
+.sp-manage { margin-top: 16px; display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--t-radius, 10px);
+  background: var(--t-surface); border: var(--t-border-w, 1px) solid var(--t-accent); }
+.sp-manage-h { display: flex; align-items: center; gap: 10px; }
+.sp-manage-h b { font: 700 15px var(--t-font); color: var(--t-text); }
+.sp-logs { margin: 0; max-height: 260px; overflow: auto; padding: 10px; font-size: 11.5px; line-height: 1.4; white-space: pre-wrap;
+  border-radius: 8px; background: color-mix(in srgb, var(--t-bg, #000) 70%, transparent); color: var(--t-text); }
+/* the Built-in engine's login (made for the player) */
+.sp-login code { font: 600 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 1px 6px; border-radius: 6px;
+  background: color-mix(in srgb, var(--t-bg, #000) 60%, transparent); color: var(--t-text); user-select: all; }
+.sp-manage-h .sp-fine { margin-left: auto; }
+.sp .sp-status { margin-top: 12px; }
+@media (max-width: 900px) { .sp-body { margin-left: 0; } }

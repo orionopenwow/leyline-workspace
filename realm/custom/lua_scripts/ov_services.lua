@@ -15,7 +15,11 @@ local BOOST_LEVEL = 70
 local BOOST_SPELLS = { 33388, 33391, 34090 } -- Apprentice, Journeyman, Expert Riding
 local BOOST_BAG = 41599                      -- Frostweave Bag (20 slots)
 local BOOST_GOLD = 500 * 10000
-local BOOST_KITS_PER_ACCOUNT = 10
+-- the account's kit cap: the same env ov_main.lua reads (main.env OV_BOOST_KITS_PER_ACCOUNT), so the two boosts can't
+-- disagree (review 4 Nov: this one was a hard-coded 10)
+local function kitsPerAccount()
+    return tonumber(os.getenv("OV_BOOST_KITS_PER_ACCOUNT") or "") or 10
+end
 
 local function boostEnabled()
     return os.getenv("OV_BOOST_TO_70") == "1"
@@ -55,7 +59,7 @@ local function onSelect(event, player, object, sender, intid, code, menuId)
         end
         local account = player:GetAccountId()
         local kits = CharDBQuery(string.format("SELECT COUNT(*) AS n FROM ov_boosts WHERE account_id = %d", account))
-        local withKit = not kits or kits:GetUInt32(0) < BOOST_KITS_PER_ACCOUNT
+        local withKit = not kits or kits:GetUInt32(0) < kitsPerAccount()
         CharDBExecute(string.format("INSERT IGNORE INTO ov_boosts (char_guid, account_id, boosted_at) VALUES (%d, %d, %d)",
             player:GetGUIDLow(), account, os.time()))
         if withKit then
@@ -64,7 +68,7 @@ local function onSelect(event, player, object, sender, intid, code, menuId)
         end
         player:SaveToDB()
         player:SendBroadcastMessage("|cff66ccff[Leyline]|r Boosted to " .. BOOST_LEVEL .. ". Visit your class trainer for your spells." ..
-            (withKit and "" or " (This account has had its " .. BOOST_KITS_PER_ACCOUNT .. " boost gold and bag kits.)"))
+            (withKit and "" or " (This account has had its " .. kitsPerAccount() .. " boost gold and bag kits.)"))
     end
     player:GossipComplete()
 end

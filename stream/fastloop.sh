@@ -13,6 +13,8 @@ cd "$(dirname "$0")"
   MARK_BEGIN="# >>> WrathUnleashed streaming (stream-up.sh)"; MARK_END="# <<< WrathUnleashed streaming";
   caddy_reload() { (cd "$CADDY_DIR" && docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile); }; }
 TS=$(date +%Y%m%d-%H%M%S); BK=${WU_BACKUPS:-/root/fastloop-backups}/$TS; mkdir -p "$BK"
+# keep the last ten backups (each holds the portal and its art: they filled the disk otherwise)
+ls -1d "${WU_BACKUPS:-/root/fastloop-backups}"/*/ 2>/dev/null | sort | head -n -10 | xargs -r rm -rf
 
 echo "== 1/2 sign-in page (wu-portal)"
 cp -p "$WU/portal/wrath_portal.py" "$BK/wrath_portal.py"
@@ -61,6 +63,8 @@ had_downloads=""
 if [ -f "$WU/portal/downloads.py" ]; then cp -p "$WU/portal/downloads.py" "$BK/downloads.py"; had_downloads=1; fi
 had_duels=""
 if [ -f "$WU/portal/duels.py" ]; then cp -p "$WU/portal/duels.py" "$BK/duels.py"; had_duels=1; fi
+had_bossfights=""
+if [ -f "$WU/portal/bossfights.py" ]; then cp -p "$WU/portal/bossfights.py" "$BK/bossfights.py"; had_bossfights=1; fi
 had_survivors=""
 if [ -f "$WU/portal/survivors.py" ]; then cp -p "$WU/portal/survivors.py" "$BK/survivors.py"; had_survivors=1; fi
 had_profiles=""
@@ -73,6 +77,9 @@ rm -f "$BK/bugreport.py"
 [ ! -f "$WU/portal/bugreport.py" ] || cp -p "$WU/portal/bugreport.py" "$BK/bugreport.py"
 # Submit a link, the feedback digest, HQ's Review pages: each backed up when there, removed on rollback when not
 for f in linkqueue.py link-blocklist.json feedback.py staffdesk.py loadouts.py loadouts.json; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
+# Looks, the upstream addons list and the Leyline flags / Host pack listing: the same (review 4 Nov: they were installed
+# below but never backed up, so a rollback left the new copies in place)
+for f in looks.py looks.json upstream_addons.py upstream-addons.json leyline_net.py hostpack.json; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_admin=""
 if [ -f "$WU/portal/admin.py" ]; then cp -p "$WU/portal/admin.py" "$BK/"; [ ! -f "$WU/portal/wu-mod.py" ] || cp -p "$WU/portal/wu-mod.py" "$BK/"; [ ! -f "$WU/portal/hq.py" ] || cp -p "$WU/portal/hq.py" "$BK/"; had_admin=1; fi
 had_hub=""
@@ -115,12 +122,14 @@ put_back() {
   for f in discord_growth.py discord_template.json discord_template_v2.json discord_template_launch.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_downloads" ]; then cp -p "$BK/downloads.py" "$WU/portal/downloads.py"; else rm -f "$WU/portal/downloads.py"; fi
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
+  if [ -n "$had_bossfights" ]; then cp -p "$BK/bossfights.py" "$WU/portal/bossfights.py"; else rm -f "$WU/portal/bossfights.py"; fi
   if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
   if [ -f "$BK/bugreport.py" ]; then cp -p "$BK/bugreport.py" "$WU/portal/bugreport.py"; else rm -f "$WU/portal/bugreport.py"; fi
   for f in linkqueue.py link-blocklist.json feedback.py staffdesk.py loadouts.py loadouts.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
+  for f in looks.py looks.json upstream_addons.py upstream-addons.json leyline_net.py hostpack.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_admin" ]; then cp -p "$BK/admin.py" "$WU/portal/admin.py"; [ ! -f "$BK/wu-mod.py" ] || cp -p "$BK/wu-mod.py" "$WU/portal/"
     if [ -f "$BK/hq.py" ]; then cp -p "$BK/hq.py" "$WU/portal/hq.py"; else rm -f "$WU/portal/hq.py"; fi
   else rm -f "$WU/portal/admin.py" "$WU/portal/wu-mod.py" "$WU/portal/hq.py"; fi
@@ -239,6 +248,9 @@ if [ -f downloads.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.ar
 # the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards): optional; it reads $WU/portal/duels/, which
 # duels-export.py fills (realm/serverpass.sh step 1d)
 if [ -f duels.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' duels.py && install -m 644 duels.py "$WU/portal/duels.py"; fi
+# boss fights, duels and arena (/wrath/bossfights, /wrath/arena, /wrath/api/bossfights): optional; it reads
+# $WU/portal/duels/bossfights.json (realm/custom/bossfights-export.py) and modes_data.py beside it
+if [ -f bossfights.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' bossfights.py && install -m 644 bossfights.py "$WU/portal/bossfights.py"; fi
 # Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors): optional; its address is
 # $WU/portal/survivors.url (hosting/survivors/sv-site-up.sh)
 if [ -f survivors.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' survivors.py && install -m 644 survivors.py "$WU/portal/survivors.py"; fi
@@ -313,6 +325,12 @@ if [ -d www-files/art ] && [ -f www-files/art/wu-theme.css ]; then
     rm -rf "$WU/portal/art/looks"; install -d -m 755 "$WU/portal/art/looks"
     find www-files/art/looks -maxdepth 1 -type f -name 'look-*.webp' -exec install -m 644 {} "$WU/portal/art/looks/" \;
     echo "  looks pictures: $(find www-files/art/looks -maxdepth 1 -type f -name 'look-*.webp' | wc -l) -> $WU/portal/art/looks"
+  fi
+  # the picture and video slots of stream/site_pages.py (our own shots and films), served at /wrath/art/slots/
+  if [ -d www-files/art/slots ]; then
+    rm -rf "$WU/portal/art/slots"; install -d -m 755 "$WU/portal/art/slots"
+    find www-files/art/slots -maxdepth 1 -type f \( -name '*.webp' -o -name '*.webm' -o -name '*.mp4' \) -exec install -m 644 {} "$WU/portal/art/slots/" \;
+    echo "  slots: $(find www-files/art/slots -maxdepth 1 -type f | wc -l) -> $WU/portal/art/slots"
   fi
   if [ -d www-files/art/hub-thumbs ]; then
     rm -rf "$WU/portal/art/hub-thumbs"; install -d -m 755 "$WU/portal/art/hub-thumbs"
@@ -467,39 +485,74 @@ fi
 
 echo "== check"
 sleep 2
-c1=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://wrath.openvanilla.app/warm.html || true)
-c2=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://wrath.openvanilla.app/data/__index || true)
-c3=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath || true)
-c4=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/art/wu-card.webp || true)
-c5=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/q/258 || true)
+# The checks ask the names players use now (review 4 Nov: they still asked the old ones). The old names still answer;
+# one old-name line below keeps an eye on that. WU_SITE_NAME / WU_GAME_NAME override them for a test box.
+SITE_NAME="${WU_SITE_NAME:-leylinelauncher.com}"
+GAME_NAME="${WU_GAME_NAME:-play.leylinelauncher.com}"
+c1=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$GAME_NAME/warm.html || true)
+c2=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$GAME_NAME/data/__index || true)
+c3=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath || true)
+c4=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/art/wu-card.webp || true)
+c5=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/q/258 || true)
 echo "  /wrath/q/258 share link (200 = links on): $c5"
-c6=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/armory || true)
+c6=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/armory || true)
 echo "  /wrath/armory (200 = the armory is on): $c6"
-c7=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/mods || true)
+c7=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/mods || true)
 echo "  /wrath/mods Workshop (200 = on): $c7"
-c7m=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/modes.json || true)
+c7m=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/modes.json || true)
 echo "  /wrath/modes.json game modes (200 = on): $c7m"
-c8=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/docs || true)
-c8w=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/workshop || true)
+c7b=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/api/bossfights || true)
+echo "  /wrath/api/bossfights boss fight boards (200 = on): $c7b"
+c8=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/docs || true)
+c8w=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/workshop || true)
 echo "  /wrath/workshop player creations (200 = on): $c8w"
 echo "  /wrath/docs Leyline docs (200 = on): $c8"
-c9=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/host || true)
+c9=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/host || true)
 echo "  /wrath/host + Your server (302 to sign-in = on): $c9"
-c10=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/api/social/me || true)
+c10=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/api/social/me || true)
 echo "  /wrath/api/social/me Leyline friends (401 signed out = on): $c10"
-c10f=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/forum/api/categories || true)
+c10f=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/forum/api/categories || true)
 echo "  /wrath/forum/api/categories the Leyline forum (200 = on): $c10f"
-c11p=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/avatar/p/star.svg || true)
+c11p=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/avatar/p/star.svg || true)
 echo "  /wrath/avatar/p/star.svg    Leyline profiles and sign-in (200 = on): $c11p"
-c11=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/admin || true)
+c11=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/admin || true)
 echo "  /wrath/admin Admin Console (302 to sign-in = on): $c11"
-c11k=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://play.openvanilla.app/account/key || true)
+c11k=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://$SITE_NAME/account/key || true)
 echo "  /account/key (302 to /wrath/key = the Leyline Hero Key page): $c11k"
-c11l=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://play.openvanilla.app/login || true)
+c11l=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://$SITE_NAME/login || true)
 echo "  /login (302 to /wrath/signin = the old sign-in page pruned): $c11l"
-c12=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/leyline-preview || true)
+c12=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/leyline-preview || true)
 echo "  /wrath/leyline-preview hidden hub (200 = on): $c12"
 echo "  warm.html (public): $c1   /data (must stay gated, 302/401/403): $c2   /wrath signed out (200 = saved-key page): $c3"
 echo "  /wrath/art/wu-card.webp (200 = the art is served): $c4"
+c3o=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath || true)
+c2o=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://wrath.openvanilla.app/data/__index || true)
+echo "  old names: play.openvanilla.app/wrath $c3o (200 = still answers)   wrath.openvanilla.app/data $c2o (must stay gated)"
 echo "  backups: $BK"
-echo "FASTLOOP OK"
+# review 4 Nov: the game data must stay behind the sign-in gate (a 200 here means anyone can download it); the step
+# fails loudly instead of printing FASTLOOP OK under it. Nothing is rolled back by this check: look at the Caddyfile.
+if [ "$c2" = 200 ] || [ "$c2o" = 200 ]; then
+  echo "ERROR: /data/__index answered 200 signed out: the game data is not behind the sign-in gate. Check the Caddyfile's streaming block." >&2
+  exit 1
+fi
+# Review 4 Nov (ops 7, suggestion 3): the other checks say something too. The site's own page must answer signed out,
+# and the Admin Console must never answer 200 to a visitor who isn't signed in.
+if [ "$c3" != 200 ] && [ "$c3o" != 200 ]; then
+  echo "ERROR: /wrath answered $c3 ($SITE_NAME) and $c3o (old name) signed out, not 200: the site is not answering." >&2
+  exit 1
+fi
+if [ "$c11" = 200 ]; then
+  echo "ERROR: /wrath/admin answered 200 signed out: the Admin Console must be hidden from visitors." >&2
+  exit 1
+fi
+# The kill switch for game data (stream/server/gamedata-switch.sh): while its flag is there, /data must answer 410.
+if [ -f "${WU_GAMEDATA_FLAG_HOST:-$WU/portal/gamedata-off}" ] && [ "$c2" != 410 ]; then
+  echo "ERROR: game data is switched off (the gamedata-off flag is there) but /data/__index answered $c2, not 410." >&2
+  exit 1
+fi
+# HTTP/3 through Docker crawled at 20-40 KB/s (4 Nov; tools/security/h3-off.sh). A Caddyfile rewrite can bring it back
+# without a word, so say so here (a warning, not a failure: h3-on is a choice the owner can make).
+if [ -f "$CF" ] && ! grep -qE '^\s*protocols\s+h1\s+h2\s*$' "$CF"; then
+  echo "WARN: HTTP/3 is on (the Caddyfile has no 'protocols h1 h2'). If that wasn't meant, queue the h3-off step."
+fi
+echo "FASTLOOP OK (site: https://$SITE_NAME/wrath)"

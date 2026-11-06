@@ -118,7 +118,11 @@ PAGES = ["/wrath", "/wrath/leyline", "/wrath/download", "/wrath/start", "/wrath/
          "/wrath/armory/Arthas", "/wrath/armory/Nobody", "/wrath/q/258", "/wrath/u/Arthas", "/wrath/r/wrath",
          "/wrath/m/pings", "/wrath/demo", "/wrath/docs", "/wrath/docs/mods", "/wrath/docs/play", "/wrath/docs/hosting",
          "/wrath/docs/hero-key", "/wrath/docs/publishing", "/wrath/workshop", "/wrath/host", "/wrath/link",
-         "/wrath/admin", "/wrath/leyline-preview", "/wrath/no-such-page", "/wrath/play", "/wrath/play/end"]
+         "/wrath/admin", "/wrath/leyline-preview", "/wrath/no-such-page", "/wrath/play", "/wrath/play/end",
+         "/wrath/guides", "/wrath/guides/install-and-log-in", "/wrath/press", "/wrath/modes/official",
+         "/wrath/modes/seeded-realm", "/wrath/single-player",
+         "/wrath/bossfights", "/wrath/bossfights?d=heroic", "/wrath/arena", "/wrath/leaderboards?board=bosses",
+         "/wrath/leaderboards?board=arena"]   # boss fights, duels and arena (stream/bossfights.py)   # stream/site_pages.py (Single player: the 404 while its flag is off)
 for path in PAGES:
     st, hd, page = get(path)
     ok = st < 500
@@ -179,7 +183,7 @@ check("realms page: titled for Leyline", "<title>Realms · Leyline</title>" in r
 
 FEEDS = ["/wrath/status.json", "/wrath/realms.json", "/wrath/mods/all.json", "/wrath/mods/catalog.json", "/wrath/modes.json",
          "/wrath/leyline/flags.json", "/wrath/leyline/hostpack.json", "/wrath/leyline/catalog.json", "/wrath/leyline/mods.json",
-         "/wrath/leyline/channel.json", "/wrath/leyline/news.json"]
+         "/wrath/leyline/channel.json", "/wrath/leyline/news.json", "/wrath/api/bossfights"]
 for path in FEEDS:
     st, hd, body = get(path)
     if not hd.get("content-type", "").startswith("application/json"):

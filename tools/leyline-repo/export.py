@@ -366,10 +366,16 @@ def license_text(src: Path) -> bytes:
     raise Refused("no LICENSE found in the repo (LICENSE or mods/template/LICENSE)")
 
 
+# The one line players may read that names the company (the standing brand rule's exception): removed from a line
+# before the check, so the line still fails if anything else in it is a brand word.
+LEGAL_LINE = re.compile(r"not affiliated with or endorsed by Blizzard Entertainment", re.I)
+
+
 def brand_hits(rel: str, data: bytes) -> list[str]:
     text = data.decode("utf-8", "replace")
     hits = []
     for n, line in enumerate(text.splitlines(), 1):
+        line = LEGAL_LINE.sub("", line)
         for rx in BANNED:
             m = rx.search(line)
             if m:

@@ -134,8 +134,8 @@ PM.ways(force=True)
 
 # ---------------------------------------------------------------- phase 1: the chooser
 st, hd, body, _ = req("GET", "/wrath/signin?next=%2Fwrath%2Fleyline%2Fforum")
-check("chooser: 200, the steps (Sign in, Your profile, Play), step 1 current", st == 200 and 'class="pf-steps"' in body
-      and re.search(r'data-n="1" class="on" aria-current="step"><span>Sign in', body) and "Your profile" in body, body[:400])
+check("chooser: 200, the steps (Log in, Your profile, Play), step 1 current", st == 200 and 'class="pf-steps"' in body
+      and re.search(r'data-n="1" class="on" aria-current="step"><span>Log in', body) and "Your profile" in body, body[:400])
 check("chooser: Hero Key first, then Google; Discord hidden while the website doesn't offer it",
       'href="/wrath/signin/go/herokey?next=%2Fwrath%2Fleyline%2Fforum"' in body and "/wrath/signin/go/google?" in body
       and "/wrath/signin/go/discord" not in body and body.index("go/herokey") < body.index("go/google"))

@@ -17,6 +17,7 @@ import json
 import math
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -959,14 +960,15 @@ class Control(unittest.TestCase):
         for node in tree.body:
             if isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", "") in ("STEPS", "READ_ONLY"):
                 vals[node.targets[0].id] = ast.literal_eval(node.value)
-        for step in ("den-check", "den-test", "den-test-invite", "den-features"):
+        for step in ("den-check", "den-test", "den-test-invite", "den-features", "den-glide", "den-glide-undo"):
             bat = vals["STEPS"][step][0]
             self.assertTrue((HERE.parent.parent / bat).is_file(), bat)
             self.assertFalse(bat.startswith("labs/"))
         self.assertIn("den-check", vals["READ_ONLY"])
         self.assertNotIn("den-test", vals["READ_ONLY"], "it starts the game: not for Autopilot on its own")
         self.assertNotIn("den-features", vals["READ_ONLY"], "it starts the game")
-        for bat in ("Den check.bat", "Den test.bat", "Den test - invite.bat", "Den features.bat"):
+        self.assertNotIn("den-glide", vals["READ_ONLY"], "it writes into the game folder")
+        for bat in ("Den check.bat", "Den test.bat", "Den test - invite.bat", "Den features.bat", "Den glide rows.bat", "Den glide rows - undo.bat"):
             self.assertIn(b"\r\n", (HERE / bat).read_bytes(), bat + " has Windows line ends")
 
 
@@ -982,7 +984,9 @@ class FakeAids:
         self.player = [16226.2, 16257.0, 13.2, 0.0]
         self.aids = {"armed": "off", "ghost": None, "at": None, "cursor": None, "axis": None, "gizmo": 0, "sel": None, "mode": "play",
                      "glow": None, "drag": 0.0, "cam": "near", "far_at": None, "zoom": 12,
-                     "hovered": None, "sel_at": None, "sel_uv": None, "grip": False}
+                     "hovered": None, "sel_at": None, "sel_uv": None, "grip": False,
+                     # the copy in hand (glide.rs): a creature made once and glided; "flicker": a gameobject made anew
+                     "copy": None, "copies_made": 0, "copies_glided": 0, "glide": "on"}
         self.zoom, self.back = 12, 0.0
         self.screen = (0.0, 0.0)
         # the props the mouse can find: id -> (u, v on the screen, x, y, z)
@@ -999,7 +1003,7 @@ class FakeAids:
     def mouse(self, act, a):
         if act == "click":
             hit = self.under(float(a[2]), float(a[3]))
-            self.aids.update(sel=hit, glow=hit, gizmo=4 if hit else 0)
+            self.aids.update(sel=hit, glow=hit, gizmo=4 if hit else 0, hover_light=None)
         elif act == "press":
             hit = self.under(float(a[2]), float(a[3]))
             if hit:
@@ -1014,6 +1018,14 @@ class FakeAids:
             self.ev("den_change", "+1 -1")
             self.aids.update(grip=False, armed="off", glow=self.aids["sel"])
 
+    def draw(self):
+        """The copy shown at a new spot: made the first time (a creature), glided after; broken "flicker": made anew."""
+        if self.aids["copy"] is None or "flicker" in self.broken:
+            self.aids["copies_made"] += 1
+            self.aids["copy"] = "object" if "flicker" in self.broken else "creature"
+        else:
+            self.aids["copies_glided"] += 1
+
     def sync(self):
         w = self.where.get(self.aids["sel"])
         self.aids.update(sel_uv=w[:2] if w else None, sel_at=w[2:] if w else None)
@@ -1026,6 +1038,9 @@ class FakeAids:
         if self.aids["armed"] == "off":
             if self.aids["mode"] == "build":
                 self.aids["hovered"] = self.under(u, v)
+                # the hover light (gizmo.rs HOVER): under the hovered prop unless it is the selection
+                h = self.aids["hovered"]
+                self.aids["hover_light"] = h if h is not None and h != self.aids["sel"] and "light" not in self.broken else None
             return
         self.aids["cursor"] = [u, v, 16 / 9]
         if self.aids["armed"].startswith("axis,"):
@@ -1040,16 +1055,61 @@ class FakeAids:
         if cmd == ".den size":
             self.sync()
             look = "build" if self.aids["mode"] == "build" and "look" not in self.broken else "play"
-            return {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0)}
+            r = {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0),
+                 "pos": self.player[:3], "facing": self.player[3]}
+            if getattr(self, "before_glide", False):
+                for k in ("copy", "copies_made", "copies_glided", "glide"):
+                    r["aids"].pop(k, None)
+            if not getattr(self, "before_5nov", False):
+                r["prop_flags"] = 0x10 if look == "build" and "flags" not in self.broken else 0
+            return r
         if w[:2] in ([".den", "save"], [".den", "load"]):
             if w[1] == "save":
-                (self.dens / ("%s.den.json" % w[2])).write_text("{}")
+                (self.dens / ("%s.den.json" % w[2])).write_text(json.dumps({"props": self.props}))
+            elif "noload" in self.broken:
+                self.props = 7   # the load went wrong: not what was saved
+            else:
+                self.props = json.loads((self.dens / ("%s.den.json" % w[2])).read_text()).get("props", self.props)
             return {"props": self.props}
+        if getattr(self, "before_clear", False) and w[:2] in ([".den", "clear"], [".den", "stamps"]):
+            return {"props": self.props, "said": []}
+        if w[:3] == [".den", "stamps", "from-layout"]:
+            self.ev("layout_stamps", "my-den-5-nov:%d:new tent-with-lanterns:2:new" % self.props)
+            return {"props": self.props, "said": []}
+        if w[:2] == [".den", "clear"]:
+            self.cleared, self.props = self.props, 0
+            self.ev("den_clear", str(self.cleared))
+            return {"props": 0, "said": []}
+        if w[:2] == [".den", "stamp"]:
+            self.stamped = 2
+            self.props += 2
+            return {"props": self.props, "said": []}
+        if w[:2] == [".build", "undo"]:
+            self.props -= getattr(self, "stamped", 0)
+            self.stamped = 0
+            return {"props": self.props, "said": []}
         a = w[2:]
         if a and a[0] == "select" and "select" not in self.broken:
             self.aids.update(sel=7, gizmo=3)
         if a[:2] == ["key", "insert"] and "swap" not in self.broken and self.aids["sel"]:
             self.ev("den_change", "+1 -1")
+            return {"props": self.props, "said": []}
+        if a[:1] == ["pick"]:
+            # the gallery card (Builder.lua B.Choose, Gizmo.lua's hook): in hand, nothing shown yet
+            self.aids.update(armed="place,%s,1543" % a[1], ghost=None, at=None)
+            return {"props": self.props, "said": []}
+        if a[:1] == ["report"]:
+            play = self.aids["mode"] == "play"
+            frames = "LeylineDenPlayPill" if play else "LeylineDenBar,LeylineDenRail,LeylineEditorStatus"
+            if "playframes" in self.broken:
+                frames += ",LeylineDenRail"
+            with open(self.dens / den_check.UI_REPORT, "a", encoding="utf-8") as f:
+                for line in ("open " + frames, "mode play=%d banner=%s toast=-" % (play, "Play_mode" if play else "Build_mode")):
+                    f.write(json.dumps({"t": den_check.now_ms(), "report": line}) + "\n")
+            return {"props": self.props, "said": []}
+        if a[:1] == ["build"]:
+            self.aids["mode"] = "build"
+            self.ev("build_mode", "build")
             return {"props": self.props, "said": []}
         if a[:1] != ["gizmo"] or (len(a) > 1 and a[1] in self.broken):
             return {"props": self.props}
@@ -1057,11 +1117,14 @@ class FakeAids:
         if act == "build":
             self.aids["mode"] = "play" if a[2:] == ["off"] else "build"
             self.ev("build_mode", self.aids["mode"])
+            if "sticky" in self.broken:
+                # 5 Nov: the UI's half-second check turned build mode on again after the test's "build off"
+                self.aids["mode"] = "build"
             if self.aids["mode"] == "build":
                 self.twins = getattr(self, "twins", 0) + 3
         elif act == "arm":
-            # in hand: nothing shown until the cursor is on the ground
-            self.aids.update(armed="place,%s,1543" % a[2], ghost=None)
+            # in hand: nothing shown until the cursor is on the ground (since 5 Nov: shown at once, `shows_at_once`)
+            self.aids.update(armed="place,%s,1543" % a[2], ghost=[16229.0, 16257.0, 13.2, 0.0] if "shows_at_once" in self.broken else None)
         elif act == "hover":
             self.hover(float(a[2]), float(a[3]))
         elif act == "commit":
@@ -1072,6 +1135,12 @@ class FakeAids:
                 self.ev("den_change", "+1 -0")
                 if "glow" not in self.broken:
                     self.aids.update(sel=9, glow=9, gizmo=4)
+                if "lost" in self.broken and not getattr(self, "lost_once", False):
+                    # 5 Nov den-move: placed and selected, then cleared a moment later by a click the UI sent
+                    self.lost_once = True
+                    self.ev("addon", "wubuild cmd click 0.10 0.95")
+                    self.ev("sel", "9 -> -: click 0.1000 0.9500 1.7778 12 carry")
+                    self.aids.update(sel=None, glow=None, gizmo=0, sel_by="9 -> -: click 0.1000 0.9500 1.7778 12 carry")
             self.aids.update(armed="off", ghost=None, cursor=None)
         elif act == "grab":
             self.aids.update(armed="axis,%s,%s" % (self.aids["sel"], a[2]), drag=0.0)
@@ -1095,13 +1164,47 @@ class FakeAids:
             self.aids["cam"] = ("far,%.1f,0,0" % self.back) if self.back >= 0.5 else "near"
             self.back = self.back if self.back >= 0.5 else 0.0
         elif act == "cancel":
-            self.aids.update(armed="off", ghost=None, cursor=None)
+            self.aids.update(armed="off", ghost=None, cursor=None, copy=None)
         elif act == "axis":
             self.aids["axis"] = None if a[2] == "off" else a[2]
         elif act == "wheel":
             self.ev("den_change", "+1 -1")
+        elif act == "glide":
+            # Gizmo.lua's frame tick at (u, v): a hover; the copy (or the carried prop) where it lands
+            u, v = float(a[2]), float(a[3])
+            if self.aids["armed"].startswith("move,") and self.aids["grip"]:
+                self.moved = (u, v)
+                self.aids["at"] = [16227.0 + u * 10, 16259.0 + v * 10, 13.2, 0.0]
+                self.draw()
+            else:
+                self.hover(u, v)
+                if self.aids.get("ghost"):
+                    self.aids["at"] = self.aids["ghost"]
+                    if self.aids["armed"] != "off":
+                        self.draw()
+        elif act == "mouse":
+            # Gizmo.lua's own press and let-go: in hand, put down; else what is under it picked up
+            u, v = float(a[2]), float(a[3])
+            if self.aids["armed"].startswith("place,"):
+                self.props += 1
+                self.ev("den_change", "+1 -0")
+                self.where[11] = [u, v, 16230.0, 16258.0, 13.2]
+                self.aids.update(armed="off", ghost=None, at=None, sel=11, glow=11, gizmo=4, copy=None)
+            elif self.aids["armed"].startswith("move,") and self.aids["grip"]:
+                self.mouse("release", ["gizmo", "release"])
+                self.aids["copy"] = None
+            else:
+                hit = self.under(u, v)
+                if hit:
+                    self.moved = (u, v)
+                    self.aids.update(sel=hit, grip=True, armed="move,%s,1543" % hit)
+                    self.draw()
         elif act in ("click", "press", "moveto", "release"):
             self.mouse(act, a)
+        elif act == "report":
+            with open(self.dens / den_check.UI_REPORT, "a", encoding="utf-8") as f:
+                for line in ("seltrace 104.2:mouse_click_world_0.10,0.95", "gizmo build=1 armed=- sel=-"):
+                    f.write(json.dumps({"t": den_check.now_ms(), "report": line}) + "\n")
         elif act == "menu" and a[2] == "2":
             self.props += 1
             self.ev("den_change", "+1 -0")
@@ -1166,6 +1269,63 @@ class PlacementAids(unittest.TestCase):
         cam, err = den_check.fit_camera(samples)
         self.assertLess(err, 0.05, "fitted: %s %.3f" % (cam, err))
 
+    def test_samples_at_two_zooms_fit_the_same_camera(self):
+        # review 4 Nov: each sample keeps the zoom it was taken at (gizmo.rs Sample.dist), and Den Lite's ray uses
+        # that zoom (Aids::view): the fit must use it too (it found fov 0.39 and a 1.3 yd error before)
+        true = {"fov": 1.2, "pivot": 1.6, "dist": 9.0, "pitch": 0.42}
+        samples = []
+        for i, (fx, fy) in enumerate(den_check.CAL_POINTS * 2):
+            dist = 8.0 if i % 2 else 16.0
+            u, v = 2 * fx - 1, 1 - 2 * fy
+            d = den_check.project(dict(true, dist=dist), (0.0, 0.0, 5.0, 0.7), u, v, 1.6, 5.0)
+            samples.append({"u": u, "v": v, "aspect": 1.6, "dist": dist, "player": [0.0, 0.0, 5.0, 0.7], "dest": [d[0], d[1], 5.0]})
+        cam, err = den_check.fit_camera(samples)
+        self.assertLess(err, 0.05, "fitted: %s %.3f" % (cam, err))
+        self.assertAlmostEqual(cam["fov"], 1.2, places=2)
+        self.assertAlmostEqual(cam["pitch"], 0.42, places=2)
+        # a sample with no zoom, or a zoom that isn't one, falls back to the camera's own distance
+        self.assertEqual(den_check.camera_error(true, [dict(samples[0], dist=None)]),
+                         den_check.camera_error(dict(true, dist=9.0), [dict(samples[0], dist=None)]))
+        self.assertEqual(den_check.camera_error({}, []), float("inf"))
+
+    def test_a_far_view_sample_uses_its_own_long_distance(self):
+        # placement review 4 Nov: a build-view sample is cast from the view's focus at the zoom plus the pull-back
+        # (gizmo.rs sample), past the game's own 50 yd: the fit uses that distance, not the camera's own
+        true = {"fov": 1.3, "pivot": 1.8, "dist": 12.0, "pitch": 0.5}
+        samples = []
+        for (fx, fy) in den_check.CAL_POINTS:
+            u, v = 2 * fx - 1, 1 - 2 * fy
+            d = den_check.project(dict(true, dist=26.0), (3.0, 1.0, 5.0, 0.4), u, v, 1.78, 5.0)
+            if d:
+                samples.append({"u": u, "v": v, "aspect": 1.78, "dist": 26.0, "player": [3.0, 1.0, 5.0, 0.4], "dest": [d[0], d[1], 5.0]})
+        self.assertTrue(samples)
+        self.assertLess(den_check.camera_error(true, samples), 1e-3)
+        self.assertGreater(den_check.camera_error(true, [dict(s, dist=None) for s in samples]), 0.5)
+
+    def test_the_calibrated_window_shape_is_kept_and_another_shape_is_noted(self):
+        self.assertEqual(den_check.calibrated_aspect([{"aspect": 1.6}, {"aspect": 1.78}, {"aspect": 1.78}, {"aspect": "x"}]), 1.78)
+        self.assertIsNone(den_check.calibrated_aspect([]))
+        (self.dens / den_check.CAMERA_FILE).write_text(json.dumps({"fov": 1.3, "aspect": 1.778}), encoding="utf-8")
+        self.assertIsNone(den_check.aspect_note(self.dens, [0, 0, 1.7778]))
+        self.assertIn("1.33", den_check.aspect_note(self.dens, [0, 0, 1.3333]))
+        self.assertIsNone(den_check.aspect_note(self.dens, None))
+        (self.dens / den_check.CAMERA_FILE).unlink()
+        self.assertIsNone(den_check.aspect_note(self.dens, [0, 0, 1.3333]))
+
+    def test_a_carry_jump_is_measured_from_where_the_prop_stood(self):
+        self.assertAlmostEqual(den_check.carry_jump([1.0, 2.0, 0.0], [4.0, 6.0, 0.0, 0.0]), 5.0)
+        self.assertIsNone(den_check.carry_jump([1.0, 2.0], None))
+        self.assertIsNone(den_check.carry_jump(None, [1.0, 2.0]))
+
+    def test_project_turns_with_the_player_and_reads_the_same_from_any_facing(self):
+        cam = den_check.CAMERA
+        for o in (0.0, 0.7, math.pi / 2, math.pi, -2.5):
+            p = den_check.project(cam, (10.0, -4.0, 3.0, o), 0.0, 0.0, 16 / 9, 3.0)
+            ahead = math.hypot(p[0] - 10.0, p[1] + 4.0)
+            q = den_check.project(cam, (10.0, -4.0, 3.0, 0.0), 0.0, 0.0, 16 / 9, 3.0)
+            self.assertAlmostEqual(ahead, math.hypot(q[0] - 10.0, q[1] + 4.0), places=4)
+            self.assertAlmostEqual(math.atan2(p[1] + 4.0, p[0] - 10.0) % (2 * math.pi), o % (2 * math.pi), places=4)
+
     def test_every_aid_passes_with_a_picture(self):
         rep = den_check.Report()
         with contextlib.redirect_stdout(io.StringIO()):
@@ -1177,7 +1337,10 @@ class PlacementAids(unittest.TestCase):
                      "gizmo: the wheel moves it along the picked axis", "swap: the selection becomes the gallery's pick", "menu: Duplicate",
                      "snap out: the view from up high", "snap out: and back to you", "zoom: out past the game's limit", "zoom: and back to you",
                      "play mode: props plain again", "mouse: the prop under the cursor glows", "mouse: a click selects it (a click on the sky clears)",
-                     "mouse: press and drag moves it"):
+                     "mouse: press and drag moves it", "build mode: props never take the game's click", "card: the copy glides under the cursor",
+                     "card: a click puts it down, selected", "select: a click on a prop picks it up, the next puts it down",
+                     "card: the copy glides as one creature (no destroy / create)", "select: the copy glides as one creature (no destroy / create)",
+                     "play mode: props usable again (a chair is sat on)"):
             self.assertIn(want, names)
         moved = [r for r in rep.rows if r[1] == "mouse: press and drag moves it"][0][2]
         self.assertTrue(moved.startswith("moved 2.06 yd") and moved.endswith("-mouse-dropped.png"), moved)
@@ -1209,7 +1372,8 @@ class PlacementAids(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             den_check.aids_features(rep, FakeAids(dens, broken={"mouse"}), dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
-        self.assertEqual(fails, {"mouse: the prop under the cursor glows", "mouse: a click selects it (a click on the sky clears)", "mouse: press and drag moves it"})
+        self.assertEqual(fails, {"mouse: the prop under the cursor glows", "mouse: a click selects it (a click on the sky clears)", "mouse: press and drag moves it",
+                                 "card: a click puts it down, selected"})
         # a Den Lite from before the mouse: said, not failed
         class NoMouse(FakeAids):
             def send(self, cmd, wait=10.0):
@@ -1253,6 +1417,147 @@ class PlacementAids(unittest.TestCase):
         self.assertTrue(any(r[0] == "INFO" and r[1] == "the editor's new flow" for r in rep.rows))
         self.assertNotIn("snap out: the view from up high", [r[1] for r in rep.rows])
 
+    def test_the_owners_5_nov_flow_fails_with_its_fix_and_an_older_den_lite_is_said(self):
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"flags", "glide"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("build mode: props never take the game's click", fails)
+        self.assertIn("card: the copy glides under the cursor", fails)
+        row = [r for r in rep.rows if r[1] == "build mode: props never take the game's click"][0]
+        self.assertIn("want 0x10", row[3])
+        dens = self.d / "dens-before-5nov"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        old = FakeAids(dens)
+        old.before_5nov = True
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, old, dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        self.assertTrue(any(r[0] == "INFO" and r[1] == "5 Nov: the editor's click fixes" for r in rep.rows))
+        self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
+
+    def test_a_copy_shown_at_once_passes_and_build_mode_coming_back_fails_play_mode(self):
+        # the owner's PC 5 Nov: "pick" failed for showing the copy at once (the right thing since that morning), and
+        # "play mode: props usable again" read flags 16 (build mode came back half a second after the test's "build off")
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"shows_at_once", "sticky"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        rows = {r[1]: r for r in rep.rows}
+        self.assertEqual(rows["pick: the card in hand"][0], "PASS")
+        self.assertIn("its copy shown at once", rows["pick: the card in hand"][2])
+        self.assertEqual(rows["play mode: props usable again (a chair is sat on)"][0], "FAIL")
+
+    def test_the_carried_copy_must_glide_not_flicker(self):
+        # owner 5 Nov: "dynamically move instead of disappearing, reappearing": a copy made anew at each spot fails
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"flicker"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        fails = {r[1]: r for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("card: the copy glides as one creature (no destroy / create)", fails)
+        self.assertIn("select: the copy glides as one creature (no destroy / create)", fails)
+        self.assertIn("The copy was object, made", fails["card: the copy glides as one creature (no destroy / create)"][3])
+        # a game without the Den patch's creature rows, and a Den Lite from before the glide: said, not failed
+        for kind, setup in (("none", lambda f: f.aids.update(glide="none")), ("before", lambda f: setattr(f, "before_glide", True))):
+            dens = self.d / ("dens-glide-" + kind)
+            dens.mkdir()
+            (dens / "den-lite.events").write_text("")
+            den = FakeAids(dens)
+            setup(den)
+            rep = den_check.Report()
+            with contextlib.redirect_stdout(io.StringIO()):
+                den_check.aids_features(rep, den, dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+            rows = [r for r in rep.rows if r[1] == "card: the copy glides as one creature (no destroy / create)"]
+            self.assertEqual(rows[0][0], "INFO", kind)
+            self.assertIn("updated launcher" if kind == "none" else "from before the glide", rows[0][2])
+            self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [], kind)
+
+    def test_the_test_runs_in_an_empty_den_its_layout_kept_as_stamps_and_put_back(self):
+        # owner 5 Nov: "remove everything from den for these tests ... remember ... a few dressed buildings and areas as
+        # stamps for testing"
+        den = FakeAids(self.dens)
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, den, self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3, only_move=True)
+        rows = {r[1]: r for r in rep.rows}
+        self.assertEqual(rows["your layout kept as stamps (Stamps > Mine)"][0], "PASS")
+        self.assertIn("my-den-5-nov (2, new)", rows["your layout kept as stamps (Stamps > Mine)"][2])
+        self.assertEqual(rows["the test's empty Den"][0], "PASS")
+        self.assertEqual(den.cleared, 2)
+        row = rows["a kept stamp goes down, one undo takes it back"]
+        self.assertEqual(row[0], "PASS", row)
+        self.assertTrue(row[2].startswith("tent-with-lanterns: 2 props down, then 0"), row[2])
+        self.assertEqual(rows["your Den put back as it was"][0], "PASS")
+        self.assertEqual(den.props, 2, "the owner's two props back")
+        self.assertFalse((self.dens / "aidstest-before.den.json").exists())
+        # the load didn't put it back: failed, and the saved file is kept
+        dens = self.d / "dens-noload"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(dens, broken={"noload"}), dens, self.shoot, self.d / "shots", settle=0, wait=0.3, only_move=True)
+        self.assertEqual({r[1]: r for r in rep.rows}["your Den put back as it was"][0], "FAIL")
+        self.assertTrue((dens / "aidstest-before.den.json").exists(), "kept for the owner")
+        # a Den Lite from before `.den clear`: said, the test runs among the props
+        dens = self.d / "dens-old"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        old = FakeAids(dens)
+        old.before_clear = True
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, old, dens, self.shoot, self.d / "shots", settle=0, wait=0.3, only_move=True)
+        rows = {r[1]: r for r in rep.rows}
+        self.assertEqual(rows["the test's empty Den"][0], "INFO")
+        self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
+
+    def test_a_d_slide_the_hover_light_and_plays_frames(self):
+        # owner 5 Nov: A / D slide (not turn), the prop under the cursor lights, Play hides the editor and Build brings it back
+        den = FakeAids(self.dens)
+
+        def keys(scan, secs, turn=False):
+            o = den.player[3]
+            sign = 1 if scan == den_check.SCAN_D else -1
+            den.player[0] += sign * 1.5 * math.sin(o)
+            den.player[1] -= sign * 1.5 * math.cos(o)
+            if turn:
+                den.player[3] += 0.5 * sign
+            return ""
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, den, self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3, keys=keys)
+        rows = {r[1]: r for r in rep.rows}
+        for want in ("build mode: A / D slide you sideways (facing unchanged)", "hover: a light under the prop under the cursor, gone once it is selected",
+                     "play mode: the editor's frames hidden, it says Play", "build mode: the editor's frames back"):
+            self.assertEqual(rows[want][0], "PASS", rows.get(want))
+        self.assertIn("D: 1.50 yd right", rows["build mode: A / D slide you sideways (facing unchanged)"][2])
+        self.assertEqual(den.aids["mode"], "play", "left in play mode as before")
+        # A / D turning, no light, the rail left up in play mode: each fails with what it saw
+        dens = self.d / "dens-broken3"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        den = FakeAids(dens, broken={"light", "playframes"})
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, den, dens, self.shoot, self.d / "shots", settle=0, wait=0.3, keys=lambda sc, t: keys(sc, t, turn=True))
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertEqual(fails, {"build mode: A / D slide you sideways (facing unchanged)", "hover: a light under the prop under the cursor, gone once it is selected",
+                                 "play mode: the editor's frames hidden, it says Play"})
+
+    def test_a_selection_lost_after_placing_says_what_cleared_it(self):
+        # 5 Nov den-move step 3: "prop None, glow on None, 0 handles": the report now names the sender from both sides
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"lost"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3, only_move=True)
+        rows = {r[1]: r for r in rep.rows}
+        self.assertEqual(rows["click: placed, and selected at once (it glows, its handles)"][0], "FAIL")
+        self.assertIn("click 0.1000 0.9500", rows["click: what changed the selection (Den Lite)"][2])
+        story = rows["click: Den Lite's events since"][2]
+        self.assertIn("sel 9 -> -: click", story)
+        self.assertIn("addon wubuild cmd click", story)
+        self.assertIn("seltrace 104.2:mouse_click_world", rows["click: what the UI says"][2])
+
     def test_hover_calibration_fits_and_saves_the_camera(self):
         true = {"fov": 1.25, "pivot": 1.7, "dist": 10.0, "pitch": 0.45}
         den = FakeAids(self.dens, true_cam=true)
@@ -1266,7 +1571,7 @@ class PlacementAids(unittest.TestCase):
         self.assertIn("PASS hover calibration: the camera fitted: fov", text)
         self.assertIn("INFO hover calibration: before: the preview was", text)
         saved = json.loads((self.dens / den_check.CAMERA_FILE).read_text())
-        self.assertEqual(set(saved), {"fov", "pivot", "dist", "pitch"})
+        self.assertEqual(set(saved), {"fov", "pivot", "dist", "pitch", "aspect"}, "the fitted camera and the window shape it was measured at")
         self.assertEqual(sum(1 for s in self.shots if s.startswith("calibrate-")), len(den_check.CAL_POINTS))
         self.assertEqual(den.aids["mode"], "play", "build mode left again")
         # clicks not measured (G didn't start the cursor): failed, nothing saved
@@ -1284,6 +1589,55 @@ class PlacementAids(unittest.TestCase):
         rep = den_check.Report()
         den_check.hover_calibration(rep, den, self.dens, self.shoot, self.d / "shots", None)
         self.assertEqual(rep.rows[0][0], "SKIP")
+
+class GlideRows(unittest.TestCase):
+    """Den Lite's glide-rows (labs/den-lite gliderows.rs) before den-move, and the den-glide step."""
+
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp(prefix="den-glide-"))
+        self.addCleanup(shutil.rmtree, self.d, True)
+        self.dens = self.d / "dens"
+        self.dens.mkdir()
+        self.exe = self.d / "den-lite.exe"
+        self.exe.write_bytes(b"x")
+        self.calls = []
+
+    def run_ok(self, cmd, **kw):
+        self.calls.append(cmd)
+        archive = self.d / "patch-S.MPQ"
+        if "--undo" in cmd:
+            (self.dens / den_check.GLIDE_MARKER).unlink()
+            return subprocess.CompletedProcess(cmd, 0, json.dumps({"ok": True, "said": "Data/patch-S.MPQ taken away"}), "")
+        archive.write_bytes(b"MPQ")
+        (self.dens / den_check.GLIDE_MARKER).write_text(json.dumps({"format": "leyline-den-creature-models", "base": 70000, "displays": [39, 40], "archive": str(archive)}))
+        return subprocess.CompletedProcess(cmd, 0, json.dumps({"ok": True, "said": "2 prop models can glide (Data/patch-S.MPQ, from your own game's tables)."}), "")
+
+    def test_the_rows_are_made_and_den_lite_will_glide_while_their_archive_is_there(self):
+        self.assertEqual(den_check.glide_ready(self.dens), (False, "no creature rows marked yet"))
+        rep = den_check.Report()
+        self.assertTrue(den_check.glide_rows(rep, self.exe, self.d / "game", self.dens, run=self.run_ok))
+        self.assertEqual(self.calls[0][1:3], ["glide-rows", "--game"])
+        self.assertEqual(rep.rows[0][0], "PASS")
+        ok, why = den_check.glide_ready(self.dens)
+        self.assertTrue(ok and why.startswith("2 prop models can glide (patch-S.MPQ)"), why)
+        (self.d / "patch-S.MPQ").unlink()
+        self.assertFalse(den_check.glide_ready(self.dens)[0], "the archive gone: no glide")
+        rep = den_check.Report()
+        den_check.glide_rows(rep, self.exe, self.d / "game", self.dens, undo=True, run=self.run_ok)
+        self.assertIn("--undo", self.calls[-1])
+
+    def test_a_refusal_or_an_older_den_lite_is_said(self):
+        rep = den_check.Report()
+        no = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, json.dumps({"ok": False, "said": "Data/patch-S.MPQ belongs to another mod"}), "")
+        self.assertFalse(den_check.glide_rows(rep, self.exe, self.d, self.dens, run=no))
+        self.assertEqual(rep.rows[0][0], "FAIL")
+        self.assertIn("another mod", rep.rows[0][2] + rep.rows[0][3])
+        rep = den_check.Report()
+        old = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 2, "", "den-lite: unknown option glide-rows")
+        self.assertFalse(den_check.glide_rows(rep, self.exe, self.d, self.dens, run=old))
+        self.assertEqual(rep.rows[0][0], "INFO")
+        self.assertIn("from before glide-rows", rep.rows[0][2])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

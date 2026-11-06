@@ -5,6 +5,9 @@ realm/custom/lua_scripts/ov_go.lua, kept in this ONE file.
     python3 -I stream/modes_data.py --lua            print the Lua table ov_go.lua carries
     python3 -I stream/modes_data.py --write <ov_go>  rewrite that table inside ov_go.lua (between its
                                                      BEGIN/END GENERATED lines)
+    python3 -I stream/modes_data.py --companions <server> <ui>
+                                                     write the Bots window's dungeon list: the realm's
+                                                     ov_companions_dungeons.lua and the addon's CompanionsData.lua
 
 stream/tests/test_modes.py fails when ov_go.lua's copy and this file disagree, and when an ENTRANCES
 number disagrees with stream/slices/mini.json.
@@ -87,12 +90,13 @@ HANGOUTS = [
 ]
 
 # The duel corner: Krasus' Landing, the open flight platform on the city's edge (game_tele "KrasusLanding",
-# azerothcore-wotlk game_tele.sql id 1731). Duels work anywhere in the city; this is the one place we point at.
+# azerothcore-wotlk game_tele.sql id 1731). Duels work anywhere in the city (realm/custom/modules/mod-leyline-qol);
+# this is the one place we point at.
 # TODO(check in game): the spot stands clear of the flight master and his landing path.
 DUEL_CORNER = (571, 5813.84, 449.122, 658.752, 1.16086)
 DUEL = {"id": "duels", "name": "Duels in Dalaran", "pos": DUEL_CORNER, "min": 1, "tag": "Any level · 1 v 1",
-        "line": "The duel corner at Krasus' Landing. Health and cooldowns come back after every duel.",
-        "hint": "Duel corner: target a player and type /duel. Either of you can say no. Health and cooldowns come back after."}
+        "line": "The duel corner at Krasus' Landing; duels work anywhere in the city. Health and cooldowns come back after every duel.",
+        "hint": "Duels work anywhere in Dalaran; the corner is where people meet. Target a player and type /duel. Either of you can say no. Health and cooldowns come back after."}
 
 # ---------------------------------------------------------------------------------------------
 # 5-player dungeons (share kind "q", by slug) and the random queues (kind "q", by LFG id)
@@ -233,6 +237,38 @@ RAIDS = [
      "bosses": ["Baltharus the Warborn", "Saviana Ragefire", "General Zarithrian", "Halion"]},
 ]
 
+# ---------------------------------------------------------------------------------------------
+# Instant boss fights (stream/bossfights.py, /wrath/bossfights) and the 1v1 arena queue (/wrath/arena)
+# ---------------------------------------------------------------------------------------------
+# Not go targets of ov_go.lua's PLACES (not in places(), so the generated Lua table is unchanged): their go kinds are
+#     bf:<boss>:<difficulty>:<mode>   difficulty normal | heroic; mode bots (fight now with companions),
+#                                     group (queue with players, companions fill the gaps) or group-only (players only)
+#     arena:1v1                       the unrated 1v1 arena queue (mod-1v1-arena's ".q1v1 unrated")
+# sent to the realm as "ovgo set <ACCOUNT> <go>"; the realm's boss-fight script runs ".bossfight join ..." at login
+# (docs/BOSS-FIGHTS.md). Player-facing names only: the final fight of Icecrown Citadel is always "The Frozen Throne".
+BF_DIFFICULTIES = ("normal", "heroic")
+BF_MODES = ("bots", "group", "group-only")
+BOSS_FIGHTS = [
+    {"id": "frozen-throne", "name": "The Frozen Throne", "raid": "Icecrown Citadel", "map": 631, "level": 80, "size": 10,
+     "pos": (631, 503.63, -2124.66, 840.86),   # the platform's centre (the encounter script in AzerothCore)
+     "tier": "icc-toc", "live": True},
+]
+# coming next, in the order the plan gives (small, self-contained rooms first): names only, no go link yet
+BOSS_FIGHTS_NEXT = [
+    {"id": "vault-of-archavon", "name": "Vault of Archavon", "raid": "Vault of Archavon", "map": 624},
+    {"id": "onyxia", "name": "Onyxia", "raid": "Onyxia's Lair", "map": 249},
+    {"id": "sartharion", "name": "Sartharion", "raid": "The Obsidian Sanctum", "map": 615},
+    {"id": "halion", "name": "Halion", "raid": "The Ruby Sanctum", "map": 724},
+]
+ARENA_QUEUE = {"id": "1v1", "name": "1v1 arena queue", "go": "arena:1v1", "min": 80,
+               "line": "Queue for a one-on-one arena match at level 80. You are matched with the next player in line."}
+
+
+def boss_go(boss: str, difficulty: str = "normal", mode: str = "bots") -> str:
+    """The go value for an instant boss fight: bf:<boss>:<difficulty>:<mode>."""
+    return f"bf:{boss}:{difficulty}:{mode}"
+
+
 KEYS_DUNGEON = "q"
 KEYS_RAID = "b"
 KEYS_HANGOUT = "h"
@@ -303,6 +339,75 @@ def lua() -> str:
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------------------------------------
+# Dungeon buddies (the Bots window's Dungeons tab, ov_companions.lua's "dungeon <id>")
+# ---------------------------------------------------------------------------------------------
+# The window draws each dungeon with the game's own Dungeon Finder art, by path only (nothing is shipped):
+# Interface\LFGFrame\LFGIcon-<name>. The client's GetLFGDungeonInfo gives the real name when it knows the
+# dungeon (matched by name in the window); these are the fallbacks, as the 3.3.5a LFGDungeons.dbc spells them.
+# TODO(check in game): every icon shows (a wrong name falls back to the group icon).
+LFG_ICONS = {
+    "ragefire-chasm": "RagefireChasm", "wailing-caverns": "WailingCaverns", "deadmines": "Deadmines",
+    "shadowfang-keep": "ShadowFangKeep", "blackfathom-deeps": "BlackfathomDeeps", "stockade": "StormwindStockades",
+    "gnomeregan": "Gnomeregan", "razorfen-kraul": "RazorfenKraul", "scarlet-monastery": "ScarletMonastery",
+    "razorfen-downs": "RazorfenDowns", "uldaman": "Uldaman", "maraudon": "Maraudon", "zulfarrak": "ZulFarrak",
+    "sunken-temple": "SunkenTemple", "blackrock-depths": "BlackrockDepths", "dire-maul": "DireMaul",
+    "blackrock-spire": "BlackrockSpire", "scholomance": "Scholomance", "stratholme": "Stratholme",
+    "hellfire-ramparts": "HellfireCitadel", "blood-furnace": "HellfireCitadel", "shattered-halls": "HellfireCitadel",
+    "slave-pens": "Coilfang", "underbog": "Coilfang", "steamvault": "Coilfang",
+    "mana-tombs": "Auchindoun", "auchenai-crypts": "Auchindoun", "sethekk-halls": "Auchindoun",
+    "shadow-labyrinth": "Auchindoun", "old-hillsbrad": "CavernsOfTime", "black-morass": "CavernsOfTime",
+    "botanica": "TempestKeep", "mechanar": "TempestKeep", "arcatraz": "TempestKeep",
+    "magisters-terrace": "Sunwell", "utgarde-keep": "UtgardeKeep", "nexus": "TheNexus", "azjol-nerub": "AzjolNerub",
+    "ahnkahet": "AhnKahet", "draktharon-keep": "DrakTharon", "violet-hold": "TheVioletHold", "gundrak": "Gundrak",
+    "halls-of-stone": "HallsofStone", "halls-of-lightning": "HallsofLightning", "oculus": "TheOculus",
+    "utgarde-pinnacle": "UtgardePinnacle", "culling-of-stratholme": "CavernsOfTime",
+    "trial-of-the-champion": "ArgentDungeon", "forge-of-souls": "TheForgeofSouls", "pit-of-saron": "PitofSaron",
+    "halls-of-reflection": "HallsofReflection",
+}
+
+
+def companions_dungeons() -> list[dict]:
+    """The 5-player dungeons bots can fill a party for, in level order: id, name, map, min, max, exp, pos
+    (map, x, y, z, o: the spot just inside the door, ENTRANCES) or None, icon (LFG_ICONS)."""
+    out = []
+    for d in DUNGEONS:
+        e = ENTRANCES.get(d["map"])
+        out.append({"id": d["id"], "name": d["name"], "map": d["map"], "min": d["levels"][0], "max": d["levels"][1],
+                    "exp": d["exp"], "pos": (d["map"],) + e if e else None, "icon": LFG_ICONS.get(d["id"], "")})
+    out.sort(key=lambda d: (d["min"], d["max"], d["name"]))
+    return out
+
+
+def companions_server_lua() -> str:
+    """realm/custom/lua_scripts/ov_companions_dungeons.lua: the table ov_companions.lua's "dungeon <id>" reads."""
+    lines = ["-- ov_companions_dungeons.lua: the dungeons the Bots window's Dungeons tab offers (ov_companions.lua reads it",
+             "-- with require). GENERATED by stream/modes_data.py --companions (do not edit by hand): the levels and the",
+             "-- door positions (the spot just inside each instance, AzerothCore's areatrigger_teleport targets) are",
+             "-- documented there. Loaded as a script on its own it only returns the table.",
+             "return {"]
+    for d in companions_dungeons():
+        pos = "nil" if not d["pos"] else "{ " + ", ".join(_num(v) for v in d["pos"]) + " }"
+        lines.append(f'    {{ id = {_lua_str(d["id"])}, name = {_lua_str(d["name"])}, map = {d["map"]}, '
+                     f'min = {d["min"]}, max = {d["max"]}, pos = {pos} }},')
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def companions_ui_lua() -> str:
+    """stream/fui-web/Interface/AddOns/WrathUnleashedUI/CompanionsData.lua: the same list for the window."""
+    lines = ["-- CompanionsData.lua: the Bots window's dungeon list (the Dungeons tab). GENERATED by stream/modes_data.py",
+             "-- --companions (do not edit by hand). icon: the game's own Dungeon Finder art, by path only",
+             "-- (Interface\\LFGFrame\\LFGIcon-<icon>); nothing is shipped.",
+             "local W = WrathUnleashedUI",
+             "W.CompanionsDungeons = {"]
+    for d in companions_dungeons():
+        lines.append(f'    {{ id = {_lua_str(d["id"])}, name = {_lua_str(d["name"])}, min = {d["min"]}, max = {d["max"]}, '
+                     f'exp = {_lua_str(d["exp"])}, icon = {_lua_str(d["icon"])}, door = {"true" if d["pos"] else "false"} }},')
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
 BEGIN = "-- BEGIN GENERATED by stream/modes_data.py --write (do not edit by hand)\n"
 END = "-- END GENERATED\n"
 
@@ -317,7 +422,18 @@ if __name__ == "__main__":
     if check():
         print("\n".join(check()), file=sys.stderr)
         sys.exit(1)
-    if sys.argv[1:2] == ["--lua"]:
+    if sys.argv[1:2] == ["--companions"] and len(sys.argv) == 4:
+        for path, text in ((sys.argv[2], companions_server_lua()), (sys.argv[3], companions_ui_lua())):
+            try:
+                with open(path, encoding="utf-8", newline="") as f:
+                    old = f.read()
+            except FileNotFoundError:
+                old = None
+            if old != text:
+                with open(path, "w", encoding="utf-8", newline="") as f:
+                    f.write(text)
+            print(path + ": " + ("already current" if old == text else "written"))
+    elif sys.argv[1:2] == ["--lua"]:
         sys.stdout.write(lua())
     elif sys.argv[1:2] == ["--write"] and len(sys.argv) == 3:
         with open(sys.argv[2], encoding="utf-8", newline="") as f:

@@ -42,7 +42,7 @@ local START_RATING = 1500
 local MIN_RATING = 100
 local PLACED_AFTER = 3          -- rated duels before a character is on the all-time board
 local STREAK_GAP_S = 30         -- streak lines at least this far apart, realm-wide
-local SITE = "play.openvanilla.app/wrath/leaderboards"
+local SITE = "leylinelauncher.com/wrath/leaderboards"   -- the site's name now (review 4 Nov; it was the old name unless the brand was on)
 local DUEL_INTERRUPTED, DUEL_WON, DUEL_FLED = 0, 1, 2
 local KIND_NAME = { [DUEL_INTERRUPTED] = "interrupted", [DUEL_WON] = "won", [DUEL_FLED] = "fled" }
 
@@ -335,7 +335,7 @@ local function onCommand(event, p, command)
     elseif sub == "loud" then D.quiet[p:GetGUIDLow()] = nil; say(p, "Streak lines on.")
     else
         say(p, "Duels at level 80 count for a rating and points. |cffffff00.duel stats|r [name], |cffffff00.duel top|r (this week), "
-            .. "|cffffff00.duel top all|r. Duel corner: |cffffff00.hub duels|r. Boards: " .. SITE)
+            .. "|cffffff00.duel top all|r. Duel anywhere in Dalaran; the corner: |cffffff00.hub duels|r. Boards: " .. SITE)
     end
     return false
 end

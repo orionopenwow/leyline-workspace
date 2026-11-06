@@ -133,6 +133,7 @@ Settings (environment, /srv/wrath/portal.env):
   WU_PLAY_CAPACITY       streamed browser seats (default 100 for launch, owner 4 Nov; 0 = no line). Past it /wrath/play
                          shows the browser queue (docs/QUEUE.md); own game files need no seat
   WU_PLAY_IDLE           seconds without game traffic before a seat counts free (600)
+  WU_PLAY_PENDING        seconds a seat just handed out counts as taken before its game first asks the stream site (90)
   WU_QUEUE_MAX, WU_QUEUE_PER_IP, WU_QUEUE_BEAT, WU_QUEUE_HOLD, WU_QUEUE_SEAT_MIN   the line: its length (500), places per
                          address (4), seconds a silent place is kept (180: the reconnect grace), seconds a freed seat waits for the first in
                          line (120), minutes per seat for the first wait guess (30). docs/QUEUE.md
@@ -322,8 +323,11 @@ hub_mod = _load_module("wu_hub", "hub.py")   # /wrath/leyline-preview: the hidde
 playmodes = _load_module("wu_playmodes", "playmodes.py")   # game modes: /wrath/modes.json, Games, ?go=mode: (stream/playmodes.py)
 modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can host and fork: /wrath/modes/<id>, /jam (stream/modepack.py)
 survivors = _load_module("wu_survivors", "survivors.py")   # Azeroth Survivors: /wrath/survivors and its own address's gate (stream/survivors.py)
+site_pages = _load_module("wu_site_pages", "site_pages.py")   # Single player, the Modes shelf, the guides, the press kit (stream/site_pages.py)
 if survivors is not None:
     survivors.bind(lambda name: globals()[name])
+if site_pages is not None:
+    site_pages.bind(lambda name: globals()[name])
 if modepacks is not None:
     modepacks.bind(lambda name: globals()[name])
 if hub_mod is not None:
@@ -351,6 +355,10 @@ listings = sys.modules.get("wu_listings") or _load_module("wu_listings", "listin
 if listings is not None:
     sys.modules["wu_listings"] = listings
     listings.bind(lambda name: globals()[name])
+# Shared Dens (stream/denmarket.py): the builds marketplace for Your Den, /wrath/dens and /wrath/api/dens; WU_DENS (off)
+denmarket = _load_module("wu_denmarket", "denmarket.py")
+if denmarket is not None:
+    denmarket.bind(lambda name: globals()[name])
 bugreport = _load_module("wu_bugreport", "bugreport.py")   # Report a bug: /wrath/bugs, the launcher's /wrath/bugs/api/report (stream/bugreport.py)
 if bugreport is not None:
     bugreport.bind(lambda name: globals()[name])
@@ -369,6 +377,22 @@ if admin is not None:
 duels = _load_module("wu_duels", "duels.py")   # /wrath/leaderboards, /wrath/api/leaderboards: duel boards (stream/duels.py)
 if duels is not None:
     duels.bind(lambda name: globals()[name])
+# /wrath/bossfights, /wrath/arena, /wrath/api/bossfights and the ?go=bf:... / ?go=arena:1v1 go kinds (stream/bossfights.py)
+bossfights = _load_module("wu_bossfights", "bossfights.py")
+if bossfights is not None:
+    bossfights.bind(lambda name: globals()[name])
+
+
+def same_site(h) -> bool:
+    """A form POST from our own pages: not cross-site, and the Origin (when sent) is this site on either of its names
+    (SITE_ORIGINS). A sandboxed or privacy context can send "Origin: null": allowed only with Sec-Fetch-Site:
+    same-origin. One copy for every module (site review 4 Nov: the bug form and the link queue only checked this when
+    forum.py had loaded, and the hub's anonymous "Submit a mod" not at all)."""
+    sfs = h.headers.get("Sec-Fetch-Site", "")
+    if sfs == "cross-site":
+        return False
+    origin = h.headers.get("Origin", "")
+    return not origin or origin in SITE_ORIGINS or (origin == "null" and sfs == "same-origin")
 
 
 def signin_url(nxt: str = "/wrath") -> str:
@@ -384,10 +408,16 @@ def host_plus(where: str) -> str:
 
 
 def go_param(query: dict) -> str:
-    """'&go=<kind>:<id>' for a share-link deep link carried through sign-in (checked again at every hop), else ''."""
+    """'&go=<kind>:<id>' for a share-link deep link carried through sign-in (checked again at every hop), else ''.
+    A boss fight (bf:<boss>:<difficulty>:<mode>) or the arena queue (arena:1v1) rides along the same way
+    (stream/bossfights.py check_go), so the game page can warm the fight's area and say what it is getting ready."""
+    v = (query.get("go") or [""])[0][:40]
+    if bossfights is not None and playmodes is not None and v.startswith("mode:"):
+        v = bossfights.mode_go(playmodes.go_mode(v)) or v   # the launcher's Modes page: ?go=mode:frozen-throne
+    if bossfights is not None and v and bossfights.check_go(v):
+        return "&go=" + urllib.parse.quote(v, safe=":")
     if links is None:
         return ""
-    v = (query.get("go") or [""])[0][:40]
     got = links.check_go(v) if v else None
     return "&go=" + urllib.parse.quote(links.go_value(*got), safe=":") if got else ""
 
@@ -431,6 +461,10 @@ if BRAND:
 else:
     REALM_NAME = os.environ.get("REALM_NAME", "WrathUnleashed")
     SITE_NAME = REALM_NAME
+# The name at the end of every page title (the browser tab): the site is Leyline whatever the realm is called (site
+# review 4 Nov: some tabs said "· WrathUnleashed", the realm's name, and the rest "· Leyline"). A community's brand
+# file renames it on the way out like every other "Leyline" (brandfile.apply).
+TITLE_NAME = "Leyline"
 # "Back to ..." on the hop bar and the in-game Leyline window: the main realm by its name.
 BACK_LABEL = f"Back to {REALM_NAME}" if BRAND else "Back to Wrath"
 # The brand switch's safety net (send() runs every text/html and JSON answer through it while BRAND is on): an old
@@ -469,7 +503,11 @@ def with_tab_icon(body: bytes, ctype: str) -> bytes:
 # half. {"mode": "banner"}: a farewell banner on top of every page. {"mode": "closed"}: every page answers the farewell
 # page (503), but for what launchers and the owner still need: the /wrath/leyline/ feeds (News and the update notice
 # carry the message), the status document, the art and HQ. No file: nothing changes.
-SHUTDOWN_OPEN = ("/wrath/leyline/", "/wrath/art/", "/wrath/admin")
+SHUTDOWN_OPEN = ("/wrath/art/", "/wrath/admin")
+# Under /wrath/leyline/ only the launcher's feeds stay open (docs/KILL-SWITCH.md: "/wrath/leyline/*.json"), and the release
+# mirror: with the front door on, that prefix is also the whole site (Mods, the forum and its forms, Submit a mod), which
+# must close with the rest (site review 4 Nov).
+SHUTDOWN_FEEDS = ("/wrath/leyline/releases/",)
 SHUTDOWN_EXACT = frozenset({"/wrath/status.json", "/wrath/healthz", "/wrath/admin"})
 _shutdown = {"key": None, "doc": None}
 
@@ -502,7 +540,9 @@ def shutdown_doc() -> dict | None:
 
 def shutdown_open(path: str) -> bool:
     """What still answers while the site is closed."""
-    return path in SHUTDOWN_EXACT or path.startswith(SHUTDOWN_OPEN)
+    if path in SHUTDOWN_EXACT or path.startswith(SHUTDOWN_OPEN) or path.startswith(SHUTDOWN_FEEDS):
+        return True
+    return path.startswith("/wrath/leyline/") and path.count("/") == 3 and path.endswith(".json")
 
 
 def _shutdown_paras(text: str) -> str:
@@ -981,6 +1021,10 @@ QUEUE_BEAT = _env_int("WU_QUEUE_BEAT", 180, 30, 900)           # the reconnect g
 QUEUE_HOLD = _env_int("WU_QUEUE_HOLD", 120, 30, 900)           # a freed seat waits this long for the first in line
 QUEUE_PER_IP = _env_int("WU_QUEUE_PER_IP", 4, 1, 100)          # places per address (/64): households share one
 QUEUE_SEAT_MIN = _env_int("WU_QUEUE_SEAT_MIN", 30, 1, 720)     # the wait guess before any seat was seen to free
+# A seat handed out ("go") counts as taken until that game's first request reaches the stream site (then it is in
+# Sessions.seated) or this many seconds pass: without it, everyone arriving in the few seconds between /wrath/play and
+# their page's first /__auth saw the same free seats, so a full server took up to WU_PLAY_LOADING players too many.
+PLAY_PENDING = _env_int("WU_PLAY_PENDING", 90, 10, 900)
 QUEUE_COOKIE = "wu_q"
 QUEUE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{20,40}$")
 
@@ -1000,6 +1044,19 @@ class PlayQueue:
         self.line: list[dict] = []          # FIFO: {token, user, ip, slug, go, joined, beat, ready_until}
         self.freed: collections.deque = collections.deque(maxlen=64)   # when seats were taken by the line (the wait guess)
         self.started: collections.deque = collections.deque(maxlen=20000)   # when new seats were handed out (loading)
+        self.pending: dict[str, float] = {}   # account -> when it was let in, until its game is seen (PLAY_PENDING)
+
+    def _in_use(self, seated, now: float) -> int:
+        """Seats in use: the seated accounts (a set, or just their number) plus the ones let in whose game has not
+        asked for anything yet. A seated account is no longer pending."""
+        for u, at in list(self.pending.items()):
+            if at <= now - PLAY_PENDING or (not isinstance(seated, int) and u in seated):
+                del self.pending[u]
+        return (seated if isinstance(seated, int) else len(seated)) + len(self.pending)
+
+    def _let_in(self, user: str, now: float) -> None:
+        self.started.append(now)
+        self.pending[user] = now
 
     def _loading(self, now: float) -> int:
         """New seats handed out in the last PLAY_LOAD_S seconds: players still pulling the client and their zone."""
@@ -1055,18 +1112,19 @@ class PlayQueue:
             self._sweep(now)
             cap = self.capacity()
             mine = next((t for t in self.line if t["user"] == user), None)
-            if cap <= 0 or user in seated:   # no line set, or this account already holds a seat (another tab, a reload)
+            in_use = self._in_use(seated, now)
+            if cap <= 0 or user in seated or user in self.pending:   # no line, or a seat already (a tab, a reload)
                 if mine:
                     self.line.remove(mine)
                 return {"state": "go", "used": mine["token"] if mine else ""}
-            self._promote(len(seated), now)
+            self._promote(in_use, now)
             if mine and mine["ready_until"]:
                 self.line.remove(mine)
                 self.freed.append(now)
-                self.started.append(now)
+                self._let_in(user, now)
                 return {"state": "go", "used": mine["token"]}
-            if not mine and not self.line and len(seated) < cap and self._can_load(now) > 0:
-                self.started.append(now)
+            if not mine and not self.line and in_use < cap and self._can_load(now) > 0:
+                self._let_in(user, now)
                 return {"state": "go", "used": ""}
             if mine:
                 mine["beat"] = now
@@ -1079,16 +1137,17 @@ class PlayQueue:
             t = {"token": secrets.token_urlsafe(24), "user": user, "ip": ip, "slug": slug, "go": go,
                  "joined": now, "beat": now, "ready_until": 0.0}
             self.line.append(t)
-            self._promote(len(seated), now)
+            self._promote(in_use, now)
             if t["ready_until"]:   # a seat was free for it at once (the ones ahead hold theirs): no page in between
                 self.line.remove(t)
                 self.freed.append(now)
-                self.started.append(now)
+                self._let_in(user, now)
                 return {"state": "go", "used": ""}
             return {**self._view(t, now), "token": t["token"]}
 
-    def poll(self, token: str, in_use: int, now: float | None = None) -> dict | None:
-        """The queue page's heartbeat: this place now (None: no such place, or it was dropped)."""
+    def poll(self, token: str, in_use, now: float | None = None) -> dict | None:
+        """The queue page's heartbeat: this place now (None: no such place, or it was dropped). `in_use`: the
+        seated accounts (or their number)."""
         now = time.time() if now is None else now
         with self.lock:
             self._sweep(now)
@@ -1096,7 +1155,7 @@ class PlayQueue:
             if not t:
                 return None
             t["beat"] = now
-            self._promote(in_use, now)
+            self._promote(self._in_use(in_use, now), now)
             return self._view(t, now)
 
     def leave(self, token: str) -> bool:
@@ -1108,13 +1167,15 @@ class PlayQueue:
     def drop_user(self, user: str) -> None:
         with self.lock:
             self.line = [t for t in self.line if t["user"] != user.upper()]
+            self.pending.pop(user.upper(), None)
 
-    def status(self, in_use: int, now: float | None = None) -> dict:
+    def status(self, in_use, now: float | None = None) -> dict:
         """The numbers: {capacity, in_use, waiting, wait_min} (capacity 0: no line here). Internal: the public ones
         (queue_public) leave the seat numbers out (owner 4 Nov: "don't tell how many seats there are")."""
         now = time.time() if now is None else now
         with self.lock:
             self._sweep(now)
+            in_use = self._in_use(in_use, now)
             self._promote(in_use, now)
             waiting = len(self.line)
             cap = self.capacity()
@@ -1130,7 +1191,7 @@ def seated_now() -> set:
 
 
 def queue_status() -> dict:
-    return play_queue.status(len(seated_now()))
+    return play_queue.status(seated_now())
 
 
 def queue_public() -> dict:
@@ -1385,6 +1446,38 @@ def herokey_public() -> tuple[int, bytes, str] | None:
     return 200, json.dumps(doc, separators=(",", ":")).encode(), "application/json; charset=utf-8"
 
 
+# Race/class pairs at character creation (docs/RACE-CLASS-COMBOS.md): the realm's preset, written by realm/charfix.sh
+# (Control "combos") into the portal's data folder; WU_RACE_CLASS_COMBOS when there is no file; modern by default.
+#   modern: today's 83 retail pairs   all: every race with every class (100)   off: the stock pairs only
+COMBOS_PRESETS = ("modern", "all", "off")
+_combos = {"key": None, "preset": None}
+
+
+def combos_file() -> str:
+    return os.path.join(os.environ.get("WU_PORTAL_DATA", "/data"), "leyline", "race-class-combos.txt")
+
+
+def combos_preset() -> str:
+    """The realm's race/class preset. The file is read again only when it changes."""
+    try:
+        st = os.stat(combos_file())
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = None
+    if key is None:
+        v = os.environ.get("WU_RACE_CLASS_COMBOS", "").strip().lower()
+        return v if v in COMBOS_PRESETS else "modern"
+    if _combos["key"] != key:
+        try:
+            with open(combos_file(), encoding="utf-8") as f:
+                words = f.read(64).split()
+        except OSError:
+            words = []
+        v = words[0].lower() if words else ""
+        _combos.update(key=key, preset=v if v in COMBOS_PRESETS else "modern")
+    return _combos["preset"]
+
+
 def env_js(sess: dict) -> bytes:
     """The page env the web client reads before its query string (benilla_app::webenv)."""
     if sess.get("hop"):
@@ -1396,7 +1489,14 @@ def env_js(sess: dict) -> bytes:
                "slice": sess["slice"], "slice_tier": str(sess["tier"])}
         if sess.get("mode") == "stream":
             env["layer"] = "1"   # ownfiles.js may offer the game-folder layer (POST /__gate?layer=...)
-    env["moderncombos"] = "1"   # character create offers the realm's 83 retail race/class pairs
+    # Character create offers the pairs this realm takes (combos_preset): only for this realm, plain or through its
+    # Beacon on the relay; a community realm has its own rules (?moderncombos=1 on the page still turns them on).
+    if not sess.get("hop") or (sess["hop"].get("home") and sess["hop"]["id"] == hangout_id()):
+        preset = combos_preset()
+        if preset != "off":
+            env["moderncombos"] = "1"   # today's 83 retail pairs (every client build knows this switch)
+        if preset == "all":
+            env["allcombos"] = "1"      # every race with every class (builds from 20261105a; older ones show the 83)
     env["foreverui"] = FOREVERUI  # Forever UI on (the client reads this before its query string)
     if BRAND:   # the page layer's wording (wrath-page.js: the hop bar's "Back to ...", the tab note); off: not sent
         env["brand"] = "leyline"
@@ -1408,6 +1508,9 @@ def env_js(sess: dict) -> bytes:
     # The env object outranks the query string in the client, so ?foreverui=0 (or 1) is copied in.
     out += ("(function(e){try{var v=new URLSearchParams(location.search).get('foreverui');"
             "if(v!==null)e.foreverui=v;}catch(_){}})(window.__wenilla_env);\n")
+    # The same for the race/class switches: ?moderncombos=0 turns both off (the stock pairs), ?allcombos=0 keeps the 83.
+    out += ("(function(e){try{var q=new URLSearchParams(location.search);['moderncombos','allcombos'].forEach(function(k){"
+            "var v=q.get(k);if(v!==null)e[k]=v;});if(e.moderncombos==='0')e.allcombos='0';}catch(_){}})(window.__wenilla_env);\n")
     if gamedata_off():
         # The killswitch: ownfiles.js goes straight to "drop your game folder" and never asks /data.
         out += "window.WU_GAMEDATA_OFF = true;\n"
@@ -1505,6 +1608,13 @@ AVATAR_ART_MAX = 16_000
 # Game pictures, so the killswitch takes them off too (410; the launcher keeps its plain gradient).
 HOME_ART_RE = re.compile(r"home/[a-z0-9][a-z0-9-]{0,40}\.(?:webp|jpg)")
 HOME_JSON = "home/home.json"
+
+# The picture and video slots of stream/site_pages.py (Single player, the Modes shelf, the guides, the press kit): our own
+# screenshots and short films of our realm, in ART_DIR/slots/ (www-files/art/slots/). Allowed by pattern: a real WebP,
+# WebM or MP4 of a sane size, nothing else. Game pictures, so behind the killswitch too (410; the page shows its panel).
+SLOT_ART_RE = re.compile(r"slots/[a-z0-9][a-z0-9-]{0,60}\.(?:webp|webm|mp4)")
+SLOT_TYPES = {"webp": "image/webp", "webm": "video/webm", "mp4": "video/mp4"}
+SLOT_ART_MAX = 4_000_000   # art_bytes reads at most this much: a longer film needs another home (owner)
 HOME_ART_MAX = 1_500_000
 HOME_JSON_MAX = 64_000
 HOME_ART_MAX_AGE = 3600   # an hour: a new screenshot under the same name shows the same day
@@ -1527,6 +1637,8 @@ def art_type(name: str) -> str:
         return "application/json; charset=utf-8"
     if HOME_ART_RE.fullmatch(name):
         return "image/webp" if name.endswith(".webp") else "image/jpeg"
+    if SLOT_ART_RE.fullmatch(name):
+        return SLOT_TYPES[name.rsplit(".", 1)[1]]
     return ""
 
 
@@ -1569,6 +1681,11 @@ def art_bytes(name: str) -> bytes | None:
         ok = len(body) <= AVATAR_ART_MAX and body.lstrip().startswith(b"<svg") and b"<script" not in body.lower()
         return body if ok else None
     webp = body[:4] == b"RIFF" and body[8:12] == b"WEBP"
+    if SLOT_ART_RE.fullmatch(name):                         # a slot: the real kind for its name, or nothing
+        kind = name.rsplit(".", 1)[1]
+        ok = len(body) < SLOT_ART_MAX and (webp if kind == "webp" else body[:4] == b"\x1a\x45\xdf\xa3" if kind == "webm"
+                                           else body[4:8] == b"ftyp")
+        return body if ok else None
     if home_art(name):                                      # a screenshot: a real WebP or JPEG of a sane size, or nothing
         jpeg = body[:3] == b"\xff\xd8\xff"
         ok = len(body) <= HOME_ART_MAX and (webp if name.endswith(".webp") else jpeg)
@@ -1664,7 +1781,7 @@ def render(body: str, nonce: str = "", script: str = "", wide: bool = False, met
     styles the same classes itself, WU_BOX_CSS). path: the page's address (the frame's phone tip comes back to it)."""
     s = f'<script nonce="{nonce}">{script}</script>' if script else ""
     if chrome:
-        full = f"{title} · {SITE_NAME}" if title else SITE_NAME
+        full = f"{title} · {TITLE_NAME}" if title else TITLE_NAME
         framed = hub_frame(full, f'<div class="wu-pg{" wide" if wide else ""}"><div class="wu-box">{body}</div></div>{s}',
                            path, current, nonce=nonce if script else "", css=WU_BOX_CSS, meta=meta)
         if framed is not None:
@@ -1673,7 +1790,7 @@ def render(body: str, nonce: str = "", script: str = "", wide: bool = False, met
         body = f"<style>{css}</style>{body}"
     v = theme_version()
     theme = f'<link rel="stylesheet" href="{art_url("wu-theme.css")}?v={v}">' if v and not BRAND else ""   # brand on: the flat look
-    full = f"{title} · {SITE_NAME}" if title else SITE_NAME
+    full = f"{title} · {TITLE_NAME}" if title else TITLE_NAME
     top = (SKIP_LINK + site_nav(current, signed_in)) if chrome else ""
     end = ((next_block(next_step) if next_step else "") + site_footer()) if chrome else ""
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
@@ -1696,11 +1813,11 @@ RULE = '<hr class="rule wu-divider">'
 def signed_out_page() -> bytes:
     return render(
         f'{crest(REALM_NAME)}<p class="sub">Wrath · on the Leyline network</p>{RULE}'
-        f'<p class="center"><a class="btn primary" href="{html.escape(signin_url("/wrath"))}">Sign in</a></p>'
+        f'<p class="center"><a class="btn primary" href="{html.escape(signin_url("/wrath"))}">Log in</a></p>'
         '<p class="fine center">Played here before? Use the same sign-in. Your Wrath login appears here.</p>'
         '<p class="fine center"><a href="/wrath/realms">All realms</a>, including community realms hosted by players · '
         '<a href="/wrath/leyline">What is Leyline?</a></p>',
-        meta=card_meta("/wrath"), title="Sign in", current="play")
+        meta=card_meta("/wrath"), title="Log in", current="play")
 
 
 def stream_off_page() -> bytes:
@@ -1766,7 +1883,7 @@ SIGN_IN_URL = "/login?next=%2Fwrath"
 # The /login fetch sets wr_next=/wrath, so the realm's /auth/key lands on /wrath. No saved key, a
 # browser without the API, a refusal or 6 seconds of nothing: the normal sign-in page. Tried once per
 # tab (sessionStorage), so a failed key never loops.
-AUTO_SIGNIN_JS = """
+AUTO_SIGNIN_TPL = """
 (function(){
 var go=function(){location.replace('%s')};
 var tried=false;try{tried=sessionStorage.getItem('ov_autokey')==='1';sessionStorage.setItem('ov_autokey','1')}catch(e){}
@@ -1780,14 +1897,25 @@ var f=document.createElement('form');f.method='post';f.action='/auth/key';
 var i=document.createElement('input');i.type='hidden';i.name='key';i.value=c.password;f.appendChild(i);
 document.body.appendChild(f);f.submit()},function(){if(!done){done=true;clearTimeout(t);go()}});
 })();
-""" % (SIGN_IN_URL, SIGN_IN_URL)
+"""
+AUTO_SIGNIN_JS = AUTO_SIGNIN_TPL % (SIGN_IN_URL, SIGN_IN_URL)
 
 
-def auto_signin_page(nonce: str) -> bytes:
+def go_signin(query: dict) -> str:
+    """The sign-in for /wrath when it came with a go link (a boss fight, a share link): Log in first, then back to
+    /wrath with the same go (checked again by go_param). "" without one: the usual SIGN_IN_URL."""
+    go = go_param(query or {})
+    return signin_url("/wrath?" + go[1:]) if go else ""
+
+
+def auto_signin_page(nonce: str, signin: str = "") -> bytes:
+    """signin: where "no saved key" goes instead of SIGN_IN_URL (go_signin: a go link kept through the sign-in)."""
+    where = signin if signin and re.fullmatch(r"/[A-Za-z0-9/_.?=%&-]{1,300}", signin) else SIGN_IN_URL
+    js = AUTO_SIGNIN_JS if where == SIGN_IN_URL else AUTO_SIGNIN_TPL % (where, SIGN_IN_URL)
     return render(
         f'{crest(REALM_NAME)}<p class="sub">Signing you in…</p>{RULE}'
-        f'<p class="fine center"><a href="{SIGN_IN_URL}">Sign in another way</a></p>',
-        nonce, AUTO_SIGNIN_JS, meta=card_meta("/wrath"), title="Sign in", current="play")
+        f'<p class="fine center"><a href="{html.escape(where)}">Log in another way</a></p>',
+        nonce, js, meta=card_meta("/wrath"), title="Log in", current="play")
 
 REALM_CSS = """
 .realm{position:relative;border:1px solid #4a3b1c;border-radius:4px;padding:16px 18px;margin:14px 0;background:rgba(5,4,12,.55);box-shadow:inset 0 0 0 1px rgba(0,0,0,.4)}
@@ -1812,6 +1940,13 @@ def realm_status() -> dict:
         return json.loads(status_json().decode("utf-8"))
     except Exception:  # noqa: BLE001 - the list still works without numbers
         return {}
+
+
+# The realm list's client warm-up (account_page's <template id="wu-warm">): put in only where the line can take ~20 MB
+# without the player asking. A phone on mobile data, Save-Data or a 2G/3G line gets the download when it presses Play.
+WARM_JS = ("(function(){var t=document.getElementById('wu-warm');if(!t||!t.content)return;"
+           "var c=navigator.connection||{};if(c.saveData||c.type==='cellular'||(c.effectiveType&&c.effectiveType!=='4g'))return;"
+           "t.parentNode.insertBefore(t.content.cloneNode(true),t)})();")
 
 
 def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
@@ -1851,8 +1986,10 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
         # Warm the browser client while the player reads this page: the stream site's public
         # warm.html stores the client's wasm in that origin's Cache Storage and its scripts in the
         # HTTP cache (same site, so the game page reads the same copies). No game data, no sign-in.
-        + (f'<iframe src="https://{html.escape(STREAM_HOST)}/warm.html" hidden aria-hidden="true" '
-           'tabindex="-1" loading="eager" style="display:none"></iframe>' if streamed else '')
+        # Review 4 Nov (stream 9): it is about 20 MB, so it waits in a <template> and WARM_JS puts it in only on a
+        # line that isn't metered or slow (no Save-Data, not cellular, effectiveType 4g or unknown).
+        + (f'<template id="wu-warm"><iframe src="https://{html.escape(STREAM_HOST)}/warm.html" hidden aria-hidden="true" '
+           'tabindex="-1" loading="eager" style="display:none"></iframe></template>' if streamed else '')
         + ('<p class="fine end"><a href="/wrath/play/end">End my browser pass</a></p>' if streamed else '')
         + '</div>'
         # 2. The whole world: own game files
@@ -1877,13 +2014,13 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
         f'<code>set realmlist {html.escape(PUBLIC_HOST)}</code></li>'
         '<li>Log in with the account and password above. They are not your website sign-in: '
         'this account name and password are made for the game.</li></ol>'
-        '<p class="fine">This login is yours alone. Sign in here again any time to see it.</p></details></div>'
+        '<p class="fine">This login is yours alone. Log in here again any time to see it.</p></details></div>'
         f'<p class="fine foot">No game files? Dalaran needs none. For the whole world: '
         f'{html.escape(DISCORD_HELP.split(DISCORD_URL)[0])}<a href="{DISCORD_URL}">{html.escape(DISCORD_URL.split("//")[-1])}</a></p>'
         + host_plus("account") +
         '<p class="fine"><a href="/wrath/realms">Community realms</a>: Dalaran hangouts and realms hosted by players</p>'
         '<p class="fine"><a href="/wrath/modes">Modes</a>: duels, boss fights, dungeons and hangouts, one click each</p>')
-    return render(body, nonce, COPY_JS, wide=True, title="Choose a realm", current="play", signed_in=True, css=REALM_CSS,
+    return render(body, nonce, COPY_JS + WARM_JS, wide=True, title="Choose a realm", current="play", signed_in=True, css=REALM_CSS,
                   path="/wrath/account")
 
 
@@ -2129,7 +2266,7 @@ def sample_info() -> dict:
         mods = hub_mod.hub.official_mods() if hub_mod is not None else []
     except Exception:   # noqa: BLE001
         mods = []
-    return dict(_sample_info(), mods=mods)
+    return dict(_sample_info(), mods=mods, combos=combos_preset())
 
 
 def _sample_info() -> dict:
@@ -2160,7 +2297,7 @@ def realms_page(query: dict | None = None) -> bytes:
                 'is players online, uptime and staff picks: nothing can be bought. '
                 '<a href="/wrath/leyline">What is Leyline?</a></p>'
                 + (f'<p class="fine">{" · ".join(stamps)}</p>' if stamps else ''))
-        return render(body, wide=True, meta=card_meta("/wrath/realms", f"Realms · {REALM_NAME}"), title="Realms",
+        return render(body, wide=True, meta=card_meta("/wrath/realms", f"Realms · {TITLE_NAME}"), title="Realms",
                       current="realms", next_step="host")
     official = (
         f'<div class="realm"><h2>{html.escape(SAMPLER_NAME if SAMPLER else REALM_NAME)}</h2>'
@@ -2226,7 +2363,7 @@ def realms_page(query: dict | None = None) -> bytes:
             '(nobody sees anyone\'s home address). Each host sets their own house rules and is the GM there. '
             '<a href="/wrath/leyline">What is Leyline?</a></p>'
             + (f'<p class="fine">{" · ".join(stamps)}</p>' if stamps else ''))
-    return render(body, wide=True, meta=card_meta("/wrath/realms", f"Realms · {REALM_NAME}"), title="Realms",
+    return render(body, wide=True, meta=card_meta("/wrath/realms", f"Realms · {TITLE_NAME}"), title="Realms",
                   current="realms", next_step="host")
 
 
@@ -2593,6 +2730,10 @@ def site_nav(current: str = "", signed_in: bool = False) -> str:
         items.append(("armory", "Armory", "/wrath/armory"))
     if docs is not None:
         items.append(("docs", "Docs", "/wrath/docs"))
+    if site_pages is not None:   # stream/site_pages.py: the guides, and Single player once its flag is on
+        if site_pages.single_public():
+            items.insert(2, ("single", "Single player", site_pages.SINGLE))
+        items.append(("guides", "Guides", site_pages.GUIDES))
     links_html = "".join(_nav_item(k, label, href, current) for k, label, href in items)
     links_html += _nav_item("server", "Server", HOST_URL, current, external=True)
     links_html += _nav_item("discord", "Discord", DISCORD_URL, current, external=True)
@@ -2665,7 +2806,8 @@ def nav_key(path: str) -> str:
     for key, roots in (("realms", ("/wrath/realms", "/wrath/r", "/r")), ("modes", ("/wrath/modes", "/wrath/h", "/wrath/q", "/wrath/b", "/h", "/q", "/b")),
                        ("mods", ("/wrath/mods", "/wrath/m", "/m")), ("armory", ("/wrath/armory", "/wrath/u", "/u")),
                        ("workshop", ("/wrath/workshop", "/wrath/w", "/w")),
-                       ("docs", ("/wrath/docs",))):
+                       ("docs", ("/wrath/docs",)), ("guides", ("/wrath/guides",)), ("single", ("/wrath/single-player",)),
+                       ("press", ("/wrath/press",))):
         if any(p == r or p.startswith(r + "/") for r in roots):
             return key
     return ""
@@ -2710,7 +2852,8 @@ def site_chrome(page: bytes, path: str, next_step: str = "play") -> bytes:
 # unchanged: the same forms, endpoints, tokens and scripts (with the page's CSP nonce, which then also runs the hub's
 # small HUB_JS). Off, or without the hub: the old frames below, as before.
 
-HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "mods", "docs": "docs", "host": "host", "looks": "looks"}
+HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "mods", "docs": "docs", "host": "host", "looks": "looks",
+              "single": "single", "guides": "guides"}   # stream/site_pages.py's pages (Single player only with its flag on)
 _HUB_DESC_RE = re.compile(rb'<meta name="description" content="Leyline: one launcher[^"]*">')
 
 
@@ -2919,8 +3062,18 @@ def remember_go(user: str, query: dict) -> None:
     ("ovgo set", realm/custom/lua_scripts/ov_go.lua), at most 20 a minute per account. Never fails the page."""
     if playmodes is not None and (query.get("go") or [""])[0][:40].startswith("mode:"):   # a game mode (stream/playmodes.py)
         mid = playmodes.go_mode((query.get("go") or [""])[0][:40])
+        alias = bossfights.mode_go(mid) if bossfights is not None and mid else None
+        if alias:   # a catalog entry that is a boss fight or the arena queue (the launcher's Modes page): its own go
+            if gate_limit.hit("go:" + user.upper(), 20):
+                bossfights.go_intent(ac_soap, user, alias, log)
+            return
         if mid and gate_limit.hit("go:" + user.upper(), 20):
             playmodes.go_intent(ac_soap, user, mid, log)
+        return
+    bf = bossfights.check_go((query.get("go") or [""])[0][:40]) if bossfights is not None else None
+    if bf:   # a boss fight or the 1v1 arena queue: "ovgo set <ACCOUNT> <go>" (stream/bossfights.py, docs/BOSS-FIGHTS.md)
+        if gate_limit.hit("go:" + user.upper(), 20):
+            bossfights.go_intent(ac_soap, user, bf, log)
         return
     if modes is None or links is None:
         return
@@ -3000,7 +3153,7 @@ def leyline_page() -> bytes:
         + shot("durotar", "Every bar, ready", "A clean modern interface: every action bar on with common keys, sized to your screen.")
         + '</div><p class="ly-fine">Screenshots from the live browser client.</p></section>'
         '<section class="ly-panel" aria-labelledby="ly-what"><h2 id="ly-what">What Leyline does</h2><div class="ly-grid">'
-        + feat("Play in the browser", f"No install: sign in with a Hero Key and play the flagship realm, {REALM_NAME}. "
+        + feat("Play in the browser", f"No install: log in with a Hero Key and play the flagship realm, {REALM_NAME}. "
                "Dalaran hangout, level 1 or a boost to 80, and a Dungeon Finder where labelled bots fill the group.")
         + feat("Host your own realm", "Run a realm on your own PC with the Host pack: your own GM login, house rules and "
                "world preset. Private by invite link, or public on the realm list.")
@@ -3071,14 +3224,14 @@ def not_found_page() -> bytes:
             '<p class="ly-lede">Nothing lives at this address. The link may be old or mistyped. Everything else is one click away.</p>'
             '</header><section class="ly-panel" aria-labelledby="nf-go"><h2 id="nf-go">Where to next</h2>'
             f'<div class="ly-grid">{"".join(cards)}</div></section>')
-    framed = hub_frame(f"Not found · {REALM_NAME}",
+    framed = hub_frame(f"Not found · {TITLE_NAME}",
                        '<div class="wu-pg wide nf"><div class="wu-box"><h1>Not found</h1>'
                        '<p class="sub">Nothing lives at this address. The link may be old or mistyped. Everything else is one click away.</p>'
                        f'<h2 id="nf-go">Where to next</h2><div class="nf-grid">{"".join(cards)}</div></div></div>',
                        "/wrath", "", css=WU_BOX_CSS + NF_CARD_CSS, noindex=True)
     if framed is not None:
         return framed
-    return ly_shell(f"Not found · {REALM_NAME}", body, "/wrath/leyline", "", "play", NOT_FOUND_CSS, noindex=True)
+    return ly_shell(f"Not found · {TITLE_NAME}", body, "/wrath/leyline", "", "play", NOT_FOUND_CSS, noindex=True)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -3224,21 +3377,30 @@ def queue_page(v: dict, nonce: str, retry: str) -> bytes:
             '<li><a id="q-survivors" href="/wrath/survivors" target="_blank" rel="noopener">Play Azeroth Survivors</a></li>'
             '<li><a id="q-notes" href="/wrath/docs/wrath-unleashed" target="_blank" rel="noopener">Read the Wrath Unleashed notes</a></li>'
             '</ul><p class="q-fine">Keep this tab open: your place stays yours.</p></section>')
-    script = ("(function(){var api=" + json.dumps(QUEUE_API) + ",retry=" + json.dumps(retry) + ",ms=" + str(QUEUE_POLL_S * 1000) + ";"
+    # Review 4 Nov (site 16, stream 8): a phone or another tab missed its turn. The tab title carries the place and
+    # "Your turn", a page that comes back to the front asks at once (background timers freeze, and a place without a
+    # heartbeat for QUEUE_BEAT is dropped), a phone buzzes once on its turn, and Leave the line asks first.
+    script = ("(function(){var api=" + json.dumps(QUEUE_API) + ",retry=" + json.dumps(retry) + ",ms=" + str(QUEUE_POLL_S * 1000)
+              + ",site=" + json.dumps(" · " + TITLE_NAME) + ",t=0,busy=0;"
               "function $(i){return document.getElementById(i)}"
-              "function tick(){fetch(api+'?me=1',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()})"
-              ".then(function(d){var y=d&&d.you;if(!y){location.replace(retry);return}"
-              "if(y.state==='ready'){$('q-pos').textContent=\"It's your turn\";$('q-wait').textContent='Starting…';location.replace(y.go);return}"
+              "function sched(d){clearTimeout(t);t=setTimeout(tick,d)}"
+              "function tick(){if(busy)return;busy=1;fetch(api+'?me=1',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()})"
+              ".then(function(d){busy=0;var y=d&&d.you;if(!y){location.replace(retry);return}"
+              "if(y.state==='ready'){document.title=\"Your turn!\"+site;$('q-pos').textContent=\"It's your turn\";$('q-wait').textContent='Starting…';"
+              "try{navigator.vibrate&&navigator.vibrate([120,60,120])}catch(e){}location.replace(y.go);return}"
+              "document.title='(#'+y.position+') In line'+site;"
               "$('q-pos').textContent=\"You're #\"+y.position+' in line';$('q-wait').textContent='About '+y.wait_min+' min';"
-              "setTimeout(tick,ms)}).catch(function(){setTimeout(tick,ms*2)})}"
-              "setTimeout(tick,ms);"
-              "var b=$('q-leave');if(b)b.addEventListener('click',function(){b.disabled=true;"
+              "sched(ms)}).catch(function(){busy=0;sched(ms*2)})}"
+              "sched(ms);"
+              "document.addEventListener('visibilitychange',function(){if(!document.hidden)sched(0)});"
+              "var b=$('q-leave');if(b)b.addEventListener('click',function(){if(!confirm('Leave the line? You lose your place.'))return;b.disabled=true;"
               "fetch(api+'/leave',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})"
               ".then(function(){location.assign('/wrath')},function(){location.assign('/wrath')})});"
               "})();") if v.get("token") else ""
     if script:
         body += f'<script nonce="{nonce}">{script}</script>'
-    page = ly_shell(f"In line · {SITE_NAME}", body, QUEUE_PATH, "play", next_step="", css=QUEUE_CSS, noindex=True).decode("utf-8")
+    tab = f"(#{int(v.get('position') or 1)}) In line" if state not in ("full", "limit") else "In line"
+    page = ly_shell(f"{tab} · {TITLE_NAME}", body, QUEUE_PATH, "play", next_step="", css=QUEUE_CSS, noindex=True).decode("utf-8")
     refresh = f'<noscript><meta http-equiv="refresh" content="30;url={e(retry)}"></noscript>' if script else \
         f'<meta http-equiv="refresh" content="60;url={e(retry)}">'
     return page.replace("<head>", "<head>" + refresh, 1).encode("utf-8")
@@ -3247,10 +3409,10 @@ def queue_page(v: dict, nonce: str, retry: str) -> bytes:
 def queue_json(token: str | None) -> dict:
     """GET /wrath/api/queue: the public numbers, and with ?me=1 and a place's cookie, that place ("you")."""
     seated = seated_now()
-    st = play_queue.status(len(seated))
+    st = play_queue.status(seated)
     doc = {"waiting": int(st["waiting"]), "wait_min": int(st["wait_min"]), "line": bool(st["waiting"])}   # no seat numbers
     if token is not None:
-        doc["you"] = play_queue.poll(token, len(seated)) if token else None
+        doc["you"] = play_queue.poll(token, seated) if token else None
     return doc
 
 
@@ -3271,7 +3433,7 @@ def start_page() -> bytes:
     head = '<h1>Start here</h1><p class="sub">New to Leyline? Pick one. Every one is free, and you can do the rest later.</p>'
     fine = ('<p class="fine">Want more? The <a href="/wrath/docs/getting-started">player guide</a> has the details, and the '
             f'<a href="{e(DISCORD_URL)}" rel="noopener noreferrer">Discord</a> has people to help.</p>')
-    title = f"Start here · {REALM_NAME}"
+    title = f"Start here · {TITLE_NAME}"
     meta = card_meta(START_PATH, "Start here · Leyline")
     framed = hub_frame(title, f'<div class="wu-pg wide st"><div class="wu-box">{head}{grid}{fine}</div></div>', START_PATH, "",
                        css=WU_BOX_CSS + START_CSS, meta=meta)
@@ -3297,7 +3459,7 @@ def download_page() -> bytes | None:
     if downloads_mod is None:
         return None
     inner = downloads_mod.page_body(launcher_download())
-    title = f"Download · {REALM_NAME}"
+    title = f"Download · {TITLE_NAME}"
     meta = card_meta(DOWNLOAD_PATH, "Download Leyline")
     framed = hub_frame(title, f'<div class="wu-pg wide"><div class="wu-box">{inner}</div></div>', DOWNLOAD_PATH, "",
                        css=WU_BOX_CSS + downloads_mod.CSS, meta=meta)
@@ -3324,7 +3486,7 @@ def looks_page(query: dict) -> bytes:
     except Exception:   # noqa: BLE001
         offered = None
     inner = looks_mod.body(q, labels=labels, offered=offered, download=download_link(), pictures=not gamedata_off())
-    title = f"Looks · {REALM_NAME}"
+    title = f"Looks · {TITLE_NAME}"
     meta = card_meta(LOOKS_PATH, "Looks · Leyline")
     framed = hub_frame(title, inner, LOOKS_PATH, "looks", css=WU_BOX_CSS + looks_mod.CSS, meta=meta)
     if framed is not None:
@@ -3355,6 +3517,11 @@ if workshop is not None and admin is not None:
     workshop.blocked = getattr(admin, "blocked", None)   # site-wide sanctions: no new links (Leyline HQ)
 if listings is not None:
     listings.setup()   # the listings service and its hourly update check (stream/listings.py)
+if denmarket is not None:
+    try:
+        denmarket.setup()   # its store and Leyline HQ's buttons (den.approve ...), whatever WU_DENS says
+    except Exception:   # an unwritable data folder: the rest of the portal still starts (the routes answer 503 then)
+        log.exception("shared Dens not set up")
 
 
 _Window = ratelimit.Limiter   # stream/ratelimit.py
@@ -3670,7 +3837,7 @@ class PageHandler(BaseHTTPRequestHandler):
     def art(self, name: str) -> None:
         """GET /wrath/art/<name>: the site art and theme, from the allow-list only, cached for a week.
         Readable from any site (fonts need CORS; it is our own art, nothing private)."""
-        if (name in GAMEDATA_ART or home_art(name) or LOOKS_ART_RE.fullmatch(name)) and gamedata_off():
+        if (name in GAMEDATA_ART or home_art(name) or LOOKS_ART_RE.fullmatch(name) or SLOT_ART_RE.fullmatch(name)) and gamedata_off():
             self.send(410, GAMEDATA_GONE, "application/json; charset=utf-8")
             return
         body = art_bytes(name)
@@ -4220,6 +4387,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if listings is not None and listings.match(path):   # List your mod: check, submit, report (stream/listings.py)
             listings.post(self, path)
             return
+        if denmarket is not None and denmarket.match(path):   # Shared Dens: share, like, report (stream/denmarket.py)
+            denmarket.post(self, path)
+            return
         if hub_rank is not None and hub_rank.match(path):   # POST /wrath/api/hub/install|rate (stream/hub_rank.py)
             hub_rank.post(self, path)
             return
@@ -4320,6 +4490,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if duels is not None and duels.match(path):   # the duel leaderboards and their JSON (stream/duels.py)
             duels.get(self, path, query)
             return
+        if bossfights is not None and bossfights.match(path):   # boss fights, duels and arena, their JSON (stream/bossfights.py)
+            bossfights.get(self, path, query)
+            return
         if forum is not None and forum.match(path):   # the forum and its JSON (stream/forum.py)
             forum.get(self, path, query)
             return
@@ -4359,6 +4532,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if listings is not None and listings.match(path):   # /wrath/mods/list, /wrath/api/listings/mine (stream/listings.py)
             listings.get(self, path, query)
             return
+        if denmarket is not None and denmarket.match(path):   # /wrath/dens, /wrath/api/dens (stream/denmarket.py; WU_DENS)
+            denmarket.get(self, path, query)
+            return
         if hub_rank is not None and hub_rank.match(path):   # /wrath/leyline/mods.json, /wrath/api/hub/me (stream/hub_rank.py)
             hub_rank.get(self, path, query)
             return
@@ -4391,13 +4567,17 @@ class PageHandler(BaseHTTPRequestHandler):
                                             made=creations.card_item if creations is not None else None,
                                             labels=RULESET_LABELS, host=PUBLIC_HOST, get_launcher=download_link()))
             return
+        if site_pages is not None and site_pages.match(path):   # /wrath/single-player (flag), /wrath/modes/<way>, /wrath/guides, /wrath/press
+            site_pages.get(self, path, query)
+            return
         if path == "/wrath/modes" and modes is not None:
             if not browse_limit.hit(rl_bucket(self.ip()), 600):
                 self.send(429, busy_page(back=path))
                 return
             self.send(200, site_chrome(modes.page(leyline_css(), art_url, art_present, card_meta, REALM_NAME,
                                                   public_host=PUBLIC_HOST,
-                                                  games=(playmodes.section() if playmodes is not None else "")
+                                                  games=(site_pages.shelf() if site_pages is not None else "")   # the Modes shelf first (owner 4 Nov)
+                                                  + (playmodes.section() if playmodes is not None else "")
                                                   + (modepacks.section() if modepacks is not None else "")), path))
             return
         if survivors is not None and survivors.match(path):   # Azeroth Survivors' page and Play (stream/survivors.py)
@@ -4499,11 +4679,11 @@ class PageHandler(BaseHTTPRequestHandler):
         ua = self.headers.get("User-Agent", "")
         if "wr_session=" not in cookie:
             nonce = secrets.token_urlsafe(16)   # a saved Hero Key signs in by itself, else the sign-in page
-            self.send(200, auto_signin_page(nonce), nonce=nonce, connect=True)
+            self.send(200, auto_signin_page(nonce, go_signin(query)), nonce=nonce, connect=True)
             return
         status, me = portal_get("/api/me", cookie, ip, ua)
         if status in (401, 403) or 300 <= status < 400:
-            return self.redirect(SIGN_IN_URL)
+            return self.redirect(go_signin(query) or SIGN_IN_URL)
         if status != 200 or not me:
             log.warning("api/me answered %s", status)
             self.send(503, error_page("The website isn't answering right now. Please try again shortly."))

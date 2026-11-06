@@ -26,7 +26,8 @@
 //     names...); a keyboard button on the character screens relays keys to the glue screens.
 //   * Menu > Controls: Classic (stick strafes, drag turns you), Simple (stick turns, drag only
 //     looks, the camera follows), Keyboard & mouse (touch off, a corner button to come back), with
-//     a phone-vs-PC table. Interface size and auto loot sit next to it.
+//     a phone-vs-PC table; Tap test, Copy debug info, Edit layout, Layout, Left-handed, Vibration,
+//     Soft lock and Bigger interface. Interface size and auto loot sit on the Menu sheet.
 //   * The rest of the screen: tap = click (target, buttons, windows), double-tap = right-click
 //     (talk, loot, open), long-press = hover (tooltips), drag = turn the camera (or drag a window),
 //     two-finger pinch = zoom.
@@ -39,7 +40,24 @@
 //     landscape (browsers only allow it from a tap; iPhone Safari can't, so it suggests Add to
 //     Home Screen, whose manifest opens full screen in landscape). Login, realm, character list
 //     and creation all take taps; a tap during a resize or rotation is dropped, not misplaced.
-//   * A gamepad connecting hands over to the bridge's gamepad mapper and hides the touch controls.
+//   * A gamepad connecting hands over to the bridge's gamepad mapper and hides the touch controls; the first time on a
+//     device a "Controller connected" card shows its buttons' jobs (the mapper's list, or PAD_MAP).
+//
+// Added 5 Nov (build 2026-11-05b; docs/TOUCH-CONTROLS.md has every control and a phone checklist):
+//   * Tap reliability: a release sent within one game update of its press is sent again after one more settle;
+//     the button magnet (a glue tap within 10 px of a scanned button where the game hovers nothing goes to its
+//     centre; character creation only up or down, never sideways); the last 10 taps with timings in
+//     owTouch.taps; Menu > Controls > Copy debug info (one line to paste to us); the Tap test (five rings, hits,
+//     misses, the factor and where the game's cursor went), also on the character screens by a corner button
+//     and by ?taptest=1. ?tapframe=<ms> forces the game-update length.
+//   * Targeting: the reticle is the nearest-enemy button; swipe the target frame left / right for the next / last
+//     enemy; soft lock (a tap on open ground, no unit under it, keeps the target).
+//   * Casting: a cast bar over the ring (UnitCastingInfo / UnitChannelInfo); a ground-targeted spell
+//     (SpellIsTargeting) waits for the next tap in the world, with an X to cancel.
+//   * Layouts: Phone and Tablet presets (Auto by screen size); Edit layout drags the stick, the ring, Jump and the
+//     tray and resizes the ring, saved per character (ow:touch-layout:<realm>/<name>), shared as an L1 code;
+//     everything clamped on screen. Left-handed mirrors the stick and the ring. Vibration on / off. Bigger
+//     interface is a slider (the game's interface size).
 //
 // The art is drawn here as vector graphics (crisp at any screen density), in the look of the
 // Open Vanilla mobile mockups: dark stone faces and bronze-gold rims.
@@ -70,7 +88,7 @@
 import { gamePointerEvent } from './input.js';
 import { makeDriver } from './touch-driver.js';
 
-export const TOUCH_BUILD = 'wrath 2026-11-03b (only scripted clicks reach the game; focus kept through a tap)';
+export const TOUCH_BUILD = 'wrath 2026-11-05b (tap re-send, button magnet, tap test, debug copy; nearest enemy, target swipe, soft lock; cast bar, ground spells; layouts, edit, left-handed; controller card)';
 // the driver installTouch made (gameTicks below asks it for game updates)
 let DRIVER = null;
 
@@ -122,6 +140,7 @@ const ICON = {
   tray: `<svg viewBox="0 0 24 24" fill="#f0d79a"><rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></svg>`,
   close: `<svg viewBox="0 0 24 24" fill="none" stroke="#f0d79a" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
   full: `<svg viewBox="0 0 24 24" fill="none" stroke="#f0d79a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>`,
+  gear: `<svg viewBox="0 0 24 24" fill="none" stroke="#f0d79a" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2.2"/><circle cx="8" cy="17" r="2.2"/></svg>`,
   rotate: `<svg viewBox="0 0 64 64" fill="none" stroke="#f0d79a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="20" y="8" width="24" height="40" rx="4"/><path d="M50 30a20 20 0 0 1-18 22M14 34a20 20 0 0 1 18-22"/><path d="M28 56l4-4-4-4M36 8l-4 4 4 4"/></svg>`,
 };
 
@@ -171,7 +190,8 @@ const ROLE_SAY = {
   spirit: 'Double-tap them to come back to life here',
 };
 
-// The Menu sheet: one big button per window. `cmd` = a binding fired through the bridge.
+// The Menu sheet: one big button per window. `cmd` = a binding fired through the bridge; `lua` = a chunk run
+// through the bridge (an addon's window), with `chat` (its slash command) when there is no bridge.
 const MENU = [
   { label: 'Character', cmd: 'TOGGLECHARACTER0', icon: 'Interface\\Icons\\INV_Chest_Chain_05' },
   { label: 'Spellbook', cmd: 'TOGGLESPELLBOOK', icon: 'Interface\\Icons\\INV_Misc_Book_09' },
@@ -183,6 +203,9 @@ const MENU = [
   { label: 'Achievements', cmd: 'TOGGLEACHIEVEMENT', icon: 'Interface\\Icons\\Achievement_Quests_Completed_08' },
   { label: 'Dungeon Finder', cmd: 'TOGGLELFGPARENT', icon: 'Interface\\Icons\\INV_Misc_GroupLooking' },
   { label: 'PvP', cmd: 'TOGGLECHARACTER4', icon: 'Interface\\Icons\\INV_BannerPVP_02' },
+  // Boss fights (WrathUnleashedUI BossFights.lua): its window, scaled there so every control is 44 px or more
+  { label: 'Boss fights', lua: 'local B = WrathUnleashedUI and WrathUnleashedUI.BossFights if B then B.Show(true) return "ok" end return "no"',
+    chat: '/bf', icon: 'Interface\\Icons\\Spell_Frost_ChainsOfIce' },
   { label: 'Game menu', cmd: 'TOGGLEGAMEMENU', icon: 'Interface\\Icons\\INV_Misc_QuestionMark' },
 ];
 
@@ -342,6 +365,7 @@ function style() {
       background: rgba(10, 8, 16, .88); border: 1px solid #8a6a2a; color: #f0d79a; font: 600 13px 'OW Cinzel', Georgia, serif;
       opacity: 0; transition: opacity .3s; pointer-events: none; text-align: center; max-width: 80vw; }
     #ow-touch .toast.on { opacity: 1; }
+    #ow-touch .toast, #ow-touch .info { z-index: 8; }
     #ow-touch .rotate { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
       background: rgba(5, 4, 10, .92); color: #f0d79a; font: 600 16px 'OW Cinzel', Georgia, serif; letter-spacing: .06em; pointer-events: auto; }
     #ow-touch .rotate svg { width: 64px; height: 64px; }
@@ -357,6 +381,9 @@ function style() {
     #ow-touch .fsgo { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
       background: rgba(5, 4, 10, .72); color: #f0d79a; font: 600 17px 'OW Cinzel', Georgia, serif; letter-spacing: .05em; pointer-events: auto; }
     #ow-touch .fsgo svg { width: 46px; height: 46px; }
+    #ow-touch .fsgo .inst, #ow-touch .rotate .inst { display: none; margin-top: 2px; padding: 8px 16px; border-radius: 18px; border: 1px solid #6b5a2e;
+      background: rgba(20,16,10,.7); color: #e8d9a8; font: 13px system-ui, sans-serif; }
+    #ow-touch.caninstall .fsgo .inst, #ow-touch.caninstall .rotate .inst { display: inline-block; }
     #ow-touch .fsgo .skip { margin-top: 2px; padding: 8px 14px; border: 0; background: none; color: #a99a78; font: 13px system-ui, sans-serif; text-decoration: underline; }
     @media (orientation: landscape) { #ow-touch.on.ingame.phone.canfs.wantfs:not(.pcmode) .fsgo { display: flex; } }
     #ow-touch:not(.inworld) .play, #ow-touch.loading .play { display: none; }
@@ -369,7 +396,7 @@ function style() {
     #ow-touch .loupe canvas { width: 100%; height: 100%; display: block; }
     /* where each click went: a small gold ring that fades */
     #ow-touch .tapring { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; pointer-events: none;
-      border: 2px solid #ffd76a; box-shadow: 0 0 8px rgba(255, 200, 80, .8); opacity: 0; z-index: 2; }
+      border: 2px solid #ffd76a; box-shadow: 0 0 8px rgba(255, 200, 80, .8); opacity: 0; z-index: 7; }
     #ow-touch .tapring.go { animation: ow-ring .45s ease-out; }
     #ow-touch .tapring.snap { border-color: #7dff9a; box-shadow: 0 0 8px rgba(120, 255, 150, .8); }
     @keyframes ow-ring { from { opacity: 1; transform: scale(.5); } to { opacity: 0; transform: scale(1.5); } }
@@ -409,6 +436,58 @@ function style() {
     #ow-touch table.vs td { border-bottom-color: rgba(150, 132, 96, .22); }
     #ow-touch table.vs td:first-child { color: #ffd100; }
     #ow-touch .pill { font-family: 'OW Friz', Georgia, serif; font-weight: 400; letter-spacing: 0; }
+    /* Menu > Controls: tools and comfort settings */
+    #ow-touch .ctlrow { display: flex; gap: 8px; flex-wrap: wrap; }
+    #ow-touch .ctlrow button { flex: 1 1 30%; min-height: 44px; padding: 0 10px; border-radius: 3px; border: 1px solid rgba(150, 132, 96, .5);
+      background: rgba(255, 255, 255, .05); color: #ffd100; font: 13px 'OW Friz', Georgia, serif; text-shadow: 0 1px 1px #000; }
+    #ow-touch .slider { display: flex; align-items: center; gap: 10px; min-height: 44px; color: #ffd100; font: 13px 'OW Friz', Georgia, serif; }
+    #ow-touch .slider input { flex: 1; min-width: 0; height: 32px; accent-color: #d9b25a; }
+    #ow-touch .slider .v { width: 44px; text-align: right; color: #fff; }
+    #ow-touch textarea.dbg { width: 100%; height: 90px; margin-top: 6px; background: rgba(0, 0, 0, .6); color: #cfc; border: 1px solid rgba(150, 132, 96, .5);
+      font: 11px/1.3 ui-monospace, monospace; -webkit-user-select: text; user-select: text; }
+    /* the character screens: a corner button for Menu > Controls (the tray only exists in the world) */
+    #ow-touch .gear { position: absolute; right: calc(env(safe-area-inset-right, 0px) + 56px); top: calc(env(safe-area-inset-top, 0px) + 12px); display: none; pointer-events: auto; opacity: .8; }
+    #ow-touch.glue-touch:not(.inworld):not(.loading) .gear { display: flex; }
+    /* the cast bar, over the ring */
+    #ow-touch .castbar { position: absolute; width: 168px; height: 16px; margin: -8px 0 0 -84px; display: none; border-radius: 3px; overflow: hidden;
+      background: rgba(0, 0, 0, .72); border: 1px solid rgba(150, 132, 96, .7); pointer-events: none; }
+    #ow-touch .castbar.on { display: block; }
+    #ow-touch .castbar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(#ffd25a, #c08a1c); }
+    #ow-touch .castbar.chan i { background: linear-gradient(#7fd0ff, #2a7ab8); }
+    #ow-touch .castbar span { position: absolute; inset: 0; color: #fff; font: 11px/16px 'OW Friz', Georgia, serif; text-align: center; text-shadow: 0 1px 1px #000; white-space: nowrap; overflow: hidden; }
+    /* a ground-targeted spell waiting: what to do, and an X to cancel it */
+    #ow-touch .gaim { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 54px); transform: translateX(-50%); display: none; align-items: center; gap: 10px;
+      padding: 4px 4px 4px 14px; border-radius: 22px; background: rgba(8, 8, 10, .85); border: 1px solid #7dff9a; color: #dfffe6; font: 14px 'OW Friz', Georgia, serif; pointer-events: none; }
+    #ow-touch.aimground.inworld .gaim { display: flex; }
+    #ow-touch .gaim .gx { width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(150, 132, 96, .6); background: rgba(255, 255, 255, .06); pointer-events: auto; display: flex; align-items: center; justify-content: center; }
+    #ow-touch .gaim .gx svg { width: 18px; height: 18px; }
+    /* the tap test: five targets, one at a time, over everything */
+    #ow-touch .taptest { position: absolute; inset: 0; display: none; background: rgba(5, 4, 10, .9); pointer-events: auto; touch-action: none; z-index: 6; }
+    #ow-touch .taptest.on { display: block; }
+    #ow-touch .tt-dot { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 3px solid #ffd76a;
+      box-shadow: 0 0 0 6px rgba(255, 215, 106, .18), 0 0 14px rgba(255, 200, 80, .7); }
+    #ow-touch .tt-dot::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #ffd76a; }
+    #ow-touch .tt-dot.done { display: none; }
+    #ow-touch .tt-msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, 80vw); text-align: center; color: #f0d79a;
+      font: 14px/1.4 'OW Friz', Georgia, serif; white-space: pre-line; pointer-events: none; }
+    #ow-touch .tt-b { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); transform: translateX(-50%); display: none; gap: 8px; }
+    #ow-touch .taptest.end .tt-b { display: flex; }
+    #ow-touch .tt-b button, #ow-touch .editbar button { min-width: 44px; height: 44px; padding: 0 14px; border-radius: 3px; border: 1px solid rgba(150, 132, 96, .6);
+      background: rgba(30, 24, 14, .9); color: #ffd100; font: 13px 'OW Friz', Georgia, serif; }
+    /* Edit layout: the controls take drags instead of presses; a bar with the rest */
+    #ow-touch .editbar { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 6px); transform: translateX(-50%); width: min(620px, 94vw); display: none;
+      flex-direction: column; gap: 6px; padding: 6px 8px; border-radius: 3px; background: rgba(8, 8, 10, .88); border: 1px solid rgba(150, 132, 96, .6);
+      color: #fff; font: 13px 'OW Friz', Georgia, serif; pointer-events: auto; z-index: 5; }
+    #ow-touch.editing .editbar { display: flex; }
+    #ow-touch .editbar .eb-b, #ow-touch .editbar .eb-code { display: flex; gap: 6px; flex-wrap: wrap; }
+    #ow-touch .editbar button { flex: 1 1 auto; height: 40px; }
+    #ow-touch .editbar input { flex: 2 1 120px; min-width: 0; height: 40px; border-radius: 3px; border: 1px solid rgba(150, 132, 96, .5); background: rgba(0, 0, 0, .6); color: #fff; padding: 0 8px; font: 16px ui-monospace, monospace; }
+    #ow-touch.editing .stick { pointer-events: auto; opacity: .9; }
+    #ow-touch.editing .stick, #ow-touch.editing .attack, #ow-touch.editing .jump, #ow-touch.editing .tray .handle { outline: 2px dashed rgba(125, 255, 154, .8); outline-offset: 3px; border-radius: 50%; }
+    #ow-touch.editing .jump { border-radius: 16px; }
+    /* a controller took over: only its card and messages show */
+    #ow-touch.padmode { display: block; }
+    #ow-touch.padmode > :not(.info):not(.toast) { display: none !important; }
     /* the page menu handle moves to the bottom edge, out of the target frame's way */
     body.ow-touch-world #ow-dock { top: auto; bottom: 0; flex-direction: column-reverse; }
     body.ow-touch-world #ow-dock-handle { border-radius: 8px 8px 0 0; border-top: 1px solid rgba(201,162,39,.35); border-bottom: 0; }
@@ -529,6 +608,27 @@ export function slotFor(i, { offset = 0, page = 1, pages = 6, vehicle = false } 
   return i + (page - 1) * 12;
 }
 
+/** Edit layout's places as a short code to share or move to another device: "L1" + 2 base-36 digits per
+ *  fraction (stick x y, ring x y, Jump x y or "zzzz" when it follows the ring, tray x y) + the ring size. */
+export function encodeLayout(c) {
+  const p = (v) => Math.round(Math.min(1, Math.max(0, v)) * 999).toString(36).padStart(2, '0');
+  const xs = [...c.s, ...c.r].map(p).join('') + (c.j ? c.j.map(p).join('') : 'zzzz') + c.t.map(p).join('');
+  return 'L1' + xs + Math.round((Math.min(1.5, Math.max(0.8, c.z)) - 0.5) * 100).toString(36).padStart(2, '0');
+}
+export function decodeLayout(code) {
+  const m = /^L1([0-9a-z]{18})$/i.exec(String(code || '').trim().replace(/\s+/g, ''));
+  if (!m) return null;
+  const d = m[1].toLowerCase().match(/../g);
+  const f = (i) => parseInt(d[i], 36) / 999;
+  if ([0, 1, 2, 3, 6, 7].some((i) => parseInt(d[i], 36) > 999)) return null;
+  const jz = d[4] === 'zz' && d[5] === 'zz';
+  if (!jz && (parseInt(d[4], 36) > 999 || parseInt(d[5], 36) > 999)) return null;
+  const z = parseInt(d[8], 36) / 100 + 0.5;
+  if (!(z >= 0.8 && z <= 1.5)) return null;
+  const r4 = (v) => Math.round(v * 1000) / 1000;
+  return { s: [r4(f(0)), r4(f(1))], r: [r4(f(2)), r4(f(3))], j: jz ? null : [r4(f(4)), r4(f(5))], t: [r4(f(6)), r4(f(7))], z: Math.round(z * 100) / 100 };
+}
+
 // -- Synthetic mouse on the game ----------------------------------------------------------------
 
 function gameCanvas() { return document.getElementById('benilla') || document.querySelector('canvas'); }
@@ -601,7 +701,18 @@ const SLOW_TAP_MS = 1200;
 const sloppyTap = (t, x, y) => Math.hypot(x - t.x0, y - t.y0) <= SLOPPY_PX && performance.now() - t.t0 < SLOPPY_MS;
 // The game reads the cursor once a frame and only presses what the last frame saw under it, so
 // each step waits for a frame the game has drawn (a timer alone can fall inside one slow frame).
-const afterFrame = () => new Promise((ok) => requestAnimationFrame(() => setTimeout(ok, 0)));
+// How long one game update takes, measured as we go (page frames, and the bridge's answers when it
+// is live): a press and release sent closer together than this may have landed in ONE update.
+// window.owTouch.tapTime: { frameMs, resent, force } (force > 0 sets frameMs, for tests and ?tapframe=).
+export const TAPTIME = { frameMs: 16.7, resent: 0, force: +(new URLSearchParams(location.search).get('tapframe') || 0) };
+const frameMs = () => (TAPTIME.force > 0 ? TAPTIME.force : TAPTIME.frameMs);
+const noteFrame = (dt) => { if (dt > 4 && dt < 600) TAPTIME.frameMs = Math.round((TAPTIME.frameMs * 0.8 + dt * 0.2) * 10) / 10; };
+let lastRafTs = 0;
+const afterFrame = () => new Promise((ok) => requestAnimationFrame((ts) => {
+  if (lastRafTs && ts - lastRafTs < 100) noteFrame(ts - lastRafTs);
+  lastRafTs = ts;
+  setTimeout(ok, 0);
+}));
 const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
 // A frame the browser drew is not a frame the game ran: on a slow phone the game's update can
 // lag the page's animation frame, so a move and the press after it landed in ONE game update,
@@ -617,7 +728,8 @@ async function gameTicks(n = 2) {
     // 0.4 s (busy). Not "whichever comes first": on a phone whose game lags the page, two page frames
     // come before the game's next update, and the press went in before the move did.
     const frames = () => afterFrame().then(afterFrame);
-    await (w?.lua ? Promise.race([w.lua('return 1', 1500).catch(frames), wait(400).then(frames)]) : frames());
+    const t0 = performance.now();
+    await (w?.lua ? Promise.race([w.lua('return 1', 1500).then(() => noteFrame(performance.now() - t0), frames), wait(400).then(frames)]) : frames());
   }
 }
 const settle = () => gameTicks(2);
@@ -626,22 +738,57 @@ const settle = () => gameTicks(2);
 // interleaving its move and press with the first's, which the game read as presses on nothing.
 let mouseChain = Promise.resolve();
 const inTurn = (fn) => (mouseChain = mouseChain.then(fn, fn));
-function click(x, y, button = 0) {
-  return inTurn(async () => {
-    const bits = button === 2 ? 2 : 1;
-    moveTo(x, y);
-    await settle();                                  // the game has the cursor there and has hovered it
-    mouse('pointerdown', x, y, button, bits);
+// The release. If it went out within one game update of the press (a phone whose game lags the
+// page: the settle between them was over before the game ran again), the game may have read the
+// press and the release in the same update and clicked nothing, leaving the button drawn pushed:
+// after one more settle the release is sent again, so a release lands in a later update than the press.
+async function release(x, y, button, tDown, rec) {
+  mouse('pointerup', x, y, button, 0);
+  const held = performance.now() - tDown;
+  if (rec) rec.held = Math.round(held);
+  if (held < frameMs()) {
     await settle();
     mouse('pointerup', x, y, button, 0);
-  });
+    TAPTIME.resent += 1;
+    if (rec) rec.resent = true;
+  }
+}
+// a click, played now (callers already in their turn); click() waits its turn
+async function clickNow(x, y, button = 0, rec = null) {
+  const bits = button === 2 ? 2 : 1;
+  moveTo(x, y);
+  await settle();                                  // the game has the cursor there and has hovered it
+  mouse('pointerdown', x, y, button, bits);
+  const tDown = performance.now();
+  await settle();
+  await release(x, y, button, tDown, rec);
+}
+const click = (x, y, button = 0, rec = null) => inTurn(() => clickNow(x, y, button, rec));
+
+// The last 10 taps, with timings, for the ?touchdebug=1 line, Menu > Controls > Copy debug info and
+// the tap test (window.owTouch.taps). Each: { at (s since the page opened), screen, how (tap, snap,
+// magnet, aim, kept, ground, drag, dropped, window), x, y (the finger), px, py (where the click went),
+// finger (ms down to up), held (ms between the press and release sent), resent (the release went twice) }.
+export const tapLog = [];
+const PAGE_T0 = performance.now();
+function noteTap(rec) {
+  rec.at = Math.round((performance.now() - PAGE_T0) / 100) / 10;
+  for (const k of ['x', 'y', 'px', 'py']) if (rec[k] != null) rec[k] = Math.round(rec[k]);
+  tapLog.push(rec);
+  while (tapLog.length > 10) tapLog.shift();
+  return rec;
+}
+/** One tap as a few characters: "snap 400,300>402,296 f120 h66 R" */
+export function tapShort(r) {
+  const to = r.px != null && (r.px !== r.x || r.py !== r.y) ? `>${r.px},${r.py}` : '';
+  return `${r.how} ${r.x},${r.y}${to}${r.finger != null ? ' f' + r.finger : ''}${r.held != null ? ' h' + r.held : ''}${r.resent ? ' R' : ''}`;
 }
 
 // -- The controller -----------------------------------------------------------------------------
 
 export function installTouch(bridge) {
   if (window.owTouch) return window.owTouch;
-  const status = (window.owTouch = { on: false, inworld: false, presses: 0, taps: 0, drags: 0, errors: 0, layout: null });
+  const status = (window.owTouch = { on: false, inworld: false, presses: 0, tapCount: 0, taps: tapLog, tapTime: TAPTIME, drags: 0, errors: 0, layout: null });
   if (!bridge?.hold || !bridge?.fire) { status.state = 'no-bridge'; return status; }
   // the bridge when the client answers it, the canvas's keys when it doesn't (touch-driver.js)
   const wenilla = (DRIVER = makeDriver(bridge, { canvas: gameCanvas }));
@@ -659,7 +806,7 @@ export function installTouch(bridge) {
     <div class="zone world play"></div>
     <div class="zone stick-zone play"></div>
     <div class="stick play"><div class="knob"></div></div>
-    <div class="ctl rbtn target play" aria-label="Target nearest enemy">${ICON.crosshair}</div>
+    <div class="ctl rbtn target play" aria-label="Nearest enemy">${ICON.crosshair}</div>
     <div class="ctl attack play" aria-label="Attack"><span class="ico">${ROLE_ICON.fight}</span></div>
     ${[0, 1, 2, 3].map((i) => `<div class="ctl key play" data-k="${i}"><div class="face"></div><div class="ring"></div><div class="cd"></div><div class="count"></div></div>`).join('')}
     <div class="ctl dots play" aria-label="Next actions"><i class="on"></i><i></i><i></i></div>
@@ -686,10 +833,16 @@ export function installTouch(bridge) {
         <button class="opt" data-scheme="classic"><b>Classic</b>Stick walks and strafes. Drag the world to turn your character and the camera together, like holding the right mouse button on PC. Best for fighting.</button>
         <button class="opt" data-scheme="simple"><b>Simple</b>Stick walks and turns, like W A S D's turn keys. Drag the world to look around without turning; the camera swings back behind you as you walk. Easiest to learn.</button>
         <button class="opt" data-scheme="pc"><b>Keyboard &amp; mouse</b>No touch controls; the normal PC interface with its action bars and chat. For a tablet with a keyboard, or a phone on a controller. The small phone button in the corner brings touch back.</button>
+        <div class="ctlrow"><button data-c="taptest">Tap test</button><button data-c="debug">Copy debug info</button><button data-c="edit">Edit layout</button></div>
+        <div class="ctlrow"><button data-c="preset">Layout: Auto</button><button data-c="lefty">Left-handed: off</button>
+          <button data-c="haptics">Vibration: on</button><button data-c="softlock">Soft lock: on</button></div>
+        <label class="slider">Bigger interface <input type="range" min="70" max="140" step="5" data-c="uisize"><span class="v">100%</span></label>
         <table class="vs"><tr><th></th><th>Phone</th><th>PC</th></tr>
           <tr><td>Move</td><td>Left stick (double-tap it: auto-run)</td><td>W A S D, Num Lock</td></tr>
           <tr><td>Turn / camera</td><td>Drag the world · pinch to zoom</td><td>Hold right / left mouse · wheel</td></tr>
-          <tr><td>Target</td><td>Tap them, or the ⌖ button (hold it to clear)</td><td>Click, Tab</td></tr>
+          <tr><td>Target</td><td>Tap them, or the ⌖ button for the nearest enemy (hold it to clear). Swipe the target's frame for the next or last one</td><td>Click, Tab, Shift-Tab</td></tr>
+          <tr><td>Keep your target</td><td>Soft lock: a tap on open ground keeps it</td><td>Click a unit</td></tr>
+          <tr><td>Place a spell on the ground</td><td>Tap the spot (the X cancels)</td><td>Click the spot</td></tr>
           <tr><td>Talk, loot, use</td><td>Double-tap them</td><td>Right-click</td></tr>
           <tr><td>Attack</td><td>Attack / Interact</td><td>Right-click the enemy</td></tr>
           <tr><td>Abilities</td><td>Four keys; swipe them for more. Hold one for its details, move or remove it</td><td>1 – 0, - and =</td></tr>
@@ -706,13 +859,25 @@ export function installTouch(bridge) {
     <form class="typebar"><input enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Tap here to type"><button type="submit">Enter</button><button type="button" class="tb-x" aria-label="Stop typing">&times;</button></form>
     <div class="info"><div class="t"></div><div class="b"></div></div>
     <div class="ctl rbtn kbd" aria-label="Keyboard">${ICON.keyboard}</div>
+    <div class="ctl rbtn gear" aria-label="Controls, tap test and debug info">${ICON.gear}</div>
+    <div class="castbar play" aria-hidden="true"><i></i><span></span></div>
+    <div class="gaim play"><span>Tap where it should land</span><button type="button" class="ctl gx" aria-label="Cancel the spell">${ICON.close}</button></div>
+    <div class="taptest"><div class="tt-dot"></div><div class="tt-msg"></div>
+      <div class="tt-b"><button type="button" data-tt="again">Again</button><button type="button" data-tt="copy">Copy result</button><button type="button" data-tt="close">Close</button></div></div>
+    <div class="editbar"><div class="eb-t">Drag the stick, the ring, Jump and the tray</div>
+      <div class="eb-b"><button type="button" data-e="smaller">Ring −</button><button type="button" data-e="bigger">Ring +</button>
+        <button type="button" data-e="phone">Phone</button><button type="button" data-e="tablet">Tablet</button>
+        <button type="button" data-e="reset">Reset</button><button type="button" data-e="done">Done</button></div>
+      <form class="eb-code"><input autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Layout code">
+        <button type="button" data-e="copy">Copy code</button><button type="submit" data-e="use">Use code</button></form></div>
     <input class="ghost" autocomplete="off" autocapitalize="off" spellcheck="false" aria-hidden="true">
     <div class="toast"></div>
-    <div class="fsgo">${ICON.full}<div>Tap to play full screen</div><button type="button" class="skip">Not now</button></div>
-    <div class="rotate">${ICON.rotate}<div>Turn your phone sideways</div><div class="sub">The game is laid out for landscape</div><button type="button" class="go">Play full screen</button></div>`;
+    <div class="fsgo">${ICON.full}<div>Tap to play full screen</div><button type="button" class="inst">Add Leyline to your home screen</button><button type="button" class="skip">Not now</button></div>
+    <div class="rotate">${ICON.rotate}<div>Turn your phone sideways</div><div class="sub">The game is laid out for landscape</div><button type="button" class="go">Play full screen</button><button type="button" class="inst">Add Leyline to your home screen</button></div>`;
   document.body.append(root);
   const $ = (s) => root.querySelector(s);
   const $$ = (s) => [...root.querySelectorAll(s)];
+  const sz = $('.stick-zone');
   const stick = $('.stick'), knob = $('.knob'), keys = $$('.key'), attack = $('.attack'), dots = $$('.dots i');
 
   let toastTimer = 0;
@@ -724,53 +889,136 @@ export function installTouch(bridge) {
     toastTimer = setTimeout(() => t.classList.remove('on'), ms);
   };
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const buzz = () => { try { navigator.vibrate?.(8); } catch { /* none */ } };
+  // a short buzz on a press (Menu > Controls > Vibration turns it off)
+  const buzz = () => { if (LS('ow:haptics') === 'off') return; try { navigator.vibrate?.(8); } catch { /* none */ } };
   const lua = (chunk) => wenilla.lua(chunk, 3000).catch(() => { status.errors += 1; return []; });
+  // soft lock (Menu > Controls): a tap on open ground keeps the target
+  const softLock = () => LS('ow:softlock') !== 'off';
+  // a ground-targeted spell (SpellIsTargeting) waiting for the tap that places it
+  let aimGround = false;
+  const setAimGround = (on) => {
+    on = !!on;
+    if (on === aimGround) return;
+    aimGround = on;
+    status.aimGround = on;
+    root.classList.toggle('aimground', on);
+    if (on) buzz();
+  };
 
   // ---- layout (CSS positions from the spec, inside the safe area) --------------------------------
   const SAFE = { l: 0, r: 0, t: 0, b: 0 };
   const STICK_HOME = { left: 24, bottom: 24, size: 120 };
+  // Layouts (Menu > Controls). Presets: Phone (the compact cluster in the bottom corners) and Tablet (a bigger ring,
+  // both thumbs a little higher up the sides, where a tablet is held); Auto picks by screen size. Left-handed mirrors
+  // the stick and the ring (the tray stays top right). Edit layout's own places (the stick, the ring round Attack, Jump,
+  // the tray, the ring's size) are kept per character, as screen fractions so they survive a turn or a new phone,
+  // and always clamped on screen. Everything is worked out right-handed, then mirrored.
+  const PRESETS = { phone: { scale: 1, lift: 0 }, tablet: { scale: 1.2, lift: 0.1 } };
+  const presetPref = () => { const p = LS('ow:touch-preset'); return p === 'phone' || p === 'tablet' ? p : 'auto'; };
+  const presetNow = () => { const p = presetPref(); return p !== 'auto' ? p : (Math.min(innerWidth, innerHeight) >= 600 ? 'tablet' : 'phone'); };
+  const lefty = () => LS('ow:lefty') === 'on';
+  const clampN = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  const ZMIN = 0.8, ZMAX = 1.5;
+  let layoutKey = 'ow:touch-layout:_';
+  let custom = null;                     // { s, r, j, t: [fx, fy], z } or null (the preset)
+  const pair = (v) => Array.isArray(v) && v.length === 2 && v.every((n) => Number.isFinite(n) && n >= 0 && n <= 1);
+  const validCustom = (v) => (v && pair(v.s) && pair(v.r) && pair(v.t) && (v.j === null || pair(v.j)) && Number.isFinite(v.z)
+    ? { s: v.s, r: v.r, j: v.j, t: v.t, z: clampN(v.z, ZMIN, ZMAX) } : null);
+  const loadCustom = () => { try { custom = validCustom(JSON.parse(LS(layoutKey) || 'null')); } catch { custom = null; } };
+  const saveCustom = () => LS(layoutKey, custom ? JSON.stringify(custom) : null);
+  loadCustom();
+  const CENTRES = {};                    // where each group is now (right-handed px), for Edit layout
   function layout() {
     const cs = getComputedStyle(document.documentElement);
     const env = (k) => parseFloat(cs.getPropertyValue(k)) || 0;
     SAFE.l = env('--ow-sl'); SAFE.r = env('--ow-sr'); SAFE.t = env('--ow-st'); SAFE.b = env('--ow-sb');
-    const W = innerWidth, H = innerHeight;
-    const home = { x: SAFE.l + STICK_HOME.left + 60, y: H - SAFE.b - STICK_HOME.bottom - 60 };
-    stick.dataset.hx = home.x; stick.dataset.hy = home.y;
-    if (!stick.classList.contains('live')) { stick.style.left = home.x + 'px'; stick.style.top = home.y + 'px'; }
+    const W = innerWidth, H = innerHeight, mir = lefty();
+    const sl = mir ? SAFE.r : SAFE.l, sr = mir ? SAFE.l : SAFE.r;   // right-handed insets
+    const X = (x) => Math.round(mir ? W - x : x);
+    const pname = presetNow(), pre = PRESETS[pname];
+    const stickLift = custom ? 0 : Math.round(pre.lift * H);
+    // the stick's home (where it rests; a touch in its zone moves it under the thumb)
+    let hx = sl + STICK_HOME.left + 60, hy = H - SAFE.b - STICK_HOME.bottom - 60 - stickLift;
+    if (custom) { hx = custom.s[0] * W; hy = custom.s[1] * H; }
+    hx = clampN(hx, sl + 64, W - sr - 64); hy = clampN(hy, SAFE.t + 64, H - SAFE.b - 64);
+    CENTRES.s = [hx, hy];
+    stick.dataset.hx = X(hx); stick.dataset.hy = Math.round(hy);
+    if (!stick.classList.contains('live')) { stick.style.left = X(hx) + 'px'; stick.style.top = Math.round(hy) + 'px'; }
+    // its zone: 42% x 62% of the screen round the home (the bottom-left corner for the presets)
+    const zw = W * 0.42, zh = H * 0.62;
+    const zl = clampN(hx - zw / 2, 0, W - zw), zt = clampN(hy - zh * 0.6, 0, H - zh);
+    Object.assign(sz.style, { left: Math.round(mir ? W - zl - zw : zl) + 'px', top: Math.round(zt) + 'px', width: Math.round(zw) + 'px', height: Math.round(zh) + 'px', bottom: 'auto' });
     // right-thumb cluster (owner 3 Nov 01:41: "the buttons are misaligned"), laid out the way radial gamepads do it
     // (RadialGamePad, Lemuroid's controls): every key on one ring round Attack, the same angle apart, each angle
     // worked out from the ring's radius so neighbours keep GAP px between them (Material's 48 + 8 rule), and the
     // whole cluster kept inside the safe area: the reticle on the ring up and right, the four keys on it to the
-    // left, Jump under Attack with its own gap, the page dots centred over the reticle.
-    const GAP = 8, EDGE = 8, RA = 48, RK = 24, RT = 23, JH = 30;
-    const TA = 62;                                                // the reticle's angle (up and right)
-    // the smallest ring on which the four keys fit between the reticle and the lowest angle a key may take (no key
-    // lower than Attack's bottom edge: Jump sits under it), each two the same angle apart with GAP px between them
-    const deg = (r) => r * 180 / Math.PI;
-    let R = RA + GAP + RK + 4, step = 0;
-    for (; R < 160; R += 2) {
-      step = deg(2 * Math.asin((RK + GAP / 2) / R)) + 1;
-      if (TA + 4 * step <= 180 + deg(Math.asin((RA - RK) / R))) break;
-    }
-    const ax = Math.round(W - SAFE.r - EDGE - Math.max(RA, R * Math.cos(TA * Math.PI / 180) + RT));
-    const ay = Math.round(H - SAFE.b - EDGE - JH - GAP - RA);    // room for Jump under it
-    attack.style.left = ax + 'px'; attack.style.top = ay + 'px';
-    const at = (deg, r) => { const a = deg * Math.PI / 180; return [Math.round(ax + r * Math.cos(a)), Math.round(ay - r * Math.sin(a))]; };
-    const [tx, ty] = at(TA, R);
-    const tgt = $('.target'); tgt.style.left = tx + 'px'; tgt.style.top = ty + 'px';
-    const ANG = [0, 1, 2, 3].map((i) => TA + step * (i + 1));
-    keys.forEach((k, i) => { const [x, y] = at(ANG[i], R); k.style.left = x + 'px'; k.style.top = y + 'px'; });
+    // left, Jump under Attack with its own gap, the page dots centred over the reticle. s scales it all.
+    const GAP = 8, EDGE = 8, TA = 62;                             // TA: the reticle's angle (up and right)
     const d = $('.dots');
-    const dw = d.offsetWidth || 52;
-    d.style.left = Math.min(tx, W - SAFE.r - EDGE - dw / 2) + 'px'; d.style.top = (ty - RT - GAP - 14) + 'px';
-    const j = $('.jump');
-    j.style.left = ax + 'px'; j.style.top = (ay + RA + GAP + JH / 2) + 'px';
-    status.layout = { W, H, ax, ay, R, step: Math.round(step), tx, ty };
+    const deg = (r) => r * 180 / Math.PI;
+    const off = (dg, r) => { const a = dg * Math.PI / 180; return [r * Math.cos(a), -r * Math.sin(a)]; };
+    const jumpOn = !(custom && custom.j);
+    // the ring at size s, lifted by lift px: its geometry and where Attack's centre goes
+    function geo(s, lift) {
+      const RA = 48 * s, RK = 24 * s, RT = 23 * s, JH = 30 * s, JW = 32 * s;
+      // the smallest ring on which the four keys fit between the reticle and the lowest angle a key may take (no key
+      // lower than Attack's bottom edge: Jump sits under it), each two the same angle apart with GAP px between them
+      let R = RA + GAP + RK + 4, step = 0;
+      for (; R < 260; R += 2) {
+        step = deg(2 * Math.asin((RK + GAP / 2) / R)) + 1;
+        if (TA + 4 * step <= 180 + deg(Math.asin((RA - RK) / R))) break;
+      }
+      const ANG = [0, 1, 2, 3].map((i) => TA + step * (i + 1));
+      const dw = (d.offsetWidth || 52) * s;
+      const [tox, toy] = off(TA, R);
+      const doy = toy - RT - GAP - 14 * s;
+      // the ring's extent round Attack's centre ([dx, dy, half width, half height]), to keep it on screen
+      const parts = [[0, 0, RA, RA], [tox, toy, RT, RT], ...ANG.map((a) => [...off(a, R), RK, RK]), [tox, doy, 0, 11 * s]];
+      if (jumpOn) parts.push([0, RA + GAP + JH / 2, JW, JH / 2]);
+      const minX = Math.min(...parts.map((q) => q[0] - q[2])), maxX = Math.max(...parts.map((q) => q[0] + q[2]));
+      const minY = Math.min(...parts.map((q) => q[1] - q[3])), maxY = Math.max(...parts.map((q) => q[1] + q[3]));
+      let ax = W - sr - EDGE - Math.max(RA, tox + RT);
+      let ay = H - SAFE.b - EDGE - (jumpOn ? JH + GAP : 0) - RA - lift;
+      if (custom) { ax = custom.r[0] * W; ay = custom.r[1] * H; }
+      ax = Math.round(clampN(ax, sl + EDGE - minX, W - sr - EDGE - maxX));
+      ay = Math.round(clampN(ay, SAFE.t + EDGE - minY, H - SAFE.b - EDGE - maxY));
+      return { s, RA, RK, RT, JH, JW, R, step, ANG, dw, tox, toy, doy, ax, ay, top: ay + minY };
+    }
+    // a preset gives back its lift, then its size, until the ring clears the tray (top right) on a short screen
+    let s = Math.round(clampN(custom ? custom.z : pre.scale, ZMIN, ZMAX) * 100) / 100, lift = custom ? 0 : Math.round(pre.lift * H);
+    let g = geo(s, lift);
+    const trayBottom = SAFE.t + 10 + 36 + GAP;
+    while (!custom && !mir && g.top < trayBottom && (lift > 0 || s > 1)) {
+      if (lift > 0) lift = Math.max(0, lift - 10); else s = Math.max(1, Math.round((s - 0.05) * 100) / 100);
+      g = geo(s, lift);
+    }
+    const { RA, RK, RT, JH, JW, R, step, ANG, dw, tox, toy, doy, ax, ay } = g;
+    CENTRES.r = [ax, ay]; CENTRES.z = s;
+    const put = (el, x, y) => { el.style.left = X(x) + 'px'; el.style.top = Math.round(y) + 'px'; el.style.scale = s === 1 ? '' : String(s); };
+    put(attack, ax, ay);
+    const tx = ax + tox, ty = ay + toy;
+    put($('.target'), tx, ty);
+    keys.forEach((k, i) => { const [ox, oy] = off(ANG[i], R); put(k, ax + ox, ay + oy); });
+    put(d, Math.min(tx, W - sr - EDGE - dw / 2), ay + doy);
+    let jx = ax, jy = ay + RA + GAP + JH / 2;
+    if (!jumpOn) { jx = clampN(custom.j[0] * W, sl + EDGE + JW, W - sr - EDGE - JW); jy = clampN(custom.j[1] * H, SAFE.t + EDGE + JH / 2, H - SAFE.b - EDGE - JH / 2); }
+    CENTRES.j = [jx, jy];
+    put($('.jump'), jx, jy);
+    // the cast bar: over the ring, clear of the dots and keys
+    const top = Math.min(ay + doy - 11 * s, ...ANG.map((a) => ay + off(a, R)[1] - RK), ty - RT);
+    const cb = $('.castbar');
+    cb.style.left = Math.round(clampN(X(ax - R / 2), 84 + EDGE + SAFE.l, W - 84 - EDGE - SAFE.r)) + 'px';
+    cb.style.top = Math.round(Math.max(SAFE.t + EDGE + 8, top - GAP - 8)) + 'px';
+    status.layout = { W, H, ax: X(ax), ay, R: Math.round(R), step: Math.round(step), tx: X(tx), ty: Math.round(ty), s, preset: pname, pref: presetPref(), mirror: mir, custom: !!custom };
     const st = $('.strip');
     st.style.left = (W / 2) + 'px'; st.style.top = (H - SAFE.b - 22 - 40) + 'px';
+    // the tray: top right (never mirrored: the player frame has the top left), or where it was put
     const tr = $('.tray');
-    tr.style.right = (SAFE.r + 10) + 'px'; tr.style.top = (SAFE.t + 10) + 'px';
+    let trR = SAFE.r + 10, trT = SAFE.t + 10;
+    if (custom) { trR = W - custom.t[0] * W - 18; trT = custom.t[1] * H - 18; }
+    trR = Math.round(clampN(trR, SAFE.r + 4, W - 40)); trT = Math.round(clampN(trT, SAFE.t + 4, H - 40));
+    tr.style.right = trR + 'px'; tr.style.top = trT + 'px';
+    CENTRES.t = [W - trR - 18, trT + 18];
   }
   // safe-area insets as numbers (env() only works in CSS)
   const sa = document.createElement('style');
@@ -809,7 +1057,7 @@ export function installTouch(bridge) {
     }
     setHolds(want);
   }
-  const sz = $('.stick-zone');
+
   sz.addEventListener('pointerdown', (e) => {
     if (winRects.some(([l, t, r, b]) => e.clientX >= l && e.clientX <= r && e.clientY >= t && e.clientY <= b)) {
       $('.world').dispatchEvent(new PointerEvent('pointerdown', e));
@@ -866,7 +1114,9 @@ export function installTouch(bridge) {
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
   }
-  press($('.target'), () => wenilla.fire('TARGETNEARESTENEMY'));
+  // the reticle on the ring is the nearest-enemy button: TARGETNEARESTENEMY through the bridge (Tab without it); each
+// tap after the first goes on to the next nearest, as Tab does
+press($('.target'), () => { wenilla.fire('TARGETNEARESTENEMY'); status.nearest = (status.nearest || 0) + 1; });
   // Jump: held while the thumb is on it (JUMP's binding swims up while held, as Space does).
   // The 1.12 file drew this pill but never wired it.
   {
@@ -945,8 +1195,11 @@ export function installTouch(bridge) {
       }
       // through the bridge: the slot itself (independent of which bar frame is showing);
       // without it: the key, whose binding pages like the stock bars do (they stay visible then)
-      if (wenilla.live) lua(`${SLOT_FN}\nUseAction(slot(${slotOf(i)}))`);
-      else wenilla.fire('ACTIONBUTTON' + slotOf(i));
+      // A spell that needs a place on the ground (SpellIsTargeting after it) waits for the next tap in the world.
+      if (wenilla.live) {
+        lua(`${SLOT_FN}\nUseAction(slot(${slotOf(i)}))\nreturn (SpellIsTargeting and SpellIsTargeting()) and 1 or 0`)
+          .then((r) => { if (r?.[0] == 1) { setAimGround(true); toast('Tap where it should land', 1800); } });
+      } else wenilla.fire('ACTIONBUTTON' + slotOf(i));
       if (!wenilla.live) showCloser();
     };
     k.addEventListener('pointerup', end);
@@ -1039,7 +1292,7 @@ return table.concat(t, "\\n")`;
   }
   $$('.grid button').forEach((b) => b.addEventListener('click', () => {
     const m = MENU[+b.dataset.m];
-    if (m.cmd) wenilla.fire(m.cmd); else if (m.chat) wenilla.chat(m.chat);
+    if (m.lua && wenilla.live) lua(m.lua); else if (m.cmd) wenilla.fire(m.cmd); else if (m.chat) wenilla.chat(m.chat);
     if (m.cmd !== 'TOGGLEGAMEMENU') showCloser();
     openSheet(null);
   }));
@@ -1083,8 +1336,138 @@ return table.concat(t, "\\n")`;
     if (status.inworld) applyGameLayout();
     toast('Interface size ' + Math.round(f * 100) + '%', 1200);
   };
-  root.querySelector('[data-s="smaller"]').addEventListener('click', () => uiStep(-0.1));
-  root.querySelector('[data-s="bigger"]').addEventListener('click', () => uiStep(0.1));
+  root.querySelector('[data-s="smaller"]').addEventListener('click', () => { uiStep(-0.1); ctlLabels(); });
+  root.querySelector('[data-s="bigger"]').addEventListener('click', () => { uiStep(0.1); ctlLabels(); });
+
+  // Menu > Controls: the tools (tap test, debug info, Edit layout) and the comfort settings
+  const ctl = (c) => root.querySelector(`[data-c="${c}"]`);
+  const PRESET_SAY = { auto: 'Auto', phone: 'Phone', tablet: 'Tablet' };
+  function ctlLabels() {
+    ctl('preset').textContent = 'Layout: ' + PRESET_SAY[presetPref()] + (custom ? ' (edited)' : '');
+    ctl('lefty').textContent = 'Left-handed: ' + (lefty() ? 'on' : 'off');
+    ctl('haptics').textContent = 'Vibration: ' + (LS('ow:haptics') === 'off' ? 'off' : 'on');
+    ctl('softlock').textContent = 'Soft lock: ' + (softLock() ? 'on' : 'off');
+    const f = Math.min(1.4, Math.max(0.7, +(LS('ow:touch-ui') || 1)));
+    ctl('uisize').value = String(Math.round(f * 100));
+    root.querySelector('.slider .v').textContent = Math.round(f * 100) + '%';
+  }
+  ctlLabels();
+  const onCtl = (c, fn) => ctl(c).addEventListener('click', (e) => { e.preventDefault(); try { fn(); } catch { status.errors += 1; } ctlLabels(); });
+  onCtl('taptest', () => { openSheet(null); tapTest.start(); });
+  onCtl('debug', () => copyDebug());
+  onCtl('edit', () => {
+    if (!status.inworld) { toast('Edit the layout once you are in the world', 2200); return; }
+    openSheet(null); editMode(true);
+  });
+  onCtl('preset', () => {
+    const order = ['auto', 'phone', 'tablet'];
+    const next = order[(order.indexOf(presetPref()) + 1) % order.length];
+    LS('ow:touch-preset', next === 'auto' ? null : next);
+    if (custom) { custom = null; saveCustom(); }      // a preset is a fresh start for this character
+    layout();
+    toast('Layout: ' + PRESET_SAY[next] + (next === 'auto' ? ` (${PRESET_SAY[presetNow()]} on this screen)` : ''), 1800);
+  });
+  onCtl('lefty', () => { LS('ow:lefty', lefty() ? null : 'on'); layout(); toast(lefty() ? 'Left-handed: the stick on the right' : 'Right-handed: the stick on the left', 1800); });
+  onCtl('haptics', () => { LS('ow:haptics', LS('ow:haptics') === 'off' ? null : 'off'); buzz(); });
+  onCtl('softlock', () => { LS('ow:softlock', softLock() ? 'off' : null); toast(softLock() ? 'Soft lock: a tap on open ground keeps your target' : 'Soft lock off: a tap on open ground clears your target', 2600); });
+  // Bigger interface: the game's own interface size, live as the slider moves (applied when it stops)
+  let uiTimer = 0;
+  ctl('uisize').addEventListener('input', (e) => {
+    const f = Math.min(1.4, Math.max(0.7, (+e.target.value || 100) / 100));
+    LS('ow:touch-ui', String(f));
+    root.querySelector('.slider .v').textContent = Math.round(f * 100) + '%';
+    clearTimeout(uiTimer);
+    uiTimer = setTimeout(() => { if (status.inworld) applyGameLayout(); }, 250);
+  });
+  // ---- Edit layout: drag the stick, the ring (by Attack, a key, the reticle or the dots), Jump and the tray ----------
+  // While editing every press on the controls is a drag (nothing reaches the game or fires a key); the bar at the top
+  // has Ring − / +, the presets, Reset, Done and the layout code. Saved per character as it goes.
+  let editing = false, edrag = null;
+  const ebar = $('.editbar'), ebIn = ebar.querySelector('input');
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  const snapshotCustom = () => {
+    const W = innerWidth, H = innerHeight, f = ([x, y]) => [r3(Math.min(1, Math.max(0, x / W))), r3(Math.min(1, Math.max(0, y / H)))];
+    return { s: f(CENTRES.s), r: f(CENTRES.r), j: custom?.j ? [...custom.j] : null, t: f(CENTRES.t), z: CENTRES.z };
+  };
+  function editMode(on) {
+    editing = !!on;
+    status.editing = editing;
+    root.classList.toggle('editing', editing);
+    edrag = null;
+    if (editing) { info.classList.remove('on'); setTray(false); ebIn.value = ''; toast('Drag the controls where your thumbs want them', 2400); }
+    else { saveCustom(); toast(custom ? 'Layout saved for this character' : 'Layout: ' + PRESET_SAY[presetNow()], 1600); }
+    ctlLabels();
+  }
+  status.editMode = editMode;
+  const groupOf = (el) => (el.closest('.stick') ? 's' : el.closest('.attack, .key, .target, .dots') ? 'r' : el.closest('.jump') ? 'j' : el.closest('.tray') ? 't' : null);
+  root.addEventListener('pointerdown', (e) => {
+    if (!editing || e.target.closest('.editbar')) return;
+    e.preventDefault(); e.stopPropagation();
+    const g = groupOf(e.target);
+    if (!g || edrag) return;
+    if (!custom) custom = snapshotCustom();
+    edrag = { id: e.pointerId, g, x0: e.clientX, y0: e.clientY, c0: [...CENTRES[g]] };
+  }, true);
+  addEventListener('pointermove', (e) => {
+    if (!editing || !edrag || e.pointerId !== edrag.id) return;
+    e.preventDefault(); e.stopPropagation();
+    const W = innerWidth, H = innerHeight, g = edrag.g;
+    // the stick, the ring and Jump are kept right-handed (mirrored on screen when Left-handed is on); the tray never mirrors
+    const dx = (e.clientX - edrag.x0) * (g !== 't' && lefty() ? -1 : 1), dy = e.clientY - edrag.y0;
+    const x = edrag.c0[0] + dx, y = edrag.c0[1] + dy;
+    custom[g] = [r3(Math.min(1, Math.max(0, x / W))), r3(Math.min(1, Math.max(0, y / H)))];
+    layout();
+  }, true);
+  const edEnd = (e) => {
+    if (!editing || !edrag || e.pointerId !== edrag.id) return;
+    e.stopPropagation();
+    edrag = null;
+    custom = snapshotCustom();        // what is on screen, clamped, is what is kept
+    if (custom.j) custom.j = [r3(CENTRES.j[0] / innerWidth), r3(CENTRES.j[1] / innerHeight)];
+    saveCustom(); ctlLabels();
+  };
+  addEventListener('pointerup', edEnd, true);
+  addEventListener('pointercancel', edEnd, true);
+  const ed = (k, fn) => takeTap(ebar.querySelector(`[data-e="${k}"]`), () => { try { fn(); } catch { status.errors += 1; } ctlLabels(); });
+  const ringSize = (d) => {
+    if (!custom) custom = snapshotCustom();
+    custom.z = Math.round(Math.min(ZMAX, Math.max(ZMIN, custom.z + d)) * 100) / 100;
+    layout(); saveCustom();
+    toast('Ring size ' + Math.round(custom.z * 100) + '%', 900);
+  };
+  ed('smaller', () => ringSize(-0.1));
+  ed('bigger', () => ringSize(0.1));
+  for (const p of ['phone', 'tablet']) ed(p, () => { LS('ow:touch-preset', p); custom = null; saveCustom(); layout(); toast('Layout: ' + PRESET_SAY[p], 1200); });
+  ed('reset', () => { custom = null; saveCustom(); layout(); toast('Layout reset to ' + PRESET_SAY[presetNow()], 1400); });
+  ed('done', () => editMode(false));
+  ed('copy', () => {
+    const code = encodeLayout(custom || snapshotCustom());
+    ebIn.value = code;
+    copyText(code).then((ok) => toast(ok ? 'Layout code copied: ' + code : 'Layout code: ' + code, 3000));
+  });
+  ebar.querySelector('.eb-code').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = validCustom(decodeLayout(ebIn.value));
+    if (!v) { toast('That is not a layout code (they start with L1)', 2200); return; }
+    custom = v; saveCustom(); layout(); ctlLabels();
+    ebIn.blur();
+    toast('Layout code used', 1200);
+  });
+  status.layoutCode = () => encodeLayout(custom || snapshotCustom());
+  status.useLayoutCode = (code) => { const v = validCustom(decodeLayout(code)); if (!v) return false; custom = v; saveCustom(); layout(); ctlLabels(); return true; };
+  Object.defineProperty(status, 'layoutKey', { get: () => layoutKey, enumerable: true });
+  // the character's own layout, once the game says who this is
+  function loadCharLayout() {
+    lua('return UnitName("player") or "", GetRealmName and GetRealmName() or ""').then((r) => {
+      const nm = String(r?.[0] || ''), realm = String(r?.[1] || '');
+      if (!nm) return;
+      const k = 'ow:touch-layout:' + (realm ? realm + '/' : '') + nm;
+      if (k === layoutKey) return;
+      layoutKey = k; loadCustom(); layout(); ctlLabels();
+    });
+  }
+  // the character screens' corner button: Menu > Controls there too (the tap test works before the world)
+  takeTap($('.gear'), () => { markScheme(); openSheet('controls'); });
 
   // auto loot: 3.3.5a's own "Auto Loot" interface option (the autoLootDefault setting); the player's
   // choice from before touch is kept and put back when touch is turned off
@@ -1357,6 +1740,32 @@ SetCVar("autoLootDefault", "${want}")`);
     return best;
   }
   status.snapAt = (x, y, ts) => { if (ts) targets = ts; return snap(x, y); };
+  // The button magnet (5 Nov, "real phones still often don't press game buttons on character screens even though the tap
+  // bubble is in the right place"): a tap that snap() leaves alone but that lands within MAGNET_PX of a scanned button's
+  // edge, where the game says nothing is under the cursor (GetMouseFocus() is empty or the screen's own backdrop), is a
+  // tap that would click nothing: it goes to the button's centre instead. Only with the bridge (the game must say "no
+  // hover"); on character creation never sideways: only a finger already over the button's width, and only its height
+  // moves (x stays where the finger is).
+  const MAGNET_PX = 10;
+  function magnet(x, y) {
+    let best = null, bd = Infinity;
+    for (const t of targets) {
+      const dx = Math.max(t.x - x, 0, x - (t.x + t.w)), dy = Math.max(t.y - y, 0, y - (t.y + t.h));
+      if (glueNow === 'charcreate' && dx > 0) continue;
+      const d = Math.hypot(dx, dy);
+      if (d <= MAGNET_PX && d < bd) { bd = d; best = t; }
+    }
+    if (!best) return null;
+    return { t: best, x: glueNow === 'charcreate' ? x : best.x + best.w / 2, y: best.y + best.h / 2 };
+  }
+  status.magnetAt = (x, y, ts) => { if (ts) targets = ts; const m = magnet(x, y); return m && { x: m.x, y: m.y }; };
+  // what the game has under its cursor: a frame's name, '' for nothing, null for no answer
+  const NO_HOVER = /^(|GlueParent|AccountLogin|CharacterSelect|CharacterCreate|RealmList|WorldFrame|UIParent)$/;
+  const FOCUS_LUA = 'local f = GetMouseFocus() return f and f.GetName and (f:GetName() or "?") or ""';
+  async function hoverName() {
+    if (!wenilla.live) return null;
+    try { const r = await wenilla.lua(FOCUS_LUA, 1500); return r == null ? null : String(r[0] ?? ''); } catch { return null; }
+  }
   function flash(x, y, snapped) {
     ring.style.left = x + 'px'; ring.style.top = y + 'px';
     ring.classList.toggle('snap', snapped);
@@ -1367,18 +1776,67 @@ SetCVar("autoLootDefault", "${want}")`);
     const c = gameCanvas(), [fx, fy] = pointerFactor(c);
     tdebug.textContent = `touch ${TOUCH_BUILD} · ${wenilla.session() || '?'} · ${wenilla.live ? 'bridge' : 'keys'}${document.fullscreenElement ? ' · full screen' : ''}\n` +
       `dpr ${devicePixelRatio} buffer ${c?.width}x${c?.height} css ${c?.clientWidth}x${c?.clientHeight}\n` +
-      `factor ${fx.toFixed(2)},${fy.toFixed(2)} buttons ${targets.length} taps ${status.taps} mode ${TAPMODE}${'onpointerrawupdate' in window ? ' raw' : ''}\n` +
-      `${extra || glueLast}\ngame took:${tapTrace.last || ' -'}  errors ${tapTrace.errors}${tapTrace.error ? ': ' + tapTrace.error : ''}`;
+      `factor ${fx.toFixed(2)},${fy.toFixed(2)} buttons ${targets.length} taps ${status.tapCount} mode ${TAPMODE}${'onpointerrawupdate' in window ? ' raw' : ''}\n` +
+      `${extra || glueLast}\ngame took:${tapTrace.last || ' -'}  errors ${tapTrace.errors}${tapTrace.error ? ': ' + tapTrace.error : ''}\n` +
+      `last: ${tapLog.slice(-3).map(tapShort).join(' | ') || '-'}  frame ${frameMs()}ms resent ${TAPTIME.resent}`;
   }
-  async function glueTap(x, y, rescan) {
-    if (rescan) await scanSoon();                      // the page changed size: find the buttons where they are now
-    const t = snap(x, y);
-    const px = t ? t.x + t.w / 2 : x, py = t ? t.y + t.h / 2 : y;
-    click(px, py, 0);
-    flash(px, py, !!t);
-    status.taps += 1;
-    glueLast = `tap ${Math.round(x)},${Math.round(y)} -> ${Math.round(px)},${Math.round(py)}${t ? ' snapped' : ''}`;
-    debugLine();
+  // The one line Menu > Controls > Copy debug info puts on the clipboard, for the player to paste to us
+  function debugReport() {
+    const c = gameCanvas(), [fx, fy] = pointerFactor(c);
+    const ua = navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').replace(/\(KHTML, like Gecko\) /, '').slice(0, 120);
+    const tt = status.tapTest ? ` | tap test ${status.tapTest.summary}` : '';
+    return `Leyline touch ${TOUCH_BUILD} | ${wenilla.session() || '?'} ${wenilla.live ? 'bridge' : 'keys'} | ` +
+      `dpr ${devicePixelRatio} buffer ${c?.width}x${c?.height} css ${c?.clientWidth}x${c?.clientHeight} page ${innerWidth}x${innerHeight}` +
+      `${fsEl() ? ' fullscreen' : ''}${installed() ? ' app' : ''} | factor ${fx.toFixed(2)},${fy.toFixed(2)} mode ${TAPMODE} | ` +
+      `buttons ${targets.length} taps ${status.tapCount} dropped ${status.dropped || 0} resent ${TAPTIME.resent} frame ${frameMs()}ms | ` +
+      `layout ${status.layout?.preset || '?'}${status.layout?.custom ? ' edited' : ''}${status.layout?.mirror ? ' left-handed' : ''} | ` +
+      `last ${tapLog.map(tapShort).join('; ') || '-'} | game took${tapTrace.last || ' -'} errors ${tapTrace.errors + status.errors}` +
+      `${tapTrace.error ? ' ' + tapTrace.error : ''}${tt} | ${ua}`;
+  }
+  status.debugReport = debugReport;
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* no clipboard: the old way */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.append(ta); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch { return false; }
+  }
+  async function copyDebug() {
+    const line = debugReport();
+    status.copied = line;
+    if (await copyText(line)) { toast('Debug info copied: paste it to us in Discord', 3500); return; }
+    // nothing would copy: show it, selectable, so it can be copied by hand
+    card(`<b>Debug info</b>\nTouch and hold the text to copy it, then paste it to us.\n<textarea class="dbg" readonly>${esc(line)}</textarea>`, [['Close']]);
+  }
+  function glueTap(x, y, rescan, rec = { how: 'tap', x, y }) {
+    return inTurn(async () => {
+      if (rescan) await scanSoon();                    // the page changed size: find the buttons where they are now
+      const t = snap(x, y);
+      let px = t ? t.x + t.w / 2 : x, py = t ? t.y + t.h / 2 : y;
+      if (t) rec.how = 'snap';
+      else if (wenilla.live && TAPMODE !== 'touchid') {
+        const m = magnet(x, y);
+        if (m) {
+          moveTo(x, y);
+          await settle();
+          const f = await hoverName();
+          rec.hover = f;
+          if (f !== null && NO_HOVER.test(f)) { px = m.x; py = m.y; rec.how = 'magnet'; }
+        }
+      }
+      rec.screen = glueNow; rec.px = px; rec.py = py;
+      flash(px, py, rec.how !== 'tap');
+      status.tapCount += 1;
+      noteTap(rec);
+      glueLast = `tap ${Math.round(x)},${Math.round(y)} -> ${Math.round(px)},${Math.round(py)}${rec.how !== 'tap' ? ' ' + (rec.how === 'snap' ? 'snapped' : rec.how) : ''}`;
+      debugLine();
+      await clickNow(px, py, 0, rec);
+      debugLine();
+    });
   }
   // the loupe: 2.5x of the game round the aim point, crosshair, the button it would snap to outlined
   const ZOOM = 2.5, LR = 66;
@@ -1458,19 +1916,23 @@ SetCVar("autoLootDefault", "${want}")`);
     const g = gl;
     gl = null;
     loupe.classList.remove('on');
+    const finger = Math.round(performance.now() - g.t0);
     if (g.mode === 'held') {                           // touchid: release while the finger is still this pointer
       mouse('pointerup', g.px, g.py, 0, 0);
       tapPid = 1;
       flash(g.px, g.py, g.snapped);
-      status.taps += 1;
+      status.tapCount += 1;
+      noteTap({ how: g.snapped ? 'snap' : 'tap', screen: glueNow, x: g.x0, y: g.y0, px: g.px, py: g.py, finger, mode: 'touchid' });
       glueLast = `tap ${Math.round(g.x0)},${Math.round(g.y0)} -> ${Math.round(g.px)},${Math.round(g.py)}${g.snapped ? ' snapped' : ''}`;
       debugLine();
       return;
     }
     if (g.mode === 'drag') {
       // a rolled tap that just crossed the slop: let go where it pressed, so the button it landed on clicks
-      if (e.type === 'pointerup' && sloppyTap(g, g.x, g.y)) { moveTo(g.x0, g.y0, 1); mouse('pointerup', g.x0, g.y0, 0, 0); status.taps += 1; }
-      else mouse('pointerup', g.x, g.y, 0, 0);
+      if (e.type === 'pointerup' && sloppyTap(g, g.x, g.y)) {
+        moveTo(g.x0, g.y0, 1); mouse('pointerup', g.x0, g.y0, 0, 0); status.tapCount += 1;
+        noteTap({ how: 'drag', screen: glueNow, x: g.x0, y: g.y0, px: g.x0, py: g.y0, finger });
+      } else mouse('pointerup', g.x, g.y, 0, 0);
       return;
     }
     // A tap is dropped only when it can't mean what the finger touched: a turn to the other
@@ -1485,17 +1947,108 @@ SetCVar("autoLootDefault", "${want}")`);
     if ((e.type !== 'pointerup' && !quickCancel) || turned || resized) {
       status.dropped = (status.dropped || 0) + 1;
       glueLast = `dropped: ${e.type !== 'pointerup' && !quickCancel ? e.type : turned ? 'turned' : `resized ${g.w}x${g.h}->${innerWidth}x${innerHeight}`}`;
+      noteTap({ how: 'dropped', why: glueLast.slice(9), screen: glueNow, x: g.x0, y: g.y0, finger });
       debugLine();
       return;
     }
     // a small resize (address bar): the same spot of the page, scaled to its new size
     const kx = innerWidth / g.w, ky = innerHeight / g.h;
     // a tap goes where the finger landed (not where it rolled to); an aimed one where the loupe aimed
-    if (g.mode === 'aim') glueTap(g.x * kx, g.y * ky); else glueTap(g.x0 * kx, g.y0 * ky, kx !== 1 || ky !== 1);
+    if (g.mode === 'aim') glueTap(g.x * kx, g.y * ky, false, { how: 'aim', x: g.x * kx, y: g.y * ky, finger });
+    else glueTap(g.x0 * kx, g.y0 * ky, kx !== 1 || ky !== 1, { how: 'tap', x: g.x0 * kx, y: g.y0 * ky, finger });
   };
   glue.addEventListener('pointerup', glueEnd);
   glue.addEventListener('pointercancel', glueEnd);
   status.findButtons = async () => { await scanSoon(); return targets; };
+
+  // ---- the tap test (Menu > Controls > Tap test; ?taptest=1 opens it) ------------------------------
+  // Five gold rings, one at a time, over everything; the player taps the centre of each. Each tap says how far the
+  // finger landed from the ring (a hit within 22 px) and, with the bridge, where the game's own cursor went for that
+  // spot (GetCursorPosition, as a fraction of its screen) against where the finger was: that difference is the
+  // pointer factor's error, the thing that makes a tap land beside a button. Nothing is clicked in the game, so it
+  // works on the character screens too (the corner Controls button there).
+  const CURSOR_LUA = 'local x, y = GetCursorPosition() local P = UIParent or GlueParent if not (x and P) then return "" end local s = P:GetEffectiveScale() return x / (P:GetWidth() * s), y / (P:GetHeight() * s)';
+  const tapTest = (() => {
+    const el = $('.taptest'), dot = el.querySelector('.tt-dot'), msg = el.querySelector('.tt-msg');
+    const SPOTS = [[0.1, 0.16], [0.9, 0.16], [0.5, 0.5], [0.1, 0.84], [0.9, 0.84]];
+    const HIT = 22;
+    let i = 0, res = [], downId = null;
+    const spot = (k) => { const m = 34; return [Math.round(m + SPOTS[k][0] * (innerWidth - 2 * m)), Math.round(m + SPOTS[k][1] * (innerHeight - 2 * m))]; };
+    function show() {
+      const [x, y] = spot(i);
+      dot.style.left = x + 'px'; dot.style.top = y + 'px';
+      dot.classList.remove('done');
+      msg.style.top = i === 2 ? '28%' : '50%';
+      msg.textContent = `Tap test: tap the centre of the gold ring (${i + 1} of ${SPOTS.length})`;
+    }
+    // where the game's cursor lands for a page spot, as [dx, dy] css px from it (null: no answer)
+    function gameOff(x, y) {
+      if (!wenilla.live) return Promise.resolve(null);
+      return inTurn(async () => {
+        moveTo(x, y);
+        await settle();
+        const r = await lua(CURSOR_LUA);
+        const fx = Number(r?.[0]), fy = Number(r?.[1]);
+        if (r?.[0] === '' || r?.[0] == null || !Number.isFinite(fx) || !Number.isFinite(fy)) return null;
+        const b = gameCanvas()?.getBoundingClientRect();
+        if (!b) return null;
+        return [Math.round(b.left + fx * b.width - x), Math.round(b.bottom - fy * b.height - y)];
+      });
+    }
+    const avg = (a) => (a.length ? Math.round(a.reduce((p, q) => p + q, 0) / a.length) : 0);
+    function finish() {
+      const c = gameCanvas(), [fx, fy] = pointerFactor(c);
+      const hits = res.filter((r) => r.hit).length;
+      const mx = avg(res.map((r) => r.x - r.tx)), my = avg(res.map((r) => r.y - r.ty)), dist = avg(res.map((r) => r.d));
+      const g = res.filter((r) => r.game);
+      const game = g.length ? [avg(g.map((r) => r.game[0])), avg(g.map((r) => r.game[1]))] : null;
+      const dir = (v, a, b) => (v ? `${Math.abs(v)} ${v > 0 ? a : b}` : '');
+      const fdir = [dir(mx, 'right', 'left'), dir(my, 'down', 'up')].filter(Boolean).join(', ');
+      const gd = game ? Math.round(Math.hypot(game[0], game[1])) : null;
+      const summary = `${hits}/${res.length} hits, finger off ${dist}px (x ${mx} y ${my}), factor ${fx.toFixed(2)},${fy.toFixed(2)}, ` +
+        (game ? `game cursor off x ${game[0]} y ${game[1]}` : 'game cursor not checked (no bridge)');
+      status.tapTest = { hits, n: res.length, dist, finger: [mx, my], game, factor: [+fx.toFixed(2), +fy.toFixed(2)], taps: res, summary };
+      msg.style.top = '42%';
+      msg.textContent = `${hits} of ${res.length} hit\nYour taps land ${dist} px from where you aim${fdir ? ` (${fdir})` : ''}\n` +
+        (game ? (gd > 8 ? `The game puts a tap ${gd} px away from your finger: that is why buttons miss. Copy the result and send it to us.`
+          : `The game puts a tap where your finger is (${gd} px off)`) : 'The game\'s side is checked once the game answers (in the world)') +
+        `\nFactor ${fx.toFixed(2)}, ${fy.toFixed(2)}`;
+      dot.classList.add('done');
+      el.classList.add('end');
+    }
+    el.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      e.preventDefault(); e.stopPropagation();
+      downId = e.pointerId;
+    });
+    el.addEventListener('pointerup', (e) => {
+      if (e.target.closest('button')) return;
+      e.preventDefault(); e.stopPropagation();
+      if (downId !== e.pointerId || el.classList.contains('end') || i >= SPOTS.length) return;
+      downId = null;
+      const [tx, ty] = spot(i), x = Math.round(e.clientX), y = Math.round(e.clientY);
+      const d = Math.round(Math.hypot(x - tx, y - ty));
+      const r = { tx, ty, x, y, d, hit: d <= HIT, game: null };
+      res.push(r);
+      flash(x, y, r.hit);
+      buzz();
+      i += 1;
+      const last = i >= SPOTS.length;
+      if (!last) show(); else { dot.classList.add('done'); msg.textContent = 'Checking…'; }
+      gameOff(x, y).then((g) => { r.game = g; if (last) finish(); });
+    });
+    el.addEventListener('pointercancel', () => { downId = null; });
+    const api = {
+      start() { i = 0; res = []; el.classList.remove('end'); el.classList.add('on'); status.tapTestOpen = true; show(); },
+      close() { el.classList.remove('on', 'end'); status.tapTestOpen = false; },
+    };
+    takeTap(el.querySelector('[data-tt="again"]'), () => api.start());
+    takeTap(el.querySelector('[data-tt="close"]'), () => api.close());
+    takeTap(el.querySelector('[data-tt="copy"]'), () => copyDebug());
+    return api;
+  })();
+  status.tapTest = null;
+  status.startTapTest = () => tapTest.start();
   if (root.classList.contains('debug')) setInterval(() => debugLine(), 1000);   // numbers from the start, not only after a tap
   const GLUE = (st) => st === 'login' || st === 'charselect' || st === 'charcreate' || /realm/i.test(st || '');
   const glueState = (st) => {
@@ -1549,6 +2102,8 @@ SetCVar("autoLootDefault", "${want}")`);
     }
     const t = touches.get(e.pointerId);
     const id = e.pointerId;
+    // on the target frame: a sideways swipe there cycles enemies (a tap still clicks the frame)
+    t.tf = !!tfRect && e.clientX >= tfRect[0] && e.clientX <= tfRect[2] && e.clientY >= tfRect[1] && e.clientY <= tfRect[3];
     const moved = inTurn(() => moveTo(e.clientX, e.clientY));   // after any tap still being played out
     // the second touch of a double-tap (a right-click on lift) is never pressed in
     t.maybeDbl = performance.now() - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 36;
@@ -1580,10 +2135,10 @@ SetCVar("autoLootDefault", "${want}")`);
   }
   // Let a pressed button out: where it was pressed (a click), or off the screen (no click: a long
   // press is a hover, for the tooltip), then back over it so the tooltip stays.
-  function pressOut(t, click) {
+  function pressOut(t, click, rec = null) {
     return inTurn(async () => {
       await settle();                                  // never the same game update as the press
-      if (click) { moveTo(t.x0, t.y0, 1); mouse('pointerup', t.x0, t.y0, 0, 0); return; }
+      if (click) { moveTo(t.x0, t.y0, 1); await release(t.x0, t.y0, 0, t.pressed || 0, rec); return; }
       moveTo(-40, -40, 1); mouse('pointerup', -40, -40, 0, 0);
       await afterFrame(); moveTo(t.x0, t.y0);
     });
@@ -1598,6 +2153,23 @@ SetCVar("autoLootDefault", "${want}")`);
       while (d - pinch.d > 28) { wenilla.fire('CAMERAZOOMIN'); pinch.d += 28; }
       while (pinch.d - d > 28) { wenilla.fire('CAMERAZOOMOUT'); pinch.d -= 28; }
       return;
+    }
+    if (t.swiped) return;
+    if (t.tf && !t.moved) {
+      // Swipe the target frame: left for the next enemy (the nearest one, then on round them, as Tab does), right for
+      // the last one (Shift-Tab). Anything else that starts there waits a little longer before it turns into a drag.
+      const dx = t.x - t.x0, dy = t.y - t.y0;
+      if (Math.abs(dx) > 30 && Math.abs(dx) > 1.5 * Math.abs(dy)) {
+        t.swiped = true; t.moved = true;
+        clearTimeout(hoverTimer);
+        if (t.pressed && !t.out) { t.out = true; pressOut(t, false); }
+        wenilla.fire(dx < 0 ? 'TARGETNEARESTENEMY' : 'TARGETPREVIOUSENEMY');
+        buzz();
+        toast(dx < 0 ? 'Next enemy' : 'Last enemy', 700);
+        noteTap({ how: 'swipe', screen: 'inworld', x: t.x0, y: t.y0, px: t.x, py: t.y, dir: dx < 0 ? 'next' : 'last' });
+        return;
+      }
+      if (Math.hypot(dx, dy) <= 40) return;
     }
     if (!t.moved && Math.hypot(t.x - t.x0, t.y - t.y0) > TAP_SLOP) {
       // window or world under the finger? wait for the answer (a few ms) before choosing
@@ -1637,27 +2209,54 @@ SetCVar("autoLootDefault", "${want}")`);
       // pressed in on a game button: out where it went in. A quick lift is the click; a long press
       // (the tooltip) or a cancelled touch lets go off the button.
       const quick = t.lifted && performance.now() - t.pressed < HOLD_MS;
-      pressOut(t, quick);
-      if (quick) { status.taps += 1; lastTap = { t: 0, x: 0, y: 0 }; }   // a window tap never starts a double-tap
+      const rec = quick ? noteTap({ how: 'window', screen: 'inworld', x: t.x0, y: t.y0, px: t.x0, py: t.y0, finger: Math.round(performance.now() - t.t0), on: t.focus }) : null;
+      pressOut(t, quick, rec);
+      if (quick) { status.tapCount += 1; lastTap = { t: 0, x: 0, y: 0 }; }   // a window tap never starts a double-tap
       touches.delete(e.pointerId);
       return;
     }
     if (cam === e.pointerId && t.lifted && sloppyTap(t, t.x, t.y)) {
       // a quick little swipe on the world was meant as a tap (target, loot, talk): end the turn, tap
-      endCam(); click(t.x0, t.y0, 0); status.taps += 1;
+      endCam(); status.tapCount += 1;
+      click(t.x0, t.y0, 0, noteTap({ how: 'drag', screen: 'inworld', x: t.x0, y: t.y0, px: t.x0, py: t.y0, finger: Math.round(performance.now() - t.t0) }));
     } else if (cam === e.pointerId || uiDrag === e.pointerId) endCam();
     // a tap: no drag began (or one was still waiting to hear what is under the finger)
     else if (!t.moved && e.type === 'pointerup' && (e.timeStamp - t.s0 < LONG_MS || ((onWindow(t) || t.focus == null) && e.timeStamp - t.s0 < SLOW_TAP_MS))
       && (!t.waiting || sloppyTap(t, t.x, t.y))) {
       t.x = t.x0; t.y = t.y0;                          // the tap is where the finger landed, not where it rolled to
       const now = performance.now();
-      status.taps += 1;
+      status.tapCount += 1;
       // a window or the world? A quick tap can lift before the game has said (a frame): wait for it,
       // so two quick taps on a window's button are two clicks, not a click and a right-click
+      const rec = { how: 'tap', screen: 'inworld', x: t.x, y: t.y, px: t.x, py: t.y, finger: Math.round(now - t.t0) };
       const decide = () => {
+        // a ground-targeted spell waiting for its place: this tap puts it there (a plain left click, never a right-click)
+        if (aimGround && !onWindow(t)) {
+          rec.how = 'ground';
+          noteTap(rec);
+          lastTap = { t: 0, x: 0, y: 0 };
+          click(t.x, t.y, 0, rec).then(() => { setAimGround(false); refreshActions(true); });
+          flash(t.x, t.y, true);
+          return;
+        }
         const dbl = !onWindow(t) && now - lastTap.t < 320 && Math.hypot(t.x - lastTap.x, t.y - lastTap.y) < 36;
-        click(t.x, t.y, dbl ? 2 : 0);
+        if (dbl) rec.how = 'right';
+        if (onWindow(t)) { rec.how = 'window'; rec.on = t.focus; }
+        noteTap(rec);
         lastTap = dbl || onWindow(t) ? { t: 0, x: 0, y: 0 } : { t: now, x: t.x, y: t.y };
+        // Soft lock: a tap on open ground (no unit under it) keeps the target, where the game would clear it. Asked of the
+        // game with the cursor already there; with no answer (no bridge) the tap clicks as before.
+        if (!dbl && !onWindow(t) && softLock() && targetState.exists && wenilla.live) {
+          inTurn(async () => {
+            moveTo(t.x, t.y);
+            await settle();
+            const r = await lua('return UnitExists("mouseover") and 1 or 0');
+            if (r?.[0] === 0 || r?.[0] === '0') { rec.how = 'kept'; status.kept = (status.kept || 0) + 1; return; }
+            await clickNow(t.x, t.y, 0, rec);
+          });
+          return;
+        }
+        click(t.x, t.y, dbl ? 2 : 0, rec);
       };
       if (t.focus === null || t.focus === undefined) Promise.race([t.focusP, wait(300)]).then(decide, decide);
       else decide();
@@ -1734,12 +2333,15 @@ for _, k in ipairs(PANELS) do if panel(k) then open = 1 end end
 local rects, seen = {}, {}
 local ch = (__OWTOUCH and __OWTOUCH.cssH) or 360
 local up = UIParent:GetHeight() / ch
+local function box(f)
+  local s = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
+  local l, b, w, h = f:GetLeft() * s, f:GetBottom() * s, f:GetWidth() * s, f:GetHeight() * s
+  return math.floor(l / up) .. "," .. math.floor((UIParent:GetHeight() - b - h) / up) .. "," .. math.ceil((l + w) / up) .. "," .. math.ceil((UIParent:GetHeight() - b) / up)
+end
 local function rect(f)
   if not f or seen[f] or not f:IsVisible() or not f:GetLeft() then return end
   seen[f] = true
-  local s = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
-  local l, b, w, h = f:GetLeft() * s, f:GetBottom() * s, f:GetWidth() * s, f:GetHeight() * s
-  table.insert(rects, math.floor(l / up) .. "," .. math.floor((UIParent:GetHeight() - b - h) / up) .. "," .. math.ceil((l + w) / up) .. "," .. math.ceil((UIParent:GetHeight() - b) / up))
+  table.insert(rects, box(f))
 end
 for _, k in ipairs(PANELS) do rect(panel(k)) end
 if UISpecialFrames then for _, n in ipairs(UISpecialFrames) do rect(_G[n]) end end
@@ -1766,13 +2368,68 @@ end
 local leave = ""
 if CanExitVehicle and CanExitVehicle() then leave = "vehicle"
 elseif PossessBarFrame and PossessBarFrame:IsShown() then leave = "possess" end
-return table.concat(out, "\\n"), ex, ho, de, kfn, kft, open, cur, table.concat(ss, ";"), table.concat(pet, ";"), table.concat(rects, ";"), role, leave`;
+-- the target frame (swipe it for the next enemy), the cast bar, a ground-targeted spell waiting for its place
+local tf = (TargetFrame and TargetFrame:IsVisible() and TargetFrame:GetLeft()) and box(TargetFrame) or ""
+-- UnitCastingInfo: name, sub, text, texture, start ms, end ms, ...; UnitChannelInfo the same
+local cast = ""
+local cn, _, _, cic, cs, ce = UnitCastingInfo("player")
+local chan = 0
+if not cn and UnitChannelInfo then cn, _, _, cic, cs, ce = UnitChannelInfo("player") if cn then chan = 1 end end
+if cn and cs and ce then cast = cn .. "~" .. (cic or "") .. "~" .. cs .. "~" .. ce .. "~" .. chan .. "~" .. string.format("%.3f", GetTime()) end
+local aim = (SpellIsTargeting and SpellIsTargeting()) and 1 or 0
+return table.concat(out, "\\n"), ex, ho, de, kfn, kft, open, cur, table.concat(ss, ";"), table.concat(pet, ";"), table.concat(rects, ";"), role, leave, tf, cast, aim`;
   // the bridge snapshot's quest status for the target, over what its tooltip said
   const QUEST_ROLE = { available: 'quest', reward: 'turnin', incomplete: 'inprogress' };
   const questRole = (r) => {
     if (r === 'fight' || r === 'loot' || r === 'player') return r;
     return QUEST_ROLE[wenilla.state?.target?.questStatus] || r;
   };
+  // ---- the cast bar (over the ring) and ground-targeted spells --------------------------------------
+  // From each poll's UnitCastingInfo / UnitChannelInfo ("name~icon~start ms~end ms~channel~GetTime()"), or the bridge
+  // snapshot's state.player.cast ({ name, start, end, channel } in ms of GetTime) when the client sends one; the bar
+  // then runs on the page's clock between polls (a channel drains, a cast fills).
+  let tfRect = null;                        // the target frame, css px [l, t, r, b] (swipe it for the next enemy)
+  const castEl = $('.castbar'), castFill = castEl.querySelector('i'), castName = castEl.querySelector('span');
+  let cast = null, castRaf = 0;
+  function parseCast(v) {
+    const p = String(v || '').split('~');
+    if (p.length < 6 || !p[0]) return null;
+    const start = +p[2], end = +p[3], now = +p[5];
+    if (!(end > start) || !Number.isFinite(now)) return null;
+    return { name: p[0], icon: p[1], start, end, channel: p[4] === '1', now: now * 1000 };
+  }
+  function snapCast() {
+    const c = wenilla.state?.player?.cast;
+    if (!c || !c.name || !(c.end > c.start)) return null;
+    return { name: String(c.name), icon: c.icon || '', start: +c.start, end: +c.end, channel: !!c.channel, now: +(c.now ?? c.start) };
+  }
+  function castUpdate(c) {
+    if (!c) {
+      if (cast) { cast = null; castEl.classList.remove('on'); status.cast = null; }
+      return;
+    }
+    const left = c.end - c.now;                       // ms still to go, by the game's clock
+    const same = cast && cast.name === c.name && cast.start === c.start;
+    cast = { ...c, dur: c.end - c.start, endsAt: performance.now() + left };
+    status.cast = { name: c.name, channel: c.channel, left: Math.round(left) };
+    if (!same) { castName.textContent = c.name; castEl.classList.toggle('chan', c.channel); }
+    castEl.classList.add('on');
+    if (!castRaf) castRaf = requestAnimationFrame(castTick);
+  }
+  function castTick() {
+    castRaf = 0;
+    if (!cast) return;
+    const left = cast.endsAt - performance.now();
+    if (left < -150) { castUpdate(null); return; }
+    const done = Math.min(1, Math.max(0, 1 - left / cast.dur));
+    castFill.style.width = ((cast.channel ? 1 - done : done) * 100).toFixed(1) + '%';
+    castRaf = requestAnimationFrame(castTick);
+  }
+  status.castUpdate = castUpdate;
+  status.parseCast = parseCast;
+  takeTap($('.gaim .gx'), () => { lua('if SpellStopTargeting then SpellStopTargeting() end'); setAimGround(false); toast('Cancelled', 900); });
+  status.setAimGround = setAimGround;
+
   let actions = [];
   let actBusy = false;
   const extras = { cursor: false };
@@ -1797,6 +2454,10 @@ return table.concat(out, "\\n"), ex, ho, de, kfn, kft, open, cur, table.concat(s
       root.classList.toggle('windows', winRects.length > 0);
       attack.classList.toggle('hostile', targetState.exists && targetState.hostile && !targetState.dead);
       setRole(questRole(String(r[11] || 'fight')));
+      tfRect = String(r[13] || '').split(',').map(Number);
+      if (tfRect.length !== 4 || tfRect.some((n) => !Number.isFinite(n))) tfRect = null;
+      castUpdate(parseCast(r[14]) || snapCast());
+      if (r[15] != null) setAimGround(r[15] == 1);
       keys.forEach((k, i) => {
         const a = actions[slotOf(i) - 1];
         const face = k.querySelector('.face');
@@ -1958,12 +2619,49 @@ end`;
     root.classList.toggle('canfs', canFs && !installed());
     root.classList.toggle('wantfs', !fsEl() && !fsSkip);
   }
-  const takeTap = (el, fn) => el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn(e); });
+  // Acted on when the finger LIFTS (5 Nov: "the fullscreen tap to activate sometimes breaks"). A browser lets a page go
+  // full screen, lock the orientation or show its install prompt only from a user gesture, and a touch only counts as
+  // one on pointerup / touchend (a finger's pointerdown does not; a mouse's does, and it still holds at its pointerup).
+  // Run from pointerdown, full screen only worked when an earlier tap had happened to leave the page "activated".
+  // The press is still taken (nothing reaches the game under the button).
+  function takeTap(el, fn) {
+    let downId = null;
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); downId = e.pointerId; });
+    el.addEventListener('pointerup', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (downId !== e.pointerId) return;
+      downId = null;
+      fn(e);
+    });
+    el.addEventListener('pointercancel', () => { downId = null; });
+  }
+  // "Add Leyline to your home screen" (5 Nov): the installed app opens full screen and landscape with the Leyline icon
+  // (www-patch.py adds the manifest). Android Chrome hands us its install prompt; iPhone Safari has none, so it says how.
+  let installEvt = null;
+  const iOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const installState = () => root.classList.toggle('caninstall', !installed() && (!!installEvt || iOS() || phone()));
+  addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; installState(); });
+  addEventListener('appinstalled', () => { installEvt = null; installState(); toast('Leyline is on your home screen: play from the new icon', 5000); });
+  function install() {
+    if (installEvt) {
+      const ev = installEvt;
+      installEvt = null;
+      try { Promise.resolve(ev.prompt()).catch(() => {}); } catch { /* refused */ }
+      installState();
+      return;
+    }
+    if (iOS()) toast('Tap Share (the square with the arrow), then Add to Home Screen. Play from the new Leyline icon', 9000);
+    else toast('Open your browser menu, then Add to Home screen (or Install app). Play from the new Leyline icon', 9000);
+  }
+  status.install = install;
+  installState();
   takeTap($('.fsgo'), (e) => {
+    if (e.target.closest('.inst')) { install(); return; }
     if (e.target.closest('.skip')) { fsSkip = true; try { sessionStorage.setItem('ow:fs-skip', '1'); } catch { /* fine */ } fsState(); return; }
     fullscreen();
   });
-  takeTap($('.rotate .go'), () => fullscreen());   // Android: full screen and turns to landscape by itself
+  takeTap($('.rotate .go'), () => fullscreen());
+  takeTap($('.rotate .inst'), () => install());   // Android: full screen and turns to landscape by itself
   for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => { fsState(); layout(); });
   addEventListener('resize', fsState);
   screen.orientation?.addEventListener?.('change', () => { fsState(); if (fsEl()) lockLandscape(); });
@@ -1983,6 +2681,7 @@ end`;
     status.inworld = true;
     root.classList.add('inworld');
     layout();
+    loadCharLayout();
     setTimeout(applyGameLayout, 1200);
     setTimeout(applyAutoLoot, 1500);
     keyNumbers();
@@ -2030,7 +2729,7 @@ return "yes"`);
     document.body.classList.remove('ow-touch-on', 'ow-touch-world');
   }
   // the Lua this layer sends, for the tests (tests/lua_chunks.mjs runs them under luac / a stub)
-  status.luaChunks = () => ({ action: ACTION_LUA, tip: TIP_LUA(1), layoutOn: gameLayoutLua(true), layoutOff: gameLayoutLua(false) });
+  status.luaChunks = () => ({ action: ACTION_LUA, tip: TIP_LUA(1), layoutOn: gameLayoutLua(true), layoutOff: gameLayoutLua(false), cursor: CURSOR_LUA, focus: FOCUS_LUA });
   status.turnOn = () => { LS('ow:touch', 'on'); turnOn(); };
   status.turnOff = () => { LS('ow:touch', 'off'); turnOff(); };
 
@@ -2057,12 +2756,44 @@ return "yes"`);
   });
 
   // a controller takes over: the bridge's gamepad mapper, touch controls out of the way
-  addEventListener('gamepadconnected', () => {
+  // The first time (per device) a card says so, with the buttons' jobs: the mapper's own list when the bridge gives one
+  // (wenilla.gamepad.mapping: [[button, what it does], ...] or { button: what }), else the standard layout below.
+  // Only the card and messages show while the controller has the game (padmode); unplugging it brings touch back.
+  // TODO: check PAD_MAP against the bridge's gamepad mapper once it is in the 3.3.5a client.
+  const PAD_MAP = [['Left stick', 'Move'], ['Right stick', 'Camera'], ['A / Cross', 'Jump'], ['B / Circle', 'Interact (right-click)'],
+    ['X / Square', 'Action 1'], ['Y / Triangle', 'Action 2'], ['LB / L1', 'Nearest enemy'], ['RB / R1', 'Next enemy'],
+    ['LT / L2 + face buttons', 'Actions 3 to 6'], ['D-pad', 'Actions 7 to 10'], ['Start / Options', 'Game menu'], ['Back / Share', 'Bags']];
+  function padMap() {
+    const m = wenilla.gamepad?.mapping;
+    if (Array.isArray(m) && m.length && m.every((r) => Array.isArray(r) && r.length >= 2)) return m.map((r) => [String(r[0]), String(r[1])]);
+    if (m && typeof m === 'object' && !Array.isArray(m) && Object.keys(m).length) return Object.entries(m).map(([k, v]) => [k, String(v)]);
+    return PAD_MAP;
+  }
+  function padCard(pad) {
+    const name = String(pad?.id || '').replace(/\s*\(.*$/, '').slice(0, 48);
+    const rows = padMap().map(([b, w]) => `<tr><td>${esc(b)}</td><td>${esc(w)}</td></tr>`).join('');
+    card(`<b>Controller connected</b>\n${name ? esc(name) + ': ' : ''}touch controls are hidden while it plays. Unplug it (or switch it off) for touch again.` +
+      `<table class="vs">${rows}</table>`, [['Got it']]);
+    status.padCard = (status.padCard || 0) + 1;
+  }
+  addEventListener('gamepadconnected', (e) => {
     try { wenilla.gamepad?.start?.(); } catch { /* mapper missing */ }
-    if (status.on) { turnOff(); toast('Controller connected: touch controls hidden'); status.byPad = true; }
+    if (!status.on) return;
+    turnOff();
+    status.byPad = true;
+    root.classList.add('padmode');
+    if (LS('ow:pad-card') !== '1') { LS('ow:pad-card', '1'); padCard(e.gamepad); } else toast('Controller connected: touch controls hidden');
   });
-  addEventListener('gamepaddisconnected', () => { if (status.byPad && wanted()) { status.byPad = false; turnOn(); } });
+  addEventListener('gamepaddisconnected', () => {
+    if (!status.byPad) return;
+    status.byPad = false;
+    root.classList.remove('padmode');
+    info.classList.remove('on');
+    if (wanted()) { turnOn(); toast('Controller gone: touch controls are back', 2200); }
+  });
 
   if (wanted()) { if (LS('ow:scheme') === 'pc') root.classList.add('pcmode'); else turnOn(); }
+  // ?taptest=1: straight into the tap test (a link we can send a player)
+  if (/[?&]taptest=1/.test(location.search) && status.on) setTimeout(() => tapTest.start(), 600);
   return status;
 }

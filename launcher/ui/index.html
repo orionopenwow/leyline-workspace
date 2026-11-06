@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="spin.css"><!-- the spinning mark: the header logo and every loading state (spin.js) -->
 <!-- themes (themes agent): Dark (style.css) or Light; the Themes section; themes.js applies the theme before paint -->
 <script src="addresses.js"></script><!-- the site, the game and the relay on their new and old names (window.LeylineAddresses; first) -->
+<script src="platform.js"></script><!-- a computer or a phone (window.LeylinePlatform; html.phone on a phone: phone.css, phone.js; docs/ANDROID.md) -->
 <link rel="stylesheet" href="themes/themes.css"><script src="themes.js"></script>
 <link rel="stylesheet" href="social.css"><!-- Home's profile panel (social.js) and the Forum page (forum.js) -->
 <link rel="stylesheet" href="account.css"><!-- the sign-in chooser (social.js) and Manage account (account.js) -->
@@ -16,6 +17,7 @@
 <link rel="stylesheet" href="hostconsole.css"><!-- Host: the host console (hostconsole.js) -->
 <link rel="stylesheet" href="den.css"><!-- Your Den: the one Den page and the Home entry (den.js) -->
 <link rel="stylesheet" href="hostmodes.css"><!-- Host: modes anyone can host and fork (hostmodes.js) -->
+<link rel="stylesheet" href="node.css"><!-- Host: Be a node, the card at the top (node.js) -->
 <link rel="stylesheet" href="hostflow.css"><!-- Host: Private or Public, templates, the settings panel, Ask Claude (hostflow.js) -->
 <link rel="stylesheet" href="loadouts.css"><!-- Loadouts: Mods & Addons › Installed, the game folder cards, the realm offer (loadouts.js) -->
 <link rel="stylesheet" href="addons.css"><!-- the Leyline addons: Clients, Mods & Addons › Installed › Addons, the PLAY offer (addons.js) -->
@@ -26,11 +28,14 @@
 <link rel="stylesheet" href="bugreport.css"><!-- Help › Report a bug (bugreport.js) -->
 <link rel="stylesheet" href="graphics.css"><!-- Mods & Addons › Discover › Graphics (graphics.js) -->
 <link rel="stylesheet" href="looks.css"><!-- Mods & Addons › Discover › Looks (looks.js) -->
+<link rel="stylesheet" href="denmarket.css"><!-- Mods & Addons › Dens: shared Dens and stamps (denmarket.js) -->
 <link rel="stylesheet" href="looks-art.css"><!-- the Looks drawings: a copy of stream/looks.py MOTIF_CSS -->
 <link rel="stylesheet" href="stone.css"><!-- the title bar and play bar on the owner's stone texture -->
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
+<link rel="stylesheet" href="single.css"><!-- Single player: its page and Home row (single.js) -->
 <link rel="stylesheet" href="solo.css"><!-- Play solo everywhere, Invite a friend, the GM command center (solo.js, gmcenter.js) -->
 <link rel="stylesheet" href="guide.css"><!-- the first-run tour and the one-time encouragement toast (guide.js) -->
+<link rel="stylesheet" href="phone.css"><!-- the phone app's layout (html.phone only; phone.js, docs/ANDROID.md): last, over the rest -->
 </head>
 <body class="ly">
 <!-- The sign-in dialog (gate.js): over the launcher, only when asked for (the title bar's Log In, or PLAY on the official
@@ -80,11 +85,16 @@
     <!-- The website's side menu (stream/hub.py nav_items): Home, Realms, Mods & Addons, Host, Forum, News. Mods & Addons is one
          page (the website's Mods and Addons): Installed and Discover (app.js TABS), each split into Mods and Addons (shelf.js:
          one rule, docs/WORDS.md); one entry, not two, because both tabs hold both and a second entry would only repeat them.
-         Forum reads the website's forum (forum.js). Modes has no item: Home and Realms lead there.
+         Forum reads the website's forum (forum.js). Modes (modes.js, the page it adds) has its item under Realms, as the
+         website's menu gets Single player, Modes and Guides pages (4 Nov); Guides has no launcher page, so no item (Help
+         holds the launcher's own help).
          Your Den (den.js) has no item (owner 2026-11-02: "only in the server drop up list next to play"): the play bar's
-         realm list (app.js renderRealmMenu) and Home's banner lead there. -->
+         realm list (app.js renderRealmMenu) and Home's banner lead there.
+         Single player (single.js, owner 4 Nov: the flagship, a top-level choice) has its item under Home, with the sword mark. -->
     <button class="nav" data-page="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
+    <button class="nav" data-page="single"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/></svg>Single player</button>
     <button class="nav" data-page="realms"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Realms</button>
+    <button class="nav" data-page="modes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9h12a3 3 0 0 1 3 3v2a3 3 0 0 1-5.2 2L14 14h-4l-1.8 2A3 3 0 0 1 3 14v-2a3 3 0 0 1 3-3z"/><path d="M8 11v2M7 12h2M16 11.5h.01M17.5 13h.01"/></svg>Modes</button>
     <button class="nav" data-page="mods"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mods &amp; Addons<span class="badge" id="nav-mods-count" hidden></span></button>
     <button class="nav" data-page="host"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Host</button>
     <button class="nav" data-page="forum"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M16 8h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1v3.5L15 17h-4a1 1 0 0 1-1-1v-1"/></svg>Forum</button>
@@ -107,6 +117,35 @@
 <!-- the site's backdrop behind the content area only (app.js loads it; the plain colour if it does not load) -->
 <div class="backdrop" id="backdrop" aria-hidden="true"></div>
 <main>
+  <!-- THE PHONE APP'S PLAY (phone.js, docs/ANDROID.md): only on a phone (html.phone). PLAY opens the website's Play page
+       inside the app, full screen; the phone's Back comes back here. No WebGPU in this web view: Open in Chrome. -->
+  <section class="page" id="page-phone" aria-labelledby="ph-title">
+    <div class="ph">
+      <div class="ph-hero">
+        <img class="ph-crystal" src="art/brand/leyline-crystal-256.webp" alt="" decoding="async">
+        <h2 id="ph-title">Leyline</h2>
+        <!-- TODO(owner): a welcome line in your own words -->
+        <p class="ph-lede">Play in the browser, right here on your phone.</p>
+      </div>
+      <button type="button" class="ph-play" id="ph-play">Play</button>
+      <p class="ph-hint" id="ph-hint">The game opens full screen. Turn your phone sideways to play; Back brings you here.</p>
+      <div class="ph-nogpu" id="ph-nogpu" role="alert" hidden>
+        <p><b>This phone's web view can't draw the game yet: open in Chrome.</b></p>
+        <button type="button" class="btn primary" id="ph-chrome">Open in Chrome</button>
+      </div>
+      <div class="ph-links" role="group" aria-label="More">
+        <button type="button" class="btn" data-ph-go="news">News</button>
+        <button type="button" class="btn" data-ph-go="forum">Forum</button>
+        <button type="button" class="btn" data-ph-link="discord">Join the Discord</button>
+      </div>
+      <section class="ph-pc" aria-labelledby="ph-pc-title">
+        <h3 id="ph-pc-title">On your computer</h3>
+        <p>Your own game folder, hosting a realm, Your Den, installing mods and looks, and Be a node need Leyline on a
+          computer (Windows, Mac or Linux) for now.</p>
+      </section>
+    </div>
+  </section>
+
   <!-- HOME -->
   <section class="page" id="page-play">
     <div class="home">
@@ -134,9 +173,18 @@
       <!-- Your Den first (den.js): Home's one Den entry, the same one click as the side menu and the play bar -->
       <section class="hm-sec hm-den" id="hm-den" aria-label="Your Den">
         <span class="hm-den-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5M6 9v11h12V9M10 20v-5h4v5"/></svg></span>
-        <div class="hm-den-txt"><b>Play solo</b><span>Just you, on this PC: no internet or sign-in. One click to your character.</span></div>
+        <div class="hm-den-txt"><b>Your Den</b><span>Your own world to build in, on this PC: no internet or sign-in. One click to your character.</span></div>
         <div class="hm-den-acts">
-          <button type="button" class="btn primary" id="hm-den-go">Play solo</button>
+          <button type="button" class="btn primary" id="hm-den-go">Open my Den</button>
+        </div>
+      </section>
+      <!-- Single player (single.js): Home's row for it, the same as the side menu's item and the play bar's row -->
+      <section class="hm-sec hm-den hm-single" id="hm-single" aria-label="Single player">
+        <span class="hm-den-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/></svg></span>
+        <!-- TODO(owner): the final marketing line, his words -->
+        <div class="hm-den-txt"><b>Single player</b><span>Just you and your bot companions, on this PC: dungeons and raids with helper bots, levelling at your pace</span></div>
+        <div class="hm-den-acts">
+          <button type="button" class="btn primary" id="hm-single-go">Start</button>
         </div>
       </section>
       <section class="hm-sec" id="hm-realms" aria-labelledby="hm-realms-h" hidden>
@@ -197,6 +245,7 @@
           <button type="button" class="page-tab" role="tab" id="tab-mods-discover" data-group="mods" data-tab="discover" aria-controls="pane-discover">Discover</button>
           <button type="button" class="page-tab" role="tab" id="tab-mods-installed" data-group="mods" data-tab="installed" aria-controls="pane-installed">Installed<span class="badge" id="tab-mods-count" hidden></span></button>
           <button type="button" class="page-tab" role="tab" id="tab-mods-gamemodes" data-group="mods" data-tab="gamemodes" aria-controls="pane-gamemodes">Game modes</button>
+          <button type="button" class="page-tab" role="tab" id="tab-mods-dens" data-group="mods" data-tab="dens" aria-controls="pane-dens">Dens</button>
         </div></div>
       <div class="tabpane" id="pane-installed" role="tabpanel" aria-labelledby="tab-mods-installed" data-shelf="mods">
         <div class="ly-tabs inst-tabs" id="inst-tabs" role="tablist" aria-label="Installed">
@@ -263,6 +312,10 @@
       <!-- Game modes (owner 3 Nov: "Game modes as a section somewhere in mods and addons"): gamemods.js showSection -->
       <div class="tabpane" id="pane-gamemodes" role="tabpanel" aria-labelledby="tab-mods-gamemodes">
         <div class="game-box" id="gm-section"></div>
+      </div>
+      <!-- Dens: the Dens and stamps players shared, and Share for your own (denmarket.js, docs/DEN-MARKETPLACE.md) -->
+      <div class="tabpane" id="pane-dens" role="tabpanel" aria-labelledby="tab-mods-dens">
+        <div id="dm"></div>
       </div>
     </div>
   </section>
@@ -335,8 +388,8 @@
       <details class="rl-other" id="rl-other">
         <summary>Got an invite link or another realm address?</summary>
       <h3>A private realm</h3>
-      <p class="lede">Got an invite link? Paste it here and Leyline points your client at that realm. Make your account on the link's page first; a link to a friend's Den needs nothing more.</p>
-      <div class="row"><input id="rl-invite" placeholder="https://relay.leylinelauncher.com/join/…#…" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="rl-join">Join</button></div>
+      <p class="lede">Got an invite link? Paste it here and Leyline points your client at that realm. Make your account on the link's page first; a link or code (DEN-…) to a friend's Den needs nothing more.</p>
+      <div class="row"><input id="rl-invite" placeholder="https://relay.leylinelauncher.com/join/…#… or DEN-…" aria-label="An invite link or a friend's Den code" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="rl-join">Join</button></div>
       <h3>Another realm</h3>
       <div class="form">
         <label>Play on
@@ -357,6 +410,11 @@
   <!-- YOUR DEN (den.js; host/yourden.rs, host/lite.rs): Play, friends, Saved Dens, Packs, Share on the Workshop -->
   <section class="page" id="page-den">
     <div class="panel wide yd" id="yd"></div>
+  </section>
+
+  <!-- SINGLE PLAYER (single.js): your game folder, the engine, Start; then Manage -->
+  <section class="page" id="page-single">
+    <div class="panel wide sp" id="sp"></div>
   </section>
 
   <!-- HOST -->
@@ -578,6 +636,8 @@
   <section class="page" id="page-settings">
     <div class="panel">
       <h2>Settings</h2>
+      <!-- jump to a part of this long page (review 4 Nov); app.js fills it from the page's own headings -->
+      <nav class="set-jump" id="set-jump" aria-label="Parts of Settings"></nav>
       <!-- Your account (account.js settingsAccount): a guest's login and the Hero Key are found from Settings too (owner 2 Nov
            23:31: "recommended to go to settings to retrieve their user name and pass and text file") -->
       <div class="set-acct" id="set-acct-box">
@@ -637,8 +697,16 @@
         file you drop on the realm box downloads into the folder you pick</label>
       <label class="check sub"><input type="checkbox" id="set-cshare"> Share while downloading (upload capped; it stops when the download is done)</label>
       <p class="status" id="testing-status" role="status"></p>
-      <h3>Your data</h3>
-      <p class="lede"><span id="ver"></span>. Settings and caches live in <code id="data-dir"></code>.</p>
+      <!-- About (review 4 Nov: the legal line was nowhere in the launcher): last, after Advanced (host.js puts Advanced
+           before it). The legal line is the one place the publisher's name may be shown (the brand rule's exception). -->
+      <section class="set-about" id="set-about">
+        <h3>About</h3>
+        <p class="lede"><span id="ver"></span>. Settings and caches live in <code id="data-dir"></code>.</p>
+        <p class="lede">Leyline is free and made by players. You bring your own game files: Leyline never ships or shares them.</p>
+        <p class="lede">Credits: the fonts (Inter, Marcellus and the Leyline display font) are under the SIL Open Font License. Forge, the Den's ground
+          editor, is free software under the GNU GPL-3.0 and is downloaded only when you ask for it.</p>
+        <p class="legal" id="set-legal">Leyline is not affiliated with or endorsed by Blizzard Entertainment.</p>
+      </section>
     </div>
   </section>
 </main>
@@ -796,6 +864,14 @@
   </div>
 </form>
 
+<!-- The phone app's tab bar (phone.js, docs/ANDROID.md): only on a phone, in place of the side menu and the play bar -->
+<nav class="ph-tabs" id="phone-tabs" aria-label="Pages">
+  <button type="button" class="ph-tab" data-ph-tab="phone"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Play</span></button>
+  <button type="button" class="ph-tab" data-ph-tab="realms"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><span>Realms</span></button>
+  <button type="button" class="ph-tab" data-ph-tab="mods"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Mods</span></button>
+  <button type="button" class="ph-tab" data-ph-tab="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>Account</span></button>
+</nav>
+
 </div>
 <script src="friendly.js"></script><!-- never a raw error to the player: window.LeylineFriendly -->
 <script src="bugreport.js"></script><!-- Help › Report a bug and the launcher's recent log (window.LeylineBugReport; early, to keep the log) -->
@@ -824,10 +900,15 @@
 <script src="hostflow-catalog.js"></script><!-- the Host page's settings and templates (window.LeylineHostCatalog; the core reads the same file, host/flow.rs) -->
 <script src="hostflow.js"></script><!-- Host: Private or Public, templates, settings, Ask Claude, Host (host/flow.rs; after hostmodes.js) -->
 <script src="den.js"></script><!-- Your Den: the one Den page and the Home entry (window.LeylineDen; after app.js and hostconsole.js) -->
+<script src="denmarket.js"></script><!-- Mods & Addons › Dens: shared Dens and stamps, Share (window.LeylineDenMarket; after app.js and den.js) -->
+<script src="single.js"></script><!-- Single player: its page, three steps, then Manage (window.LeylineSingle; after app.js, den.js and solo.js) -->
+<script src="singleupdate.js"></script><!-- Single player: the bots, always up to date (Update the bots, Bots updated; window.LeylineSingleUpdate) -->
 <script src="gmcenter.js"></script><!-- the GM command center for your own worlds (window.LeylineGM; after den.js) -->
 <script src="hostnetwork.js"></script><!-- Host: the Network tab (host/network.rs) -->
+<script src="node.js"></script><!-- Host: Be a node, the card at the top, and its part in Settings (p2p/node.rs; after host.js and hostnetwork.js) -->
 <script src="home.js"></script>
 <script src="agents.js"></script><!-- Agents: the page and the approval card on every page (window.LeylineAgents) -->
 <script src="guide.js"></script><!-- the first-run tour, Help › Show me again, the one-time encouragement lines (window.LeylineGuide; last) -->
+<script src="phone.js"></script><!-- the phone app: its tab bar, PLAY in the app, what needs a computer (window.LeylinePhone; after everything) -->
 </body>
 </html>

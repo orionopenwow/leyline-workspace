@@ -184,7 +184,7 @@ test('a dropped folder is added straight away; the guide takes drops and names n
   await page.evaluate(() => window.LeylineNav.show('findfiles'));
   const guide = await page.textContent('#page-findfiles');
   assert.match(guide, /Drop your game folder, or a zip of it, anywhere on this page\. Or paste a direct link to your own backup zip\./);
-  assert.doesNotMatch(guide, /world of warcraft|\bwow\b|warcraft|lich king|blizzard|torrent|magnet|\d+\.\d+\.\d+/i);
+  assert.doesNotMatch(guide, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard|torrent|magnet|\d+\.\d+\.\d+/i);
   assert.deepEqual(await page.$$eval('#page-findfiles a, #page-findfiles [data-link]', (l) => l.map((x) => x.dataset.link || x.href)), ['discord', 'gettingstarted']);
   await shot(page, 'clientdrop-guide');
   await dropText(page, '#page-findfiles', '/home/me/Games/Wrath');

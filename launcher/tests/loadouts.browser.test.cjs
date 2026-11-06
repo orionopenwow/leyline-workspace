@@ -335,7 +335,7 @@ test('Mods & Addons › Game modes: the modes to play, Your Den, the game mode m
   assert.ok(await page.isVisible('#gm-section .gm-den button:has-text("Open Your Den")'));
   await page.click('#gm-section .gm-card[data-id="mod:golfcart"] button:has-text("Install")');
   await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'mod_install' && a.project === 'mod:golfcart'));
-  assert.ok(!/World of Warcraft|\bWoW\b|Warcraft|Lich King|Blizzard/i.test(text));
+  assert.ok(!/World of Warcraft|\bWoW\b|Warcraft|Lich King|(?<!endorsed by )Blizzard/i.test(text));
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -1,3 +1,5 @@
+// REFERENCE ONLY: players never get this file. The live boot.js is the client build's web/boot.js (client/patches,
+// series.txt), which stream/server/www-patch.py edits by anchors. Read that one (review 4 Nov: this copy misled readers).
 // boot.js — the pre-login loading experience, shared by the dev page (web/index.html) and the
 // realm page (crates/wenilla-realm/templates/play.html).
 //

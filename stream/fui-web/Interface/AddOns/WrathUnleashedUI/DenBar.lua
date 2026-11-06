@@ -55,7 +55,20 @@ local CARDS = {
     { "Build mode", "F7 switches between Build mode (the tools, a thin gold edge) and Play mode. Click a prop in the gallery, then Enter or double-click to place it." },
     { "Shape ground", "Opens the world editor on your Den's ground: raise hills, dig, paint the ground. Your game shows it after a restart." },
     { "Play mode and invite", "Play mode (F7) hides every tool so you just walk your Den: Dojo, Class, Invite and Files stay in the corner." },
-    { "Keys", "F7 build / play · click a tile, Enter places · arrows move, PgUp / PgDn lift, Q / E turn, + / - size · Tab next · Del deletes · Esc lets go · Ctrl+Z / Ctrl+Y undo, redo." },
+    -- the editor's whole key map (DenKeys.lua, Gizmo.lua; docs/DEN-TOOLS.md "Keys"): this card grows to fit it
+    { "Keys", table.concat({
+        "F7 build / play  ·  Esc cancels, then deselects",
+        "1 2 3 tools: Move, Turn, Size  ·  Q / E turn  ·  Del deletes",
+        "Click a prop to carry it, drag to slide it  ·  Shift adds",
+        "Ctrl+drag box select  ·  Ctrl+A everything near you",
+        "Ctrl+Z / Ctrl+Y undo, redo  ·  Ctrl+C / Ctrl+V copy, paste",
+        "Ctrl+D duplicate (again: the same offset)",
+        "G grid (Shift+G its size)  ·  R turn step  ·  Shift+R scatter",
+        "L lie on the slope, Shift+L upright  ·  F frame it",
+        "Wheel far out: fly with WASD, Space / X  ·  Shift fast",
+        "Right mouse + wheel: fly speed  ·  Home: back to you",
+        "Ctrl+1 2 3 keep the view, Shift+1 2 3 go back",
+    }, "\n") },
 }
 D.CARDS = CARDS
 
@@ -338,8 +351,15 @@ function D.Tool(which)
         b.Focus(which)
     elseif which == "stamps" then
         b.ShowBuilder(true); b.ShowTab("stamps"); b.SetMode("stamps")
+        -- Den Lite's tools (BuildTools.lua): the library with pictures, turn / mirror / size, place with the mouse
+        local T = W.BuildTools
+        if T and T.Here() then T.Show("stamps") end
     elseif which == "path" then
-        b.Path()
+        local T = W.BuildTools
+        if T and T.Here() then b.SetMode("path"); T.Show("path") else b.Path() end
+    elseif which == "tools" then
+        local T = W.BuildTools
+        if T then T.Toggle() end
     end
     D.Refresh()
 end
@@ -352,8 +372,12 @@ D.RAIL = {
     { "rotate", "rotate", "Rotate", "Turn the selection (, and .)", function() D.Tool("rotate") end },
     { "stamps", "stamp", "Stamps", "Stamps: ready-made areas", function() D.Tool("stamps") end },
     { "path", "path", "Path", "Path: a line of the picked prop", function() D.Tool("path") end },
+    -- the builder's tools (BuildTools.lua, 4 Nov): box select, align, arrays, Solid, layers, history
+    { "tools", "grid", "Tools", "Tools: box select, align, arrays, Solid, layers, history", function() D.Tool("tools") end },
     { "ground", "ground", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
     { "dojo", "dojo", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
+    -- duel tournaments (DenTourney.lua): the bracket, sign-ups, the ring
+    { "arena", "banners", "Arena", "Duel tournaments: the bracket, sign-ups, the ring", function() if W.Tourney then W.Tourney.Toggle() end end },
     -- snap out (owner 3 Nov): the view up and back over where you stand, and back (Gizmo.lua; its key says the tooltip)
     { "view", "camera", "View", "Snap out: the view from up high, and back", function() if W.Gizmo and W.Gizmo.Snap then W.Gizmo.Snap() end end },
 }
@@ -475,6 +499,7 @@ local function buildBar()
     pill.play = {}
     local px = 8
     for _, it in ipairs({ { "dojo", "Dojo", function() if W.Dojo then W.Dojo.Toggle() end end, "The training grounds" },
+                          { "arena", "Arena", function() if W.Tourney then W.Tourney.Toggle() end end, "Duel tournaments: sign up, watch, fight" },
                           { "class", "Class", function() D.ShowClasses() end, "Try another class here" },
                           { "invite", "Invite", function() D.Invite() end, "Invite one friend: a link to send" },
                           { "files", "Files", function() local b = B(); if b then b.ShowFiles() end end, "Your Den's saves by name" },
@@ -486,13 +511,14 @@ local function buildBar()
         px = px + (tonumber((c:GetWidth())) or 60) + 6
     end
     local bw = tonumber((pill.back:GetWidth())) or 180
-    pill:SetWidth(math.max(px + 2, bw + 16))
-    pill:SetHeight(2 * S().ED_SIZE.chip + 22)
-    -- the toasts' line (kept for callers; play mode's toasts show as the mode's banner)
+    local pw = math.max(px + 2, bw + 16)
+    pill:SetWidth(pw)
+    -- the toasts' line ("Saved 34 s ago"): its own row inside the corner (owner 5 Nov: under it, the Dojo covered it)
     pill.line = S().EdText(pill, S().ED_SIZE.text)
-    pill.line:SetPoint("TOPLEFT", pill, "BOTTOMLEFT", 4, -6)
-    pill.line:SetWidth(math.max(px + 2, bw + 16) - 8); pill.line:SetJustifyH("LEFT")
-    pill.line.outside = true
+    pill.line:SetPoint("TOPLEFT", pill, "TOPLEFT", 10, -8 - 2 * (S().ED_SIZE.chip + 6))
+    pill.line:SetJustifyH("LEFT")
+    if W.DenLayout then W.DenLayout.OneLine(pill.line, pw - 20, 16) else pill.line:SetWidth(pw - 20) end
+    pill:SetHeight(2 * S().ED_SIZE.chip + 22 + 22)
     pill:Hide()
     bar.pill = pill
 
@@ -542,11 +568,12 @@ local function buildBar()
     banner:Hide()
     bar.banner = banner
 
-    -- the drawer under the strip: a name for Save, or the invite link to copy (a small card, not a bar)
-    drawer = CreateFrame("Frame", "LeylineDenDrawer", bar)
+    -- the drawer under the strip: a name for Save, or the invite link to copy (a small card, not a bar); its own
+    -- window in the top middle (DenLayout.lua's toasts), so play mode's Invite shows it too
+    drawer = CreateFrame("Frame", "LeylineDenDrawer", UIParent)
     drawer:SetWidth(470); drawer:SetHeight(64)
     drawer:SetPoint("TOP", bar, "BOTTOM", 0, -8)
-    drawer.outside = true
+    drawer:SetFrameStrata("MEDIUM")
     drawer:EnableMouse(true)
     S().EdPanel(drawer, 0.95, ED().panel2)
     drawer.label = S().EdLabel(drawer, "", true, "TOPLEFT", 12, -9)
@@ -570,6 +597,16 @@ local function buildBar()
     drawer:Hide()
 
     bar:Hide()
+    -- the slots (DenLayout.lua): the strip, the rail and play mode's corner place themselves and are never put away;
+    -- the mode's banner and the save / invite card stack in the top middle
+    local L = W.DenLayout
+    if L then
+        L.Dock(bar, "top", { place = false, keep = true, name = "strip" })
+        L.Dock(rail, "left", { place = false, keep = true, name = "rail" })
+        L.Dock(pill, "left", { place = false, keep = true, name = "playcorner" })
+        L.Dock(banner, "toast", { name = "banner" })
+        L.Dock(drawer, "toast", { name = "drawer" })
+    end
     D.Labels()
 end
 function D.Bar() if not bar then buildBar() end return bar end
@@ -618,6 +655,7 @@ function D.Paint()
         bar.path:SetActive(b.mode == "path")
     end
     bar.dojo:SetActive(W.Dojo and W.Dojo.IsOpen and W.Dojo.IsOpen() or false)
+    if bar.arena then bar.arena:SetActive(W.Tourney and W.Tourney.IsOpen and W.Tourney.IsOpen() or false) end
     if bar.guide then bar.guide:SetActive(W.DenGuide and W.DenGuide.IsOpen() or false) end
     -- what is only for a Den: the ground, Play, Invite
     for _, k in ipairs({ "ground", "playBtn", "invite" }) do if D.active then bar[k]:Show() else bar[k]:Hide() end end
@@ -628,7 +666,7 @@ function D.Dock(toWorld)
     local b = B()
     if not (b and b.Dock) then return end
     D.Bar()
-    for _, f in ipairs({ bar, rail, bar.pill }) do b.Dock(f, toWorld) end
+    for _, f in ipairs({ bar, rail, bar.pill, drawer }) do b.Dock(f, toWorld) end
 end
 
 function D.OpenDrawer(kind)
@@ -780,7 +818,10 @@ function D.SetPlay(on)
         D.CloseDrawer()
         closeMenus()
         -- no handles on a selected prop while you walk
-        if B and B.state and B.state.selId and B.Command then B.Command("selclear") end
+        if B and B.state and B.state.selId and B.Command then
+            if W.NoteSel then W.NoteSel("play_mode") end
+            B.Command("selclear")
+        end
         if LeylineEdit then pcall(LeylineEdit, "group") end
         local k = D.keys.build or D.keys.play
         D.Toast("info", "Play mode: just you and your Den. " .. (k and (k:gsub("CTRL%-", "Ctrl+") .. " or ") or "") .. "Esc > Back to building.", true)
@@ -830,6 +871,10 @@ function D.ShowIntro(n)
     intro.body:SetText(c[2])
     intro.count:SetText(D.card .. " / " .. #CARDS)
     intro.next:SetText(D.card == #CARDS and "Start building" or "Next")
+    -- the keys card is the long one: the window grows to hold its lines
+    local lines = 1
+    for _ in c[2]:gmatch("\n") do lines = lines + 1 end
+    intro:SetHeight(lines > 3 and math.max(220, 130 + lines * 18) or 220)
     if D.card == #CARDS then intro.skip:Hide() else intro.skip:Show() end
     intro:Show()
     return D.card
@@ -926,6 +971,8 @@ function D.Refresh()
     D.LayoutRail()
     D.LayoutBar()
     if want then bar:Show(); rail:Show() else bar:Hide(); rail:Hide(); closeMenus() end
+    -- the save / invite card is its own window now: it goes when neither the editor nor play mode is up
+    if not want and not (D.active and D.play) then D.CloseDrawer() end
     if D.active and D.play then bar.pill:Show() else bar.pill:Hide() end
     -- build mode in a Den: the gold edge round the screen
     if D.active and not D.play then bar.edge:Show() else bar.edge:Hide() end
@@ -990,6 +1037,10 @@ function D.OnMessage(prefix, msg, channel, sender)
         if W.DenDiag then pcall(W.DenDiag, plain(data)) end
     elseif name == "ui" then
         D.TestAction(data)
+    elseif name == "showcase" then
+        -- a share from the launcher (labs/den-lite showcase.rs): "<pictures>|<ms between>|<zoom yards>"
+        local n, step, zoom = data:match("^(%d+)|(%d+)|(%d+)$")
+        if n then D.Showcase(tonumber(n), tonumber(step) / 1000, tonumber(zoom)) end
     elseif name == "invite" and inviteOk(data) then
         D.link = data
         if D.active then
@@ -1035,7 +1086,8 @@ local function frameRect(f)
     return { x = l * k, y = b * k, w = w * k, h = h * k }
 end
 D.EDITOR_FRAMES = { "LeylineDenBar", "LeylineDenRail", "WrathUnleashedBuilderFrame", "LeylineEditorStatus", "WrathUnleashedPropsFrame",
-    "WrathUnleashedFilesFrame", "LeylineDenMenu", "LeylineDenDrawer", "LeylineDenGuide" }
+    "WrathUnleashedFilesFrame", "LeylineDenMenu", "LeylineDenDrawer", "LeylineDenGuide", "LeylineDenPlayPill", "LeylineDojoPanel",
+    "LeylineTourneyPanel", "LeylineDenHomePanel", "WrathUnleashedToolsFrame" }
 D.GAME_FRAMES = { "MinimapCluster", "ChatFrame1", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
     "MultiBarLeft", "PlayerFrame" }
 -- Which shown editor windows overlap which shown game frames (by more than 2 UI units): { "A/B", ... }
@@ -1054,6 +1106,8 @@ function D.Overlaps()
             end
         end
     end
+    -- and the Den's own windows on each other (DenLayout.lua's slots: "dojo/strip")
+    if W.DenLayout then for _, l in ipairs(W.DenLayout.Overlaps()) do out[#out + 1] = l end end
     return out
 end
 D.FrameRect = frameRect
@@ -1101,6 +1155,11 @@ function D.Report(what)
         rail and (rail.compact and "compact" or "labelled") or "-")
     local p = b and b.Pill and b.Pill()
     if p and p.line then lines[#lines + 1] = "pill " .. tostring(p.line:GetText() or "") end
+    -- what the player is told of the mode (den-move: after Play the toast and the banner say Play)
+    local cur = D.current
+    lines[#lines + 1] = string.format("mode play=%s banner=%s toast=%s", D.play and "1" or "0",
+        tostring(bar and bar.banner and bar.banner.label and bar.banner.label:GetText() or "-"):gsub("%s+", "_"),
+        tostring(type(cur) == "table" and (cur.text or cur[2]) or "-"):sub(1, 80):gsub("%s+", "_"))
     if what then lines[#lines + 1] = "mark " .. tostring(what) end
     for _, l in ipairs(lines) do report(l) end
     return lines
@@ -1138,9 +1197,17 @@ function D.TestAction(text)
     end
     if a == "page" then return b.Page(tonumber(w[2]) or 1) end
     if a == "pick" or a == "place" then
-        local c = find(w[2])
-        if not c then report("missing " .. tostring(w[2])); return false end
+        -- the gallery first (it asks Den Lite for its cards the first time it opens), then the card
         if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end
+        local c = find(w[2])
+        -- 5 Nov den-move on the owner's PC: the gallery had never been opened in that run, its cards hadn't come
+        -- yet, and the pick did nothing ("in hand off"). Den Lite knows the prop by its number: the card is picked by
+        -- it, and the report says the gallery wasn't filled yet.
+        if not c and tonumber(w[2]) then
+            report("pick " .. w[2] .. " before the gallery's cards came")
+            c = { id = tonumber(w[2]), name = "Prop " .. w[2] }
+        end
+        if not c then report("missing " .. tostring(w[2])); return false end
         b.ShowTab("all")
         b.Choose(c)
         if a == "place" then b.Window().spawn:Click() end
@@ -1201,6 +1268,51 @@ function D.TestAction(text)
     if a == "rail" then local r = bar[w[2] or ""]; if r and r.Click then r:Click(); return true end; return false end
     return false
 end
+
+-- ---------------------------------------------------------------- the showcase (labs/den-lite showcase.rs)
+-- When a player shares this Den from the launcher (Mods & Addons > Dens > Share, docs/DEN-MARKETPLACE.md), Den Lite
+-- puts the far camera over the build and asks for its pictures: the interface hides, the camera zooms out to fit it,
+-- and the game's own Screenshot() takes one picture on each side, a quarter turn between (FlipCameraYaw), ending
+-- where it began. The pictures go to the game's Screenshots folder as JPEGs; the launcher shows them and sends only
+-- the ones the player keeps. The timer runs on the world frame, so it keeps going while the interface is hidden.
+local shoot = CreateFrame("Frame", nil, WorldFrame or UIParent)
+shoot:Hide()
+function D.Showcase(n, step, zoom)
+    if shoot.left then return false end
+    shoot.left = math.max(1, math.min(tonumber(n) or 4, 8))
+    shoot.turn = 360 / shoot.left
+    shoot.step = math.max(0.5, math.min(tonumber(step) or 1.8, 5))
+    shoot.t, shoot.turned = shoot.step, true
+    shoot.ui = UIParent:IsShown()
+    shoot.cv = { GetCVar("screenshotFormat"), GetCVar("screenshotQuality") }
+    SetCVar("screenshotFormat", "jpeg")   -- small enough to share (900 KB a picture)
+    SetCVar("screenshotQuality", "6")
+    if not InCombatLockdown() then UIParent:Hide() end
+    if CameraZoomOut then CameraZoomOut(math.max(1, math.min(tonumber(zoom) or 20, 50))) end
+    shoot:Show()
+    return true
+end
+shoot:SetScript("OnUpdate", function(self, elapsed)
+    if not self.left then return self:Hide() end
+    self.t = self.t - (elapsed or 0)
+    if self.t > 0 then return end
+    if not self.turned then   -- the picture is written: a quarter round to the next side
+        if FlipCameraYaw then FlipCameraYaw(self.turn) end
+        self.turned, self.t = true, self.step - 0.4
+    elseif self.left > 0 then
+        if Screenshot then Screenshot() end
+        D.shots = (D.shots or 0) + 1
+        self.left = self.left - 1
+        self.turned, self.t = false, 0.4
+    else
+        self:Hide()
+        self.left = nil
+        if self.cv[1] then SetCVar("screenshotFormat", self.cv[1]) end
+        if self.cv[2] then SetCVar("screenshotQuality", self.cv[2]) end
+        if self.ui then UIParent:Show() end
+    end
+end)
+D.shootFrame = shoot
 
 local listener = CreateFrame("Frame")
 listener:RegisterEvent("CHAT_MSG_ADDON")

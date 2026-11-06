@@ -58,13 +58,13 @@ local CHECK_EVERY_MS = 5000    -- the position check for box-bounded areas
 local GOSSIP_MAX = 30          -- 3.3.5a shows at most 32 gossip items
 
 local DISCORD = "https://discord.gg/RfChVr8J7T"
-local HELP = "play.openvanilla.app/wrath/docs/play"
+local HELP = "leylinelauncher.com/wrath/docs/play"   -- the site's name now (review 4 Nov)
 -- The page reads a dropped 3.3.5a game folder in the browser (stream/www-files/ownfiles.js) and the realm
 -- then lifts this rule for the account; the in-game button is Esc > Mods & Workshop > Leyline realms.
-local BYOC = "This part of the world isn't streamed to the browser. Drop your own 3.3.5a game folder on the "
+local BYOC = "This part of the world isn't streamed to the browser. Drop your own game folder on the "
     .. "game page (or Esc > Mods & Workshop > Leyline realms > Use my game folder) to go anywhere: it is "
     .. "read on your computer, nothing is uploaded. How: " .. HELP .. " - or ask on our Discord: " .. DISCORD
-local BYOC_SHORT = "Not streamed: drop your 3.3.5a game folder on the page to go here"
+local BYOC_SHORT = "Not streamed: drop your game folder on the page to go here"
 local TAG = "|cffff9933[Browser play]|r "
 
 -- The Leyline Sample Hangout (see the top). Read at each use, so a profile switch needs no script edit.
@@ -72,7 +72,7 @@ local function sampler() return os.getenv("OV_SAMPLER") == "1" end
 local function citiesOff() return sampler() and os.getenv("OV_SAMPLER_CITIES") ~= "1" end
 local SAMPLER_NAME = "Leyline Sample Hangout"
 local SAMPLER_BYOC = "The " .. SAMPLER_NAME .. " streams Dalaran, the starting areas and every dungeon and raid. "
-    .. "Add your own 3.3.5a game folder to explore the whole world (Esc > Mods & Workshop > Leyline realms > Use "
+    .. "Add your own game folder to explore the whole world (Esc > Mods & Workshop > Leyline realms > Use "
     .. "my game folder, or drop it on the game page): it is read on your computer, nothing is uploaded. How: " .. HELP
     .. ". Or join a community realm from Leyline."
 local SAMPLER_SHORT = "Add your own game folder to explore the whole world"
@@ -554,7 +554,7 @@ local function onLogin(event, player)
         player:SendBroadcastMessage(TAG .. "In the browser you live in " .. placeNames(f, player) .. " until level "
             .. lowLevel() .. "; then the Dungeon Finder opens. Type .play for the menu. "
             .. (sampler() and "Add your own game folder to explore the whole world" or "To go everywhere, drop "
-            .. "your own 3.3.5a game folder on the game page") .. " (how: " .. names(HELP) .. ").")
+            .. "your own game folder on the game page") .. " (how: " .. names(HELP) .. ").")
     end
 end
 

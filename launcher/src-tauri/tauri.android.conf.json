@@ -1,0 +1,17 @@
+{
+  "identifier": "com.leylinelauncher.app",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Leyline",
+        "backgroundColor": "#1a1d22"
+      }
+    ]
+  },
+  "bundle": {
+    "android": {
+      "minSdkVersion": 26
+    }
+  }
+}

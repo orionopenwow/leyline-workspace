@@ -345,6 +345,8 @@ local function build()
     button(panel, "Close", 70, function() panel:Hide() end, "BOTTOMRIGHT", -12, 10)
     if UISpecialFrames then tinsert(UISpecialFrames, "LeylineDenHomePanel") end
     panel:Hide()
+    -- the right-hand inspector (DenLayout.lua): one panel there at a time
+    if W.DenLayout then W.DenLayout.Dock(panel, "inspector", { name = "denhome" }) end
 end
 
 function H.Show(show)
@@ -521,6 +523,9 @@ function H.UpdateKeys()
     if ClearOverrideBindings then ClearOverrideBindings(keyOwner) end
     keyHalf = {}
     H.keysOn = sig
+    -- one owner for Q / E (review 4 Nov): the build mode's Gizmo lets them go while a stamp is marked here
+    local G = W.Gizmo
+    if G and G.Bindings then pcall(G.Bindings) end
     if not SetOverrideBindingClick then return end
     for _, k in ipairs(want) do SetOverrideBindingClick(keyOwner, true, k, keyButton(k)) end
 end

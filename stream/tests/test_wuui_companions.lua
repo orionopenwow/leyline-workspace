@@ -9,6 +9,7 @@ local server = arg[2] or "realm/custom/lua_scripts/ov_companions.lua"
 local modapi = arg[3] or server:gsub("ov_companions%.lua$", "ov_modapi.lua")
 
 local pass, fail = 0, 0
+math.randomseed(7)   -- the realm picks classes at random
 local function check(name, ok)
     if ok then pass = pass + 1; print("PASS " .. name) else fail = fail + 1; print("FAIL " .. name) end
 end
@@ -49,6 +50,13 @@ function Frame:GetChecked() return self.checked end
 function Frame:SetValue(v) self.value = v end
 function Frame:SetTexCoord(...) self.coords = { ... } end
 function Frame:SetTextColor(r, g, b) self.color = { r, g, b } end
+function Frame:SetAttribute(k, v) self.attrs = self.attrs or {}; self.attrs[k] = v end
+function Frame:GetAttribute(k) return self.attrs and self.attrs[k] end
+function Frame:SetPoint(...) self.point = { ... } end
+function Frame:GetPoint() if self.point then return unpack(self.point) end end
+function Frame:SetTexture(t) self.tex = t; return 1 end
+function Frame:GetTexture() return self.tex end
+function Frame:SetAlpha(a) self.alpha = a end
 local function new(kind, name, parent)
     local f = setmetatable({ kind = kind, name = name, parent = parent, scripts = {}, events = {}, shown = true }, Frame)
     if name then _G[name] = f end
@@ -57,7 +65,23 @@ local function new(kind, name, parent)
 end
 function Frame:CreateFontString() return new("FontString", nil, self) end
 function Frame:CreateTexture() return new("Texture", nil, self) end
-function CreateFrame(kind, name, parent) local f = new(kind, name, parent); frames[#frames + 1] = f; return f end
+function CreateFrame(kind, name, parent, template)
+    local f = new(kind, name, parent); f.template = template; frames[#frames + 1] = f; return f
+end
+unpack = unpack or table.unpack
+local errorsLines = {}
+UIErrorsFrame = { AddMessage = function(_, m) errorsLines[#errorsLines + 1] = m end }
+local inCombat = false
+local bindings = {}
+function GetBindingKey(b) return bindings[b] end
+local unitCombat = {}
+function UnitAffectingCombat(u) return unitCombat[u] or false end
+local portraits = {}
+function SetPortraitTexture(tex, unit) portraits[#portraits + 1] = unit; tex.portraitOf = unit end
+function GetLFGDungeonInfo(id)
+    if id == 5 then return "Utgarde Keep", 1, 70, 72, 70, 69, 80, 2, 0, "UtgardeKeepClient" end
+    return nil
+end
 
 UIParent = new("Frame", "UIParent"); UIParent.top = true
 Minimap = new("Frame", "Minimap"); Minimap.top = true
@@ -75,7 +99,7 @@ RAID_CLASS_COLORS = { MAGE = { r = 0.41, g = 0.8, b = 0.94 }, WARRIOR = { r = 0.
     DRUID = { r = 1, g = 0.49, b = 0.04 }, PRIEST = { r = 1, g = 1, b = 1 } }
 PowerBarColor = { MANA = { r = 0, g = 0, b = 1 }, RAGE = { r = 1, g = 0, b = 0 } }
 function GetScreenHeight() return 981 end
-function InCombatLockdown() return false end
+function InCombatLockdown() return inCombat end
 function SetBinding() return 1 end
 function SetBindingClick() return 1 end
 function SaveBindings() end
@@ -175,6 +199,7 @@ end
 
 local player = unit({ guid = 7, name = "Tester", class = 8, account = 1, accName = "TESTER" })
 package.preload["ov_modapi"] = function() return dofile(modapi) end
+package.path = (server:match("^(.*/)[^/]+$") or "./") .. "?.lua;" .. package.path   -- ov_companions_dungeons.lua
 dofile(server)
 local T = assert(OV_COMPANIONS_TEST)
 check("the realm script has the window channel", T.window == true and onServerAddon ~= nil)
@@ -235,6 +260,9 @@ os.getenv = realGetenv
 local W = assert(WrathUnleashedUI)
 local C = assert(W.Companions, "W.Companions")
 check("builds nothing until opened", C.Window() == nil and not _G.WrathUnleashedBotsMinimapButton)
+check("bot chatter hidden by default", C.HideChatter() == true)
+check(".toc: the dungeon list, the tabs and the bars after Companions.lua", at["CompanionsData.lua"] < at["Companions.lua"]
+    and at["CompanionsTabs.lua"] > at["Companions.lua"] and at["BotBar.lua"] > at["Companions.lua"] and at["BotBar.lua"] < at["Leyline.lua"])
 check("/companions and /comp", SLASH_WUCOMPANIONS1 == "/companions" and SLASH_WUCOMPANIONS2 == "/comp" and SlashCmdList.WUCOMPANIONS)
 check("chat filters for bot achievements and whispers", filters.CHAT_MSG_ACHIEVEMENT and filters.CHAT_MSG_GUILD_ACHIEVEMENT
     and filters.CHAT_MSG_WHISPER and filters.CHAT_MSG_WHISPER_INFORM)
@@ -262,8 +290,14 @@ check("/comp opens the window; Esc closes it", win and win:IsShown() and UISpeci
 check("empty: says so and offers the group buttons", win.empty:GetText():find("No bots with you") and win.sub:GetText() == "0 of 4 bots in your party")
 check("orders wait for bots", win.prepare.enabled == false and win.passive.enabled == false)
 
+-- a widget with that text anywhere inside parent (the window's tabs keep their widgets on pages)
+local function inside(f, parent)
+    local p = f.parent
+    while p do if p == parent then return true end; p = p.parent end
+    return false
+end
 local function find(parent, text)
-    for _, f in ipairs(created) do if f.parent == parent and f.text == text then return f end end
+    for _, f in ipairs(created) do if inside(f, parent) and f.text == text then return f end end
 end
 find(win, "Fill party"):Fire("OnClick")
 check("Fill party: the realm recruits 4", #player.cmds == 4 and win.status:GetText():find("Recruiting 4 bots"))
@@ -343,9 +377,11 @@ local specBtn
 for _, b in ipairs(menu.specBtns) do if b:IsShown() and b.enabled and b.spec then specBtn = b end end
 check("specs from the realm's list, the current one not clickable", specBtn ~= nil)
 local spec = specBtn.spec
+local mageName = mage.bot.name
 specBtn:Fire("OnClick")
-check("pick a spec: the realm teaches it, the row shows it", player.whispers[#player.whispers - 2].text == "talents spec " .. spec
-    and not menu:IsShown() and mage.bot.spec == spec)
+check("pick a spec: the realm teaches it, the roster shows it", player.whispers[#player.whispers - 2].text == "talents spec " .. spec
+    and not menu:IsShown() and C.Find(mageName).spec == spec)
+for _, r in ipairs(win.rows) do if r.bot and r.bot.name == mageName then mage = r end end
 local roles = C.RolesFor(mage.bot.cls)
 mage:Fire("OnClick", "LeftButton")
 check("role buttons only for roles the class can take", (function()
@@ -355,6 +391,204 @@ check("role buttons only for roles the class can take", (function()
     end
     return true end)())
 menu:Hide()
+
+-- ---------------------------------------------------------------- the bar of your bots
+local Bar = C.Bar
+local bf = Bar.Frame()
+check("bot bar: built and shown once bots are with you", bf and bf:IsShown() and bf:GetName() == "WrathUnleashedBotBar")
+local s1 = bf.slots[1]
+check("bot bar: one secure slot per bot, the client's own target on left-click", s1.template == "SecureUnitButtonTemplate"
+    and s1:GetAttribute("type1") == "target" and s1:GetAttribute("unit") == "party1" and bf.slots[4]:IsShown()
+    and not bf.slots[5]:IsShown())
+check("bot bar: portrait, name in its class colour, role icon", s1.portrait.portraitOf == "party1"
+    and s1.name:GetText():find("^|cff%x%x%x%x%x%x" .. s1.botName) and s1.role.coords ~= nil)
+check("bot bar: says how many", bf.count:GetText() == "4 bots")
+Bar.Update(false)
+check("bot bar: health and mana bars", s1.hp.value ~= nil and s1.mp.value ~= nil)
+local function slotOf(bot) for _, s in ipairs(bf.slots) do if s.botName == bot.name then return s end end end
+local sa = slotOf(bots[3])
+bots[3].hp = 1000; bots[3].mp = 500; hasTarget = false
+C.Order("follow", "all"); Bar.Update(false)
+check("activity: following", sa.activity:GetText() == "Following")
+bots[3].mp = 100; Bar.Update(false)
+check("activity: resting (low on mana out of a fight)", sa.activity:GetText() == "Resting")
+bots[3].mp = 500
+unitCombat[sa.unit] = true; Bar.Update(false)
+check("activity: fighting", sa.activity:GetText() == "Fighting")
+unitCombat[sa.unit] = nil
+bots[3].dead = true; Bar.Update(false)
+check("activity: dead", sa.activity:GetText() == "Dead")
+bots[3].dead = false
+sa:Fire("PostClick", "RightButton")
+local bmenu = _G.WrathUnleashedBotMenu
+check("bot bar: right-click opens that bot's menu (orders, spec, role, gear)", bmenu:IsShown() and bmenu.botName == sa.botName
+    and bmenu.attack and bmenu.passive and bmenu.gear and bmenu.dismiss)
+local w0 = #player.whispers
+bmenu.passive:Fire("OnClick")
+check("menu: passive for that bot only", bots[1].strategies and #player.whispers == w0 and not bmenu:IsShown()
+    and C.Find(sa.botName).status == "passive")
+sa:Fire("PostClick", "RightButton")
+check("menu: then it offers Fight", bmenu.passive:GetText() == "Fight")
+bmenu.passive:Fire("OnClick")
+sa:Fire("PostClick", "LeftButton")
+check("bot bar: left-click doesn't open the menu", not bmenu:IsShown())
+-- moving it, and keeping where it is
+bf.head:Fire("OnDragStart")
+bf.point = { "TOPLEFT", UIParent, "TOPLEFT", 300.4, -200.2 }
+bf.head:Fire("OnDragStop")
+check("bot bar: dragged, the spot is kept", WrathUnleashedUIDB.botBarPos and WrathUnleashedUIDB.botBarPos[1] == "TOPLEFT"
+    and WrathUnleashedUIDB.botBarPos[3] == 300 and WrathUnleashedUIDB.botBarPos[4] == -200)
+-- in combat, slots wait for the end of the fight
+inCombat = true
+local keepUnit = s1:GetAttribute("unit")
+partyUnits.party1, partyUnits.party2 = partyUnits.party2, partyUnits.party1
+check("in combat: no layout (secure frames)", Bar.Layout() == false and Bar.dirty == true and s1:GetAttribute("unit") == keepUnit)
+inCombat = false
+Bar.events:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
+check("after the fight: laid out again", Bar.dirty == nil and slotOf(partyUnits.party1).unit == "party1")
+partyUnits.party1, partyUnits.party2 = partyUnits.party2, partyUnits.party1
+Bar.Layout()
+
+-- ---------------------------------------------------------------- the orders bar
+local ob = Bar.Orders()
+check("orders bar: shown with bots, five orders with the game's own icons", ob and ob:IsShown() and #ob.btns == 5
+    and ob.btns.follow and ob.btns.stay and ob.btns.attack and ob.btns.passive and ob.btns.pull
+    and ob.btns.stay.icon:GetTexture():find("^Interface\\Icons\\"))
+check("key bindings: a header and a name for each order", BINDING_HEADER_WUBOTS == "Bots" and BINDING_NAME_WUBOTS_FOLLOW
+    and BINDING_NAME_WUBOTS_PULL and BINDING_NAME_WUBOTS_WINDOW)
+local bx = assert(io.open(dir .. "/Bindings.xml")):read("*a")
+check("Bindings.xml: each binding calls C.Key", bx:find('name="WUBOTS_FOLLOW" header="WUBOTS"', 1, true)
+    and bx:find('WrathUnleashedUI.Companions.Key("pull")', 1, true) and bx:find('WrathUnleashedUI.Companions.Key("window")', 1, true))
+bindings.WUBOTS_FOLLOW = "ALT-1"
+Bar.events:Fire("OnEvent", "UPDATE_BINDINGS")
+check("orders bar: a set key shows on its button", ob.btns.follow.hotkey:GetText() == "A-1" and ob.btns.stay.hotkey:GetText() == "")
+win:Hide()
+local chat0 = #chatLines
+ob.btns.stay:Fire("OnClick")
+check("orders bar: Stay for everyone; the answer on screen, not in the chat", player.whispers[#player.whispers].text == "stay"
+    and errorsLines[#errorsLines] == "Staying here." and #chatLines == chat0)
+hasTarget = false
+ob.btns.attack:Fire("OnClick")
+check("orders bar: Attack without a target says so", errorsLines[#errorsLines] == "Target something first.")
+hasTarget = true
+C.Key("attack")
+check("key: attack my target", player.whispers[#player.whispers].text == "attack")
+C.Key("passive")
+check("key: passive, then the button says Fight", bots[1].strategies:find("passive") and ob.btns.passive.label == "Fight"
+    and ob.btns.passive.on:IsShown())
+C.Key("passive")
+check("key: again, they fight", ob.btns.passive.label == "Passive")
+local w1 = #player.whispers
+C.Key("pull")
+check("key: pull (the tank opens)", (function()
+    local tankName = C.bots[1].role == "tank" and C.bots[1].name
+    for i = w1 + 1, #player.whispers do
+        if player.whispers[i].text == "attack" and player.whispers[i].to.name ~= tankName then return false end
+    end
+    return #player.whispers == w1 + 1 and errorsLines[#errorsLines] == "Pulling your target." end)())
+C.Key("window")
+check("key: the window", win:IsShown())
+
+-- ---------------------------------------------------------------- first-time tips
+local tipsF = Bar.Tips()
+check("tips: shown the first time bots are with you, at the bar", tipsF and tipsF:IsShown() and tipsF.step == 1
+    and tipsF.head:GetText() == "Tip 1 of 3" and WrathUnleashedUIDB.botsTipsSeen == true)
+tipsF.next:Fire("OnClick")
+check("tips: 2 of 3, the orders bar", tipsF.step == 2 and tipsF.title:GetText() == "Orders for everyone")
+tipsF.next:Fire("OnClick")
+check("tips: 3 of 3 ends with Got it", tipsF.step == 3 and tipsF.next:GetText() == "Got it")
+tipsF.next:Fire("OnClick")
+check("tips: done", not tipsF:IsShown())
+C.Ask()
+check("tips: never again", not tipsF:IsShown() and Bar.MaybeTips() == false)
+SlashCmdList.WUCOMPANIONS("tips")
+check("/comp tips shows them again", tipsF:IsShown() and tipsF.step == 1)
+tipsF:Hide()
+
+-- ---------------------------------------------------------------- the tabs
+check("tabs: Your bots, Party, Raid, Your alts, Buddy, Dungeons", (function()
+    local want = { "bots", "party", "raid", "alts", "buddy", "dungeons" }
+    for i, k in ipairs(want) do if not (win.tabs[i] and win.tabs[i].key == k) then return false end end
+    return #win.tabs == 6 end)())
+local party = C.ShowTab("party")
+check("Party tab: shown alone, the roster page hidden", party:IsShown() and not win.page:IsShown() and C.Tab() == "party")
+check("Party tab: 4 slots (tank, healer, damage, damage), every slot Any", #party.slots == 4 and party.slots[1].slotRole == "tank"
+    and party.slots[4].slotRole == "dps" and party.slots[1].cls:GetText() == "Class: Any" and party.slots[1].spec.enabled == false)
+party.slots[1].cls:Fire("OnClick")
+local ch = C.Chooser()
+check("class chooser: Any and the classes that can tank", ch:IsShown() and find(ch, "Any")
+    and find(ch, "|cffff7d0aDruid|r") and not find(ch, "|cff69ccf0Mage|r"))
+find(ch, "|cffff7d0aDruid|r"):Fire("OnClick")
+check("picked a druid: saved per character, the spec opens", C.GetPicks()[1].word == "druid" and WrathUnleashedUIChar.botPicks
+    and party.slots[1].spec.enabled == true and not ch:IsShown())
+party.slots[1].spec:Fire("OnClick")
+check("spec chooser: only the druid's tank specs", find(ch, "Feral (bear)") and not find(ch, "Restoration"))
+find(ch, "Feral (bear)"):Fire("OnClick")
+check("picks string for the realm", C.Picks() == "tank=druid:bear pve,healer=any,dps=any,dps=any")
+serverClock = serverClock + 31
+party.fill:Fire("OnClick")
+check("Fill my party sends the picks", sent[#sent][2] == "wucomp\tfill\t1/1\tparty\ttank=druid:bear pve,healer=any,dps=any,dps=any"
+    and win.status:GetText():find("most allowed"))
+party.reset:Fire("OnClick")
+check("Every slot Any", C.Picks() == "" and party.slots[1].cls:GetText() == "Class: Any")
+
+local raid = C.ShowTab("raid")
+check("Raid tab: the shape lights up what you have", raid.shape:GetText():find("With you now: 4 bots %(1 tank, 1 healer, 2 damage%)")
+    and raid.icons[1].icon.alpha == 1 and raid.icons[2].icon.alpha == 0.3 and raid.fill.enabled == true)
+raid.fill:Fire("OnClick")
+check("Fill raid", sent[#sent][2] == "wucomp\tfill\t1/1\traid")
+
+local nsent = #sent
+local alts = C.ShowTab("alts")
+check("Your alts tab: asks the realm for your alts", sent[nsent + 1] and sent[nsent + 1][2] == "wucomp\talts\t1/1\t")
+check("no alts: says so", alts.empty:GetText():find("No other characters") and alts.bringUsual.enabled == false)
+C.Dispatch("alts", "A\tAlto\t60\t11\t0\t0\nA\tBassa\t0\t7\t1\t1\nU\tAlto")
+check("alts listed: class colour, level, who is with you", alts.rows[1]:IsShown() and alts.rows[1].name:GetText():find("Alto")
+    and alts.rows[1].info:GetText() == "Level 60 Druid" and alts.rows[2].info:GetText() == "with you as a bot"
+    and alts.rows[2].bring.enabled == false and not alts.rows[3]:IsShown())
+check("the usual party shown", alts.usual:GetText() == "Your usual party: Alto." and alts.bringUsual.enabled == true)
+alts.rows[1].bring:Fire("OnClick")
+check("Bring an alt", sent[#sent][2] == "wucomp\talt\t1/1\tAlto")
+alts.bringUsual:Fire("OnClick")
+check("Bring my usual party", sent[#sent][2] == "wucomp\tusual\t1/1\t")
+
+local bud = C.ShowTab("buddy")
+check("Buddy tab: none with you", bud.card.name:GetText() == "No buddy with you" and bud.toggle:GetText() == "Bring a buddy")
+bud.cls:Fire("OnClick")
+find(C.Chooser(), "|cff69ccf0Mage|r"):Fire("OnClick")
+check("buddy class picked", WrathUnleashedUIChar.buddyClass == "mage" and bud.cls:GetText():find("Mage"))
+serverClock = serverClock + 31
+bud.toggle:Fire("OnClick")
+check("Bring a buddy asks for that class; the realm's answer shows", sent[#sent][2] == "wucomp\tbuddy\t1/1\tmage"
+    and win.status:GetText():find("most allowed"))
+
+local dg = C.ShowTab("dungeons")
+check("Dungeons tab: the ones for your level (80)", dg.rows[1]:IsShown() and (function()
+    for _, r in ipairs(dg.rows) do
+        if r:IsShown() and not r.info:GetText():find("for your level") then return false end
+    end
+    return true end)())
+local uk
+for _, r in ipairs(dg.rows) do if r:IsShown() and r.name:GetText() == "Utgarde Keep" then uk = r end end
+check("the game's own Dungeon Finder art: the client's name when it knows the dungeon", uk
+    and uk.icon:GetTexture() == "Interface\\LFGFrame\\LFGIcon-UtgardeKeepClient")
+check("else the list's own name", (function()
+    for _, r in ipairs(dg.rows) do
+        if r:IsShown() and r ~= uk and not r.icon:GetTexture():find("^Interface\\LFGFrame\\LFGIcon%-%a+$") then return false end
+    end
+    return true end)())
+check("more than fit: scroll", dg.more:GetText():find("of %d+ %(scroll%)"))
+local n80 = #C.DungeonList(false)
+dg.all:SetChecked(true); dg.all:Fire("OnClick")
+check("Every dungeon: all of them", #C.DungeonList(true) == #W.CompanionsDungeons and #W.CompanionsDungeons > n80)
+dg:Fire("OnMouseWheel", -1)
+check("scrolls", C.dungeonOffset == 1)
+dg.all:SetChecked(false); dg.all:Fire("OnClick")
+uk.go:Fire("OnClick")
+check("Go: the realm fills the party and takes you to the door", sent[#sent][2] == "wucomp\tdungeon\t1/1\tutgarde-keep"
+    and win.status:GetText():find("To Utgarde Keep: your bots meet you at the door"))
+C.ShowTab("bots")
+check("back to Your bots", win.page:IsShown() and not dg:IsShown())
 
 -- answers while the window is closed land in the chat frame, tagged
 win:Hide()
@@ -375,6 +609,7 @@ runServer()
 check("Dismiss all: they leave, the window empties", #player.group.members == 1 and #C.bots == 0 and not win.rows[1]:IsShown()
     and win.sub:GetText() == "0 of 4 bots in your party")
 check("nothing in the chat from any of it", #serverChat == 0)
+check("no bots: the bot bar and the orders bar hide", not Bar.Frame():IsShown() and not Bar.Orders():IsShown())
 
 -- a realm without bots: the window says so
 player.IsPlayerbot = nil

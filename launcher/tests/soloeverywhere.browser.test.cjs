@@ -4,7 +4,7 @@
 //   * every Modes card, every realm card and every Host mode card: one "Play solo" (or a quiet "Online only" with why)
 //     right after its online button, and one line under it; the label the same everywhere; Docker missing said before
 //     anything is pressed; Play solo on a mode opens that mode's form private and for you; on the official realm it is
-//     Solo leveling; nothing starts by itself;
+//     Single player; nothing starts by itself;
 //   * Home: the other ways to play solo and Invite a friend: Den Lite's link (den_invite) or the Host pack realm's
 //     (host_invite), copied;
 //   * leyline://join?link=…: one Join card; nothing joins before Join; Join knocks with a 3.3.5a folder; none: says so;
@@ -26,7 +26,7 @@ const PACKS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'strea
   id: m.id, name: m.name, line: m.line, version: m.version, author: m.author, based_on: m.based_on, status: m.status, profile: m.profile,
   scripts: m.scripts, env: m.env, mods: m.mods, den: m.den, tags: m.tags, jam: null, credit: m.credit || null, settings: m.settings,
   picture: null, own: false }));
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 const WRATH = { id: 'c335a-1', name: 'My Wrath', path: 'C:\\Games\\Wrath', build: '3.3.5a', realmlist: '' };
 const VANILLA = { id: 'c1121-1', name: 'My Vanilla', path: 'D:\\Vanilla', build: '1.12.1', realmlist: '' };
 const NET = [
@@ -173,14 +173,14 @@ test('Docker missing: the line says so before anything is pressed; Play solo ope
   await ctx.close();
 });
 
-test('Realms: Play solo after Play on each realm card; the official realm plays Solo leveling on this PC', async () => {
+test('Realms: Play solo after Play on each realm card; the official realm plays Single player on this PC', async () => {
   const { page, ctx, errors } = await open();
   await page.evaluate(() => window.LeylineNav.show('realms'));
   await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card .solo-go').length > 0);
   const rows = await soloRows(page, '#rl-list .realm-card');
   assert.equal(rows[0].label, 'Play solo');
   assert.equal(rows[0].after, 'Play', 'right after Play');
-  assert.match(rows[0].note, /Solo leveling/);
+  assert.match(rows[0].note, /Single player/);
   await page.click('#rl-tab-community');
   await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card').length === 2);
   const com = await soloRows(page, '#rl-list .realm-card');
@@ -189,9 +189,9 @@ test('Realms: Play solo after Play on each realm card; the official realm plays 
   await page.click('#rl-tab-official');
   await page.waitForFunction(() => document.querySelector('#rl-list .realm-card .solo-go'));
   await page.click('#rl-list .realm-card .solo-go');
-  await page.waitForFunction(() => document.querySelector('#page-host.on'));
+  await page.waitForFunction(() => document.querySelector('#page-single.on'));
   const started = await page.evaluate(() => window.__calls.map(([c]) => c).filter((c) => /^(play|host_start|join_invite)/.test(c)));
-  assert.deepEqual(started, [], 'the Host page says the next step; nothing starts by itself');
+  assert.deepEqual(started, [], 'the Single player page says the next step (single.js); nothing starts by itself');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -222,7 +222,7 @@ test('Host: every mode card has Play solo after Host; the Den has its own page',
 test('Home: the ways to play solo, and Invite a friend copies Your Den\'s link (Den Lite)', async () => {
   const { page, ctx, errors } = await open({ lite: 'running' });
   await page.waitForSelector('#solo-home');
-  assert.match(await page.textContent('#solo-home .solo-ways'), /Solo leveling.*Modes.*Your own realm.*GM command center/);
+  assert.match(await page.textContent('#solo-home .solo-ways'), /Single player.*Modes.*Your own realm.*GM command center/);
   await page.click('#solo-home .solo-invite');
   await page.waitForFunction(() => /Invite link copied/.test(document.getElementById('solo-status').textContent));
   assert.deepEqual(await callsOf(page, 'den_invite'), [{ name: null }]);
@@ -358,7 +358,7 @@ test('GM command center: off while the realm is stopped; Your Den in game; the o
   assert.ok(await page.$$eval('.gm-grid button', (b) => b.every((x) => x.disabled)), 'every control off');
   await page.click('.gm-world[data-world="den"]');
   assert.match(await page.textContent('.gm-den'), /Den panel \(type \/den\)/);
-  assert.equal(await page.textContent('.gm-den .solo-go'), 'Play solo');
+  assert.equal(await page.textContent('.gm-den .solo-go'), 'Open my Den');
   await page.click('.gm-world[data-world="official"]');
   assert.match(await page.textContent('.gm-official'), /never run from here.*checks you are staff/);
   await page.click('.gm-official .btn');

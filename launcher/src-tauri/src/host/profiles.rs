@@ -12,9 +12,9 @@
 //! A Den (`den`, docs/DEN.md: a private room to build in) is always private: its start also gets
 //! `LEYLINE_VISIBILITY` / `WU_VISIBILITY=private` (and `host.rs` adds `--private`), and on its first start the name
 //! "My Den". The kit then makes its join page take accounts only from the invite link and never runs bots.
-//! Solo leveling (`solo`, realm/profiles/solo.env: one player levelling alone, with helper bots and dungeons scaled
-//! for one) is private the same way, named "Solo leveling" on its first start; it does run bots.
-//! One kit hosts one realm (one `state/host.json`, one compose project): a Den and Solo leveling take turns on it
+//! Single player (`solo`, realm/profiles/solo.env: one player levelling alone, with helper bots and dungeons scaled
+//! for one) is private the same way, named "Single player" on its first start (owner 4 Nov: "Single player" before); it does run bots.
+//! One kit hosts one realm (one `state/host.json`, one compose project): a Den and Single player take turns on it
 //! (the same realm, its accounts and characters kept), so the play bar offers to switch between them.
 
 use crate::clients::{Build, ClientProfile};
@@ -36,7 +36,7 @@ pub struct KitProfile {
 pub const PROFILES: &[KitProfile] = &[
     KitProfile { id: "dalaran", label: "3.3.5a: a light Dalaran hangout (boost to 80, no bots)", build: Build::V335a, core: "azerothcore", own_folder: false },
     KitProfile { id: "den", label: "3.3.5a: My Den (a private room to build in)", build: Build::V335a, core: "azerothcore", own_folder: false },
-    KitProfile { id: "solo", label: "3.3.5a: Solo leveling (just you, with helper bots)", build: Build::V335a, core: "azerothcore", own_folder: false },
+    KitProfile { id: "solo", label: "3.3.5a: Single player (just you, with helper bots)", build: Build::V335a, core: "azerothcore", own_folder: false },
     KitProfile { id: "main", label: "3.3.5a: normal from level 1, or a one-time boost", build: Build::V335a, core: "azerothcore", own_folder: false },
     KitProfile { id: "brawl", label: "3.3.5a: everyone starts at 80", build: Build::V335a, core: "azerothcore", own_folder: false },
     KitProfile { id: "progression", label: "3.3.5a: blizzlike progression", build: Build::V335a, core: "azerothcore", own_folder: false },
@@ -60,11 +60,11 @@ pub const DEN: &str = "den";
 /// A new Den's name (the kit's own question otherwise).
 pub const DEN_NAME: &str = "My Den";
 
-/// Solo leveling (realm/profiles/solo.env): private, for one player, helper bots on.
+/// Single player (realm/profiles/solo.env): private, for one player, helper bots on.
 pub const SOLO: &str = "solo";
-pub const SOLO_NAME: &str = "Solo leveling";
+pub const SOLO_NAME: &str = "Single player";
 
-/// The realms made for this PC alone (the play bar's My Den and Solo leveling): always started private.
+/// The realms made for this PC alone (the play bar's My Den and Single player): always started private.
 pub fn private_profile(id: &str) -> bool {
     id == DEN || id == SOLO
 }
@@ -338,7 +338,7 @@ mod tests {
         let _ = fs::remove_dir_all(&games);
     }
 
-    /// Solo leveling (realm/profiles/solo.env): private like a Den, "Solo leveling" on its first start, bots on.
+    /// Single player (realm/profiles/solo.env): private like a Den, "Single player" on its first start, bots on.
     #[test]
     fn solo_leveling_is_private_and_runs_bots() {
         let k = kit("solo", &[]);
@@ -347,20 +347,20 @@ mod tests {
         let wrath = client("b", Build::V335a, games.to_str().unwrap());
         let p = find(SOLO).unwrap();
         assert_eq!((p.build, p.core, p.own_folder), (Build::V335a, "azerothcore", false));
-        assert!(p.label.contains("Solo leveling"));
+        assert!(p.label.contains("Single player") && !p.label.contains("Single player"));
         assert!(!no_bots(SOLO), "its helper bots are the point");
         assert!(private_profile(SOLO) && private_profile(DEN) && !private_profile("main") && !private_profile("dalaran"));
-        assert_eq!((first_name(SOLO), first_name(DEN), first_name("main")), (Some("Solo leveling"), Some("My Den"), None));
+        assert_eq!((first_name(SOLO), first_name(DEN), first_name("main")), (Some("Single player"), Some("My Den"), None));
         let tbc = client("a", Build::V243, games.to_str().unwrap());
         assert!(choose(&k, SOLO, Some(&tbc)).unwrap_err().contains("needs a 3.3.5a client"));
         choose(&k, SOLO, Some(&wrath)).unwrap();
         let env = env_for(&k);
         for (key, v) in [("WU_PROFILE", "solo"), ("LEYLINE_RULESET", "solo"), ("LEYLINE_VISIBILITY", "private"), ("WU_VISIBILITY", "private"),
-            ("LEYLINE_NAME", "Solo leveling"), ("WU_NAME", "Solo leveling")] {
+            ("LEYLINE_NAME", "Single player"), ("WU_NAME", "Single player")] {
             assert!(env.contains(&(key.into(), v.into())), "{key}={v}: {env:?}");
         }
         assert!(env.contains(&("WU_WOW_DIR".into(), games.display().to_string())));
-        // a Den switched to Solo leveling: the same realm, still private, its name from the switch (host.rs Answers)
+        // a Den switched to Single player: the same realm, still private, its name from the switch (host.rs Answers)
         fs::write(k.join("state/host.json"), r#"{"realm_id":"abcdefghijk2345a","name":"My Den","profile":"den"}"#).unwrap();
         let env = env_for(&k);
         assert!(!env.iter().any(|(k, _)| k.ends_with("NAME")), "{env:?}");

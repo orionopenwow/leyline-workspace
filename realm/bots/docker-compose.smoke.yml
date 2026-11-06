@@ -1,0 +1,96 @@
+# The bot smoke test's throwaway realm (realm/bots/bots-smoke.sh starts it, tests it and removes it; docs/BOTS-UPDATES.md).
+# The Single player ruleset (profiles/solo.env + modules.env, as the host kit runs it) from the images under test,
+# with: SOAP on (the console the test uses), no random bots (only the ones the test asks for), a small addclass
+# pool, no recruit cooldown, and the realm scripts the bots need plus the probe (ov_bots_probe.lua, test only).
+#
+# Game data: the dbc + maps volume extracted from your own game folder (SMOKE_DATA_VOLUME, default ov-client-data,
+# the same one realm\1-extract.bat makes), read only. Nothing here downloads or ships game data.
+# Ports on 127.0.0.1 only. Everything (containers, database volume) goes at the end unless --keep.
+name: wu-bots-smoke
+
+x-db: &db
+  AC_LOGIN_DATABASE_INFO: "ac-database;3306;root;${SMOKE_DB_PASSWORD:?bots-smoke.sh sets it};acore_auth"
+  AC_WORLD_DATABASE_INFO: "ac-database;3306;root;${SMOKE_DB_PASSWORD:?bots-smoke.sh sets it};acore_world"
+  AC_CHARACTER_DATABASE_INFO: "ac-database;3306;root;${SMOKE_DB_PASSWORD:?bots-smoke.sh sets it};acore_characters"
+
+volumes:
+  smoke-database: {}
+  client-data:
+    external: true
+    name: ${SMOKE_DATA_VOLUME:-ov-client-data}
+
+services:
+  ac-database:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SMOKE_DB_PASSWORD:?bots-smoke.sh sets it}
+    command: ["--innodb-buffer-pool-size=256M"]
+    volumes:
+      - smoke-database:/var/lib/mysql
+    healthcheck:
+      test: '/usr/bin/mysql --protocol=TCP --host=127.0.0.1 --user=root --password=$$MYSQL_ROOT_PASSWORD --execute "SHOW DATABASES;"'
+      interval: 5s
+      timeout: 40s
+      retries: 60
+      start_period: 30s
+
+  ac-db-import:
+    image: ${SMOKE_IMAGE:?}-db-import:${SMOKE_TAG:?}
+    working_dir: /azerothcore
+    environment:
+      <<: *db
+      AC_DISABLE_INTERACTIVE: "1"
+      AC_DATA_DIR: /azerothcore/env/dist/data
+      AC_LOGS_DIR: /azerothcore/env/dist/logs
+    depends_on:
+      ac-database: { condition: service_healthy }
+
+  ac-authserver:
+    image: ${SMOKE_IMAGE:?}-authserver:${SMOKE_TAG:?}
+    working_dir: /azerothcore
+    tty: true
+    ports: ["127.0.0.1:${SMOKE_AUTH_PORT:-13724}:3724"]
+    environment:
+      AC_LOGIN_DATABASE_INFO: "ac-database;3306;root;${SMOKE_DB_PASSWORD:?};acore_auth"
+      AC_LOGS_DIR: /azerothcore/env/dist/logs
+      AC_TEMP_DIR: /azerothcore/env/dist/temp
+    depends_on:
+      ac-database: { condition: service_healthy }
+      ac-db-import: { condition: service_completed_successfully }
+
+  ac-worldserver:
+    image: ${SMOKE_IMAGE:?}-worldserver:${SMOKE_TAG:?}
+    working_dir: /azerothcore
+    stdin_open: true
+    tty: true
+    ports:
+      - "127.0.0.1:${SMOKE_WORLD_PORT:-13785}:8085"
+      - "127.0.0.1:${SMOKE_SOAP_PORT:-17878}:7878"
+    volumes:
+      - client-data:/azerothcore/env/dist/data:ro
+      - ${SMOKE_LUA_DIR:?bots-smoke.sh sets it}:/azerothcore/lua_scripts:ro
+    env_file:
+      - path: ../profiles/solo.env
+      - path: ../modules.env
+    environment:
+      <<: *db
+      AC_DATA_DIR: /azerothcore/env/dist/data
+      AC_LOGS_DIR: /azerothcore/env/dist/logs
+      AC_CLOSE_IDLE_CONNECTIONS: "0"
+      AC_WARDEN_ENABLED: "0"
+      AC_SOAP_ENABLED: "1"
+      AC_SOAP_IP: "0.0.0.0"
+      AC_SOAP_PORT: "7878"
+      AC_GM_LOGIN_STATE: "0"
+      AC_PLAYERBOTS_DATABASE_INFO: "ac-database;3306;root;${SMOKE_DB_PASSWORD:?};acore_playerbots"
+      AC_PLAYERBOTS_MIN_RANDOM_BOTS: "0"
+      AC_PLAYERBOTS_MAX_RANDOM_BOTS: "0"
+      AC_PLAYERBOTS_ADD_CLASS_ACCOUNT_POOL_SIZE: "5"
+      AC_VMAP_ENABLE_LOS: "0"
+      AC_VMAP_ENABLE_HEIGHT: "0"
+      AC_MOVE_MAPS_ENABLE: "0"
+      OV_COMPANIONS: "1"
+      OV_COMPANIONS_COOLDOWN: "0"
+    depends_on:
+      ac-database: { condition: service_healthy }
+      ac-db-import: { condition: service_completed_successfully }

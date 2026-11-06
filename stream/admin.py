@@ -105,6 +105,17 @@ def P(name):
     except KeyError:
         return None
 
+def _signin(path: str) -> str:
+    """The Leyline Log in page for a page of ours (the portal's signin_url: stream/profiles.py), coming back to path.
+    Review 4 Nov: these links still said /login?next=, the old sign-in that Caddy now only redirects."""
+    fn = P("signin_url")
+    if callable(fn):
+        try:
+            return fn(path)
+        except Exception:   # noqa: BLE001
+            pass
+    return "/wrath/signin?next=" + urllib.parse.quote(path, safe="")
+
 
 # ----------------------------------------------------------------------------------------------
 # Settings and limits
@@ -448,16 +459,16 @@ def who(h, path: str, api: bool = False) -> dict | None:
     ua = h.headers.get("User-Agent", "")
     if "wr_session=" not in cookie:
         if api:
-            refuse(401, "Sign in", "Sign in first.")
+            refuse(401, "Log in", "Log in first.")
         else:
-            h.redirect("/login?next=" + urllib.parse.quote(path, safe=""))
+            h.redirect(_signin(path))
         return None
     status, me = P("portal_get")("/api/me", cookie, ip, ua)
     if status in (401, 403) or 300 <= status < 400:
         if api:
-            refuse(401, "Sign in", "Sign in first.")
+            refuse(401, "Log in", "Log in first.")
         else:
-            h.redirect("/login?next=" + urllib.parse.quote(path, safe=""))
+            h.redirect(_signin(path))
         return None
     if status != 200 or not isinstance(me, dict) or not me:
         refuse(503, "Try again shortly", "The website isn't answering right now.")
@@ -1219,7 +1230,7 @@ def page_simple(title: str, text: str) -> bytes:
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<meta name="robots" content="noindex,nofollow"><meta name="color-scheme" content="dark light"><title>{e(title)} · Leyline Admin</title>'
             f'<style>{_css()}</style></head><body class="ly sw"><div class="ly-glow"></div><div class="ly-wrap ad">'
-            f'<section class="ly-panel"><h2>{e(title)}</h2><p>{e(text)}</p><p><a href="/wrath/leyline">Leyline</a></p></section>'
+            f'<section class="ly-panel"><h1>{e(title)}</h1><p>{e(text)}</p><p><a href="/wrath/leyline">Back to Leyline</a></p></section>'
             f'</div></body></html>').encode("utf-8")
 
 
@@ -1228,7 +1239,7 @@ def denied_page(account: str) -> bytes:
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<meta name="robots" content="noindex,nofollow"><meta name="color-scheme" content="dark light"><title>Staff only · Leyline Admin</title>'
             f'<style>{_css()}</style></head><body class="ly sw"><div class="ly-glow"></div><div class="ly-wrap ad">'
-            f'<section class="ly-panel"><h2>Staff only</h2><p>This part of the site is for the Leyline staff.{acct}</p>'
+            f'<section class="ly-panel"><h1>Staff only</h1><p>This part of the site is for the Leyline staff.{acct}</p>'
             f'<p><a href="/wrath/leyline">Back to Leyline</a></p></section></div></body></html>').encode("utf-8")
 
 

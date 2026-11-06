@@ -183,8 +183,10 @@ local function clipped(F)
             -- on screen
             if e.x < -0.5 or e.y < -0.5 or e.x + e.w > F.screen.w + 0.5 or e.y + e.h > F.screen.h + 0.5 then add(e, "off screen") end
             -- a text fits its box
-            if f.kind == "FontString" and f.text and f.text ~= "" and not e.f.autoW then
-                local tw, size = F.textWidth(f), F.fontSize(f)
+            -- (one line with wrapping off: the game ends it in "..." itself, DenLayout.lua L.OneLine)
+            if f.kind == "FontString" and f.text and f.text ~= "" and not e.f.autoW and f.wrap ~= false then
+                local k = F.effScale(f)
+                local tw, size = F.textWidth(f) * k, F.fontSize(f) * k
                 local lines = math.ceil(tw / math.max(1, e.w) - 1e-6)
                 if e.h < size * 1.9 then
                     if tw > e.w + 0.5 then add(e, string.format("wider than its box (%.0f > %.0f)", tw, e.w)) end
@@ -450,6 +452,161 @@ do
     check("report: each line fits one addon message", (function() for _, l in ipairs(lines) do if #l > 200 then return false end end return #lines >= 6 end)())
     D.SetActive(false)
     check("outside a Den the test's actions do nothing", not D.TestAction("gallery"))
+end
+
+-- ---------------------------------------------------------------- the slots (owner 5 Nov, live in Your Den: "the ui is a mess
+-- too": the Dojo over play mode's corner, its title over its Train tab, "FULL DEN ONLY" under its buttons, the hint
+-- line under the status pill). DenLayout.lua's slots, at 1280x720 to 2560x1440 and UI scales 0.64 to 1.0, every
+-- combination the owner can open: no two Den windows on each other; no text on another text or on a button that
+-- isn't its own (measured by letters, capitals wider: fakeui.lua F.charWidth); every text inside its frame.
+local DEN = { "LeylineDenBar", "LeylineDenRail", "LeylineDenPlayPill", "WrathUnleashedBuilderFrame", "WrathUnleashedPropsFrame",
+    "LeylineEditorStatus", "LeylineDojoPanel", "LeylineTourneyPanel", "LeylineDenHomePanel", "WrathUnleashedToolsFrame",
+    "WrathUnleashedFilesFrame", "LeylineDenDrawer", "LeylineDenModeBanner", "LeylineDenGuide", "LeylineTeleports" }
+local DENROOT = {}
+for _, n in ipairs(DEN) do DENROOT[n] = true end
+local function denOverlaps(F)
+    local out = {}
+    for i = 1, #DEN do
+        for j = i + 1, #DEN do
+            local a, b = F.rectOf(DEN[i]), F.rectOf(DEN[j])
+            if a and b then
+                local ox = math.min(a.x + a.w, b.x + b.w) - math.max(a.x, b.x)
+                local oy = math.min(a.y + a.h, b.y + b.h) - math.max(a.y, b.y)
+                if ox > 2 and oy > 2 then out[#out + 1] = DEN[i] .. "/" .. DEN[j] end
+            end
+        end
+    end
+    -- and the game's own frames
+    for _, l in ipairs(overlaps(F, DEN, STOCK)) do out[#out + 1] = l end
+    return out
+end
+-- where a text's letters are (not its box): one line, by its justification; wrapped: its box
+local function ink(F, e)
+    local f = e.f
+    if e.f.autoW then return { x = e.x, y = e.y, w = e.w, h = e.h } end
+    local k = F.effScale(f)
+    local tw, size = F.textWidth(f) * k, F.fontSize(f) * k
+    if f.wrap ~= false and tw > e.w + 0.5 then return { x = e.x, y = e.y, w = e.w, h = e.h } end
+    local w = math.min(tw, e.w)
+    local x = e.x
+    if f.justify == "LEFT" then x = e.x elseif f.justify == "RIGHT" then x = e.x + e.w - w else x = e.x + (e.w - w) / 2 end
+    local h = math.min(e.h, size + 2)
+    local y = e.y + (e.h - h) / 2
+    if f.justifyV == "TOP" then y = e.y + e.h - h end
+    return { x = x, y = y, w = w, h = h }
+end
+local CLICKS = { Button = true, EditBox = true, CheckButton = true, Slider = true }
+local function textCollisions(F)
+    local out = {}
+    local layout = F.layout()
+    local texts, others = {}, {}
+    for _, e in ipairs(layout) do
+        if DENROOT[e.root or ""] and e.alpha > 0.05 then
+            if e.kind == "FontString" and (e.f.text or "") ~= "" then texts[#texts + 1] = { e = e, r = ink(F, e) }
+            elseif CLICKS[e.kind] then others[#others + 1] = { e = e, r = { x = e.x, y = e.y, w = e.w, h = e.h } } end
+        end
+    end
+    local function within(f, o) local p = f.parent; while p do if p == o then return true end; p = p.parent end; return false end
+    local function hit(a, b) return math.min(a.x + a.w, b.x + b.w) - math.max(a.x, b.x) > 1 and math.min(a.y + a.h, b.y + b.h) - math.max(a.y, b.y) > 1 end
+    local function say(t, o) if #out < 6 then out[#out + 1] = string.format("%s '%s' on %s '%s'", t.e.root, tostring(t.e.f.text):sub(1, 30), o.e.kind, tostring(o.e.f.text or o.e.f.name or ""):sub(1, 30)) end end
+    for i, t in ipairs(texts) do
+        for j = i + 1, #texts do
+            local o = texts[j]
+            if o.e.root == t.e.root and hit(t.r, o.r) then say(t, o) end
+        end
+        for _, o in ipairs(others) do
+            if o.e.root == t.e.root and not within(t.e.f, o.e.f) and t.e.f.placeholder ~= o.e.f and hit(t.r, o.r) then say(t, o) end
+        end
+    end
+    F.endLayout()
+    return out
+end
+
+local SIZES = { { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 } }
+local SCALES = { false, 0.64, 0.75, 1.0 }
+local slotBad, textBad, clipBad, waitBad, seen = {}, {}, {}, {}, 0
+for _, scr in ipairs(SIZES) do
+    for _, k in ipairs(SCALES) do
+        for _, n in ipairs(DEN) do _G[n] = nil end   -- no window left from an earlier game
+        local F, st, W = session(scr[1], scr[2], k or nil)
+        local D, B, J, L = W.DenBar, W.Builder, W.Dojo, W.DenLayout
+        local tag = string.format("%dx%d@%s", scr[1], scr[2], k and tostring(k) or "fit")
+        local function look(what)
+            seen = seen + 1
+            for _, l in ipairs(denOverlaps(F)) do slotBad[#slotBad + 1] = tag .. " " .. what .. ": " .. l end
+            for _, l in ipairs(L.Overlaps()) do slotBad[#slotBad + 1] = tag .. " " .. what .. " (DenLayout): " .. l end
+            for _, l in ipairs(textCollisions(F)) do textBad[#textBad + 1] = tag .. " " .. what .. ": " .. l end
+            for _, l in ipairs(clipped(F)) do clipBad[#clipBad + 1] = tag .. " " .. what .. ": " .. l end
+        end
+        F.toClient("wuden\tdojo\t1/1\tserver=lite;fly=0;speed=1;dummies=0;ring=0;combat=1;class=mage;level=80;fight=0;parse=-;best=-;god=0")
+        F.toClient("wuden\tjaina\t1/1\ttalk=normal;doing=follow;mood=happy;offer=-;ask=-")
+        look("entering")
+        D.TestAction("gallery"); D.TestAction("place 1670"); D.TestAction("props")
+        F.tick(0.1)
+        look("gallery, a selection")
+        -- the Dojo, every tab, with the gallery and the selection open: the selection waits for it
+        J.Show(true)
+        for _, t in ipairs(J.TABS) do J.Page(t[1]); look("dojo " .. t[1]) end
+        if not (L.Waiting(B.Panel()) and not B.Panel():IsShown()) then waitBad[#waitBad + 1] = tag .. ": the selection didn't wait for the Dojo" end
+        J.Show(false)
+        if not B.Panel():IsShown() then waitBad[#waitBad + 1] = tag .. ": the selection didn't come back when the Dojo closed" end
+        -- the Arena, Den home, Tools: one at a time in the inspector
+        if W.Tourney then W.Tourney.Show(true); look("arena"); W.Tourney.Show(false) end
+        if W.DenHome then W.DenHome.Show(true); look("den home"); W.DenHome.Show(false) end
+        if W.BuildTools and W.BuildTools.Show then W.BuildTools.Show("select"); look("tools"); W.BuildTools.Hide() end
+        -- Files, the invite card, the banner, the guide
+        B.ShowFiles(true); look("files"); B.ShowFiles(false)
+        D.Invite(); F.toClient("wuden\tinvite\t1/1\thttps://relay.example.app/join/abcdefghijklmnop#ABCDEFGHJKLMNPQRSTUVWXYZ")
+        D.Banner("Build mode"); look("invite and banner"); D.CloseDrawer()
+        if W.DenGuide then W.DenGuide.Show(true, 1); look("guide"); W.DenGuide.Show(false) end
+        -- a long note and the build hint: one status line
+        B.PillNote("Fragrant Flowers: 1 build point. Double-click to place it in front of you, or drag it out of the gallery.")
+        look("a long note")
+        -- play mode: its corner, the Dojo beside it (owner's dojo-overlap.png), the class list
+        D.SetPlay(true)
+        J.Show(true); J.Page("train"); look("play mode, the Dojo")
+        D.ShowClasses(true); look("play mode, the classes"); D.ShowClasses(false)
+        D.Invite(); look("play mode, invite"); D.CloseDrawer()
+        J.Show(false); D.SetPlay(false)
+    end
+end
+check("the slots: no two Den windows on each other, none on the game's frames (" .. seen .. " scenes)", #slotBad == 0,
+    table.concat(slotBad, " | "):sub(1, 1500))
+check("no text on another text or a button that isn't its own", #textBad == 0, table.concat(textBad, " | "):sub(1, 1500))
+check("every text fits its box, inside its frame and the screen", #clipBad == 0, table.concat(clipBad, " | "):sub(1, 1500))
+check("one inspector: the selection waits for the Dojo and comes back", #waitBad == 0, table.concat(waitBad, " | "))
+
+-- the parts on their own: the Dojo's label column, the full Den's row on Den Lite, the status line's one row
+do
+    local F, st, W = session(1920, 1080)
+    local J, B, D, L = W.Dojo, W.Builder, W.DenBar, W.DenLayout
+    J.Show(true)
+    local p = J.Panel()
+    local okCol = true
+    for _, r in ipairs(p.rows) do if 12 + F.textWidth(r.label) + 4 > p.col then okCol = false end end
+    check("the Dojo: the buttons start right of the longest label (measured)", okCol, p.col)
+    F.toClient("wuden\tdojo\t1/1\tserver=lite;fly=0;speed=1;dummies=0;ring=0")
+    check("the Dojo on Den Lite: the full Den's row not shown (not greyed)", not p.full:IsVisible() and not p.bossPick:IsVisible())
+    local head, tabs = F.rectOf(p.head) or F.anyRect(p.head), F.rectOf(p.tabs.train)
+    check("the Dojo's title in its own row, over the tabs", head and tabs and head.y >= tabs.y + tabs.h - 1, head and (head.y .. " " .. tabs.y + tabs.h))
+    check("the Dojo in the inspector slot, right of the screen's middle", L.Slot(p) == "inspector" and (F.rectOf(p).x >= F.screen.w / 2 - 1))
+    J.Show(false)
+    D.TestAction("gallery"); D.TestAction("place 1670")
+    local pill = B.Pill()
+    local r = F.rectOf(pill)
+    check("the status line: one bar, one row (30 high), right of the chat", r and r.h == 30 and r.x >= 462, r and (r.x .. "," .. r.h))
+    local hint = _G.LeylineGizmoTag
+    check("the build hint is inside the status line (not a line of its own)", hint and hint:GetParent() == pill.left)
+    B.PillNote("Placed.")
+    check("a fresh note: the hint steps aside for it (only one shows)", hint:GetAlpha() == 0 and pill.note:IsVisible())
+    F.clock = F.clock + 10; pill:GetScript("OnUpdate")(pill, 0.1)
+    check("a few seconds later: the hint again", pill.note:GetText() == "" and hint:GetAlpha() == 1)
+    check("nothing above or below the status line", (function()
+        for _, e in ipairs(F.layout()) do
+            if e.root == "LeylineEditorStatus" and e.kind == "FontString" and (e.f.text or "") ~= "" and (e.y < r.y - 1 or e.y + e.h > r.y + r.h + 1) then
+                F.endLayout(); return false end
+        end
+        F.endLayout(); return true end)())
 end
 
 -- no game-brand words on screen

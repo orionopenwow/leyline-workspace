@@ -92,6 +92,8 @@ class Registry:
         n = rec["node"]
         if n.get("volunteer") is not True:
             return 400, {"ok": False, "error": "only community relays register here"}
+        if not str(n.get("http", "")).startswith("https://"):   # review 4 Nov: the health check and players use https
+            return 400, {"ok": False, "error": "a node answers on https://<its public name>"}
         if nid in self.banned:
             return 403, {"ok": False, "id": nid, "banned": True, "kill": self.kill,
                          "error": "this node is stopped by the Leyline team"}

@@ -168,14 +168,14 @@ check("header: each item goes to the launcher page's web twin", hrefs == {
       "Addons": "/wrath/leyline-preview/addons", "Looks": "/wrath/looks", "Host": "/wrath/host",
       "Forum": "/wrath/leyline/forum"} and "addons" in HB.CATEGORY_IDS, hrefs)
 more = re.search(r'<details class="hb-more-d"><summary class="hb-ni[^"]*">.*?<span>More</span></summary><div class="hb-more-m">(.*?)</div></details>', nav, re.S)
-MORE_ITEMS = ["Leaderboards", "Forge", "Agents", "Docs", "News", "Join the Discord", "Creators"]   # Join the Discord under News, as in the launcher
+MORE_ITEMS = ["Leaderboards", "Boss fights", "Duels and arena", "Forge", "Agents", "Docs", "Guides", "News", "Join the Discord", "Creators"]   # Join the Discord under News, as in the launcher; Guides (stream/site_pages.py) under Docs; Boss fights and Duels and arena (stream/bossfights.py) after Leaderboards
 check("header: More is a details dropdown (no script needed) with Forge, Agents, Docs, News, Join the Discord, Creators",
       more and re.findall(r"<span>([^<]+)</span>", more.group(1)) == MORE_ITEMS
       and "#status" not in more.group(1) and "/gallery" not in more.group(1))
 check("header: the phone sheet has the same items as tiles, and the download", re.findall(
       r"<span>([^<]+)</span>", re.search(r'<div class="hb-nav-x">(.*?)</div>', nav, re.S).group(1)) == MORE_ITEMS
       and '<a class="hb-dl-x" href="/wrath/download">Download the launcher</a>' in nav and 'id="hb-menu" class="hb-menu-t"' in hd and '<label for="hb-menu" class="hb-menu-b"' in hd)
-check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 7 + 1 + 7 + 7
+check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 7 + 1 + 10 + 10
       and "stroke:currentColor" in front)
 check("header: Download (primary: the download page with every option) and Log In (the launcher's word; the crystal on the folded rail) on the right, no item active on the front page",
       re.search(r'<div class="hb-end"><a class="hb-dl" href="/wrath/download"><svg[^>]*>.*?<span>Download</span></a>'

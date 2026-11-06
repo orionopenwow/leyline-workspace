@@ -1,8 +1,9 @@
-// The play bar's realm drop-up (ui/app.js "the play bar's realm picker") for Solo leveling, the game client part and
+// The play bar's realm drop-up (ui/app.js "the play bar's realm picker") for Single player, the game client part and
 // the first-run steps (owner 31 Oct: "add solo leveling and choose client here and make setup flawless and easy";
 // "hopping between client versions should be easy too"), in Chromium with a fake Tauri core:
-//   * Solo leveling: set up from the Host page (not a picker row; owner 1 Nov), Switch from the Docker Den (one realm
-//     per PC: asked, then run on the same realm), On this PC under Your realms (the invite knock, then PLAY; PLAY again
+//   * Single player (owner 4 Nov: "Solo leveling" before): its own picker row under Your Den, set up from its page
+//     (single.js) or the Host page, Switch from the Docker Den (one realm per PC: asked, then run on the same realm),
+//     On this PC (the invite knock, then PLAY; PLAY again
 //     knocks again); not answering: the Host page says Start; Your Den with no folder: the add flow, saying what for;
 //   * the Game client part: one row, the client of the version the realm needs (its path in the tooltip; a click opens
 //     the client list); none of that version: one plain line and Add a game folder…; picking a realm of another version takes a client of that version by
@@ -111,7 +112,7 @@ const row = async (page, name) => (await rrows(page)).find((x) => x.startsWith(n
 const callsOf = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const pageOn = (page) => page.evaluate(() => document.querySelector('.page.on').id);
 const bar = async (page) => [await page.textContent('#play-headline'), await page.textContent('#pb-detail')];
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 async function shot(page, name) {
   if (!SHOTS) return;
   await page.screenshot({ path: path.join(SHOTS, name + '.png') });
@@ -123,7 +124,7 @@ test('a new player (no game folder, no Host pack, no Docker): every row says its
   await page.click('#pb-realm-btn');
   const rows = await rrows(page);
   assert.equal(await row(page, 'Your Den'), 'Your Den||Needs your game folder|false');
-  assert.equal(await row(page, 'Solo leveling'), undefined, 'Solo leveling is on the Host page, not in the picker');
+  assert.equal(await row(page, 'Single player'), 'Single player||Needs your game folder|false', 'its own row (owner 4 Nov), saying its next step');
   assert.deepEqual(rows.slice(-2), ['! No game folder for this realm yet. 3.3.5a', 'Add a game folder…|||false']);
   assert.equal(await page.textContent('#pb-rmenu .pb-note .rl-ver'), '3.3.5a', 'the version as a chip');
   await shot(page, 'first-run-dropup-dark');
@@ -137,20 +138,20 @@ test('a new player (no game folder, no Host pack, no Docker): every row says its
   await ctx.close();
 });
 
-test('Solo leveling, from the Host page: it picked there with its facts; nothing starts', async () => {
+test('Single player, from the Host page: it picked there with its facts; nothing starts', async () => {
   for (const scheme of ['dark', 'light']) {
     const { page, ctx, errors } = await open({ kit: KIT(null) }, scheme);
     await page.click('#pb-realm-btn');
-    assert.equal(await row(page, 'Solo leveling'), undefined);
+    assert.equal(await row(page, 'Single player'), 'Single player||Set it up once|false');
     await shot(page, 'dropup-' + scheme);
     await page.keyboard.press('Escape');
     await page.evaluate(() => { window.LeylineNav.show('host'); document.dispatchEvent(new CustomEvent('leyline:host-ruleset', { detail: { profile: 'solo' } })); });
     assert.equal(await pageOn(page), 'page-host');
     await page.waitForFunction(() => document.querySelector('.hc-rs[data-profile="solo"].on'));
-    assert.equal(await page.inputValue('#hc-name'), 'Solo leveling');
+    assert.equal(await page.inputValue('#hc-name'), 'Single player');
     assert.match(await page.textContent('.hc-rs[data-profile="solo"] .hc-rs-l'), /Helper bots fill your group/);
     if (await page.isVisible('#hc-gm')) await page.fill('#hc-gm', 'soloone');   // a Mac or Linux kit asks for your account name
-    assert.match(await page.textContent('#page-host'), /Then pick Solo leveling in the play bar/);
+    assert.match(await page.textContent('#page-host'), /Then pick Single player in the play bar/);
     assert.equal((await callsOf(page, 'host_start_quiet')).length, 0);
     await shot(page, 'host-solo-' + scheme);
     assert.deepEqual(errors, []);
@@ -158,17 +159,18 @@ test('Solo leveling, from the Host page: it picked there with its facts; nothing
   }
 });
 
-test('Solo leveling on this PC: under Your realms; the row plays it (knock, then PLAY); PLAY again knocks again; the bar names it', async () => {
-  const { page, ctx, errors } = await open({ kit: KIT('solo', 'Solo leveling'), clients: [VANILLA, WRATH] });
+test('Single player on this PC: its row under Your Den plays it (knock, then PLAY); PLAY again knocks again; the bar names it', async () => {
+  const { page, ctx, errors } = await open({ kit: KIT('solo', 'Single player'), clients: [VANILLA, WRATH] });
   await page.click('#pb-realm-btn');
   const rows = await rrows(page);
-  assert.deepEqual(rows.slice(rows.indexOf('# Your realms'), rows.indexOf('# Your realms') + 2), ['# Your realms', 'Solo leveling|3.3.5a|On this PC|false']);
-  assert.equal(await row(page, 'Your Den'), 'Your Den||Switch from Solo leveling|false', 'one realm per PC: the Docker Den would take its place');
+  assert.equal(rows[rows.findIndex((x) => x.startsWith('Your Den|')) + 1], 'Single player|3.3.5a|On this PC|false');
+  assert.ok(!rows.includes('# Your realms'), 'not again under Your realms');
+  assert.equal(await row(page, 'Your Den'), 'Your Den||Switch from Single player|false', 'one realm per PC: the Docker Den would take its place');
   await page.click('#pb-rmenu .pb-solo');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play'));
   assert.deepEqual(await callsOf(page, 'join_invite'), [{ client: 'c335a-1', link: 'https://relay.openvanilla.app/join/abcdefghijk2345a#k3y' }], 'the 3.3.5a folder, not the picked 1.12.1 one');
   assert.deepEqual(await callsOf(page, 'play'), [{ client: 'c335a-1', realm: 'relay.openvanilla.app:40007' }]);
-  assert.equal(await page.textContent('#pb-realm'), 'Solo leveling');
+  assert.equal(await page.textContent('#pb-realm'), 'Single player');
   assert.equal(await page.textContent('#pb-realm-ver'), '3.3.5a');
   assert.ok(await page.evaluate(() => document.querySelector('#pb-realm-ic.pb-mark-ic svg')));
   assert.deepEqual(await bar(page), ['READY TO PLAY', 'On this PC']);
@@ -176,32 +178,32 @@ test('Solo leveling on this PC: under Your realms; the row plays it (knock, then
   await page.waitForFunction(() => window.__calls.filter(([c]) => c === 'play').length === 2);
   assert.equal((await callsOf(page, 'join_invite')).length, 2, 'PLAY knocks again first');
   await page.click('#pb-realm-btn');
-  assert.equal(await row(page, 'Solo leveling'), 'Solo leveling|3.3.5a|On this PC|true');
-  assert.equal((await rrows(page)).filter((x) => x.startsWith('Solo leveling|')).length, 1, 'once');
+  assert.equal(await row(page, 'Single player'), 'Single player|3.3.5a|On this PC|true');
+  assert.equal((await rrows(page)).filter((x) => x.startsWith('Single player|')).length, 1, 'once');
   assert.ok(!(await rrows(page)).some((x) => x.startsWith('relay.openvanilla.app:40007')), 'not again as an address');
   await shot(page, 'solo-playing-dark');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
 
-test('Solo leveling on this PC but stopped: PLAY never fails silently: the Host page says Start', async () => {
-  const { page, ctx, errors } = await open({ kit: KIT('solo', 'Solo leveling'), joinFails: true, stopped: true });
+test('Single player on this PC but stopped: PLAY never fails silently: the Host page says Start', async () => {
+  const { page, ctx, errors } = await open({ kit: KIT('solo', 'Single player'), joinFails: true, stopped: true });
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu .pb-solo');
   await page.waitForFunction(() => document.querySelector('#page-host.on'));
-  await page.waitForFunction(() => /Press Start to start Solo leveling/.test(document.querySelector('#page-host').textContent));
+  await page.waitForFunction(() => /Press Start to start Single player/.test(document.querySelector('#page-host').textContent));
   assert.match(await page.textContent('#page-host'), /didn't answer|did not answer/);
   assert.equal((await callsOf(page, 'play')).length, 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
 
-test('the Docker Den on this PC, Solo leveling asked for: one realm per PC, so it asks, then switches the same realm', async () => {
+test('the Docker Den on this PC, Single player asked for: one realm per PC, so it asks, then switches the same realm', async () => {
   const { page, ctx, errors } = await open({ kit: KIT('den', 'My Den') });
   const ask = () => page.evaluate(() => { window.LeylineNav.show('host'); document.dispatchEvent(new CustomEvent('leyline:host-ruleset', { detail: { profile: 'solo' } })); });
   await ask();
   await page.waitForSelector('#hc-confirm[open]');
-  assert.equal(await page.textContent('#hc-confirm-title'), 'Switch to Solo leveling?');
+  assert.equal(await page.textContent('#hc-confirm-title'), 'Switch to Single player?');
   assert.match(await page.textContent('#hc-confirm-body'), /one realm at a time, and it runs My Den now/);
   await shot(page, 'switch-ask-dark');
   await page.click('#hc-confirm-no');
@@ -212,7 +214,7 @@ test('the Docker Den on this PC, Solo leveling asked for: one realm per PC, so i
   await page.click('#hc-confirm-yes');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start_quiet'));
   assert.deepEqual((await callsOf(page, 'host_choose')).pop(), { profile: 'solo', clientId: 'c335a-1' });
-  assert.deepEqual(await callsOf(page, 'host_start_quiet'), [{ answers: { name: 'Solo leveling', visibility: 'private', gm: null } }]);
+  assert.deepEqual(await callsOf(page, 'host_start_quiet'), [{ answers: { name: 'Single player', visibility: 'private', gm: null } }]);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

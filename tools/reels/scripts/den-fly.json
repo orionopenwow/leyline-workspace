@@ -1,0 +1,58 @@
+{
+ "id": "den-fly",
+ "kind": "reel",
+ "formats": [
+  "reel",
+  "wide"
+ ],
+ "title": "Fly over your Den",
+ "kicker": "Your Den",
+ "sub": "TODO(owner): See the whole place you built.",
+ "end_line": "TODO(owner): Your Den is waiting.",
+ "shots": [
+  {
+   "take": "game-den-fly",
+   "in": [
+    "fly",
+    -0.3
+   ],
+   "out": [
+    "snap",
+    0
+   ],
+   "caption": "Free flight: hold W and look around"
+  },
+  {
+   "take": "game-den-fly",
+   "in": [
+    "snap",
+    0
+   ],
+   "out": [
+    "zoomout",
+    0
+   ],
+   "caption": "Snap out to see it all"
+  },
+  {
+   "take": "game-den-fly",
+   "in": [
+    "zoomout",
+    0
+   ],
+   "out": [
+    "back",
+    1.5
+   ],
+   "caption": "Zoom out as far as you like, and back"
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   1,
+   2
+  ],
+  "max_seconds": 8
+ }
+}

@@ -22,6 +22,7 @@ class FakeRealm:
         self.events = []
         self.auth_server = self.world_server = None
         self.next_guid = 1
+        self.on_packet = None       # f(user, opcode, body, send) for any other client packet (tests that need chat)
 
     def add_account(self, user, password):
         self.accounts[user.upper()] = srp6.make_verifier(user, password)
@@ -195,6 +196,8 @@ class FakeRealm:
                 await asyncio.sleep(self.logout_delay)
                 send(w.SMSG_LOGOUT_COMPLETE)
                 self.events.append(("logout", user))
+            elif self.on_packet:
+                self.on_packet(user, op, b, send)
             await writer.drain()
 
 

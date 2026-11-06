@@ -502,7 +502,7 @@ class Projects:
         A listing installs from the author only, so a repo without an open licence is not held for that."""
         who = account_of(me)
         if not who:
-            return False, "Sign in to add a link."
+            return False, "Log in to add a link."
         if not self.writable():
             return False, "Adding links is closed right now. Please try again later."
         try:
@@ -604,7 +604,7 @@ class Projects:
         for the moderators but doesn't count toward hiding."""
         who = account_of(me)
         if not who:
-            return False, "Sign in to report a link."
+            return False, "Log in to report a link."
         now = self.now()
         reason = reason if reason in self.REPORT_REASONS else "other"
         with self._locked():

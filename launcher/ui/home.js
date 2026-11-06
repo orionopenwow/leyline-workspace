@@ -164,6 +164,18 @@
     const list = homeArt && homeArt[id];
     return list && list.length ? list[Math.floor(Date.now() / 86400000) % list.length] : null;
   }
+  // The last home.json that read well is kept, so the next start builds the launch slide with its screenshot at once
+  // (the picture then comes from the webview's cache) instead of a bare slide until the site answers (review 4 Nov:
+  // "the first slide is empty until its picture loads").
+  const ART_KEY = "leyline.homeArt";
+  try {
+    const kept = JSON.parse(localStorage.getItem(ART_KEY) || "null");
+    if (kept && typeof kept === "object" && (kept.base === HOME_ART || kept.base === window.LeylineAddresses.oldName(HOME_ART))) {   // only the site's own folder
+      HOME_ART = kept.base;
+      homeArt = readHomeArt(kept.j);
+      denWeek = readDenWeek(kept.j);
+    }
+  } catch (_) { homeArt = null; }
   async function loadHomeArt() {
     try {
       const get = (base) => fetch(base + "home.json", { credentials: "omit", referrerPolicy: "no-referrer" });
@@ -173,14 +185,16 @@
         HOME_ART = window.LeylineAddresses.oldName(HOME_ART);
         r = await get(HOME_ART);
       }
-      if (!r.ok) return;
+      if (!r.ok) { if (r.status === 404) { try { localStorage.removeItem(ART_KEY); } catch (_) { /* fine */ } } return; }   // none on the site any more
       const j = await r.json();
       homeArt = readHomeArt(j);
       denWeek = readDenWeek(j);
+      try { localStorage.setItem(ART_KEY, JSON.stringify({ base: HOME_ART, j })); } catch (_) { /* storage may be off */ }
     } catch (_) { return; }
     build();
   }
   // a screenshot that fills the slide, under a scrim; the words turn light once it is in
+  const shownPhotos = new Set();
   function photo(s, id) {
     const a = artFor(id);
     if (!a) return;
@@ -189,12 +203,17 @@
     img.decoding = "async";
     img.referrerPolicy = "no-referrer";
     img.draggable = false;
+    if (id === "hangout") img.fetchPriority = "high";   // the slide shown first
+    // the gallery is rebuilt as the realms, mods and news come in: a picture already shown keeps showing, with no fade
+    // from the bare slide each time
+    if (shownPhotos.has(a.url)) s.classList.add("has-photo", "photo-kept");
     img.addEventListener("load", () => {
-      if (img.naturalWidth < 2) { img.remove(); return; }
+      if (img.naturalWidth < 2) { img.remove(); shownPhotos.delete(a.url); s.classList.remove("has-photo"); return; }
+      shownPhotos.add(a.url);
       s.classList.add("has-photo");
       if (slides[index] && slides[index].node === s) hero.classList.add("on-art");
     });
-    img.addEventListener("error", () => { img.remove(); s.classList.remove("has-photo"); if (slides[index] && slides[index].node === s) hero.classList.remove("on-art"); });
+    img.addEventListener("error", () => { img.remove(); shownPhotos.delete(a.url); s.classList.remove("has-photo"); if (slides[index] && slides[index].node === s) hero.classList.remove("on-art"); });
     img.src = a.url;
     s.append(img);
     if (a.credit) s.append(el("small", "hs-credit", a.credit));

@@ -108,6 +108,15 @@ check(".stuck refused in combat", #f.casts == 0 and f.msgs[1]:match("in combat")
 local d = player({ guid = 13, dead = true })
 events[42](42, d, "stuck")
 check(".stuck refused when dead", #d.casts == 0 and d.msgs[1]:match("release your spirit"))
+-- review 4 Nov: not from a battleground or arena (the triggered hearth was an instant, free way out of a match)
+local bgp = player({ guid = 14 })
+function bgp:InBattleground() return true end
+events[42](42, bgp, "stuck")
+check(".stuck refused in a battleground", #bgp.casts == 0 and (bgp.msgs[1] or ""):match("battleground or arena"))
+local arp = player({ guid = 15 })
+function arp:InArena() return true end
+events[42](42, arp, "stuck")
+check(".stuck refused in an arena", #arp.casts == 0 and (arp.msgs[1] or ""):match("battleground or arena"))
 
 local w = player()
 check(".wu lists commands", events[42](42, w, "wu") == false and w.msgs[1]:match("%.bug"))

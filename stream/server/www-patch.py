@@ -13,6 +13,7 @@ missing file or anchor is a warning, and the page then runs without the page lay
     python3 -I www-patch.py <www folder> <www-files folder>
 """
 import os
+import re
 import shutil
 import sys
 
@@ -21,7 +22,7 @@ SCRIPTS = ["ownfiles.js", "ownfiles-worker.js", "mpq.js", "chain.js", "sections.
 # The page layer (wrath-page.js): optional, copied when www-files/ has them all.
 PAGE_LAYER = ["wrath-early.js", "wrath-page.js", "stages.js", "input.js", "touch.js", "touch-driver.js",
               "ahead.js", "sw-register.js", "wrath-sw.js", "wu-diag.js", "wu-loading.js", "wu-loading.css", "tab.html",
-              "wu-addons.js", "wu-addons-core.js", "leyline-look.css"]
+              "wu-addons.js", "wu-addons-core.js", "leyline-look.css", "leyline.webmanifest"]
 # the loading screens' art and font (www-files/art/ -> www/art/), the 1.12 boot screen's
 PAGE_ART = ["wu-load-bg.webp", "wu-load-orion.webp", "wu-corner-tl.webp", "wu-corner-tr.webp", "wu-corner-bl.webp",
             "wu-corner-br.webp", "wu-divider.webp", "wu-dragon-l.webp", "wu-dragon-r.webp",
@@ -33,6 +34,20 @@ PAGE_TAG = '<script src="./wrath-early.js"></script>\n'
 # it runs), else before the page's module script; else at the end of the page
 PAGE_AFTER = '<script src="/__env.js"></script>\n'
 PAGE_BEFORE = '<script type="module">'
+# Phones (5 Nov playtest: the live page had none, so phones laid it out 980 px wide and zoomed out, with a tiny game and
+# tiny touch controls): the page is as wide as the screen, at 1:1, and draws under a notch. The same tag the touch
+# tests' pages use (touch-layout.browser.test.cjs), so what is tested is what phones get.
+VIEWPORT_TAG = '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
+# "Add Leyline to your home screen" (touch.js): the installed app opens full screen, landscape, with the Leyline icon.
+# The manifest is on this (stream) origin, so it is asked for with the session cookie (use-credentials): the site's
+# forward_auth would answer a cookieless request with a redirect. The icons are the public site art.
+APP_TAGS = ('<link rel="manifest" href="./leyline.webmanifest" crossorigin="use-credentials">\n'
+            '<link rel="apple-touch-icon" href="https://leylinelauncher.com/wrath/art/leyline-favicon-180.png">\n'
+            '<meta name="apple-mobile-web-app-capable" content="yes">\n'
+            '<meta name="mobile-web-app-capable" content="yes">\n'
+            '<meta name="apple-mobile-web-app-title" content="Leyline">\n'
+            '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n'
+            '<meta name="theme-color" content="#14121a">\n')
 
 IMPORT_ANCHOR = "  import { boot } from './boot.js';\n"
 IMPORTS = ("  import { ensureDataSource } from './ownfiles.js';\n"
@@ -107,8 +122,31 @@ def patch_boot(s: str) -> str:
                              "  await Promise.resolve(opts.dataReady);\n" + anchor, 1)
 
 
+def _head_insert_at(s: str) -> int:
+    """Where tags for the page's head go: after <meta charset>, else after <head>, else after the doctype, else 0.
+    (The client build's page has no <head> tag at all, 5 Nov, and a tag before the doctype would put the page in
+    quirks mode.)"""
+    m = re.search(r"<meta\s+charset[^>]*>", s, re.I) or re.search(r"<head[^>]*>", s, re.I) or re.search(r"<!doctype[^>]*>", s, re.I)
+    return m.end() if m else 0
+
+
+def patch_viewport(s: str) -> str:
+    """index.html with the phone viewport tag and the home-screen app tags (idempotent; never raises)."""
+    low = s.lower()
+    add = ""
+    if not re.search(r"name\s*=\s*[\"']?viewport", low):
+        add += VIEWPORT_TAG
+    if "leyline.webmanifest" not in low:
+        add += APP_TAGS
+    if not add:
+        return s
+    i = _head_insert_at(s)
+    return s[:i] + ("\n" if i else "") + add.rstrip("\n") + ("\n" if not i else "") + s[i:]
+
+
 def patch_page_layer(s: str) -> str:
-    """index.html with the page layer's one script tag (idempotent; never raises)."""
+    """index.html with the page layer's one script tag and the phone viewport tag (idempotent; never raises)."""
+    s = patch_viewport(s)
     if "wrath-early.js" in s:
         return s
     if PAGE_AFTER in s:

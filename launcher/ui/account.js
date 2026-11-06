@@ -23,6 +23,11 @@
   const tauri = window.__TAURI__ && window.__TAURI__.core ? window.__TAURI__.core.invoke : null;
   const invoke = tauri || (async () => { throw "This is a preview page: open it in the Leyline app."; });
   const S = () => window.LeylineSocial;
+  // never a raw error on the page (friendly.js; review 4 Nov): signed_out has its own line, a sentence from the website
+  // or the core is shown as it is, anything technical becomes the fallback (the raw text goes to the console)
+  const OUT = "You were signed out. Log in again.";
+  const oops = (e, fb) => (String(e) === "signed_out" ? OUT
+    : window.LeylineFriendly ? window.LeylineFriendly(e, fb) : (fb || "Something went wrong. Try again."));
   const BIO_MAX = 300;
   const NAME_RE = /^[A-Za-z0-9_.\-À-ɏ]{2,24}$/;
 
@@ -205,7 +210,7 @@
       busy = false;
       if (btn) btn.disabled = false;
       const msg = String(e);
-      status(msg === "signed_out" ? "You were signed out. Log in again." : msg, "bad");
+      status(oops(e, "Couldn't save your profile. Try again."), "bad");
       if (msg === "signed_out") S().refresh();
     }
   }
@@ -278,7 +283,7 @@
         keyStatus(`Saved ${FILE}. Log in anywhere with your name and password, or with the file.`, "ok");
         document.dispatchEvent(new CustomEvent("leyline:guest", { detail: { saved: true } }));
         render();
-      } catch (e) { keyStatus(String(e), "bad"); }
+      } catch (e) { keyStatus(oops(e, "Couldn't save the file. Try again, or copy your login by hand."), "bad"); }
     };
     acts.append(save);
     wrap.append(acts);
@@ -305,7 +310,7 @@
       try {
         const ok = await invoke("save_text_file", { name: FILE, text: keyText(name, key) });
         if (ok) { keyStatus(`Saved ${FILE}. Keep it somewhere safe.`, "ok"); keySaved(); }
-      } catch (e) { keyStatus(String(e), "bad"); }
+      } catch (e) { keyStatus(oops(e, "Couldn't save the file. Use Copy instead."), "bad"); }
     };
     const copy = el("button", "btn", "Copy"); copy.type = "button"; copy.id = "ac-key-copy";
     copy.onclick = async () => {
@@ -403,7 +408,7 @@
       const rm = el("button", "btn small", "Remove password"); rm.type = "button"; rm.id = "ac-pw-remove";
       rm.onclick = async () => {
         try { await invoke("social_call", { action: "password", args: { remove: true } }); keyState.has_password = false; render(); }
-        catch (e) { note(String(e), "bad"); }
+        catch (e) { note(oops(e, "Couldn't remove the password. Try again."), "bad"); }
       };
       acts.append(rm);
     }
@@ -417,7 +422,7 @@
         p1.value = p2.value = "";
         if (keyState) keyState.has_password = true;
         note("Password saved. Log in with your name, its #tag and this password.", "ok");
-      } catch (err) { note(String(err) === "signed_out" ? "You were signed out. Log in again." : String(err), "bad"); }
+      } catch (err) { note(oops(err, "Couldn't save the password. Try again."), "bad"); }
     };
     f.append(l1, p1, l2, p2, acts, st);
     d.append(f);
@@ -431,7 +436,7 @@
     catch (e) {
       if (String(e) === "signed_out") { keyState = { web_only: true }; keyBusy = false; S().refresh(); return; }
       // the website not answering is not "your key lives on the website": say what happened, with Try again
-      keyState = { failed: String(e) || "Couldn't check your key right now." };
+      keyState = { failed: oops(e, "Couldn't check your key right now.") };
     }
     keyBusy = false;
     if (onPage()) render();
@@ -450,7 +455,7 @@
     } catch (e) {
       keyAsk = false;
       const msg = String(e);
-      keyNote = [msg.includes("website") ? msg : (msg === "signed_out" ? "You were signed out. Log in again." : msg), "bad"];
+      keyNote = [oops(e, "Couldn't make a new key right now. Try again."), "bad"];
       if (msg.includes("website")) keyState = Object.assign({}, keyState || {}, { web_only: true });
       else if (msg !== "signed_out") keyState = null;   // look again: a key made a moment ago elsewhere shows up
     }

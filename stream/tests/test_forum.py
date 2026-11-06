@@ -135,8 +135,8 @@ check("the forum: 200 signed out, the six categories in order", st == 200 and al
       and body.index("Share your realm") < body.index("Mods &amp; addons") < body.index("Announcements"), body[:300])
 check("the forum: the hub's look (its header and tokens), the Forum item lit, no script", 'class="hb-top"' in body and "--lk-bg" in body
       and re.search(r'class="hb-ni on" href="/wrath/leyline/forum" aria-current="page"', body) and "<script" not in body)
-check("the forum: a big Join the Discord and Sign in to post", "Join the Discord" in body and wp.DISCORD_URL in body
-      and "Sign in to post" in body and "/login?next=%2Fwrath%2Fleyline%2Fforum%2Fnew" in body)
+check("the forum: a big Join the Discord and Log in to post", "Join the Discord" in body and wp.DISCORD_URL in body
+      and "Log in to post" in body and "/login?next=%2Fwrath%2Fleyline%2Fforum%2Fnew" in body)
 check("the forum: Hub preview stays noindex while the front door is off", hd.get("X-Robots-Tag", "").startswith("noindex"))
 st, hd, _ = req("GET", "/wrath/leyline-preview/forum/c/help?page=2")
 check("the preview's address sends a 301 to the forum's own", st == 301 and hd.get("Location") == "/wrath/leyline/forum/c/help?page=2")
@@ -191,7 +191,7 @@ check("an image address is only a link (no <img> from a post), no HTML from the 
       "i.example/shot.png\"" not in body.replace('href="https://i.example/shot.png"', "") and "<img src=\"https://" not in body
       and "&lt;script&gt;alert(1)&lt;/script&gt; &lt;b&gt;bold&lt;/b&gt;" in body and 'href="javascript' not in body)
 check("line breaks kept as text (pre-wrap)", "white-space:pre-wrap" in body and "How do I share my realm?\nHere is a shot" in body)
-check("signed out: Sign in to reply, no reply form, no Report link", "Sign in to reply" in req("GET", f"/wrath/leyline/forum/t/{T1}")[2]
+check("signed out: Log in to reply, no reply form, no Report link", "Log in to reply" in req("GET", f"/wrath/leyline/forum/t/{T1}")[2]
       and 'action="/wrath/leyline/forum/t/' not in req("GET", f"/wrath/leyline/forum/t/{T1}")[2])
 
 # the rules for what is written (bob: also new, so space the posts out)
@@ -449,7 +449,7 @@ check("CSRF: the website cookie alone can't post to the JSON (Bearer only)", st 
 st, _, doc = tpost("reply", {"thread": TL, "body": "cross"}, cookie="alice", origin="https://evil.example")
 check("CSRF: a cross-site page with the visitor's cookie: refused", st == 401)
 st, _, doc = tpost("reply", {"thread": TL, "body": "x"}, "A" * 43)
-check("an unknown token: 401 (the launcher signs out)", st == 401 and "Sign in again" in doc.get("error", ""))
+check("an unknown token: 401 (the launcher signs out)", st == 401 and "Log in again" in doc.get("error", ""))
 st, _, doc = tpost("mine", {}, TOK)
 check("launcher: mine lists the player's own threads only", st == 200 and [t["id"] for t in doc.get("threads", [])][:1] == [TL]
       and all(F.thread(t["id"])["author_acct"] == "WR000004" for t in doc["threads"]), doc)
@@ -568,6 +568,71 @@ aud = [json.loads(x) for x in open(os.path.join(TMP, "admin", "audit.jsonl"))]
 check("the audit log: who muted, the refused ban, the API lock", any(a["action"] == "forum.mute" and a["ok"] and a["who"] == "mod1" for a in aud)
       and any(a["action"] == "sanction.set" and not a["ok"] and a["who"] == "mod1" for a in aud)
       and any(a["action"] == "forum.thread.lock" and a["ok"] and a["target"] == str(TL) for a in aud))
+
+# ---------------------------------------------------------------- the same text again, and one network's new accounts
+F.seen("WR000099", "Dupe")
+NOW[0] += 100
+TA = F.new_thread("WR000099", "general", "Where do I find the dens", "Looking for a den to join, anyone around tonight?")
+NOW[0] += 100
+F.reply("WR000099", TA, "Thanks!")
+NOW[0] += 100
+try:
+    F.reply("WR000099", TA, "Thanks!"); dup_same = False
+except FM.ForumError as ex:
+    dup_same = ex.status == 400
+check("the same reply twice in one thread is refused", dup_same)
+TB = TL if not F.thread(TL)["locked"] else T1
+F.set_thread(TB, "locked", False)
+NOW[0] += 100
+F.reply("WR000099", TB, "Thanks!")
+check("a short reply in another thread is fine", True)
+NOW[0] += 100
+try:
+    F.reply("WR000099", TB, "Looking for a den to join, anyone around tonight?"); dup_long = False
+except FM.ForumError as ex:
+    dup_long = ex.status == 400 and "already" in ex.text
+check("a long post repeated in another thread is refused", dup_long)
+NOW[0] += 4000
+try:
+    F.new_thread("WR000099", "help", "Where do I find the dens", "Another try at the same title, different words."); dup_title = False
+except FM.ForumError as ex:
+    dup_title = ex.status == 400
+check("a second thread with the same title the same day is refused", dup_title)
+NOW[0] += 86400 * 2
+F.reply("WR000099", TA, "Thanks!")
+check("the same text a day later is fine", True)
+
+del wp.browse_limit.hit   # the real limiter again (memory, per network)
+wp.browse_limit.clear()
+NOW[0] += 86400
+for i in range(6):
+    ACCOUNTS[f"net{i}"] = (f"net{i}", f"Net{i}", f"WR00010{i}")
+codes = [new_thread(f"net{i}", "general", f"Fresh account number {i}", f"Hello from fresh account {i}.")[0] for i in range(5)]
+check(f"one network's new accounts: {FM.NET_NEW_THREADS_H} new threads an hour, then 429", codes == [303] * FM.NET_NEW_THREADS_H + [429], codes)
+got = []
+for n in range(FM.NET_NEW_POSTS_H):
+    NOW[0] += 61
+    got.append(reply(f"net{n % 6}", TA, f"Reply number {n} from a fresh account.")[0])
+check(f"... and {FM.NET_NEW_POSTS_H} posts an hour together (threads count), then 429",
+      got[:FM.NET_NEW_POSTS_H - FM.NET_NEW_THREADS_H] == [303] * (FM.NET_NEW_POSTS_H - FM.NET_NEW_THREADS_H)
+      and got[FM.NET_NEW_POSTS_H - FM.NET_NEW_THREADS_H] == 429, got)
+NOW[0] += 1
+st_old = reply("alice", TA, "An established account still posts from the same network.")[0]
+check("an account that isn't new still posts from that network", st_old == 303, st_old)
+check("the per-network keys are the network's /64 for IPv6", FM._net(type("H", (), {"ip": lambda s: "2001:db8:1:2::5"})()) == "2001:db8:1:2::/64")
+wp.browse_limit.hit = lambda *a, **k: True
+
+# ---------------------------------------------------------------- a thread over more than one page
+while F.posts(TA)[2] < 2:
+    F.reply("WR000003", TA, f"Team note {F.thread(TA)['replies']}", staff=True)
+_, _, p1 = req("GET", f"/wrath/leyline/forum/t/{TA}", "bob")
+_, _, p2 = req("GET", f"/wrath/leyline/forum/t/{TA}?page=2", "bob")
+_, _, pz = req("GET", f"/wrath/leyline/forum/t/{TA}?page=abc")
+check("thread pages: page 1 has Later and no reply form", "Page 1 of 2" in p1 and f"?page=2" in p1 and 'name="body"' not in p1)
+check("... the last page has Earlier and the reply form", "Page 2 of 2" in p2 and "Earlier" in p2 and 'name="body"' in p2)
+check("... a bad page number reads as page 1, signed out", "Page 1 of 2" in pz and "Log in to reply" not in pz)
+last = F.posts(TA, 2)[0][-1]["id"]
+check("page_of finds a post's page (the reply's redirect)", F.page_of(last) == 2)
 
 print(f"{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

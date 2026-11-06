@@ -174,6 +174,7 @@ local function setStatus(text)
         pill.note:SetText(B.status)
         local m = S().ED.muted
         pill.note:SetTextColor(m[1], m[2], m[3])
+        if refreshPill then refreshPill() end
     end
     if panel then panel.status:SetText(B.status) end
     if files then files.status:SetText(B.status) end
@@ -494,14 +495,20 @@ end
 -- What a tab lists: only the realm's catalog (and your prefabs, a Den's stamps), never anything else.
 function B.ListFor(tab, search)
     local q = tostring(search or ""):lower()
-    local function match(c) return q == "" or c.name:lower():find(q, 1, true) or (c.key and c.key:find(q, 1, true)) end
+    -- by name, by its key, and by its category as a tag ("light", "fence", "seat": the gallery's search box)
+    local function match(c)
+        return q == "" or c.name:lower():find(q, 1, true) or (c.key and c.key:find(q, 1, true)) or (c.cat and #q >= 3 and c.cat:find(q, 1, true))
+    end
     local out = {}
     if tab == "prefabs" then
         for _, f in ipairs(B.prefabs) do if match(f) then out[#out + 1] = f end end
         return out
     end
     if tab == "stamps" then
-        for _, st in ipairs((W.DenHome and W.DenHome.StampItems and W.DenHome.StampItems()) or {}) do if match(st) then out[#out + 1] = st end end
+        -- Den Lite's library (BuildTools.lua: Leyline's own, yours, copied places; by category), else Den home's six
+        local lib = W.BuildTools and W.BuildTools.StampItems and W.BuildTools.StampItems() or {}
+        if #lib == 0 then lib = (W.DenHome and W.DenHome.StampItems and W.DenHome.StampItems()) or {} end
+        for _, st in ipairs(lib) do if match(st) then out[#out + 1] = st end end
         return out
     end
     if SEARCHED[tab] then
@@ -943,7 +950,10 @@ function B.Place(item)
     if item.kind == "prefab" then
         ok = B.PastePrefab(item.name)
     elseif item.kind == "stamp" then
-        ok = W.DenHome and W.DenHome.Stamp(item.key, editing())   -- in edit mode: as the shelf's tiles
+        -- Den Lite: placed with the mouse (BuildTools.lua: a click on the ground puts it there, Enter keeps it)
+        local T = W.BuildTools
+        if T and T.Here() then ok = T.PlaceStamp(item.key); if ok then T.Show("stamps") end
+        else ok = W.DenHome and W.DenHome.Stamp(item.key, editing()) end   -- in edit mode: as the shelf's tiles
     end
     if item.kind then
         B.Arm(nil)
@@ -1066,7 +1076,10 @@ end
 -- Esc: nothing selected, the panel closed, a waiting pick let go.
 function B.Deselect()
     B.Arm(nil)
-    if B.state.selId then B.Command("selclear") end
+    if B.state.selId then
+        if W.NoteSel then W.NoteSel("builder_deselect") end
+        B.Command("selclear")
+    end
     B.ShowProps(false)
     setStatus("Nothing selected.")
     return true
@@ -1210,31 +1223,38 @@ function B.StatusLine()
     return table.concat(parts, " · ")
 end
 
--- The pill: one line at the bottom centre, above the action bars, saying what the editor is doing; over it, for a
--- few seconds, the last thing the realm (Den Lite) said or the hint for what the mouse is on. Every answer goes here,
--- none to the chat (DenBar.lua filters the Den's system lines into it too).
+-- The status line (owner 5 Nov, live: three lines stacked over each other at the bottom: the note over the pill, the
+-- pill, the build hint under it): one bar along the bottom, right of the chat, left of the side bars (DenLayout.lua's
+-- status slot), one row: on the left what was just said (the realm's answer, a toast, the hint for what the mouse is
+-- on; Gizmo.lua's build hint when nothing was said lately), on the right what the editor is doing ("Place · Barrel ·
+-- snap 1 yd · 15° · room 3/800 · Saved 12 s ago"), then the selection boxed in gold. Every answer goes here, none to
+-- the chat (DenBar.lua filters the Den's system lines into it too). Each part one line, ending in "..." when long.
 local NOTE_SECS = 6
+local PILL_H, PILL_MOST = 30, 1100
 local function buildPill()
     pill = CreateFrame("Frame", "LeylineEditorStatus", UIParent)
-    pill:SetWidth(560); pill:SetHeight(30)
+    pill:SetWidth(560); pill:SetHeight(PILL_H)
     pill:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, LAYOUT.pillBottom)
     pill:SetFrameStrata("MEDIUM")
     S().EdPanel(pill, 0.86)
     pill.line = S().EdText(pill, S().ED_SIZE.text)
-    pill.line:SetPoint("CENTER", 0, 0)
+    pill.line:SetPoint("RIGHT", pill, "RIGHT", -12, 0)
+    pill.line:SetJustifyH("RIGHT")
     pill.line:SetHeight(18)   -- one line: a long one ends in "..."
-    pill.note = S().EdText(pill, S().ED_SIZE.text)
-    pill.note:SetPoint("BOTTOM", pill, "TOP", 0, 6)
-    pill.note:SetWidth(720)
-    pill.note.outside = true   -- over the pill, on purpose
+    -- the left part: the last thing said (for a few seconds), else the hint (Gizmo.lua docks its tag here)
+    pill.left = CreateFrame("Frame", nil, pill)
+    pill.left:SetPoint("LEFT", pill, "LEFT", 12, 0)
+    pill.left:SetHeight(18); pill.left:SetWidth(200)
+    pill.note = S().EdText(pill.left, S().ED_SIZE.text)
+    pill.note:SetPoint("LEFT", pill.left, "LEFT", 0, 0)
+    pill.note:SetJustifyH("LEFT")
     local m = S().ED.muted
     pill.note:SetTextColor(m[1], m[2], m[3])
     pill.note:SetText(B.status or "")
-    -- the selection, boxed in gold at the pill's right: its name (and how many)
+    -- the selection, boxed in gold at the bar's right end: its name (and how many)
     pill.sel = CreateFrame("Button", nil, pill)
-    pill.sel:SetHeight(30)
-    pill.sel:SetPoint("LEFT", pill, "RIGHT", 6, 0)
-    pill.sel.outside = true
+    pill.sel:SetHeight(PILL_H - 6)
+    pill.sel:SetPoint("RIGHT", pill, "RIGHT", -3, 0)
     S().EdPanel(pill.sel, 0.9, S().ED.panel2)
     S().EdEdge(pill.sel, S().ED.gold)
     pill.sel.label = S().EdText(pill.sel, S().ED_SIZE.text)
@@ -1245,42 +1265,89 @@ local function buildPill()
     pill.sel.edLabel = "The selection: its panel"
     pill.sel:Hide()
     pill:SetScript("OnUpdate", function()
-        if B.statusAt and now() - B.statusAt > NOTE_SECS and pill.note:GetText() ~= "" then pill.note:SetText("") end
+        if B.statusAt and now() - B.statusAt > NOTE_SECS and pill.note:GetText() ~= "" then pill.note:SetText(""); refreshPill() end
     end)
     pill:Hide()
+    if W.DenLayout then W.DenLayout.Dock(pill, "status", { place = false, keep = true, name = "status" }) end
+end
+-- what shows on the left now: the note while it is fresh, else the hint (Gizmo.lua's tag)
+function B.PillLeft()
+    if not pill then return nil end
+    if (pill.note:GetText() or "") ~= "" then return "note" end
+    if pill.hint and pill.hint:IsShown() then return "hint" end
+    return nil
+end
+-- Gizmo.lua's tag (the build hint) as the bar's left part: inside it, one line, under any fresh note
+function B.DockHint(f)
+    B.Pill()
+    if not f then return end
+    pill.hint = f
+    f:SetParent(pill.left)
+    f:ClearAllPoints()
+    f:SetPoint("LEFT", pill.left, "LEFT", 0, 0)
+    f:SetHeight(18)
+    if f.fs and f.fs.ClearAllPoints then
+        f.fs:ClearAllPoints(); f.fs:SetPoint("LEFT", f, "LEFT", 0, 0); f.fs:SetJustifyH("LEFT")
+        if f.fs.SetFontObject then f.fs:SetFontObject(S().EdFont(S().ED_SIZE.text)) end
+        local m = S().ED.muted
+        f.fs:SetTextColor(m[1], m[2], m[3])
+    end
+    refreshPill()
 end
 refreshPill = function()
     if not pill then return end
+    local L = W.DenLayout
     local line = B.StatusLine()
     local D = W.DenBar
     if D and D.IsActive and D.IsActive() and D.SavedLine then line = line .. "  ·  " .. D.SavedLine() end
-    -- never wider than the room between the chat (its right edge 462 at the stock place) and the screen's middle;
-    -- a line too long loses the "Saved" note first, then ends in "..." (nothing cut mid-letter)
+    -- the bar: the status slot's width (right of the chat, left of the side bars), at most PILL_MOST
     local sw = (GetScreenWidth and tonumber((GetScreenWidth()))) or 1366
-    local most = math.max(360, math.min(900, sw - 2 * 470))
-    pill.line:SetText(line)
-    local w = pill.line.GetStringWidth and tonumber((pill.line:GetStringWidth()))
-    if w and w + 40 > most then
-        line = B.StatusLine()
-        pill.line:SetText(line)
-        w = tonumber((pill.line:GetStringWidth()))
-    end
-    local pw = math.max(math.min(420, most), math.min(most, (w or (#line * 7)) + 40))
+    local a = L and L.Area("status") or { l = 470, r = sw - 96, b = LAYOUT.pillBottom }
+    local pw = math.max(360, math.min(PILL_MOST, a.r - a.l))
     pill:SetWidth(pw)
-    pill.line:SetWidth(pw - 24)
-    if w and w > pw - 24 then S().Elide(pill.line, line, pw - 24) end
-    -- the selection's box, and the pill's edge gold while building in a Den (build mode), the subtle edge elsewhere
+    pill:ClearAllPoints()
+    pill:SetPoint("BOTTOM", UIParent, "BOTTOMLEFT", math.floor((a.l + a.r) / 2), a.b)
+    -- the selection's box at the right end
     local s = B.state
     local name = s.selName and ((s.count or 1) > 1 and (s.count .. " selected: " .. s.selName) or s.selName)
+    local selW = 0
     if name then
         pill.sel.label:SetText(name)
         local tw = pill.sel.label.GetStringWidth and tonumber((pill.sel.label:GetStringWidth())) or (#name * 7)
-        pill.sel:SetWidth(math.min(240, tw + 24))
-        pill.sel.label:SetWidth(math.min(240, tw + 24) - 16)
+        selW = math.min(220, tw + 24)
+        pill.sel:SetWidth(selW)
+        if L then L.OneLine(pill.sel.label, selW - 16, 18) else pill.sel.label:SetWidth(selW - 16) end
         pill.sel:Show()
     else
         pill.sel:Hide()
     end
+    -- the state on the right (before the selection), at most 60% of what is left: the "Saved" note goes first
+    local room = pw - 24 - (selW > 0 and selW + 8 or 0)
+    pill.line:ClearAllPoints()
+    pill.line:SetPoint("RIGHT", pill, "RIGHT", -12 - (selW > 0 and selW + 2 or 0), 0)
+    pill.line:SetWidth(0)
+    pill.line:SetText(line)
+    local w = pill.line.GetStringWidth and tonumber((pill.line:GetStringWidth())) or (#line * 7)
+    local most = math.floor(room * 0.6)
+    if w > most then
+        line = B.StatusLine()
+        pill.line:SetText(line)
+        w = tonumber((pill.line:GetStringWidth())) or (#line * 7)
+    end
+    local lw = math.min(w + 2, most)
+    pill.line:SetWidth(lw)
+    if w > lw then S().Elide(pill.line, line, lw) end
+    -- the left part: what is left, one line each (the note over the hint: only one shows)
+    local leftW = math.max(40, room - lw - 16)
+    pill.left:SetWidth(leftW)
+    if L then L.OneLine(pill.note, leftW, 18) else pill.note:SetWidth(leftW) end
+    local hasNote = (pill.note:GetText() or "") ~= ""
+    if pill.hint then
+        pill.hint:SetWidth(leftW)
+        if pill.hint.fs and L then L.OneLine(pill.hint.fs, leftW, 18) end
+        pill.hint:SetAlpha(hasNote and 0 or 1)
+    end
+    -- the bar's edge gold while building in a Den (build mode), the subtle edge elsewhere
     local building = D and D.IsActive and D.IsActive() and not D.play
     S().EdEdge(pill, building and S().ED.gold or S().ED.edge)
 end
@@ -1292,6 +1359,7 @@ function B.PillNote(text, colour)
     pill.note:SetText(text or "")
     local c = colour or S().ED.muted
     pill.note:SetTextColor(c[1], c[2], c[3])
+    refreshPill()
 end
 function B.ShowPill(show)
     B.Pill()
@@ -1481,20 +1549,37 @@ end
 -- you, End puts it on the ground, Ctrl+Z / Ctrl+Shift+Z undo and redo, Tab the next, Esc lets go; numpad + / - size it.
 -- Override bindings to hidden buttons, only while there is a selection and its panel is open, given back after; never
 -- the movement keys (WASD, Q / E, the arrows) or the camera's mouse.
+-- In Den Lite's build mode the same keys are DenKeys.lua's and Gizmo.lua's too (two owners may bind a key): these
+-- then do what those do (Esc's cancel-then-deselect, Ctrl+V under the cursor, Ctrl+D by the last offset, Home back
+-- to you from the far view), so whichever binding the game picks, a key does one thing.
+local function denKeys()
+    local G = W.Gizmo
+    return (G and G.build) and W.DenKeys or nil
+end
 B.KEYS = {
     DELETE = function() return B.Command("delete") end,
     U = function() return B.Command("copy") end,
     INSERT = function() return B.Swap(false) end, ["SHIFT-INSERT"] = function() return B.Swap(true) end,
     [","] = function() return B.Nudge("turn", 1) end, ["."] = function() return B.Nudge("turn", -1) end,
     PAGEUP = function() return B.Nudge("z", 1) end, PAGEDOWN = function() return B.Nudge("z", -1) end,
-    HOME = function() return B.Pad("bring") end, END = function() return B.Command("floor") end,
+    HOME = function()
+        local G = W.Gizmo
+        if G and G.build and G.far then return G.Send("cam off") end
+        return B.Pad("bring")
+    end,
+    END = function() return B.Command("floor") end,
     NUMPADPLUS = function() return B.Nudge("scale", 1) end, NUMPADMINUS = function() return B.Nudge("scale", -1) end,
     TAB = function() return B.SelectNext() end,
-    ESCAPE = function() return B.Deselect() end,
+    ESCAPE = function()
+        local G = W.Gizmo
+        if G and G.build and G.Escape then return G.Escape() end
+        return B.Deselect()
+    end,
     ["CTRL-Z"] = function() return B.Command("undo") end, ["CTRL-SHIFT-Z"] = function() return B.Command("redo") end,
     ["CTRL-Y"] = function() return B.Command("redo") end,
-    ["CTRL-C"] = function() return B.Command("copy") end, ["CTRL-V"] = function() return B.Paste() end,
-    ["CTRL-D"] = function() return B.Command("dup") end,
+    ["CTRL-C"] = function() local k = denKeys(); if k then return k.Copy() end; return B.Command("copy") end,
+    ["CTRL-V"] = function() local k = denKeys(); if k then return k.Paste() end; return B.Paste() end,
+    ["CTRL-D"] = function() local k = denKeys(); if k then return k.Duplicate() end; return B.Command("dup") end,
     -- while a picked prop waits to be placed (B.Arm): Enter places it
     ENTER = function() return B.PlaceArmed() end, NUMPADENTER = function() return B.PlaceArmed() end,
 }
@@ -1972,11 +2057,12 @@ local function buildPanel()
     local function cmdFn(c) return function() B.Command(c) end end
     local _, my = flow(panel.more, {
         { "Select my last", cmdFn("selall"), "Select mine" },
-        { "Unlock", cmdFn("unlock"), nil, "full" }, { "Hide", cmdFn("hide"), nil, "full" },
-        { "Show all", cmdFn("show all"), nil, "full" }, { "Measure", cmdFn("measure"), nil, "full" },
-        { "Align X", cmdFn("align x"), nil, "full" }, { "Align Y", cmdFn("align y"), nil, "full" }, { "Align Z", cmdFn("align z"), nil, "full" },
-        { "Bottoms", cmdFn("align bottom"), nil, "full" }, { "Stack on", B.Stack, nil, "full" },
-        { "Group", cmdFn("group"), nil, "full" }, { "Ungroup", cmdFn("ungroup"), nil, "full" }, { "Put away", cmdFn("store"), nil, "full" },
+        -- Den Lite does these too since 4 Nov (its caps: buildtools.rs); "full": only the full Den's
+        { "Unlock", cmdFn("unlock"), nil, "unlock" }, { "Hide", cmdFn("hide"), nil, "hide" },
+        { "Show all", cmdFn("show all"), nil, "show" }, { "Measure", cmdFn("measure"), nil, "measure" },
+        { "Align X", cmdFn("align x"), nil, "align" }, { "Align Y", cmdFn("align y"), nil, "align" }, { "Align Z", cmdFn("align z"), nil, "align" },
+        { "Bottoms", cmdFn("align bottom"), nil, "align" }, { "Stack on", B.Stack, nil, "full" },
+        { "Group", cmdFn("group"), nil, "group" }, { "Ungroup", cmdFn("ungroup"), nil, "group" }, { "Put away", cmdFn("store"), nil, "full" },
     }, P, -12, MW - 2 * P, panel.tools)
     panel.tools.Near = panel.sel.Near
     panel.tools.Clear = panel.sel.Clear
@@ -1992,7 +2078,9 @@ local function buildPanel()
         for _, k in ipairs({ "Select mine", "Unlock", "Hide", "Show all", "Measure", "Align X", "Align Y", "Align Z", "Bottoms", "Stack on",
             "Group", "Ungroup", "Put away" }) do
             local c = panel.tools[k]
-            if c then if lite and c.only == "full" then c:Hide() else c:Show(); list[#list + 1] = c end end
+            -- on Den Lite: what it says it does (caps), never what only the full Den does
+            local off = lite and (c and (c.only == "full" or (c.only and not B.Can(c.only))))
+            if c then if off then c:Hide() else c:Show(); list[#list + 1] = c end end
         end
         local xx, yy = P, -12
         for _, c in ipairs(list) do
@@ -2007,6 +2095,9 @@ local function buildPanel()
     panel:SetScript("OnShow", function() B.propsEditing = nil; B.PropsFill(); B.BindKeys(true) end)
     panel:SetScript("OnHide", function() B.BindKeys(false); B.propsAuto = nil end)
     panel:Hide()
+    -- the right-hand inspector (DenLayout.lua): it places itself; the Dojo, the Arena or Den home there put it away
+    -- until they close
+    if W.DenLayout then W.DenLayout.Dock(panel, "inspector", { place = false, name = "selection" }) end
 end
 
 -- The panel's tabs (owner's editor: a row of tabs under the preview): Piece (position, the pad, rotation and size, the
@@ -2130,6 +2221,8 @@ buildFiles = function()
     end)
     files:SetHeight(282)
     files:Hide()
+    -- a big window in the middle, under the top toasts (DenLayout.lua)
+    if W.DenLayout then W.DenLayout.Dock(files, "centre", { name = "files" }) end
 end
 
 function B.Files() if not files then buildFiles() end return files end
@@ -2228,11 +2321,23 @@ local function buildTile(i)
     end)
     t:SetScript("OnLeave", function(self) self.over = nil; paintTile(self); S().EdTip(nil) end)
     -- drag a tile out of the window: placed (in front of you; in edit mode where you click next)
-    t:SetScript("OnDragStart", function(self) B.dragging = self.item; if self.item then setStatus("Let go outside the window to place it.") end end)
+    -- Den Lite's build mode (owner's LANDSCAPE editor, build-tool-core.js: "drag a card from the Build palette and drop
+    -- the piece under your cursor"): the drag picks the card up at once, its copy glides under the cursor over the
+    -- world (Gizmo.lua: over the world while a card is dragged out of the window), and letting go there puts it down
+    -- (one undo) and selects it; let go over the window, it stays in hand (click the ground to place it).
+    local function gizmoDrag(item) local G = W.Gizmo; return G and G.build and item and not item.kind and G.DropCard end
+    t:SetScript("OnDragStart", function(self)
+        B.dragging = self.item
+        if not self.item then return end
+        if gizmoDrag(self.item) then B.Choose(self.item); setStatus("Let go on the ground to put it there.")
+        else setStatus("Let go outside the window to place it.") end
+    end)
     t:SetScript("OnDragStop", function()
         local it = B.dragging
         B.dragging = nil
-        if it and not (win.IsMouseOver and win:IsMouseOver()) then B.Place(it) end
+        local outside = not (win.IsMouseOver and win:IsMouseOver())
+        if it and gizmoDrag(it) then if outside then W.Gizmo.DropCard() end
+        elseif it and outside then B.Place(it) end
     end)
     t:Hide()
     return t
@@ -2345,7 +2450,7 @@ function B.Layout()
         win:SetHeight(winHeight(B.rows))
         win:ClearAllPoints()
         win:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x / k, b / k)
-        B.placedAt = { x, b }
+        B.galleryAt = { x, b }   -- where the gallery went (B.placedAt is the time of the last placing: a table there broke the state)
     else
         B.rows = B.FitRows()
         win:SetHeight(winHeight(B.rows))
@@ -2407,6 +2512,7 @@ local function build()
     win.searchHint:SetPoint("LEFT", search, "LEFT", 8, 0)
     win.searchHint:SetTextColor(S().ED.off[1], S().ED.off[2], S().ED.off[3])
     win.searchHint:SetText("Search props...")
+    win.searchHint.placeholder = search   -- over its own box on purpose (the layout test knows)
     win.az = chip(win, "A-Z", 48, function() B.SetAZ(not B.az) end, "TOPLEFT", x0 + 248, -42)
     win.az.edLabel = "Sort by name"
     win.spinBtn = chip(win, "Spin", 52, function() B.SetSpin(not B.spin) end, "TOPLEFT", x0 + 302, -42)
@@ -2495,6 +2601,8 @@ local function build()
         chromeRefresh()
     end)
     win:Hide()
+    -- bottom left (DenLayout.lua's gallery slot): it finds its own place round the chat (B.PlaceGallery)
+    if W.DenLayout then W.DenLayout.Dock(win, "gallery", { place = false, name = "gallery" }) end
 end
 
 -- Is any editor piece open (the chrome outside a Den follows this)?

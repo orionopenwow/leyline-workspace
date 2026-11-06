@@ -305,6 +305,7 @@ class Session:
         self.next_req = 1
         self.closed = False
         self.status_cache = (0.0, None)
+        self.status_flight = None   # the one status request in flight (relay.status: single flight)
         self.rtt_ms = None          # the tunnel's round trip (the fastest of the recent probes), for the listing
         self.rtt_samples = collections.deque(maxlen=5)
         self.rtt_at = 0.0
@@ -427,7 +428,15 @@ class Relay:
         except FileNotFoundError:
             pass
         except (OSError, ValueError) as e:
-            log.error("state file unreadable (%s): starting empty, not overwriting until next save", e)
+            # review 4 Nov: the next save writes a fresh state over it (every realm's ports would be handed out
+            # again), so the unreadable file is kept beside it for the operator first
+            keep = f"{self.cfg.state_file}.unreadable-{time.strftime('%Y%m%d-%H%M%S')}"
+            try:
+                import shutil
+                shutil.copy2(self.cfg.state_file, keep)
+            except OSError:
+                keep = "(could not copy it)"
+            log.error("state file unreadable (%s): starting empty; the old file is kept as %s", e, keep)
         for rid, r in self.state["realms"].items():
             self.port_owner[r["auth"]] = (rid, 3724)
             self.port_owner[r["world"]] = (rid, 8085)
@@ -1261,6 +1270,17 @@ class Relay:
         at, cached = s.status_cache
         if cached and time.monotonic() - at < self.cfg.status_ttl:
             return httpd.response(200, cached, headers=h)
+        # Single flight (review 4 Nov): a burst of status asks while the cache is stale (a link posted on Reddit) shares
+        # one request to the host's agent instead of sending one each to a home PC.
+        fut = getattr(s, "status_flight", None)
+        if fut is None or fut.done():
+            fut = asyncio.ensure_future(self._status_fetch(s, base))
+            s.status_flight = fut
+        doc = dict(await asyncio.shield(fut), updated_at=base["updated_at"])
+        return httpd.response(200, doc, headers=h)
+
+    async def _status_fetch(self, s, base):
+        """One status request to a realm's agent; the answer is cached on the session (status_ttl)."""
         try:
             res = await s.request("status")
             doc = dict(base, **{k: v for k, v in (res.get("status") or {}).items()
@@ -1272,7 +1292,7 @@ class Relay:
             doc = dict(base, online=True)  # the tunnel is up but the realm did not answer in time
         doc["realm"] = s.name
         s.status_cache = (time.monotonic(), doc)
-        return httpd.response(200, doc, headers=h)
+        return doc
 
     def metrics_text(self):
         lines = [f"wu_relay_realms_online {len(self.sessions)}",

@@ -18,3 +18,5 @@ mod-mythic-plus https://github.com/silviu20092/mod-mythic-plus master e2a487d358
 mod-multibot-bridge https://github.com/Wishmaster117/mod-multibot-bridge main ebfa01a129dd4c441b2527e42dcc37b6da95e6c2
 mod-questie-bridge https://github.com/Aldori15/mod-questie-bridge main ad6ebd8fd70270992d0d843f0dc8c73ba924be30
 mod-sandbox-core local - -
+mod-leyline-bossfights local - -
+mod-leyline-qol local - -

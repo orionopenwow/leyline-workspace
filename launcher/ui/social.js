@@ -27,7 +27,12 @@
     return e;
   };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const openLink = (name) => invoke("open_link", { name }).catch((e) => say(String(e), "bad"));
+  // never a raw error on the page (friendly.js; review 4 Nov): a sentence from the website or the core as it is, anything
+  // technical becomes the fallback (the raw text goes to the console)
+  const OUT = "You were signed out. Log in again.";
+  const oops = (e, fb) => (String(e) === "signed_out" ? OUT
+    : window.LeylineFriendly ? window.LeylineFriendly(e, fb) : (fb || "Something went wrong. Try again."));
+  const openLink = (name) => invoke("open_link", { name }).catch((e) => say(oops(e, "Couldn't open your browser. Try again."), "bad"));
   const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
 
   let me = null, extra = {}, signedIn = false, code = "", ways = null;
@@ -118,7 +123,7 @@
       const c = el("p", "sx-code", code); c.setAttribute("aria-label", "Sign-in code " + code.split("").join(" "));
       const row = el("div", "sf-acts");
       const again = el("button", "btn small", "Open the page again"); again.type = "button";
-      again.onclick = () => invoke("social_signin_reopen").catch((e) => fail(String(e)));
+      again.onclick = () => invoke("social_signin_reopen").catch((e) => fail(oops(e, "Couldn't open your browser. Try again.")));
       const cancel = el("button", "link-s", "Cancel"); cancel.type = "button"; cancel.onclick = cancelSignIn;
       row.append(again, cancel);
       box.append(w, c, row);
@@ -225,7 +230,9 @@
       return out;
     } catch (e) {
       if (id !== runId) return;
-      flow.stage = "error"; flow.note = String(e); renderCode();
+      // a network failure keeps a line that says so: gate.js reads it as the website being down (Continue without logging in)
+      const net = /error sending|connect|dns|timed? ?out|tls|ssl|refused|reset|offline|unreachable|network/i.test(String(e));
+      flow.stage = "error"; flow.note = oops(e, net ? "Couldn't reach the website. Try again in a moment." : "Couldn't log you in right now. Try again."); renderCode();
     }
   }
   function newAccount() { return quickSignIn("new", () => invoke("social_new_account")); }
@@ -297,11 +304,16 @@
     tb.append(panel); tb.classList.add("open");
     btn.setAttribute("aria-expanded", "true");
     if (focus) { const f = panel.querySelector(".ap-edit"); if (f) f.focus(); }
+    friendsAt = Date.now();
     loadFriends();
   }
+  // the friends list while the panel stays open: asked again when the window comes back into focus, at most every
+  // 30 s (review 4 Nov: a request accepted on the website didn't show until the panel was opened again)
+  let friendsAt = 0;
+  window.addEventListener("focus", () => { if (panel && Date.now() - friendsAt > 30000) { friendsAt = Date.now(); loadFriends(); } });
   const go = (fn) => () => { closePanel(false); fn(); };
   const nav = (page) => () => { if (window.LeylineNav) window.LeylineNav.show(page); };
-  // no Den or Solo leveling here (owner 1 Nov: one way in): Your Den is in the side menu and the play bar
+  // no Den or Single player here (owner 1 Nov: one way in): Your Den is in the side menu and the play bar
 
   function menuItem(ic, label, line, fn, cls) {
     const b = el("button", "ap-item" + (cls ? " " + cls : "")); b.type = "button"; b.setAttribute("role", "menuitem");
@@ -443,7 +455,7 @@
 
   async function act(action, args) {
     try { await invoke("social_call", { action, args }); }
-    catch (e) { addNote = [String(e), "bad"]; }
+    catch (e) { addNote = [oops(e, "That didn't go through. Try again."), "bad"]; }
     await loadFriends();
   }
   async function sendRequest(text) {
@@ -454,7 +466,7 @@
       await invoke("social_call", { action: "request", args: { to } });
       addNote = [`Asked ${to}. They show here once they say yes.`, "ok"];
       const i = $("ap-addin"); if (i) i.value = "";
-    } catch (e) { addNote = [String(e) === "signed_out" ? "You were signed out. Log in again." : String(e), "bad"]; }
+    } catch (e) { addNote = [oops(e, "Couldn't send that right now. Try again."), "bad"]; }
     await loadFriends();
   }
 
@@ -587,7 +599,10 @@
         else fail("The code expired. Pick a way to try again.");
         return;
       }
-    } catch (e) { if (id === runId) fail(String(e)); }
+    } catch (e) {
+      const net = /error sending|connect|dns|timed? ?out|tls|ssl|refused|reset|offline|unreachable|network/i.test(String(e));
+      if (id === runId) fail(oops(e, net ? "Couldn't reach the website. Try again in a moment." : "Couldn't start logging in. Try again."));
+    }
   }
 
   async function cancelSignIn() {
@@ -597,7 +612,47 @@
     renderCode(); say("");
   }
 
+  // Log out as a guest whose login was never saved (gate.js createGuest keeps it in leyline.guestLogin until Manage
+  // account saves it): ask first (review 4 Nov). On this PC the sign-in dialog still offers "Log in as …", but on any
+  // other PC the account is out of reach without its name and password or Hero Key.
+  function unsavedGuest() {
+    try {
+      const g = JSON.parse(localStorage.getItem("leyline.guestLogin") || "null");
+      if (!g || typeof g.key !== "string") return null;
+      const mine = me ? `${me.name}${me.tag ? "#" + me.tag : ""}` : "";
+      return !g.name || !mine || g.name === mine ? g : null;
+    } catch (_) { return null; }
+  }
+  function askSaveFirst(g) {
+    return new Promise((resolve) => {
+      let d = $("so-dlg");
+      if (!d) {
+        d = el("dialog", "dlg so-dlg"); d.id = "so-dlg"; d.setAttribute("aria-labelledby", "so-dlg-h"); d.setAttribute("aria-describedby", "so-dlg-p");
+        const h = el("h3", "", "Save your login first?"); h.id = "so-dlg-h";
+        const p = el("p", ""); p.id = "so-dlg-p";
+        const row = el("div", "row");
+        for (const [id, cls, t] of [["so-save", "btn primary", "Save my login"], ["so-out", "btn", "Log out anyway"], ["so-cancel", "link-s", "Cancel"]]) {
+          const b = el("button", cls, t); b.type = "button"; b.id = id; row.append(b);
+        }
+        d.append(h, p, row);
+        document.body.append(d);
+      }
+      $("so-dlg-p").textContent = `${g.name || "This guest account"} has no saved login yet. On this PC you can log back in with one click, but on another PC you need its name and password or its Hero Key.`;
+      const done = (v) => { if (d.open) d.close(); resolve(v); };
+      $("so-save").onclick = () => done("save");
+      $("so-out").onclick = () => done("out");
+      $("so-cancel").onclick = () => done("cancel");
+      d.oncancel = (ev) => { ev.preventDefault(); done("cancel"); };
+      if (d.showModal) { d.showModal(); $("so-save").focus(); } else resolve("out");
+    });
+  }
   async function signOut() {
+    const g = signedIn ? unsavedGuest() : null;
+    if (g) {
+      const a = await askSaveFirst(g);
+      if (a === "cancel") return;
+      if (a === "save") { closePanel(false); if (window.LeylineNav) window.LeylineNav.show("account"); return; }
+    }
     signedIn = false; me = null; fresh = null;
     try { localStorage.setItem("leyline.signedOutAt", String(Date.now())); } catch (_) { /* fine */ }   // gate.js: a key file from before isn't used again
     await invoke("social_signout").catch(() => {});

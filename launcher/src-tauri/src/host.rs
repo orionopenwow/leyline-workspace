@@ -15,11 +15,15 @@
 //! * the host console (`console`): the realm's health, GM controls, Check my realm and the realm tools, once a
 //!   realm is set up on this PC; and `leyline link` (a server the player already runs) in a window of its own.
 
+pub mod bots; // Bots always up to date: which bots run here, newer ones, Update the bots (host/bots.rs)
 pub mod console;
 pub mod dens;
 pub mod denfiles; // My models: the player's own model files checked and renamed under our folder (host/denfiles.rs)
 pub mod denways; // Invite a friend: same network, your own address, the relay (host/denways.rs)
+pub mod denhost; // Hosting friends with no Docker: who's in, kick, build rights, the invite code, sharing kept (host/denhost.rs)
+pub mod creaturemodels; // Your Den's gliding copy: creature rows wearing the props' models in patch-T (host/creaturemodels.rs)
 pub mod denmodels; // My models: kept, listed for Den Lite, put in the Den's patch (host/denmodels.rs)
+pub mod engine; // Single player's Built-in engine: the realm natively on Windows, no Docker (docs/BUILTIN-ENGINE.md)
 pub mod lite; // Den Lite: the built-in Den server, no Docker (an interface; the program is labs/den-lite)
 pub mod litenet; // Your Den on the Leyline network with no Docker: the relay tunnel for Den Lite's friends (host/litenet.rs)
 pub mod terrain; // Your Den's ground: the terrain delta, patch-T.MPQ, the Docker Den's tile (host/terrain.rs)
@@ -245,7 +249,7 @@ pub fn plan(kit: &Path, seed: Option<&str>, os: HostOs, has: impl Fn(&str) -> bo
             if chosen.as_deref() == Some("vanillaplus") {
                 cmd.push("--always-on".into());
             }
-            // A Den and Solo leveling are private (docs/DEN.md: leyline host --ruleset den --private; the ruleset comes in the env).
+            // A Den and Single player are private (docs/DEN.md: leyline host --ruleset den --private; the ruleset comes in the env).
             if chosen.as_deref().is_some_and(profiles::private_profile) {
                 cmd.push("--private".into());
             }
@@ -958,7 +962,7 @@ mod tests {
         let w = plan(k.path(), None, HostOs::Windows, |_| false).unwrap();
         assert!(w.env.contains(&("WU_PROFILE".into(), "den".into())) && w.env.contains(&("WU_VISIBILITY".into(), "private".into())));
         assert!(!plan(k.path(), Some(&seed), HostOs::Linux, |t| t == "konsole").unwrap().args.contains(&"--private".to_string()), "a seed has its own answers");
-        // Solo leveling: private too
+        // Single player: private too
         profiles::choose(k.path(), "solo", None).unwrap();
         let s = plan(k.path(), None, HostOs::Linux, |t| t == "konsole").unwrap();
         assert_eq!(&s.args[s.args.len() - 4..], &["bash", "leyline", "host", "--private"]);

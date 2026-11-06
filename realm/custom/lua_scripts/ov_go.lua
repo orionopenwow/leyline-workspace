@@ -16,6 +16,11 @@
 --   * a character below the level waits: reaching the level (the boost to 80 included) tries again by itself,
 --     and another character of the account can use it. A brand new character is never moved during its first
 --     login (it picks boost or level 1 first): .go, or the level-up, does it.
+-- Two kinds start a game mode instead of going to a place (the character runs the mode's own command, deferred
+-- like a teleport, with the same combat / dead / instance checks):
+--   bf:<boss>:<normal|heroic>:<bots|group|group-only>   Boss fights (mod-leyline-bossfights, docs/BOSS-FIGHTS.md):
+--                                                       .bossfight join <boss> <difficulty> <mode>; level 80.
+--   arena:1v1                                           the 1v1 arena queue (mod-1v1-arena): .q1v1 unrated; level 80.
 -- Only places in PLACES below can be reached: the table is generated from stream/modes_data.py (map ids,
 -- entrances, levels and where each number came from are documented there). A place with no entrance in that
 -- file is looked up in the world database's areatrigger_teleport by its map.
@@ -85,7 +90,7 @@ local PLACES = {
     ["b:zulaman"] = { name = "Zul'Aman", what = "raid", map = 568, pos = nil, min = 70, raid = true, hint = "" },
     ["b:zulgurub"] = { name = "Zul'Gurub", what = "raid", map = 309, pos = nil, min = 60, raid = true, hint = "" },
     ["h:dalaran"] = { name = "Dalaran", what = "hangout", map = 571, pos = { 571, 5807.98, 588.487, 660.94, 1.66594 }, min = 1, raid = false, hint = "" },
-    ["h:duels"] = { name = "Duels in Dalaran", what = "hangout", map = 571, pos = { 571, 5813.84, 449.122, 658.752, 1.16086 }, min = 1, raid = false, hint = "Duel corner: target a player and type /duel. Either of you can say no. Health and cooldowns come back after." },
+    ["h:duels"] = { name = "Duels in Dalaran", what = "hangout", map = 571, pos = { 571, 5813.84, 449.122, 658.752, 1.16086 }, min = 1, raid = false, hint = "Duels work anywhere in Dalaran; the corner is where people meet. Target a player and type /duel. Either of you can say no. Health and cooldowns come back after." },
     ["h:goldshire-inn"] = { name = "The Goldshire Inn", what = "hangout", map = 0, pos = { 0, -9460.3, 18.9, 57, 3.98 }, min = 1, raid = false, hint = "" },
     ["q:258"] = { name = "Random dungeon: Azeroth", what = "queue", map = nil, pos = nil, min = 15, raid = false, hint = "" },
     ["q:259"] = { name = "Random dungeon: Outland", what = "queue", map = nil, pos = nil, min = 59, raid = false, hint = "" },
@@ -167,7 +172,28 @@ AuthDBExecute("CREATE TABLE IF NOT EXISTS ov_go_intents ("
     .. "account_id INT UNSIGNED NOT NULL PRIMARY KEY, go VARCHAR(40) NOT NULL, "
     .. "expires_at INT UNSIGNED NOT NULL, KEY expires_at (expires_at))")
 
+-- Mode kinds (not places): the boss fights the realm module knows (BossfightsLogic.h Bosses()), and the 1v1 queue.
+local BOSSFIGHTS = { ["frozen-throne"] = "The Frozen Throne" }
+local BF_DIFF = { normal = true, heroic = true }
+local BF_MODE = { bots = true, group = true, ["group-only"] = true }
+local MODE_MIN = 80
+
+-- { kind = "bossfight"|"arena", name, cmd, min } for a mode kind, else nil.
+local function modeGo(go)
+    if type(go) ~= "string" or #go > 40 then return nil end
+    if go == "arena:1v1" then
+        return { kind = "arena", name = "the 1v1 arena queue", cmd = "q1v1 unrated", min = MODE_MIN }
+    end
+    local boss, diff, mode = go:match("^bf:([%l%-]+):(%l+):([%l%-]+)$")
+    if boss and BOSSFIGHTS[boss] and BF_DIFF[diff] and BF_MODE[mode] then
+        return { kind = "bossfight", name = BOSSFIGHTS[boss] .. " (" .. diff .. ")",
+                 cmd = "bossfight join " .. boss .. " " .. diff .. " " .. mode, min = MODE_MIN }
+    end
+    return nil
+end
+
 local function validGo(go)
+    if modeGo(go) then return true end
     return type(go) == "string" and #go <= 40 and go:match("^[hqb]:[%l%d][%l%d%-]*$") ~= nil and PLACES[go] ~= nil
 end
 
@@ -232,9 +258,31 @@ local function act(player, why)
         if why == "command" then say(player, "Nothing is waiting. Pick a place on " .. SITE .. ", then come back.") end
         return
     end
+    local lvl = player:GetLevel()
+    local mg = modeGo(g.go)
+    if mg then
+        if lvl < mg.min then
+            if why ~= "level" then
+                say(player, string.format("%s needs level %d. Reach it (new characters: |cffffff00.boost|r) or log in a "
+                    .. "character of level %d in the next %d min, and Go starts it.", mg.name, mg.min, mg.min, minutesLeft(g)))
+            end
+            return
+        end
+        if why == "login" and fresh[player:GetGUIDLow()] then
+            say(player, "Waiting for you: " .. mg.name .. ". Type |cffffff00.go|r when you're ready.")
+            return
+        end
+        local stop = blocked(player)
+        if stop then
+            say(player, "Start " .. mg.name .. ": " .. stop .. ". Type |cffffff00.go|r when you're free (|cffffff00.go cancel|r forgets it).")
+            return
+        end
+        forget(account)   -- used once; the mode's own command says what happens next
+        if player.RunCommand then player:RunCommand(mg.cmd) end
+        return
+    end
     local p = PLACES[g.go]
     if not p then forget(account); return end
-    local lvl = player:GetLevel()
     if p.what == "queue" then
         forget(account)
         if lvl < p.min then
@@ -352,7 +400,7 @@ end
 local HUB_COOLDOWN = 10
 local HUB = {
     duels    = { label = "Duel corner", pos = PLACES["h:duels"].pos,
-                 tip = "The duel corner. Target a player and type /duel. Health and cooldowns come back after." },
+                 tip = "The duel corner (duels work anywhere in Dalaran). Target a player and type /duel. Health and cooldowns come back after." },
     arena    = { label = "1v1 arena", pos = { 571, 5818.2, 446.0, 658.752, 2.6 }, npc = 999991,
                  tip = "Talk to the Arena Battlemaster 1v1 (level 80), or type .q1v1 rated or .q1v1 unrated." },
     transmog = { label = "Transmog", pos = { 571, 5799.6, 628.6, 647.8, 5.6 }, npc = 190010,
@@ -443,7 +491,7 @@ end
 
 local function onLevel(event, player, oldLevel)
     local g = pendingOf(player:GetAccountId())
-    local p = g and PLACES[g.go]
+    local p = g and (PLACES[g.go] or modeGo(g.go))
     if not p or p.what == "queue" then return end
     if (tonumber(oldLevel) or 0) < p.min and player:GetLevel() >= p.min then
         fresh[player:GetGUIDLow()] = nil
@@ -457,4 +505,4 @@ RegisterPlayerEvent(30, onFirstLogin)  -- PLAYER_EVENT_ON_FIRST_LOGIN
 RegisterPlayerEvent(42, onCommand)     -- PLAYER_EVENT_ON_COMMAND
 
 -- for tests (stream/tests/test_ov_go.lua)
-OV_GO_TEST = { PLACES = PLACES, pending = pending, act = act, validGo = validGo, TTL = TTL, HUB = HUB, HUB_ORDER = HUB_ORDER }
+OV_GO_TEST = { PLACES = PLACES, modeGo = modeGo, pending = pending, act = act, validGo = validGo, TTL = TTL, HUB = HUB, HUB_ORDER = HUB_ORDER }

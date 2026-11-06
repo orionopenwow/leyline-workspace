@@ -1813,6 +1813,26 @@ fn aid_parts(frames: &[Frame], name: &str) -> Option<String> {
     whole
 }
 
+/// Every whole `wubuild <name>` answer in frames already read, in order (each joined from its parts).
+fn aid_all<'a>(frames: impl IntoIterator<Item = &'a Frame>, name: &str) -> Vec<String> {
+    let want = format!("OVMOD\twubuild\t{name}\t");
+    let (mut parts, mut all) = (Vec::new(), Vec::new());
+    for f in frames {
+        let Some(rest) = addon_text(f).and_then(|t| t.strip_prefix(&want).map(String::from)) else { continue };
+        let Some((pn, data)) = rest.split_once('\t') else { continue };
+        let Some((i, n)) = pn.split_once('/') else { continue };
+        let (Ok(i), Ok(n)) = (i.parse::<usize>(), n.parse::<usize>()) else { continue };
+        if i == 1 {
+            parts.clear();
+        }
+        parts.push(data.to_string());
+        if i == n && parts.len() == n {
+            all.push(parts.concat());
+        }
+    }
+    all
+}
+
 fn until_aid(w: &mut World, name: &str) -> (Vec<Frame>, String) {
     let want = format!("OVMOD\twubuild\t{name}\t1/1\t");
     let mut got = Vec::new();
@@ -1869,20 +1889,29 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
     assert_eq!(until_aid(&mut w, "mode").1, "build");
 
-    // the gizmo on; a right-click on the chair selects it: the addon is told to open its menu
+    // the gizmo on; a use of the chair (props are sent not selectable in build mode since 5 Nov, so only a client
+    // that still took the click sends one) selects it and picks it up, as the Select tool's left click; Esc puts it back
+    // and the gizmo comes up round it
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tgizmo on");
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tselclear");
     w.until_addon("wubuild", "state");
     w.raw(gizmo::CMSG_GAMEOBJ_USE, &chair.to_le_bytes());
-    let (frames, picked) = until_aid(&mut w, "picked");
-    assert_eq!(picked, id.to_string());
+    let (picked, carried) = until_aid(&mut w, "carried");
+    assert_eq!(carried, id.to_string());
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tpreview off");
+    let (frames, aim) = until_aid(&mut w, "aim");
+    assert_eq!(aim, "off");
     let (made, _) = objects(&frames);
     let flags: Vec<(u64, &Go)> = made.iter().filter(|(_, g)| (990_001..=990_003).contains(&g.entry)).map(|(k, g)| (*k, g)).collect();
     assert_eq!(flags.len(), 3, "the gizmo's three flags: {made:?}");
     let x = flags.iter().find(|f| f.1.entry == 990_001).unwrap();
     assert_eq!(x.1.display, 5913);
     assert!(x.1.x > s0.x + 3.0, "beside the chair, along x");
-    assert!(w.until_addon("wubuild", "state").contains(&format!("sel={id},2413")));
+    // the carry's state line (with the pick-up's answer or before Esc's)
+    // (joined from its parts: the state line is longer than one addon message, and where it is cut moves with the
+    // caps list and the counts, so "sel=" may straddle two parts; the owner's PC, 5 Nov: failed reading part by part)
+    let states = aid_all(picked.iter().chain(frames.iter()), "state");
+    assert!(states.iter().any(|t| t.contains(&format!("sel={id},2413"))), "{states:?}");
     // a handle right-clicked: its axis grabbed (the next test drags it); its entry answers the query as a goober
     let y = flags.iter().find(|f| f.1.entry == 990_002).unwrap().0;
     w.raw(gizmo::CMSG_GAMEOBJ_USE, &y.to_le_bytes());
@@ -1978,7 +2007,7 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     assert!(gone.contains(&copy[0].0), "the copy goes once the real one is there");
     let mut glow = None;
     let mut handles = Vec::new();
-    let mut frames2 = frames;
+    let frames2 = frames;
     // the state may come before "placed" (aid_send's order): look in what came already, else wait for it
     let st = match aid_parts(&frames2, "state") {
         Some(st) => st,
@@ -2049,6 +2078,79 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     assert!(until_aid(&mut w, "cam").1.starts_with("far,"));
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam far -2");
     assert_eq!(until_aid(&mut w, "cam").1, "near");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The copy in hand glides as a creature (glide.rs; owner 5 Nov: "dynamically move instead of disappearing,
+/// reappearing"), over the wire: with the launcher's marker (the Den's patch-T gives the chair's model a creature
+/// display) the pick makes one creature wearing display 70000 + 39, each later hover is a SMSG_MONSTER_MOVE of it
+/// (facing angle, Flying | OrientationFixed), nothing is made or taken away while it moves, and the click makes the real
+/// chair before the creature goes. Without the marker the copy is a gameobject (the test above).
+#[test]
+fn a_card_in_hand_glides_as_a_creature_over_the_wire() {
+    use den_lite::{flight, gizmo, glide};
+    let (srv, dir) = server("glide", HeroGender::Female);
+    std::fs::write(dir.join(glide::MARKER), r#"{"format": "leyline-den-creature-models", "version": 1, "base": 70000, "displays": [39]}"#).unwrap();
+    let mut w = into_world(&srv, 2);
+    let s0 = Spot::default();
+    w.send(&heartbeat(s0.x, s0.y, s0.z, 0.0));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
+    assert_eq!(until_aid(&mut w, "mode").1, "build");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tgizmo glide on");
+    assert_eq!(until_aid(&mut w, "glide").1, "on", "the marker was read for the Den's owner");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tpreview 2413");
+    until_aid(&mut w, "aim");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\thover 0.15 -0.25 1.7778 12");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\twhere");
+    let (frames, _) = until_aid(&mut w, "ghost");
+    assert!(objects(&frames).0.keys().all(|g| !gizmo::is_ghost(*g)), "no gameobject copy");
+    let mut copy = None;
+    for f in &frames {
+        if let Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(u)) = &f.msg {
+            for o in &u.objects {
+                if let Object::CreateObject { guid3, mask2: UpdateMask::Unit(m), object_type: ObjectType::Unit, .. } = o {
+                    if glide::is_glider(guid3.guid()) {
+                        copy = Some((guid3.guid(), m.object_entry(), m.unit_displayid(), m.unit_flags()));
+                    }
+                }
+            }
+        }
+    }
+    let (g, entry, display, flags) = copy.expect("the copy is a creature");
+    assert_eq!((entry, display), (Some(glide::ENTRY as i32), Some(70_039)), "wearing the chair's model");
+    assert_eq!(flags.map(|f| f as u32 & 0x0200_0000), Some(0x0200_0000), "not selectable");
+    assert!(frames.iter().any(|f| f.opcode == flight::SMSG_SPLINE_MOVE_GRAVITY_DISABLE), "no gravity: it stays at the height given");
+    // the cursor moves (hovers further apart than the redraw's 33 ms): it glides, nothing made or taken away
+    for u in ["0.05", "-0.05", "-0.15"] {
+        std::thread::sleep(Duration::from_millis(60));
+        w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\thover {u} -0.25 1.7778 12"));
+    }
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\twhere");
+    let (frames, at) = until_aid(&mut w, "ghost");
+    let moves: Vec<&Frame> = frames.iter().filter(|f| f.opcode == flight::SMSG_MONSTER_MOVE).collect();
+    assert!(moves.len() >= 2, "it glides: {} moves", moves.len());
+    for m in &moves {
+        let n = 1 + m.body[0].count_ones() as usize;
+        assert_eq!(den_lite::combat::read_packed(&m.body, &mut 0), Some(g));
+        assert_eq!(m.body[n + 17], glide::FACING_ANGLE);
+        assert_eq!(u32::from_le_bytes(m.body[n + 22..n + 26].try_into().unwrap()), glide::SPLINE_FLYING | glide::SPLINE_ORIENTATION_FIXED);
+    }
+    let (made, gone) = objects(&frames);
+    assert!(made.is_empty() && gone.is_empty(), "no destroy / create while it glides: {made:?} {gone:?}");
+    assert!(unit_creates(&frames).is_empty());
+    // the click: the real chair where the creature is, then the creature goes
+    let at: Vec<f32> = at.split(',').map(|v| v.parse().unwrap()).collect();
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit");
+    let (frames, placed) = until_aid(&mut w, "placed");
+    let id: u64 = placed.parse().unwrap();
+    let chair = (0xF110u64 << 48) | (2413u64 << 24) | id;
+    let made_at = frames.iter().position(|f| objects(std::slice::from_ref(f)).0.contains_key(&chair)).expect("the chair made");
+    let gone_at = frames.iter().position(|f| matches!(&f.msg, Some(ServerOpcodeMessage::SMSG_DESTROY_OBJECT(d)) if d.guid.guid() == g)).expect("the creature goes");
+    assert!(made_at < gone_at, "the real one first");
+    let real = objects(&frames).0[&chair].clone();
+    assert!((real.x - at[0]).abs() < 0.02 && (real.y - at[1]).abs() < 0.02);
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);
@@ -2549,6 +2651,86 @@ fn the_den_goes_anywhere_near_and_far_and_each_place_keeps_its_den() {
     w.say(".den size city");
     let (_, line) = until_said(&mut w, "Your Den is size 7 of 7");
     assert!(line.contains("city-size"), "{line}");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A near teleport's counter (MSG_MOVE_TELEPORT_ACK from the server) and the game's answer to it.
+fn answer_near(w: &mut World, frames: &[Frame]) -> Vec<u8> {
+    let tp = frames.iter().find(|f| f.opcode == 0x0C7).expect("MSG_MOVE_TELEPORT_ACK").body.clone();
+    let mut ack = vec![0x01, 0x01];
+    ack.extend_from_slice(&tp[2..6]);
+    ack.extend_from_slice(&1000u32.to_le_bytes());
+    w.raw(0x0C7, &ack);
+    tp
+}
+
+/// A heartbeat by hand (packed guid, flags, flags2, time, x y z o, fall time, and the jump's four when falling).
+fn raw_heartbeat(x: f32, y: f32, z: f32, flags: u32) -> Vec<u8> {
+    let mut b = vec![0x01, 0x01];
+    b.extend_from_slice(&flags.to_le_bytes());
+    b.extend_from_slice(&0u16.to_le_bytes());
+    b.extend_from_slice(&2000u32.to_le_bytes());
+    for v in [x, y, z, 0.0f32] {
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    b.extend_from_slice(&500u32.to_le_bytes());
+    if flags & 0x1000 != 0 {
+        for v in [-30.0f32, 0.0, 1.0, 0.0] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    b
+}
+
+/// Anywhere, fast (places.rs, owner 4 Nov): the GM ways (`.go`, `.tele`, `.go xyz`), `.back` to the spot before,
+/// `.den home` from another map; and a fall through the world after a teleport is lifted back over the last ground,
+/// flying.
+#[test]
+fn go_anywhere_back_and_home_and_a_fall_through_the_world_is_lifted() {
+    let (srv, dir) = server("anywhere", HeroGender::Male);
+    let mut w = into_world(&srv, 0);
+    w.say(".go stormwind");
+    until_said(&mut w, "Off to Stormwind");
+    w.raw(0x0DC, &[]);
+    until_said(&mut w, "You are at Stormwind");
+    // the same map: near
+    w.say(".tele goldshire");
+    let (frames, _) = until_said(&mut w, "Off to Goldshire");
+    let tp = answer_near(&mut w, &frames);
+    assert_eq!((f32_at(&tp, 16), f32_at(&tp, 20)), (-9464.0, 62.0));
+    until_said(&mut w, "You are at Goldshire");
+    // back: Stormwind (named by the nearest place)
+    w.say(".back");
+    let (frames, _) = until_said(&mut w, "Off to Stormwind");
+    let tp = answer_near(&mut w, &frames);
+    assert_eq!(f32_at(&tp, 16), -8833.38);
+    until_said(&mut w, "You are at Stormwind");
+    // the start of a name is enough; a name that is nothing says so
+    w.say(".go goldshir");
+    let (frames, _) = until_said(&mut w, "Off to Goldshire");
+    answer_near(&mut w, &frames);
+    until_said(&mut w, "You are at Goldshire");
+    w.say(".go nowhereatall");
+    until_said(&mut w, "No place called 'nowhereatall'");
+    // home from another map: far, to the Den
+    w.say(".den home");
+    until_said(&mut w, "Off to your Den");
+    w.raw(0x0DC, &[]);
+    until_said(&mut w, "You are at your Den");
+    // a typed spot on another map, then a fall through the world there
+    w.say(".go xyz 100 200 50 0");
+    until_said(&mut w, "Off to map 0 at 100, 200, 50");
+    w.raw(0x0DC, &[]);
+    until_said(&mut w, "You are at map 0");
+    w.raw(0x0EE, &raw_heartbeat(100.0, 200.0, 50.5, 0));
+    w.raw(0x0EE, &raw_heartbeat(100.0, 200.0, 50.5 - den_lite::places::RESCUE_DROP - 5.0, 0x1000));
+    let (frames, _) = until_said(&mut w, "You fell through the ground");
+    assert!(frames.iter().any(|f| f.opcode == 0x343), "flying on (SMSG_MOVE_SET_CAN_FLY)");
+    let tp = frames.iter().find(|f| f.opcode == 0x0C7).expect("lifted by a near teleport");
+    assert_eq!((f32_at(&tp.body, 16), f32_at(&tp.body, 20)), (100.0, 200.0));
+    assert!((f32_at(&tp.body, 24) - (50.5 + den_lite::places::RESCUE_LIFT)).abs() < 0.01, "over the last ground");
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);

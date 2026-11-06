@@ -79,7 +79,9 @@ const IGNORED: &[&str] = &[".git", "__pycache__", ".ds_store", "thumbs.db", "des
 const PACKAGE_TOP: &[&str] =
     &["mod.json", "ui", "realm", "native", "assets", "tests", "readme.md", "readme.txt", "license", "license.txt", "license.md", "changelog.md"];
 /// Data/ slots for patches, in the order they are handed out. patch.MPQ, patch-2 and patch-3 are the game's own.
-const PATCH_SLOTS: &str = "456789ABCDEFGHIJKLMNOPQRSUVWXY"; // T is Your Den's ground (host/terrain.rs), Z the hybrid client's (hybrid.rs)
+// T is Your Den's ground (host/terrain.rs), Y the official realm's race and class choices (combos.rs), Z the hybrid
+// client's (hybrid.rs)
+const PATCH_SLOTS: &str = "456789ABCDEFGHIJKLMNOPQRSUVWX";
 /// Native code: a mod with any of these needs the player's one-time OK (owner decision: allowed, with a notice).
 pub const NATIVE_CODE_EXT: &[&str] = &[".dll", ".asi", ".exe"];
 /// What may sit next to native code in the client folder: the code and its own settings and notes.
@@ -262,13 +264,15 @@ pub fn extract_zip(zip: &Path, dest: &Path, max_zip: u64) -> Result<(), String> 
         if file.size() > cap {
             return Err(format!("{rel} is larger than {}", fmt_size(cap)));
         }
-        let total = if cap == MAX_PATCH { &mut patch_total } else { &mut addon_total };
-        *total += file.size();
-        if addon_total > MAX_PACKAGE {
-            return Err(format!("the zip unpacks to more than {}", fmt_size(MAX_PACKAGE)));
-        }
-        if patch_total > MAX_PATCH * 2 {
-            return Err(format!("the patches in the zip come to more than {}", fmt_size(MAX_PATCH * 2)));
+        // The totals count the bytes actually written, not the sizes the zip declares (review 4 Nov: a zip that
+        // under-declared could write up to MAX_FILES x the cap). The declared size still refuses early.
+        let (budget, total, too_big) = if cap == MAX_PATCH {
+            (MAX_PATCH * 2, &mut patch_total, format!("the patches in the zip come to more than {}", fmt_size(MAX_PATCH * 2)))
+        } else {
+            (MAX_PACKAGE, &mut addon_total, format!("the zip unpacks to more than {}", fmt_size(MAX_PACKAGE)))
+        };
+        if total.saturating_add(file.size()) > budget {
+            return Err(too_big);
         }
         let out = dest.join(&rel);
         if let Some(d) = out.parent() {
@@ -276,10 +280,15 @@ pub fn extract_zip(zip: &Path, dest: &Path, max_zip: u64) -> Result<(), String> 
         }
         let mut w = fs::File::create(&out).map_err(|e| e.to_string())?;
         // The zip reader checks each file's CRC when it reaches the end; a file that unpacks bigger than it
-        // said is cut at the cap and refused.
-        let n = io::copy(&mut (&mut file).take(cap + 1), &mut w).map_err(|_| format!("the zip is damaged: {rel} does not unpack"))?;
+        // said is cut at the cap (or at what is left of the budget) and refused.
+        let limit = cap.min(budget - *total);
+        let n = io::copy(&mut (&mut file).take(limit + 1), &mut w).map_err(|_| format!("the zip is damaged: {rel} does not unpack"))?;
         if n > cap {
             return Err(format!("{rel} unpacks bigger than it says"));
+        }
+        *total += n;
+        if *total > budget {
+            return Err(too_big);
         }
     }
     Ok(())
@@ -1900,8 +1909,8 @@ pub mod tests {
 
     #[test]
     fn patch_slots_never_hand_out_the_dens_ground_or_the_hybrid_clients() {
-        assert!(!PATCH_SLOTS.contains('T') && !PATCH_SLOTS.contains('Z'));
-        assert_eq!(PATCH_SLOTS.len(), 30);
+        assert!(!PATCH_SLOTS.contains('T') && !PATCH_SLOTS.contains('Y') && !PATCH_SLOTS.contains('Z'));
+        assert_eq!(PATCH_SLOTS.len(), 29);
         assert_eq!(patch_slot_of("patch-T.MPQ"), None, "a patch-T is the Den's ground, never a mod's");
     }
 
@@ -2248,7 +2257,8 @@ pub mod tests {
         let bad = write(d.path(), "patch-B.MPQ", b"nope");
         assert!(install_local_t(c.path(), Build::V335a, &bad).unwrap_err().contains("not an MPQ"));
         assert_eq!(patch_slot_of("patch-2.MPQ"), None);
-        assert_eq!(patch_slot_of("PATCH-y.mpq"), Some('Y'));
+        assert_eq!(patch_slot_of("PATCH-x.mpq"), Some('X'));
+        assert_eq!(patch_slot_of("patch-Y.MPQ"), None, "Y is the official realm's race and class choices (combos.rs)");
         assert_eq!(patch_slot_of("patch-Z.MPQ"), None, "Z is the hybrid client's own");
         // Turn off and on, then remove: the player's own patch-4 stays.
         let key = load(c.path()).mods[0].key.clone();

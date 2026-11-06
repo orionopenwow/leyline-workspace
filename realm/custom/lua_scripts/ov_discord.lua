@@ -186,6 +186,23 @@ local function say(rest, reply)
     local name, text = unhex(hn), unhex(ht)
     if not name or not text then reply("wudiscord: usage: wudiscord say <hex name> <hex text>"); return end
     name, text = gameSafe(name, MAX_NAME), gameSafe(text, 200)
+    -- Review 4 Nov: the name guard's chat filter (ov_names.lua) on Discord's side too. The bridge only masks the brand
+    -- words, and this line reaches every player online, so a slur from Discord was shown in full while the same word
+    -- typed in game was starred.
+    local names = rawget(_G, "OVNames")
+    if names and type(names.Mask) == "function" then
+        local okN, mn = pcall(names.Mask, name)
+        local okT, mt = pcall(names.Mask, text)
+        if okN and type(mn) == "string" then name = mn end
+        if okT and type(mt) == "string" then text = mt end
+    end
+    -- Review 4 Nov: a Discord display name can pass for staff ("GM", "Admin", "Orion's helper"). The name guard's staff
+    -- list (ov_names.lua NameHit, kind "staff") already keeps those off characters; a Discord name it flags is shown as
+    -- "Discord user" instead (the text still comes through, filtered like game chat).
+    if names and type(names.NameHit) == "function" then
+        local okH, kind = pcall(names.NameHit, name)
+        if okH and kind == "staff" then name = "Discord user" end
+    end
     if name == "" or text == "" then reply("wudiscord: empty"); return end
     if not allowSay() then reply("wudiscord busy: too many lines this minute"); return end
     local line, shown = DISCORD_TAG .. name .. ": " .. text, 0

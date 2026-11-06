@@ -1,8 +1,8 @@
 @echo off
 setlocal
-title WrathUnleashed - sign-in and warm-up
+title Leyline - sign-in and warm-up
 rem The server half of the faster start (run "Update browser client.bat" first, for the new client):
-rem  - play.openvanilla.app/wrath signs in by itself with a Hero Key saved in the browser,
+rem  - leylinelauncher.com/wrath signs in by itself with a Hero Key saved in the browser,
 rem  - the realm list downloads the browser client in the background while you read it,
 rem  - the client's own files (no game data) skip the sign-in gate so that download can happen.
 rem Backs up first and puts things back if anything refuses. One upload and one SSH login.
@@ -61,6 +61,8 @@ rem the download page and the Download choice (/wrath/download)
 if exist downloads.py set "LINKS=%LINKS% downloads.py"
 rem the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards; duels-export.py fills them on the realm)
 if exist duels.py set "LINKS=%LINKS% duels.py"
+rem boss fights, duels and arena (/wrath/bossfights, /wrath/arena, /wrath/api/bossfights; bossfights-export.py fills the boards)
+if exist bossfights.py set "LINKS=%LINKS% bossfights.py"
 rem Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors)
 if exist survivors.py set "LINKS=%LINKS% survivors.py"
 rem Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar)
@@ -106,7 +108,7 @@ echo [1/2] Uploading...
 scp %OPTS% "%T%" %HOST%:/tmp/wu-fastloop.tgz || (echo Upload failed. If it says "timed out", wait 2 minutes and run this again. & pause & exit /b 1)
 
 echo [2/2] Applying it on the server (under a minute)...
-ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py modepack.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py discord_growth.py duels.py survivors.py profiles.py herokeys.py network.py bugreport.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py linkqueue.py feedback.py staffdesk.py loadouts.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
+ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py modepack.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py discord_growth.py duels.py bossfights.py survivors.py profiles.py herokeys.py network.py bugreport.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py linkqueue.py feedback.py staffdesk.py loadouts.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
 if errorlevel 1 (
   echo.
   echo It did not report success; see the lines above. Anything it changed was put back.
@@ -116,6 +118,7 @@ if errorlevel 1 (
 )
 del /q "%T%" 2>nul
 echo.
-echo Done. Open https://leylinelauncher.com/wrath signed out: a Hero Key saved in this browser signs you in.
+echo Done: the website is updated at https://leylinelauncher.com/wrath (the old name still answers).
+echo Open it signed out: a Hero Key saved in this browser logs you in.
 pause
 exit /b 0

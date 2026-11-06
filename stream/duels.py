@@ -47,6 +47,8 @@ CLASSES = {1: "Warrior", 2: "Paladin", 3: "Hunter", 4: "Rogue", 5: "Priest", 6: 
 CLASS_COLOR = {1: "#c79c6e", 2: "#f58cba", 3: "#abd473", 4: "#fff569", 5: "#ffffff", 6: "#ff4d6a", 7: "#2f8fff",
                8: "#69ccf0", 9: "#a29bff", 11: "#ff7d0a"}
 BOARDS = (("week", "This week"), ("all", "All time"), ("class", "By class"))
+# the boards stream/bossfights.py draws (boss fight clear times, the 1v1 arena ladder): tabs here only with that module
+MORE_BOARDS = (("bosses", "Boss fights"), ("arena", "1v1 arena"))
 DUEL_CORNER = "/wrath/h/duels"     # the go link to the duel corner (stream/modes.py link("h", "duels"))
 
 e = html.escape
@@ -307,8 +309,10 @@ def how_it_works() -> str:
 def page_body(query: dict, d: dict | None = None) -> tuple[str, str]:
     """(title, body) for /wrath/leaderboards."""
     d = d or store.doc()
+    bf = P("bossfights")
+    boards = BOARDS + (MORE_BOARDS if bf is not None else ())
     board = (query.get("board") or ["week"])[0]
-    board = board if board in dict(BOARDS) else "week"
+    board = board if board in dict(boards) else "week"
     cls = None
     try:
         c = int((query.get("class") or [""])[0])
@@ -318,7 +322,18 @@ def page_body(query: dict, d: dict | None = None) -> tuple[str, str]:
     realm = P("REALM_NAME") or "Wrath Unleashed"
     tabs = ('<nav class="hb-seg" aria-label="Boards">' + "".join(
         f'<a href="{PAGE}' + ("" if k == "week" else f"?board={k}") + '"' + (' class="on" aria-current="page"' if k == board else "")
-        + f">{e(t)}</a>" for k, t in BOARDS) + "</nav>")
+        + f">{e(t)}</a>" for k, t in boards) + "</nav>")
+    if board in dict(MORE_BOARDS):
+        try:
+            inner = bf.leaderboard_tab(board, query)
+        except Exception:   # noqa: BLE001: the duel boards still show
+            inner = '<p class="hb-lede">This board is not available right now.</p>'
+        go = (bf.ARENA_PAGE, "Queue 1v1 arena") if board == "arena" else (bf.PAGE, "Fight now")
+        body = ('<section class="hb-pg db" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                f'<h1 id="hb-pg-h">Leaderboards</h1>{tabs}</div>'
+                f'<a class="hb-play hb-pg-x" href="{e(go[0])}">{e(go[1])}</a></header><div class="hb-pg-b">'
+                + inner + "</div></section>")
+        return f"Leaderboards · {dict(MORE_BOARDS)[board]} · Leyline", body
     facts = []
     if board == "week":
         if d["week_start"]:
@@ -359,20 +374,21 @@ def match(path: str) -> bool:
 def _shell(title: str, body: str) -> tuple[bytes, dict]:
     """The page in the hub's frame (header, tokens, footer), else the portal's Leyline page, else a plain one."""
     hub = P("hub_mod")
+    css = CSS + str(getattr(P("bossfights"), "CSS", "") or "")   # the boss fight and arena tabs (stream/bossfights.py)
     if hub is not None and getattr(hub, "hub", None) is not None:
         try:
-            out = hub.hub._shell(title, body, PAGE, active="leaderboards", css=CSS)
+            out = hub.hub._shell(title, body, PAGE, active="leaderboards", css=css)
             return out, ({} if hub.front_on() else {"X-Robots-Tag": "noindex, nofollow"})
         except Exception:   # noqa: BLE001: the plain page then
             pass
     shell = P("ly_shell")
     if shell is not None:
         try:
-            return shell(title, body, PAGE, "", "play", CSS), {}
+            return shell(title, body, PAGE, "", "play", css), {}
         except Exception:   # noqa: BLE001
             pass
     return (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{e(title)}</title><style>{CSS}</style><main>{body}</main></html>").encode("utf-8"), {}
+            f"<title>{e(title)}</title><style>{css}</style><main>{body}</main></html>").encode("utf-8"), {}
 
 
 def _limited(h) -> bool:

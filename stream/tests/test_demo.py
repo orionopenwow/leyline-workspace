@@ -77,11 +77,11 @@ def get(path, ip="203.0.113.5", cookie=""):
     return r.status, dict(r.getheaders()), r.read().decode("utf-8", "replace")
 
 st, hd, body = get("/wrath?demo=1")
-check("off by default (no WU_GUEST_DEMO): 404 page", st == 404 and "closed" in body, st)
+check("off by default (no WU_GUEST_DEMO): a 200 page that says closed (the same as /wrath/demo)", st == 200 and "closed" in body, st)
 check("off: nothing asked of the realm", realm.calls == [], realm.calls)
 check("off: no pool loaded", g.pool.passes == {})
 st, hd, body = get("/wrath/demo")
-check("section preview renders while off", st == 200 and "Try Leyline in the Goldshire Inn" in body, st)
+check("section preview renders while off, its tab says closed", st == 200 and "<title>Guest passes are closed right now" in body and "Try Leyline in the Goldshire Inn" not in body.split("</title>")[0], st)
 
 os.environ["WU_GUEST_DEMO"] = "1"
 st, hd, body = get("/wrath?demo=1")
@@ -160,8 +160,8 @@ os.environ.pop("WU_DEMO_PER_HOUR")
 
 # -- turning it off again -------------------------------------------------------------------------
 os.environ["WU_GUEST_DEMO"] = "0"
-st, _, _ = get("/wrath?demo=1", ip="203.0.113.200")
-check("WU_GUEST_DEMO=0 closes it at once", st == 404)
+st, _, body = get("/wrath?demo=1", ip="203.0.113.200")
+check("WU_GUEST_DEMO=0 closes it at once", st == 200 and "closed" in body)
 os.environ["WU_STREAM"] = "0"; os.environ["WU_GUEST_DEMO"] = "1"
 st, _, body = get("/wrath?demo=1", ip="203.0.113.201")
 check("streaming off: no pass", st == 503 and "resting" in body)

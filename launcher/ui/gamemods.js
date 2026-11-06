@@ -328,8 +328,11 @@
       try {
         const run = () => invoke("mod_install", { client: c.id, project: p.id });
         await (typeof withNativeOk === "function" ? withNativeOk(run) : run());
+        // Installed opens on the tab of what just went in (Mods or Addons), with its card marked (app.js noteInstalled)
+        if (window.LeylineApp && window.LeylineApp.noteInstalled) window.LeylineApp.noteInstalled(p.id, window.LeylineShelf ? window.LeylineShelf.of(p) : "");
       } catch (e) {
-        if (sayFn) sayFn(`${p.name} didn't go in: ${String(e).slice(0, 160)}. Playing without it.`, "warn");
+        const why = window.LeylineFriendly ? window.LeylineFriendly(e, "") : "";   // never the raw error (friendly.js)
+        if (sayFn) sayFn(`${p.name} didn't go in${why ? ": " + why.replace(/[.!?]$/, "") : ""}. Playing without it.`, "warn");
       }
     }
     if (leyline) { try { await window.LeylineAddons.install(c); } catch (_) { /* PLAY goes on */ } }

@@ -75,6 +75,8 @@ local function player(over)
     function p:GetGroup() return self.group end
     function p:Teleport(...) self.teleports[#self.teleports + 1] = { ... }; return self.teleportOk end
     function p:RegisterEvent(fn, delay, rep) self.queue[#self.queue + 1] = { fn = fn, delay = delay } end
+    p.commands = {}
+    function p:RunCommand(c) self.commands[#self.commands + 1] = c end
     return p
 end
 local function run(p)
@@ -255,6 +257,41 @@ local n = player({ guid = 22, level = 30, account = 42 })
 events[3](3, n); run(n)
 check("only the account's own intent", #n.teleports == 0)
 console("ovgo clear OTHER")
+
+-- mode kinds: boss fights (bf:) and the 1v1 arena queue (arena:1v1) ---------------------------------------------
+check("bf kind is valid", T.validGo("bf:frozen-throne:normal:bots") and T.validGo("bf:frozen-throne:heroic:group-only")
+    and T.validGo("bf:frozen-throne:normal:group") and T.validGo("arena:1v1"))
+for _, bad in ipairs({ "bf:frozen-throne:mythic:bots", "bf:onyxia:normal:bots", "bf:frozen-throne:normal:pets",
+                       "bf:frozen-throne:normal", "bf:frozen-throne:normal:bots:x", "arena:2v2", "arena:1v1x",
+                       "bf:Frozen-Throne:normal:bots", "bf:frozen-throne:normal:bots;drop" }) do
+    check("refused: " .. bad, not T.validGo(bad))
+end
+r, out = console("ovgo set PLAYER bf:frozen-throne:heroic:group-only")
+check("console set bf: ovgo ok", r == false and out:match("^ovgo ok: PLAYER %-> bf:frozen%-throne:heroic:group%-only")
+    and auth.intents[42] and auth.intents[42].go == "bf:frozen-throne:heroic:group-only")
+local bf = player({ guid = 30, level = 80 })
+events[3](3, bf); run(bf)
+check("bf at login: runs .bossfight join, no teleport, used once", bf.commands[1] == "bossfight join frozen-throne heroic group-only"
+    and #bf.teleports == 0 and auth.intents[42] == nil and T.pending[42] == nil)
+console("ovgo set PLAYER bf:frozen-throne:normal:bots")
+local low = player({ guid = 31, level = 70 })
+events[3](3, low); run(low)
+check("bf below 80: waits, says the level", #low.commands == 0 and last(low):match("needs level 80") and auth.intents[42] ~= nil)
+low.level = 80
+events[13](13, low, 79); run(low)
+check("bf: reaching 80 starts it", low.commands[1] == "bossfight join frozen-throne normal bots" and auth.intents[42] == nil)
+console("ovgo set PLAYER bf:frozen-throne:normal:bots")
+local busy = player({ guid = 32, level = 80, combat = true })
+events[3](3, busy); run(busy)
+check("bf in combat: kept for .go", #busy.commands == 0 and last(busy):match("not in combat") and auth.intents[42] ~= nil)
+busy.combat = false
+cmd(busy, ".go"); run(busy)
+check("bf: .go starts it", busy.commands[1] == "bossfight join frozen-throne normal bots")
+console("ovgo set PLAYER arena:1v1")
+local ar = player({ guid = 33, level = 80 })
+events[3](3, ar); run(ar)
+check("arena:1v1 at login: .q1v1 unrated", ar.commands[1] == "q1v1 unrated" and #ar.teleports == 0 and auth.intents[42] == nil)
+check("places still work beside the mode kinds", T.validGo("q:deadmines") and T.validGo("b:icc-frozen-throne") and not T.modeGo("q:deadmines"))
 
 -- messages ----------------------------------------------------------------------------------------------------
 local joined = table.concat(allMsgs, "\n"):lower()

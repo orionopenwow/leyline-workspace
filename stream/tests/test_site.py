@@ -210,8 +210,8 @@ check("account page: still the realm list and the Hero Key link", "Choose a real
       and 'class="wu-panel wide"' in acct)
 check("account page: no Log In once signed in", ">Log In</a>" not in nav_of(acct))
 check("the gold pages keep their themed body", '<body class="wu">' in wp.signed_out_page().decode())
-check("titles say which page", "<title>Realms · WrathUnleashed</title>" in get("/wrath/realms")[2]
-      and "<title>Leyline</title>" in get("/wrath/leyline")[2] and "<title>Sign in · WrathUnleashed</title>" in wp.signed_out_page().decode())
+check("titles say which page", "<title>Realms · Leyline</title>" in get("/wrath/realms")[2]
+      and "<title>Leyline</title>" in get("/wrath/leyline")[2] and "<title>Log in · Leyline</title>" in wp.signed_out_page().decode())
 
 # ---------------------------------------------------------------- 4. the 404
 st, hd, nf = get("/wrath/no-such-page")
@@ -425,8 +425,8 @@ def check_frame(label, page, active, scripts=0):
 
 so = wp.signed_out_page().decode()
 check_frame("framed sign-in page", so, "/wrath")
-check("framed sign-in page: the same Sign in link, its link card and title", f'href="{wp.html.escape(wp.signin_url("/wrath"))}">Sign in</a>' in so
-      and 'property="og:title"' in so and "<title>Sign in · WrathUnleashed</title>" in so and so.count('name="description"') == 1)
+check("framed sign-in page: the same Log in link, its link card and title", f'href="{wp.html.escape(wp.signin_url("/wrath"))}">Log in</a>' in so
+      and 'property="og:title"' in so and "<title>Log in · Leyline</title>" in so and so.count('name="description"') == 1)
 acct = wp.account_page("Tester", "WR1", "pw", "n0nce").decode()
 check_frame("framed account page", acct, "/wrath", scripts=2)
 check("framed account page: the realm list, the Hero Key link, the copy fields and the + Your server link",

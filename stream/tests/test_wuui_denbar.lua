@@ -193,8 +193,10 @@ check("F7 and F8 bound in the Den (free: a stock game binds neither)", overrides
 local intro = D.Intro()
 check("the first time: the intro's first card", intro and intro:IsShown() and intro.head:GetText() == "This is your Den"
     and intro.body:GetText():find("empty white world that's yours") and intro.count:GetText() == "1 / 5")
+-- (5 Nov, the noggit keys: the keys card is the whole key map, one short line each, the window grows to fit)
 check("four short cards and the keys", #D.CARDS == 5 and (function()
-    for i, c in ipairs(D.CARDS) do if (i < 5 and #c[2] > 160) or #c[2] > 220 or #c[1] > 20 then return false end end
+    for i, c in ipairs(D.CARDS) do if (i < 5 and #c[2] > 160) or (i == 5 and #c[2] > 720) or #c[1] > 20 then return false end end
+    for line in D.CARDS[5][2]:gmatch("[^\n]+") do if #line > 66 then return false end end
     return D.CARDS[2][1] == "Build mode" and D.CARDS[2][2]:find("F7") and D.CARDS[3][1] == "Shape ground" and D.CARDS[4][2]:find("Invite") and D.CARDS[5][1] == "Keys"
 end)())
 intro.next:Fire("OnClick")
@@ -313,8 +315,10 @@ B.ShowBuilder(true)
 W.EditMode.ShowDen(true)
 W.DenHome.Show(true)
 B.ShowProps(true)
-check("before: the Builder, the Den panel, Den home and the properties are open", B.Window():IsShown() and W.EditMode.DenPanel():IsShown()
-    and W.DenHome.Panel():IsShown() and B.Panel():IsShown())
+-- one right-hand inspector (DenLayout.lua, owner 5 Nov): the properties, opened last, put Den home away until they close
+check("before: the Builder, the Den panel and the properties are open; Den home waits for the properties", B.Window():IsShown()
+    and W.EditMode.DenPanel():IsShown() and B.Panel():IsShown() and (not W.DenLayout or (not W.DenHome.Panel():IsShown()
+    and W.DenLayout.Waiting(W.DenHome.Panel()))))
 _G.LeylineDenKeyPlay:Fire("OnClick", "LeftButton", true)
 _G.LeylineDenKeyPlay:Fire("OnClick", "LeftButton", false)
 check("F8: play mode (one press, down and up, counts once)", D.play == true)
@@ -351,7 +355,16 @@ check("F7 in play mode: back to building, the Builder opens, the banner says Bui
     and _G.LeylineDenModeBanner.label:GetText() == "Build mode" and _G.LeylineDenBuildEdge:IsShown())
 _G.LeylineDenKeyBuild:Fire("OnClick", "LeftButton", true)
 check("F7 in build mode: play mode (one key both ways)", D.play == true)
+-- den-move reads the mode from the report (the open frames, the banner and the toast): Play, then Build
+local function reportLine(lines, head) for _, l in ipairs(lines) do if l:find("^" .. head) then return l end end end
+local rp = D.Report()
+check("the report in play mode: the play corner open, not the strip or the rail; the banner says Play",
+    reportLine(rp, "mode play=1 banner=Play_mode") ~= nil and reportLine(rp, "open "):find("LeylineDenPlayPill", 1, true)
+    and not reportLine(rp, "open "):find("LeylineDenRail", 1, true) and not reportLine(rp, "open "):find("LeylineDenBar,", 1, true))
 _G.LeylineDenKeyBuild:Fire("OnClick", "LeftButton", true)
+rp = D.Report()
+check("the report in build mode: the strip and the rail back, the banner says Build", reportLine(rp, "mode play=0 banner=Build_mode") ~= nil
+    and reportLine(rp, "open "):find("LeylineDenRail", 1, true) and not reportLine(rp, "open "):find("LeylineDenPlayPill", 1, true))
 
 -- ---------------------------------------------------------------- 4. keys only when free, and nowhere else
 bound.F8 = "TOGGLEAUTORUN"
@@ -409,6 +422,37 @@ do
     check("diag: the addon answers Den Lite's ask with its view, tagged", said:find("wudiag\tat:before", 1, true) ~= nil
         and said:find("wudiag\tme:speed=", 1, true) ~= nil and said:find("wudiag\tme2:mounted=", 1, true) ~= nil
         and said:find("W*=", 1, true) ~= nil)
+end
+
+-- the showcase (labs/den-lite showcase.rs): a share's pictures, taken by the game itself, the interface hidden
+do
+    local shots, turns, zoomed = 0, {}, 0
+    Screenshot = function() shots = shots + 1; check("showcase: the interface is hidden for each picture", not UIParent:IsShown()) end
+    FlipCameraYaw = function(a) turns[#turns + 1] = a end
+    CameraZoomOut = function(n) zoomed = n end
+    cv.screenshotFormat = "tga"
+    UIParent:Show()
+    fireClient("wuden\tshowcase\t1/1\t4|1800|24")
+    local f = D.shootFrame
+    check("showcase: it starts, zoomed out to fit the build, as JPEGs", f:IsShown() and zoomed == 24 and cv.screenshotFormat == "jpeg")
+    check("showcase: one at a time", D.Showcase(4, 1.8, 24) == false)
+    for _ = 1, 60 do if f:IsShown() then f:Fire("OnUpdate", 0.5) end end
+    check("showcase: four pictures, a quarter turn after each, back where it began", shots == 4 and #turns == 4
+        and turns[1] == 90 and turns[4] == 90)
+    check("showcase: then the interface and the player's own settings are back", not f:IsShown() and UIParent:IsShown()
+        and cv.screenshotFormat == "tga")
+    fireClient("wuden\tshowcase\t1/1\tnot numbers")
+    check("showcase: a bad line does nothing", not f:IsShown())
+end
+
+-- 5 Nov den-move on the owner's PC: a pick before the gallery's cards came did nothing ("in hand off"); Den Lite
+-- knows the prop by its number, so the card is picked by it
+do
+    local keep = B.catalog
+    B.catalog = {}
+    local ok = D.active and D.TestAction("pick 2413")
+    check("a test pick before the gallery's cards came: picked by its number", (not D.active) or (ok and B.pick and B.pick.id == 2413))
+    B.catalog = keep
 end
 
 print(string.format("\n%d/%d passed", pass, pass + fail))

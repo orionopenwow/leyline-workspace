@@ -87,6 +87,12 @@ struct AppState {
     data_dir: String,
 }
 
+/// What the UI runs on (ui/platform.js): a computer here; the phone app answers the same command (mobile.rs).
+#[tauri::command]
+fn platform() -> crate::Platform {
+    crate::platform()
+}
+
 #[tauri::command]
 fn get_state(core: State<Core>) -> AppState {
     AppState {
@@ -220,7 +226,8 @@ fn point_and_play_with(
         if r.build.is_some_and(|b| b != p.build) {
             let s = core.snapshot();
             return Err(realms::pick_client(&r, &s.clients, Some(client))
-                .map(|c| format!("{} runs {}: pick {} for it.", r.name, c.build.version(), c.name))
+                // the era, never a version number in a sentence (players' words; review 4 Nov)
+                .map(|c| format!("{} needs a {} game folder: pick {} for it.", r.name, c.build.era().unwrap_or("different"), c.name))
                 .unwrap_or_else(|e| e));
         }
     }
@@ -242,6 +249,13 @@ fn point_and_play_with(
     // anywhere but a Den: the Den's account and realm name (den_launch) out of Config.wtf, so the switch is clean
     if !local && realm != crate::host::lite::ADDRESS {
         let _ = crate::herokey::clear_login(&profile.path, crate::host::lite::ACCOUNT, crate::host::lite::REALM);
+        // a start where Leyline signs nobody in (a community realm, the official realm signed out): the account names
+        // Leyline wrote for earlier starts come out too, so the login screen never shows the player's official account
+        // (or a Den's) on another realm (review 4 Nov). A start that signs in wrote its own name just before this. The
+        // Docker Den and realms on this PC keep the name the Den page filled in (den_prefill_account).
+        if session.is_none() && !on_this_pc(&realm) {
+            let _ = crate::herokey::clear_written_names(&profile.path);
+        }
     }
     crate::gfx::prepare_launch(&profile)?;
     let hybrid_on = (core.snapshot().hybrid_login || local) && profile.build == clients::Build::V335a;
@@ -263,6 +277,13 @@ fn point_and_play_with(
         if let Err(e) = r {
             ground_note = format!(" (Your Den's ground: {e})");
         }
+        // The official realm's race and class choices (crate::combos, docs/RACE-CLASS-COMBOS.md): the create screen's
+        // tables from the player's own files, in patch-Y, before PLAY there; taken away before anywhere else. Never
+        // stops the start either.
+        let preset = if crate::addresses::is_official_realm(&realm) { crate::combos::official_preset(&core.dir) } else { crate::combos::Preset::Off };
+        if let Err(e) = crate::combos::prepare_client(&profile.path, preset) {
+            ground_note.push_str(&format!(" (The realm's race and class choices: {e})"));
+        }
     }
     let plan = launch::plan(&profile, &wine, launch::Os::current())?;
     let child = launch::run(&plan).inspect_err(|_| {
@@ -276,6 +297,13 @@ fn point_and_play_with(
         scrub_when_closed(profile.path.clone());
     }
     Ok((format!("Started {} on {realm}.{ground_note}", profile.name), hybrid))
+}
+
+/// A realm on this PC (the Docker Den, the player's own hosted realm): `127.x`, `localhost`, or the Docker Den's
+/// knocked address.
+fn on_this_pc(realm: &str) -> bool {
+    let host = realm.rsplit_once(':').map(|(h, _)| h).unwrap_or(realm);
+    host.starts_with("127.") || host.eq_ignore_ascii_case("localhost") || DEN_ADDRESS.lock().ok().and_then(|g| g.clone()).as_deref() == Some(realm)
 }
 
 /// The Docker Den's address on this PC, once its own invite was knocked (join_invite): its plays get the Den's ground.
@@ -623,12 +651,14 @@ struct GuestJoin {
 #[tauri::command]
 async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Result<Joined, String> {
     core.client(&client)?;
-    let (relay, rid, secret) = realms::parse_invite(&link).ok_or("That is not an invite link (https://<relay>/join/<realm>#<code>).")?;
+    // a Den code (DEN-...: host/denhost.rs) is the same as its link, the relay way
+    let link = crate::host::denhost::link_from_code(&link, realms::RELAY).unwrap_or(link);
+    let (relay, rid, secret) = realms::parse_invite(&link).ok_or("That is not an invite link (https://<relay>/join/<realm>#<code>) or a Den code (DEN-...).")?;
     // a friend's Den (Den Lite): the same network first, then the friend's own address, then the relay (denways.rs)
     if let Some((user, pass)) = crate::host::litenet::guest_in(&link) {
         let profile = core.client(&client)?;
         if profile.build != clients::Build::V335a {
-            return Err("Your friend's Den plays with a 3.3.5a game folder: pick that one.".into());
+            return Err("Your friend's Den plays with a Wrath game folder: pick that one.".into());
         }
         let (lan, at) = crate::host::denways::ways_in(&link);
         let (way, list, tried) = blocking(move || Ok(crate::host::denways::pick(lan.as_deref(), at.as_deref(), crate::host::denways::connects))).await?;
@@ -669,6 +699,8 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
 #[derive(Serialize)]
 struct DenInvite {
     link: String,
+    /// The same way in as a code to paste (DEN-...: host/denhost.rs), the relay way.
+    code: String,
     name: String,
     expires: u64,
     tunnel: crate::host::litenet::TunnelState,
@@ -750,14 +782,9 @@ fn den_invite_with(name: Option<&str>, tunnel: bool) -> Result<DenInvite, String
         let seed = litenet::load_or_create_key(&litenet::key_path(&root))?;
         let secret = lite::invite_secret(&root)?;
         let tunnel = if tunnel {
-            litenet::start(litenet::Setup {
-                endpoint: litenet::Endpoint::relay(realms::RELAY),
-                relay_name: realms::RELAY.into(),
-                seed,
-                name: "Den Lite".into(),
-                invite_secret: secret.clone(),
-                den_dir: l.den_dir(),
-            })
+            // kept on for the next start of Leyline (host/denhost.rs: den_share_resume)
+            crate::host::denhost::set_sharing(&root, true);
+            den_tunnel(&l, &root)?
         } else {
             let public = litenet::public_key(&seed)?;
             litenet::TunnelState { relay: realms::RELAY.into(), realm_id: litenet::realm_id(&public), ..Default::default() }
@@ -781,9 +808,116 @@ fn den_invite_with(name: Option<&str>, tunnel: bool) -> Result<DenInvite, String
         } else {
             InviteWay { id: "relay", ok: false, line: format!("Leyline relay: {}", tunnel.last_error) }
         };
+        let code = crate::host::denhost::code_from_link(&link).unwrap_or_default();
         let link = crate::host::denways::with_ways(&link, lan.as_deref(), at.as_deref());
-        Ok(DenInvite { link, name: g.name, expires: g.expires, tunnel, ways: vec![lan_way, own_way, relay_way] })
+        Ok(DenInvite { link, code, name: g.name, expires: g.expires, tunnel, ways: vec![lan_way, own_way, relay_way] })
     }
+}
+
+/// The relay tunnel for this Den Lite (host/litenet.rs), as Invite friends and the resume start it.
+fn den_tunnel(l: &crate::host::lite::Binary, root: &Path) -> Result<crate::host::litenet::TunnelState, String> {
+    use crate::host::{lite::DenLite, litenet};
+    let seed = litenet::load_or_create_key(&litenet::key_path(root))?;
+    let secret = crate::host::lite::invite_secret(root)?;
+    Ok(litenet::start(litenet::Setup {
+        endpoint: litenet::Endpoint::relay(realms::RELAY),
+        relay_name: realms::RELAY.into(),
+        seed,
+        name: "Den Lite".into(),
+        invite_secret: secret,
+        den_dir: l.den_dir(),
+    }))
+}
+
+/// Sharing kept across restarts (owner 4 Nov: "it keeps working across restarts"): when Leyline starts and the host
+/// was sharing (host/denhost.rs `sharing`), Den Lite starts (no game) and the tunnel comes back, so friends' links
+/// work after the host's PC restarts. Stop sharing ends it.
+fn den_share_resume() -> Result<bool, String> {
+    use crate::host::{denhost, lite::{self, DenLite}, litenet};
+    let app = crate::settings::app_dir();
+    let root = lite::root(&app);
+    if !denhost::sharing(&root) {
+        return Ok(false);
+    }
+    let l = lite::Binary::find(&app);
+    if !l.available() {
+        return Ok(false);
+    }
+    if !l.status().running {
+        l.start()?;
+        for _ in 0..50 {
+            if litenet::remote_ports(&l.den_dir()).is_some() && l.status().running {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    }
+    if litenet::remote_ports(&l.den_dir()).is_none() {
+        return Err("Your Den's server is from before friends could join.".into());
+    }
+    den_tunnel(&l, &root).map(|_| true)
+}
+
+/// The Friends list on Your Den (host/denhost.rs): who is in now, the friends' logins that still work, and whether
+/// the Den is shared.
+#[derive(Serialize)]
+struct DenFriends {
+    running: bool,
+    sharing: bool,
+    online: crate::host::denhost::Online,
+    invites: Vec<crate::host::lite::GuestInfo>,
+    tunnel: crate::host::litenet::TunnelState,
+}
+
+#[tauri::command]
+async fn den_friends() -> Result<DenFriends, String> {
+    blocking(|| {
+        use crate::host::{denhost, lite::{self, DenLite}};
+        let app = crate::settings::app_dir();
+        let l = lite::Binary::find(&app);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let running = l.available() && l.status().running;
+        let mut online = denhost::read_online(&l.den_dir(), now);
+        if !running {
+            online = denhost::Online::default();
+        }
+        let invites = if l.exe.is_some() { l.guest_list().unwrap_or_default() } else { Vec::new() };
+        Ok(DenFriends { running, sharing: denhost::sharing(&lite::root(&app)), online, invites, tunnel: crate::host::litenet::state() })
+    })
+    .await
+}
+
+/// One thing the host does for a friend from the Friends list: `kick` (out now, their link stops), `build` (on or
+/// off; `who` "all" for every friend), `keep` (their link works a week from their last visit). The line to show.
+#[tauri::command]
+async fn den_friend(action: String, who: String, on: bool) -> Result<String, String> {
+    blocking(move || {
+        use crate::host::{denhost, lite::{self, DenLite}};
+        let line = denhost::ask_line(&action, &who, on).ok_or("That isn't something Your Den can do for a friend.")?;
+        let l = lite::Binary::find(&crate::settings::app_dir());
+        if l.exe.is_none() {
+            return Err("Press Play solo once first: it gets your Den's server.".into());
+        }
+        if l.status().running {
+            denhost::ask(&l.den_dir(), &line)?;
+            if let Some(said) = denhost::answer(&l.den_dir(), std::time::Duration::from_millis(2500)) {
+                return Ok(said);
+            }
+            // an older Den Lite doesn't read asks: what the file can do, it does
+            let _ = std::fs::remove_file(l.den_dir().join(denhost::HOST_ASK_FILE));
+        }
+        match action.as_str() {
+            "kick" => l.guest_revoke(&who).map(|_| "Their link no longer works.".to_string()),
+            "build" if who == "all" => Err("Start your Den first (Play solo): every friend's switch is for a Den that is running.".into()),
+            _ => l.guest_set(&who, &action, on).map(|_| match (action.as_str(), on) {
+                ("build", true) => "They can build when they come in.".to_string(),
+                ("build", false) => "They can look around, not build.".to_string(),
+                (_, true) => "Kept: their link works for a week from their last visit.".to_string(),
+                _ => "No longer kept.".to_string(),
+            }),
+        }
+    })
+    .await
 }
 
 /// "Your own address" for friends (host/denways.rs): a host name or IP (optionally `:port`) that reaches this PC
@@ -863,6 +997,7 @@ fn den_net_state() -> crate::host::litenet::TunnelState {
 async fn den_net_stop() -> Result<(), String> {
     blocking(|| {
         crate::host::litenet::stop();
+        crate::host::denhost::set_sharing(&crate::host::lite::root(&crate::settings::app_dir()), false);
         let l = crate::host::lite::Binary::find(&crate::settings::app_dir());
         if l.exe.is_some() {
             l.guest_revoke_all()?;
@@ -1494,6 +1629,97 @@ fn den_join_page(app: AppHandle, core: State<Core>) -> Result<(), String> {
     app.opener().open_url(link, None::<&str>).map_err(|e| e.to_string())
 }
 
+// ---- Single player's Built-in engine (host/engine.rs, docs/BUILTIN-ENGINE.md): no Docker. The page (single.js)
+// follows engine_progress as it follows host_progress for the Docker engine.
+
+fn engine_paths() -> crate::host::engine::Paths {
+    crate::host::engine::Paths::new(&settings::app_dir())
+}
+
+/// Installed, set up, running (each port), the player's login once made.
+#[tauri::command]
+async fn engine_status() -> Result<crate::host::engine::EngineStatus, String> {
+    blocking(|| Ok(crate::host::engine::status(&engine_paths()))).await
+}
+
+/// Set Single player up on the Built-in engine (whatever isn't done yet: the engine, the maps from this game folder,
+/// the database, the account) and start it. `update`: take the release's newer engine first.
+#[tauri::command]
+fn engine_setup(core: State<Core>, client: String, update: Option<bool>) -> Result<String, String> {
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err("Single player plays with a different game folder: pick one of its version.".into());
+    }
+    crate::host::engine::begin(&settings::app_dir(), Some(profile.path), update.unwrap_or(false))
+}
+
+/// Start it again (set up already).
+#[tauri::command]
+fn engine_start() -> Result<String, String> {
+    crate::host::engine::begin(&settings::app_dir(), None, false)
+}
+
+#[tauri::command]
+fn engine_progress() -> crate::host::engine::Job {
+    crate::host::engine::progress()
+}
+
+/// Everyone saved, everything stopped.
+#[tauri::command]
+async fn engine_stop() -> Result<String, String> {
+    blocking(|| crate::host::engine::stop(&engine_paths())).await
+}
+
+#[tauri::command]
+async fn engine_logs(lines: Option<usize>) -> Result<String, String> {
+    blocking(move || Ok(crate::host::engine::logs(&engine_paths(), lines.unwrap_or(200).clamp(20, 2000)))).await
+}
+
+/// A back-up of the saves (accounts, characters, the bots): the zip's path.
+#[tauri::command]
+async fn engine_backup() -> Result<String, String> {
+    blocking(|| crate::host::engine::backup(&engine_paths()).map(|p| p.display().to_string())).await
+}
+
+/// The release looked at for a newer engine; the status after.
+#[tauri::command]
+async fn engine_update_check() -> Result<crate::host::engine::EngineStatus, String> {
+    blocking(|| {
+        let p = engine_paths();
+        crate::host::engine::check_update(&p)?;
+        Ok(crate::host::engine::status(&p))
+    })
+    .await
+}
+
+#[derive(Serialize)]
+struct EnginePlay {
+    message: String,
+    account: String,
+    password: String,
+}
+
+/// Play Single player on the Built-in engine: the account filled in on the login screen and the realm picked after
+/// it (Config.wtf), the client pointed at 127.0.0.1:3724, then started.
+#[tauri::command]
+fn engine_play(core: State<Core>, client: String) -> Result<EnginePlay, String> {
+    use crate::host::engine;
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err("Single player plays with a different game folder: pick one of its version.".into());
+    }
+    let st = engine::status(&engine_paths());
+    if !st.set_up {
+        return Err("Set Single player up first: press Start on its page.".into());
+    }
+    if !st.running {
+        return Err("Single player isn't running: press Start first.".into());
+    }
+    let _ = crate::herokey::set_login(&profile.path, &st.account, Some(engine::REALM_NAME));
+    let (message, _) = point_and_play_with(&core, &client, engine::REALM, true, None, false)?;
+    Ok(EnginePlay { message, account: st.account, password: st.password })
+}
+
 /// Forge, the Den's terrain editor (host/forge.rs): installed or not, open or not, and what its last close did.
 #[tauri::command]
 fn forge_state() -> crate::host::forge::ForgeState {
@@ -2079,7 +2305,16 @@ fn install_and_restart(app: &AppHandle, core: &Core) -> Result<(), String> {
         return Err("No update is ready yet.".into());
     };
     // On Windows the installer takes over and closes Leyline itself; elsewhere Leyline restarts into the new one.
-    up.install(&bytes).map_err(|e| format!("The update could not be installed: {e}"))?;
+    // A failed install keeps the download: Restart can try again at once (review 4 Nov: it said "No update is ready
+    // yet" until the next check, 30 minutes later).
+    if let Err(e) = up.install(&bytes) {
+        if let Ok(mut u) = core.upd.lock() {
+            if u.pending.is_none() {
+                u.pending = Some((up, bytes));
+            }
+        }
+        return Err(format!("The update could not be installed: {e}"));
+    }
     app.restart()
 }
 
@@ -2154,9 +2389,35 @@ pub fn run() {
             start_update_timer(app.handle().clone());
             crate::p2p::cmds::magnet_from_args(); // a shared magnet: link (only with the magnet_links flag on)
             crate::agents::commands::start(app.handle().clone()); // Agents: the heartbeat `Leyline mcp` looks for (agents.rs)
+            // Be a node (p2p/node.rs): its loop, when this PC turned it on; started by "start with Windows" (--node):
+            // the window opens minimized, the node working
+            crate::p2p::node::start(settings::app_dir());
+            if crate::p2p::node::started_as_node(std::env::args()) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.minimize();
+                }
+            }
+            // Your Den shared with friends before: back on the Leyline network by itself (host/denhost.rs)
+            std::thread::spawn(|| {
+                if let Err(e) = den_share_resume() {
+                    eprintln!("leyline: Your Den's sharing didn't come back: {e}");
+                }
+            });
             Ok(())
         })
+        // Be a node's "keep running when the window closes": closing the main window minimizes it instead while the
+        // node is on and that box is ticked (no tray icon: that needs the tauri `tray-icon` feature, a new crate in the
+        // tree). Every other window, and every close with the box unticked, closes as before.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && crate::p2p::node::keep_running_on_close(&settings::app_dir()) {
+                    api.prevent_close();
+                    let _ = window.minimize();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
+            platform,
             get_state,
             pick_folder,
             detect_client,
@@ -2246,6 +2507,8 @@ pub fn run() {
             // Host pack, Docker, realm stop/logs/invite, P2P and torrent flags (src/p2p/cmds.rs)
             crate::p2p::cmds::hostpack_info,
             crate::p2p::cmds::hostpack_install,
+            crate::p2p::cmds::bots_status,
+            crate::p2p::cmds::bots_update,
             crate::p2p::cmds::docker_info,
             crate::p2p::cmds::docker_start, // Start Docker: Docker Desktop's own start, else its app (host/docker.rs start)
             crate::p2p::cmds::host_profiles, // host any client (host/profiles.rs)
@@ -2272,6 +2535,8 @@ pub fn run() {
             crate::p2p::cmds::den_share_move,
             den_play_lite,
             den_invite, // Invite friends on Den Lite: the relay tunnel and a login per friend (host/litenet.rs)
+            den_friends, // Your Den's Friends list: who's in, the logins that work, sharing (host/denhost.rs)
+            den_friend,  // kick, build on/off, keep for one friend (host/denhost.rs)
             den_net_state,
             den_net_stop,
             den_own_address, // Invite: your own address for friends (host/denways.rs)
@@ -2280,6 +2545,15 @@ pub fn run() {
             den_models_remove,
             den_prefill_account,
             den_join_page,
+            engine_status, // Single player's Built-in engine (host/engine.rs, ui/single.js)
+            engine_setup,
+            engine_start,
+            engine_progress,
+            engine_stop,
+            engine_logs,
+            engine_backup,
+            engine_update_check,
+            engine_play,
             forge_state, // Forge, the Den's terrain editor (host/forge.rs, ui/den.js "Open in Forge")
             forge_install,
             forge_open,
@@ -2307,6 +2581,10 @@ pub fn run() {
             crate::p2p::cmds::host_herokey_test,
             crate::p2p::cmds::host_carry, // Help carry the network (host/network.rs)
             crate::p2p::cmds::host_carry_set,
+            crate::p2p::cmds::node_state, // Be a node: the Host page's one switch (p2p/node.rs)
+            crate::p2p::cmds::node_set,
+            crate::p2p::cmds::node_check_network,
+            crate::p2p::cmds::node_quit,
             crate::p2p::cmds::p2p_flags,
             crate::p2p::cmds::p2p_set_flag,
             crate::p2p::cmds::p2p_set_limits,
@@ -2338,6 +2616,17 @@ pub fn run() {
             crate::forum::commands::forum_post,
             crate::forum::commands::forum_open,
             // List your mod: check, list, report, edit, remove with the launcher's sign-in (listing.rs)
+            // Mods & Addons › Dens: the shared Dens and stamps (denmarket.rs, stream/denmarket.py)
+            crate::denmarket::commands::dens_browse,
+            crate::denmarket::commands::dens_detail,
+            crate::denmarket::commands::dens_mine,
+            crate::denmarket::commands::dens_post,
+            crate::denmarket::commands::dens_share,
+            crate::denmarket::commands::dens_open,
+            crate::denmarket::commands::dens_stamp,
+            crate::denmarket::commands::dens_showcase,
+            crate::denmarket::commands::dens_shots,
+            crate::denmarket::commands::dens_page_open,
             crate::listing::commands::listing_post,
             crate::listing::commands::listing_mine,
             crate::listing::commands::listing_open,

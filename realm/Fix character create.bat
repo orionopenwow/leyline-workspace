@@ -6,7 +6,14 @@ rem start data, their race's own starting zone (Death Knights: Acherus) and star
 rem need no level-55 character. Backs up the changed tables first; "Rollback character fix.bat" undoes it.
 rem One upload and one SSH login (the server pauses SSH after many quick logins).
 rem Needs next to this file: charfix_world.sql, charfix.sh, charfix_rollback.sh.
+rem   "Fix character create.bat"          keeps the realm's race/class preset (modern the first time)
+rem   "Fix character create.bat" modern   today's retail pairs (83)      "... all"   every race with every class (100)
+rem The preset is kept in the realm's profile and told to the website (docs\RACE-CLASS-COMBOS.md).
 cd /d "%~dp0"
+set "COMBOS="
+if /i "%~1"=="modern" set "COMBOS=modern"
+if /i "%~1"=="all" set "COMBOS=all"
+if not "%~1"=="" if not defined COMBOS (echo Unknown preset "%~1": use modern or all. & pause & exit /b 1)
 set "KEY=%USERPROFILE%\.ssh\openwow"
 set "HOST=root@play.openvanilla.app"
 set "OPTS=-i "%KEY%" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30"
@@ -21,7 +28,7 @@ scp %OPTS% "%T%" %HOST%:/tmp/wu-charfix.tgz || (echo Upload failed. If it says "
 
 echo [2/2] Applying it on the server (backup, database, settings, world server restart: 2-10 minutes)...
 rem Runs on the server by itself (charfix.log), so a dropped connection can't stop it halfway.
-ssh %OPTS% %HOST% "mkdir -p /srv/wrath/charfix && tar -xzf /tmp/wu-charfix.tgz -C /srv/wrath/charfix && rm -f /tmp/wu-charfix.tgz && cd /srv/wrath/charfix && sed -i 's/\r$//' charfix.sh charfix_rollback.sh charfix_world.sql && (setsid nohup bash charfix.sh > charfix.log 2>&1 < /dev/null & echo $! > charfix.pid) && sleep 1 && tail -n +1 -f --pid=$(cat charfix.pid) charfix.log; grep -q '^CHARFIX OK' charfix.log"
+ssh %OPTS% %HOST% "mkdir -p /srv/wrath/charfix && tar -xzf /tmp/wu-charfix.tgz -C /srv/wrath/charfix && rm -f /tmp/wu-charfix.tgz && cd /srv/wrath/charfix && sed -i 's/\r$//' charfix.sh charfix_rollback.sh charfix_world.sql && (CHARFIX_COMBOS=%COMBOS% setsid nohup bash charfix.sh > charfix.log 2>&1 < /dev/null & echo $! > charfix.pid) && sleep 1 && tail -n +1 -f --pid=$(cat charfix.pid) charfix.log; grep -q '^CHARFIX OK' charfix.log"
 if errorlevel 1 (
   echo.
   echo The fix did not report success. If the connection dropped it may still be running:
@@ -33,7 +40,7 @@ if errorlevel 1 (
 )
 del /q "%T%" 2>nul
 echo.
-echo Done. Make a new character with a new pair (for example a Tauren Paladin or a Human Hunter): it starts
+echo Done. Make a new character with a new pair (for example a Tauren Paladin or a Human Hunter; with "all", a Gnome Druid): it starts
 echo in its race's zone with its starting gear, and the main realm's pop-up offers the boost to 80.
 pause
 exit /b 0

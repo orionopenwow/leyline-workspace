@@ -37,6 +37,8 @@ pub struct Descriptor {
     pub size: Option<u64>,
     /// A `.torrent` for the same zip (used only when `torrent_downloads` is on).
     pub torrent: Option<String>,
+    /// The bots this pack's realm runs (realm/bots.json; host/bots.rs, "Update the bots").
+    pub bots: Option<super::bots::Pins>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +68,7 @@ pub fn clean(d: Descriptor) -> Option<Descriptor> {
         sha256: sha,
         size: d.size.filter(|s| *s <= MAX_PACK),
         torrent: d.torrent.filter(|t| origin_ok(t)),
+        bots: d.bots.and_then(super::bots::Pins::clean),
         ..d
     })
 }
@@ -85,6 +88,7 @@ pub fn from_catalog(v: &Value) -> Option<Descriptor> {
         sha256: s("sha256"),
         size: p.get("size").and_then(Value::as_u64),
         torrent: p.get("torrent").and_then(Value::as_str).map(String::from),
+        bots: p.get("bots").and_then(|b| serde_json::from_value(b.clone()).ok()),
     })
 }
 
@@ -283,7 +287,7 @@ mod tests {
     }
 
     fn desc(base: &str, data: &[u8], v: &str) -> Descriptor {
-        Descriptor { name: "Host pack".into(), version: v.into(), download: format!("{base}/hp.zip"), sha256: net::hex(&Sha256::digest(data)), size: Some(data.len() as u64), torrent: None }
+        Descriptor { name: "Host pack".into(), version: v.into(), download: format!("{base}/hp.zip"), sha256: net::hex(&Sha256::digest(data)), size: Some(data.len() as u64), torrent: None, bots: None }
     }
 
     #[test]

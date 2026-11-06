@@ -108,7 +108,9 @@ class Harden(unittest.TestCase):
 
     def test_stream_up_caps_bodies(self):
         sh = (REPO / "stream/server/stream-up.sh").read_text()
-        block = sh[sh.index("$STREAM_HOST {"):sh.index("$MARK_END")]
+        # the site block opens with every name since the domain move ($STREAM_NAMES), before it with $STREAM_HOST
+        start = sh.index("$STREAM_NAMES {") if "$STREAM_NAMES {" in sh else sh.index("$STREAM_HOST {")
+        block = sh[start:sh.index("$MARK_END", start)]
         self.assertIn("request_body {\n\t\tmax_size 2MB\n\t}", block)
         self.assertIn("flush_interval -1", block)
 

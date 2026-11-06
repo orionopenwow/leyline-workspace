@@ -627,7 +627,9 @@ if root then
     check("loot: greed -> pass", both("AC_PLAYERBOTS_LOOT_GREED_ROLL_LEVEL=0"))
     check("loot: no disenchant, no recipe rolls", both("AC_PLAYERBOTS_LOOT_ROLL_DISENCHANT=0") and both("AC_PLAYERBOTS_LOOT_ROLL_RECIPE=0"))
     check("loot: no looting under free-for-all", both("AC_PLAYERBOTS_FREE_METHOD_LOOT=0"))
-    check("caps: module 9, realm 60, group 10, raid 9, 25 off", both("AC_PLAYERBOTS_MAX_ADDED_BOTS=9") and both("OV_COMPANIONS_REALM_MAX=60")
+    -- owner 2026-10-31 "remove all live bots for now": the module cap is 0 while OV_COMPANIONS=0 (it was 9, you + 9)
+    check("caps: module 0 while bots are off (9 with them on)", both(prof:find("\nOV_COMPANIONS=0\n", 1, true) and "AC_PLAYERBOTS_MAX_ADDED_BOTS=0" or "AC_PLAYERBOTS_MAX_ADDED_BOTS=9"))
+    check("caps: realm 60, group 10, raid 9, 25 off", both("OV_COMPANIONS_REALM_MAX=60")
         and both("OV_COMPANIONS_GROUP_MAX=10") and both("OV_COMPANIONS_PER_PLAYER_RAID=9") and both("OV_COMPANIONS_RAID25=0"))
 else
     realPrint("SKIP profile checks (run with the repo path to ov_companions.lua)")
@@ -915,6 +917,187 @@ check("window answers never go to the chat while the window drives", (function()
         for _, x in ipairs(replies(p, "msg")) do if x:find("|cff66ccff[Bots]", 1, true) then return false end end
     end
     return true end)())
+
+-- the window's tabs: picks, pull, alts, buddy, dungeons ------------------------------------------------------------
+local function head(p)
+    local all = replies(p, "roster")
+    for line in (all[#all] or ""):gmatch("[^\n]+") do
+        if line:sub(1, 2) == "H\t" then local f = {}; for v in (line .. "\t"):gmatch("([^\t]*)\t") do f[#f + 1] = v end; return f end
+    end
+    return {}
+end
+local PK = T.parsePicks("tank=druid:bear pve,healer=shaman,dps=mage:fire pve,dps=any,tank=mage,healer=priest:shadow pve,dps=bard,heals=paladin")
+check("picks: class and spec per slot", PK.tank[1].word == "druid" and PK.tank[1].spec == "bear pve" and PK.healer[1].word == "shaman"
+    and PK.healer[1].spec == nil and PK.dps[1].word == "mage" and PK.dps[1].spec == "fire pve" and PK.dps[2].word == nil)
+check("picks: a class that can't take the role, a spec of another role and unknown words are dropped",
+    PK.tank[2].word == nil and PK.healer[2].word == "priest" and PK.healer[2].spec == nil and PK.dps[3].word == nil
+    and PK.healer[3].word == "paladin")
+check("picks: odd text gives no picks", #T.parsePicks("tank=warrior; drop table").tank == 0 and #T.parsePicks("").dps == 0)
+
+clock = clock + 31
+local wq = player({ guid = 230, level = 80, spec = "dps" })
+winPlayers[#winPlayers + 1] = wq
+win(wq, "fill", "party\ttank=druid:bear pve,healer=shaman,dps=mage:fire pve,dps=any")
+check("fill with picks: the picked classes are recruited", count(wq, "^playerbots bot addclass druid$") == 1
+    and count(wq, "^playerbots bot addclass shaman$") == 1 and count(wq, "^playerbots bot addclass mage$") >= 1
+    and count(wq, "addclass") == 4 and said(wq):match("Recruiting 4 bots"))
+local qb = serve(wq)
+run(wq)
+local qmage, qdruid, qsham
+for _, x in ipairs(qb) do
+    if x.class == 8 and not qmage then qmage = x elseif x.class == 11 then qdruid = x elseif x.class == 7 then qsham = x end
+end
+check("fill with picks: the picked specs are taught", told(wq, qdruid, "talents spec bear pve") and told(wq, qmage, "talents spec fire pve")
+    and told(wq, qsham, "talents spec resto pve"))
+win(wq, "roster", "")
+local hf = head(wq)
+check("roster head: buddy on and raids on", hf[9] == "1" and hf[10] == "1")
+env.OV_COMPANIONS_BUDDY, env.OV_COMPANIONS_GROUP_MAX = "0", "5"
+win(wq, "roster", "")
+hf = head(wq)
+check("roster head: buddy off and raids off", hf[9] == "0" and hf[10] == "0")
+env.OV_COMPANIONS_BUDDY, env.OV_COMPANIONS_GROUP_MAX = nil, nil
+win(wq, "order", "pull all")
+check("pull without a target: refused", said(wq) == "Target something first.")
+wq.sel = {}
+local wb0 = #wq.whispers
+win(wq, "order", "pull all")
+check("pull: only the tank opens on your target", (function()
+    for i = wb0 + 1, #wq.whispers do
+        local w = wq.whispers[i]
+        if w.text == "attack" and w.to ~= qdruid then return false end
+    end
+    return told(wq, qdruid, "attack") and said(wq) == "Pulling your target."
+end)())
+win(wq, "dismiss", "all"); run(wq)
+local solo = player({ guid = 231, level = 80, spec = "dps" })
+clock = clock + 31
+cmd(solo, "recruit dps mage"); local sm = serve(solo)[1]; run(solo)
+solo.sel = {}
+win(solo, "order", "pull all")
+check("pull without a tank bot: everyone attacks", told(solo, sm, "attack"))
+winPlayers[#winPlayers + 1] = solo
+
+-- Your alts tab
+table.insert(chars, { guid = 801, account = 11, name = "Alto", level = 60, class = 11, online = 0 })
+table.insert(chars, { guid = 802, account = 11, name = "Bassa", level = 65, class = 7, online = 0 })
+clock = clock + 31
+local ma = player({ guid = 800, account = 11, name = "Mains", level = 70 })
+winPlayers[#winPlayers + 1] = ma
+win(ma, "alts", "")
+local al = replies(ma, "alts")[1] or ""
+check("alts: the account's offline characters, none with you, no usual party", al:find("A\tAlto\t60\t11\t0\t0", 1, true)
+    and al:find("A\tBassa\t65\t7\t0\t0", 1, true) and not al:find("U\t", 1, true) and not al:find("Stranger", 1, true))
+win(ma, "alt", "Stranger")
+check("alt: another account's character refused", #ma.cmds == 0 and said(ma):match("no character called Stranger"))
+win(ma, "alt", "Alto")
+check("alt: brought through the module's add", ma.cmds[1] == "playerbots bot add Alto" and said(ma):match("Bringing Alto"))
+serve(ma); run(ma)
+check("alt: joined, and the list is sent again", T.companions[800][801] and #replies(ma, "alts") >= 2)
+win(ma, "save", "")
+al = replies(ma, "alts")[#replies(ma, "alts")]
+check("save: the usual party saved and shown; Alto shows as with you", usual[11] and usual[11][1].name == "Alto"
+    and al:find("U\tAlto", 1, true) and al:find("A\tAlto\t0\t11\t1\t1", 1, true) and said(ma):match("Saved your usual party"))
+win(ma, "dismiss", "all"); run(ma)
+
+-- Buddy tab
+clock = clock + 31
+local mb = player({ guid = 810, level = 20 })
+winPlayers[#winPlayers + 1] = mb
+win(mb, "buddy", "bard")
+check("buddy: an unknown class: usage", #mb.cmds == 0 and said(mb):match("Usage"))
+win(mb, "buddy", "mage")
+check("buddy: the picked class", mb.cmds[1] == "playerbots bot addclass mage" and said(mb):match("on the way"))
+local mbb = serve(mb)[1]; run(mb)
+win(mb, "roster", "")
+check("buddy: in the roster as the buddy", roster(mb).by[mbb.name] and roster(mb).by[mbb.name].kind == "buddy")
+win(mb, "buddy", "any")
+check("buddy: asking again shows the buddy", said(mb):match(mbb.name) and #mb.cmds == 1)
+win(mb, "buddy", "off"); run(mb)
+check("buddy off: it leaves and logs out", told(mb, mbb, "leave") and mb.cmds[#mb.cmds] == "playerbots bot remove " .. mbb.name
+    and said(mb):match("heads home"))
+env.OV_COMPANIONS_BUDDY = "0"
+win(mb, "buddy", "mage")
+check("buddy off on the realm: says so", said(mb):match("buddy is off") and #mb.cmds == 2)
+env.OV_COMPANIONS_BUDDY = nil
+
+-- Dungeons tab
+local nd = 0
+for _ in pairs(T.DUNGEONS) do nd = nd + 1 end
+check("dungeons: the list loaded through require, with doors and levels", nd >= 50 and T.DUNGEONS.deadmines
+    and T.DUNGEONS.deadmines.map == 36 and T.DUNGEONS.deadmines.min == 10 and T.DUNGEONS.deadmines.pos[1] == 36)
+clock = clock + 31
+local md = player({ guid = 820, level = 15, spec = "dps" })
+winPlayers[#winPlayers + 1] = md
+function md:Teleport(...)
+    local t = { ... }
+    self.teleports[#self.teleports + 1] = t
+    if self.refuse then return false end
+    self.map, self.dungeon = t[1], true
+    return true
+end
+win(md, "dungeon", "atlantis")
+check("dungeon: not on the list", said(md):match("isn't on the list") and #md.teleports == 0)
+md.combat = true
+win(md, "dungeon", "deadmines")
+check("dungeon: not in combat", said(md) == "Not in combat." and #md.cmds == 0 and #md.teleports == 0)
+md.combat, md.bg = false, true
+win(md, "dungeon", "deadmines")
+check("dungeon: not from a battleground", said(md):match("battlegrounds") and #md.teleports == 0)
+md.bg = false
+local low = player({ guid = 821, level = 8 })
+winPlayers[#winPlayers + 1] = low
+win(low, "dungeon", "deadmines")
+check("dungeon: below its level: refused", said(low):match("opens at level 10") and #low.cmds == 0 and #low.teleports == 0)
+win(md, "dungeon", "deadmines\ttank=warrior:prot pve")
+check("dungeon: the party is filled (with the picks)", count(md, "addclass") == 4 and count(md, "^playerbots bot addclass warrior$") == 1)
+check("dungeon: taken to the door", #md.teleports == 1 and md.teleports[1][1] == 36 and md.teleports[1][2] == -16.4
+    and said(md):match("^To The Deadmines: your bots meet you at the door%.$"))
+local mdb = serve(md)   -- they log in out in the world
+run(md)
+check("dungeon: the bots that join are fetched into the instance (summon)", (function()
+    for _, x in ipairs(mdb) do if not told(md, x, "summon") then return false end end
+    return #mdb == 4 end)())
+win(md, "dungeon", "deadmines")
+check("dungeon: already inside it: no trip, says so", #md.teleports == 1 and said(md):match("already"))
+win(md, "dungeon", "wailing-caverns")
+check("dungeon: inside another one: leave first", said(md):match("Leave this dungeon first") and #md.teleports == 1)
+md.map, md.dungeon = 0, false
+win(md, "dungeon", "wailing-caverns")
+check("dungeon: one trip every 5 minutes", said(md):match("travel to a dungeon again in %d+ s") and #md.teleports == 1)
+clock = clock + 301
+env.OV_COMPANIONS_DUNGEON_TRAVEL = "0"
+win(md, "dungeon", "wailing-caverns")
+check("dungeon: travel off: the party only", #md.teleports == 1 and said(md):match("^Head to Wailing Caverns"))
+env.OV_COMPANIONS_DUNGEON_TRAVEL = nil
+md.refuse = true
+win(md, "dungeon", "wailing-caverns")
+check("dungeon: the core refuses the door: says so", said(md):match("closed to you"))
+md.refuse = nil
+local before = #md.teleports
+win(md, "dungeon", "wailing-caverns")
+check("dungeon: the bots already with you are brought after the trip", (function()
+    local n0 = #md.whispers
+    run(md)
+    for _, x in ipairs(mdb) do
+        local got = false
+        for i = n0 + 1, #md.whispers do if md.whispers[i].to == x and md.whispers[i].text == "summon" then got = true end end
+        if not got then return false end
+    end
+    return #md.teleports == before + 1 end)())
+local mr = player({ guid = 822, level = 30 })
+winPlayers[#winPlayers + 1] = mr
+group(mr).raid = true
+win(mr, "dungeon", "deadmines")
+check("dungeon: not as a raid", said(mr):match("You are in a raid"))
+local lead = player({ guid = 823, level = 30 })
+local mf = player({ guid = 824, level = 30 })
+winPlayers[#winPlayers + 1] = mf
+group(lead, { lead, mf })
+win(mf, "dungeon", "deadmines")
+check("dungeon: group leader only", said(mf):match("Only the group leader") and #mf.teleports == 0)
+win(md, "dismiss", "all"); run(md)
+for _, p in ipairs({ wq, solo, ma, mb, md, low, mr, mf }) do for _, x in ipairs(replies(p, "msg")) do allMsgs[#allMsgs + 1] = x end end
 for _, p in ipairs({ wp, wd, me, ws }) do for _, x in ipairs(replies(p, "msg")) do allMsgs[#allMsgs + 1] = x end end
 
 -- names: no brand names, and companions are called bots

@@ -67,6 +67,8 @@ services:
     working_dir: /azerothcore
     tty: true
     restart: unless-stopped
+    # a cap so a leak can't take the host's whole PC (review 4 Nov); WU_AUTH_MEM in .env changes it
+    mem_limit: ${WU_AUTH_MEM:-256m}
     logging: *logging
     networks: [realm]
     environment:
@@ -96,6 +98,8 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+    # a cap so a leak can't take the host's whole gaming PC (review 4 Nov); WU_WORLD_MEM in .env changes it
+    mem_limit: ${WU_WORLD_MEM:-3g}
     logging: *logging
     networks: [realm]
     stop_grace_period: 2m      # saves every online player on the way down

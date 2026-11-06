@@ -250,10 +250,10 @@ check("Ragefire Chasm (inside the mark) allowed at 80", #p.tp == 0)
 -- outside: sent home with both messages
 p.map, p.zone = LATER_MAP, 0; fire(28, p); runTimers()
 check("an instance in a tier above the mark refused: sent to Dalaran", #p.tp == 1 and p.tp[1][1] == 571, LATER_MAP)
-check("whisper says drop your game folder + the help page + Discord", p.msgs[#p.msgs]:match("Drop your own 3.3.5a game folder on the game page")
+check("whisper says drop your game folder + the help page + Discord", p.msgs[#p.msgs]:match("Drop your own game folder on the game page")
     and p.msgs[#p.msgs]:match("Use my game folder") and p.msgs[#p.msgs]:match("nothing is uploaded")
-    and p.msgs[#p.msgs]:match("play.openvanilla.app/wrath/docs/play") and p.msgs[#p.msgs]:match("discord.gg/hVeUxYwbkr"))
-check("centre text too: drop the game folder", #p.center == 1 and p.center[1]:match("drop your 3.3.5a game folder on the page"))
+    and p.msgs[#p.msgs]:match("leylinelauncher.com/wrath/docs/play") and p.msgs[#p.msgs]:match("discord.gg/RfChVr8J7T"))
+check("centre text too: drop the game folder", #p.center == 1 and p.center[1]:match("drop your game folder on the page"))
 do
     local bad = false
     for _, t in ipairs({ p.msgs[#p.msgs], p.center[1] }) do
@@ -327,7 +327,7 @@ check("level 1 login: told where it lives", h1.msgs[#h1.msgs]:match("Northshire 
 h1.x, h1.y = -9300, -100; h1.zone = 12          -- walked out of the box, still in Elwynn (no zone change)
 tick()
 check("left the Northshire box (no zone change): the position check sends it back", h1.tp[1] and h1.tp[1][1] == 0 and math.abs(h1.tp[1][2] + 8949.95) < 0.01)
-check("sent back with the game-folder + Discord message", h1.msgs[#h1.msgs]:match("own 3.3.5a game folder") ~= nil)
+check("sent back with the game-folder + Discord message", h1.msgs[#h1.msgs]:match("own game folder") ~= nil)
 h1.x, h1.y, h1.zone = -8833, 628, 1519; fire(27, h1, 1519, 1519); runTimers()
 check("level 1 in Stormwind City: allowed", #h1.tp == 1)
 clock = clock + 10
@@ -617,8 +617,8 @@ do
         #s80.tp == 1 and s80.tp[1][1] == 571, #s80.tp)
     local m = s80.msgs[#s80.msgs]
     check("sampler message: add your own game folder to explore the whole world",
-        m:match("Add your own 3.3.5a game folder to explore the whole world") and m:match("Use my game folder")
-        and m:match("nothing is uploaded") and m:match("play.openvanilla.app/wrath/docs/play"), m)
+        m:match("Add your own game folder to explore the whole world") and m:match("Use my game folder")
+        and m:match("nothing is uploaded") and m:match("leylinelauncher.com/wrath/docs/play"), m)
     check("sampler message: points to community realms on Leyline", m:match("community realm from Leyline") ~= nil, m)
     check("sampler centre text: add your own game folder", s80.center[1] == "Add your own game folder to explore the whole world", s80.center[1])
     check("sampler messages: no game-brand words", noBrand(m) and noBrand(s80.center[1]) and noBrand(s80.msgs[1]))
@@ -714,8 +714,18 @@ do
     check("OV_SAMPLER off: no Sample Hangout welcome", not (mainP.msgs[1] or ""):match("Sample Hangout"))
     clock = clock + 61
     mainP.map, mainP.x, mainP.y, mainP.zone = 0, -10500, 1000, 40; fire(28, mainP); runTimers()
-    check("OV_SAMPLER off: the old message (drop your game folder)", mainP.msgs[#mainP.msgs]:match("Drop your own 3.3.5a game folder") ~= nil)
+    check("OV_SAMPLER off: the old message (drop your game folder)", mainP.msgs[#mainP.msgs]:match("Drop your own game folder") ~= nil)
     ENV.OV_SAMPLER = nil
+end
+
+-- The Den tier (mini.json "den", owner 1 Nov: the light browser Den): a level 1 browser player in a Den room on the
+-- island (map 1, 16226, 16257) is inside the slice, so the stream rule never sends them away; just off the island is not.
+if K.den then
+    local low = player(77, 1, 16226, 16257, { level = 1, zone = 876 })
+    check("Den tier: a level 1 player in the Den room is inside", T.inSlice({ tier = ALL }, low, 1, 876, 16226, 16257))
+    check("Den tier: the yard's edge is inside too", T.inSlice({ tier = ALL }, low, 1, 876, 16226 + 60, 16257 - 60))
+    check("Den tier: far from the island is not", not T.inSlice({ tier = ALL }, low, 1, 876, 15000, 15000))
+    check("Den tier: not in the travel menu", not (TT[K.den].play and #TT[K.den].play > 0))
 end
 
 -- tiers in the script, as text for the JSON cross-check (tests/test_lua.py)
@@ -726,5 +736,15 @@ for t = 0, TT.count - 1 do
     parts[#parts + 1] = t .. "=" .. table.concat(ids, ",")
 end
 print("TIERS " .. table.concat(parts, ";"))
+-- Review 4 Nov: no game client version in what players read (the standing rule: data fields and badges only)
+do
+    local T = OV_SLICES_TEST or {}
+    local bad = {}
+    for _, k in ipairs({ "BYOC", "SAMPLER_BYOC", "SAMPLER_WELCOME", "FALLBACK" }) do
+        local v = T[k]
+        if type(v) == "string" and (v:find("%d%.%d+%.%d") or v:find("1%.12")) then bad[#bad + 1] = k end
+    end
+    check("player messages name no client version", #bad == 0, table.concat(bad, ","))
+end
 print(string.format("\n%d/%d passed", pass, pass + fail))
 os.exit(fail == 0 and 0 or 1)

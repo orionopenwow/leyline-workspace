@@ -32,7 +32,7 @@ switches the realm to it (first run about an hour; characters and accounts are k
 | mod-challenge-modes | Hardcore, semi-hardcore, self-crafted, slow-XP and other runs with rewards |
 | mod-guildhouse | A guild house per guild |
 | mod-dungeon-master | Random dungeon runs from an NPC |
-| mod-arac | All races, all classes (client needs Patch-A.MPQ: `..\addons\install-gm-addons.bat`) |
+| mod-arac | More race/class pairs: the `modern` 83 or `all` 100 (docs/RACE-CLASS-COMBOS.md; Control `combos`). Players' desktop games get the create screen's tables from the launcher, made from their own files |
 | mod-1v1-arena | Rated 1v1 arena |
 | mod-mythic-plus | Keystones with a timer, affixes and rewards |
 | mod-multibot-bridge | Server side of the MultiBot addon (bot control panel) |

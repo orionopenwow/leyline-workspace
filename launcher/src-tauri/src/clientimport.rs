@@ -787,7 +787,7 @@ pub fn run_with(src: &Source, parent: &Path, work: &Path, caps: &Caps, job: &Job
 
 // ------------------------------------------------------------------------------------------------ the app
 
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))] // desktop only: the phone app has its own short list (mobile.rs)
 pub(crate) mod commands {
     use super::*;
     use tauri::{AppHandle, Manager, State};

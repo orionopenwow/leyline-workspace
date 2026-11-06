@@ -83,7 +83,7 @@ if PM is None:
 check("the catalog passes its check", PM.ERRORS == [] and PM.CATALOG is not None, PM.ERRORS)
 ids = [m["id"] for m in PM.entries()]
 check("the seed modes", ids == ["minigolf", "bumper-balls", "coin-dash", "community", "brawl", "azeroth-survivors", "hordes-of-azeroth",
-                               "arena-1v1", "keystones", "transmog", "hardcore"], ids)
+                               "arena-1v1", "keystones", "transmog", "hardcore", "frozen-throne", "arena-queue"], ids)
 INGAME = {"arena-1v1": ".hub arena", "keystones": ".hub keys", "transmog": ".hub transmog", "hardcore": ".hub hardcore"}
 check("the in-game modes: live, found with .hub", all(PM.by_id(k)["kind"] == "in-game" and PM.by_id(k)["status"] == "live"
       and PM.by_id(k)["start"] == {"cmd": v} for k, v in INGAME.items()))
@@ -91,6 +91,14 @@ gol = open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_go.lua"), en
 hubt = gol[gol.index("local HUB = {"):gol.index("local HUB_ORDER")]
 check("every .hub spot in the catalog is one ov_go.lua knows", all(re.search(rf"^\s+{v.split()[1]}\s+= \{{", hubt, re.M) for v in INGAME.values()))
 check("live realm modes", PM.realm_ids() == ["minigolf", "bumper-balls", "coin-dash", "community"], PM.realm_ids())
+# the boss fight and the arena queue: realm modes on the list (the launcher's schema), another go kind underneath
+check("boss fight and arena queue: live realm entries, never an ovplay id",
+      PM.live_realm_ids() == ["minigolf", "bumper-balls", "coin-dash", "community", "frozen-throne", "arena-queue"]
+      and not set(PM.GO_AS) & set(PM.realm_ids()), PM.live_realm_ids())
+check("GO_AS = stream/bossfights.py MODE_GO", wp.bossfights is not None and PM.GO_AS == wp.bossfights.MODE_GO)
+check("the site's Play links their own go", PM.play_href(PM.by_id("frozen-throne")) == "/wrath?go=bf:frozen-throne:normal:bots"
+      and PM.play_href(PM.by_id("arena-queue")) == "/wrath?go=arena:1v1")
+check("no brand words in their titles and lines", not any(PM.BANNED.search(PM.by_id(i)[f]) for i in PM.GO_AS for f in ("title", "line")))
 surv, hordes = PM.by_id("azeroth-survivors"), PM.by_id("hordes-of-azeroth")
 check("Azeroth Survivors: offline, coming, credited (MIT or Apache-2.0)", surv["kind"] == "offline" and surv["status"] == "coming"
       and surv["credit"]["by"] == "Aethus (original game)" and surv["credit"]["note"] == "Open rebuild by OutThisLife" and "Apache-2.0" in surv["credit"]["license"] and "MIT" in surv["credit"]["license"]
@@ -238,9 +246,12 @@ check("share-link go values still work", wp.go_param({"go": ["q:deadmines"]}) ==
 lua = open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_playmode.lua"), encoding="utf-8").read()
 table = lua[lua.index("local MODES = {"):lua.index("\n}\n", lua.index("local MODES = {"))]
 lua_ids = re.findall(r'\["([a-z0-9-]+)"\] = \{', table)
-check("ov_playmode.lua's table = the catalog's live realm modes", sorted(lua_ids) == sorted(PM.realm_ids()), (lua_ids, PM.realm_ids()))
+# the boss fight and arena queue ids may be in the realm's table too (the desktop launcher's LeylinePlay addon sends
+# "wuplay go <id>"; docs/BOSS-FIGHTS.md), or not yet
+check("ov_playmode.lua's table = the catalog's live realm modes", set(PM.realm_ids()) <= set(lua_ids)
+      and set(lua_ids) <= set(PM.live_realm_ids()), (lua_ids, PM.realm_ids()))
 for m in PM.entries():
-    if m["kind"] == "realm":
+    if m["kind"] == "realm" and m["id"] not in PM.GO_AS:
         check(f"ov_playmode.lua title of {m['id']}", f'["{m["id"]}"] = {{ title = "{m["title"]}"' in table)
 bat = open(os.path.join(REPO, "realm", "Server pass - finder 10 and bug reports.bat"), "rb").read()
 check("server pass .bat copies ov_playmode.lua", b'copy /y "custom\\lua_scripts\\ov_playmode.lua" "%T%\\" >nul' in bat)

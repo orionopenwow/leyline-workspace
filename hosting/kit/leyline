@@ -32,7 +32,8 @@
 # default public, private for den and solo), LEYLINE_GM (your account name),
 # LEYLINE_TAGLINE, LEYLINE_RULES_FILE (one rule per line). leyline link: LEYLINE_LINK_NAME, LEYLINE_LINK_AUTH,
 # LEYLINE_LINK_WORLD, LEYLINE_LINK_CLIENT (vanilla | tbc | wrath), LEYLINE_LINK_TAGLINE, LEYLINE_LINK_CORE,
-# LEYLINE_LINK_TAGS, LEYLINE_LINK_STATUS_URL.
+# LEYLINE_LINK_TAGS, LEYLINE_LINK_STATUS_URL. LEYLINE_NO_DOCKER=1: the link's agent runs on this machine's python3
+# (3.10+) instead of a container; chosen by itself when Docker isn't there but python3 is (a server box without Docker).
 #
 # This command never makes game accounts and never sets passwords. You make your own account on
 # your join page (your password never leaves your browser) and it gets GM rights by itself.
@@ -233,8 +234,20 @@ link_tools() {   # setup.py with the kit folder (this PC's python3 with LEYLINE_
   if [ "${LEYLINE_LOCAL_TOOLS:-0}" = 1 ]; then PYTHONPATH="$KIT/tools" WU_KIT="$KIT" python3 -m wuhost.setup "$@"; return; fi
   docker run --rm --user "$(id -u):$(id -g)" -v "$KIT:/kit" -e WU_KIT=/kit "${WU_TOOLS_IMAGE:-wu-host-tools:1}" python -m wuhost.setup "$@"
 }
+link_py_ok() { command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; }
+link_no_docker() { [ "${LEYLINE_NO_DOCKER:-0}" = 1 ]; }
 link_image() {
   local img="${WU_TOOLS_IMAGE:-wu-host-tools:1}"
+  # Hosting audit, 5 Nov ("host from anything"): a server box without Docker still links, the agent on its python3.
+  if ! link_no_docker && ! { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; } && link_py_ok; then
+    LEYLINE_NO_DOCKER=1
+    say "  No Docker here: the agent runs on this machine's python3 instead (LEYLINE_NO_DOCKER=1)."
+  fi
+  if link_no_docker; then
+    link_py_ok || die "LEYLINE_NO_DOCKER=1 needs python3 3.10 or newer (python.org), or install Docker instead."
+    LEYLINE_LOCAL_TOOLS=1
+    return 0
+  fi
   [ "${LEYLINE_LOCAL_TOOLS:-0}" = 1 ] && return 0
   command -v docker >/dev/null 2>&1 || die "Docker is not installed. Get Docker Desktop (Mac) or Docker Engine (Linux), then run this again."
   docker info >/dev/null 2>&1 || die "Docker is installed but not running. Start it, then run this again."
@@ -247,11 +260,13 @@ link_image() {
 }
 for_container() {  # an address as the agent's container sees it: on Mac and Windows "this PC" is host.docker.internal
   local a="$1"
-  if [ "$(uname -s)" != Linux ]; then
+  if [ "$(uname -s)" != Linux ] && ! link_no_docker; then
     a="$(printf '%s' "$a" | sed -E 's/^(127\.0\.0\.1|localhost):/host.docker.internal:/')"
   fi
   printf '%s' "$a"
 }
+link_pid() { local p; p="$(cat "$STATE/agent.pid" 2>/dev/null || true)"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && printf '%s' "$p"; }
+link_stop_local() { local p; p="$(link_pid || true)"; [ -n "$p" ] && kill "$p" 2>/dev/null; rm -f "$STATE/agent.pid"; }
 link_state() { sed -n "s/^ *\"$1\": *\(true\|false\|[0-9]*\).*/\1/p" "$STATE/relay-state.json" 2>/dev/null | head -1; }
 
 cmd_link() {
@@ -262,13 +277,17 @@ cmd_link() {
     status)
       [ -f "$STATE/host.json" ] || die "Nothing linked yet: run  leyline link"
       say "Linked server: $(state_get name)   realm id $(state_get realm_id)"
-      say "Agent:  $(docker ps -a --filter "name=^$LINK_C\$" --format '{{.Status}}' 2>/dev/null | head -1)"
+      if [ -f "$STATE/agent.pid" ]; then
+        say "Agent:  $(p="$(link_pid || true)"; [ -n "$p" ] && echo "running on python3 (pid $p, log state/agent.log)" || echo "not running (start: leyline link)")"
+      else
+        say "Agent:  $(docker ps -a --filter "name=^$LINK_C\$" --format '{{.Status}}' 2>/dev/null | head -1)"
+      fi
       say "Relay:  $([ "$(link_state connected)" = true ] && echo connected || echo 'not connected yet')   realm list: $(link_state listing_status)"
       say "Page:   ${LEYLINE_SITE}/wrath/r/$(state_get realm_id)"
       return ;;
-    stop) docker stop "$LINK_C" >/dev/null 2>&1 || true; say "Stopped. Your server shows as offline on the list at once and leaves it after 6 hours. Start again: leyline link"; return ;;
+    stop) link_stop_local; docker stop "$LINK_C" >/dev/null 2>&1 || true; say "Stopped. Your server shows as offline on the list at once and leaves it after 6 hours. Start again: leyline link"; return ;;
     remove)
-      docker rm -f "$LINK_C" >/dev/null 2>&1 || true
+      link_stop_local; docker rm -f "$LINK_C" >/dev/null 2>&1 || true
       say "The agent is gone: your server leaves the realm list (offline at once, off the list within 6 hours)."
       say "The realm id is kept in state/ (realm.key): run  leyline link  again to come back as the same realm."
       return ;;
@@ -306,6 +325,12 @@ cmd_link() {
   link_tools "${args[@]}" >/dev/null || die "The link settings were refused (see above)."
   if [ "${LEYLINE_LINK_NO_START:-0}" != 1 ]; then
     step "Starting the agent"
+    if link_no_docker; then
+      link_stop_local
+      (cd "$KIT" || exit 1
+       PYTHONPATH="$KIT/tools" nohup python3 -m wuhost.agent --state "$STATE" </dev/null >>"$STATE/agent.log" 2>&1 &
+       echo $! > "$STATE/agent.pid") </dev/null >/dev/null 2>&1
+    else
     local net=(--add-host host.docker.internal:host-gateway)
     [ "$(uname -s)" = Linux ] && net=(--network host)
     docker rm -f "$LINK_C" >/dev/null 2>&1 || true
@@ -313,6 +338,7 @@ cmd_link() {
       --security-opt no-new-privileges --memory 96m --tmpfs /tmp --log-opt max-size=10m --log-opt max-file=3 \
       --user "$(id -u):$(id -g)" -v "$STATE:/state" "${net[@]}" "${WU_TOOLS_IMAGE:-wu-host-tools:1}" \
       python -m wuhost.agent --state /state >/dev/null || die "The agent did not start (docker logs $LINK_C)."
+    fi
     local i
     for i in $(seq 1 "${LEYLINE_LINK_WAIT:-30}"); do [ "$(link_state connected)" = true ] && break; sleep 2; done
     if [ "$(link_state connected)" = true ]; then say "  ${G}Connected to the Leyline relay.${N}"
@@ -328,8 +354,13 @@ cmd_link() {
   say "    in realmd.conf). The relay limits wrong passwords per player instead."
   say "  It's listed as Unclaimed until you claim it for your Hero Key account: once the site gives you a claim token"
   say "  (its Claim a realm page), run: leyline claim TOKEN"
-  say "  Later: leyline link status | stop | remove. The agent restarts by itself whenever Docker runs."
-  if [ "$keep_on" = 1 ] && [ "${LEYLINE_LINK_NO_START:-0}" != 1 ]; then always_on; fi
+  if link_no_docker; then
+    say "  Later: leyline link status | stop | remove. The agent runs until this machine restarts; to start it at boot,"
+    say "  add this line to crontab -e:  @reboot cd \"$KIT\" && LEYLINE_NO_DOCKER=1 LEYLINE_NONINTERACTIVE=1 bash leyline link"
+  else
+    say "  Later: leyline link status | stop | remove. The agent restarts by itself whenever Docker runs."
+  fi
+  if [ "$keep_on" = 1 ] && [ "${LEYLINE_LINK_NO_START:-0}" != 1 ] && ! link_no_docker; then always_on; fi
 }
 
 cmd_pack() {   # leyline pack list | show ID | build ID [--game DIR] [--client-patch auto|always|never] (tools/wuhost/packs.py)

@@ -582,13 +582,17 @@ namespace
             if (FactionOk(s, horde) && !p->HasSpell(s))
                 p->learnSpell(s, false);
         TrainerPass(p, horde);
-        SetSpecTalents(p, spec, true);
+        // The points of a level 80 character, set by hand: a new Death Knight still stands in its starting zone here,
+        // where CalculateTalentsPoints counts only quest points (25). At login, on the boss map, the core counts again.
+        std::uint32_t points = std::uint32_t((80 - 9) * sWorld->getRate(RATE_TALENT));
+        p->SetFreeTalentPoints(points);
+        SetSpecTalents(p, spec, false);
         TrainerPass(p, horde);
         p->learnSpell(SPELL_ACTIVATE_PRIMARY, false);
         p->learnSpell(SPELL_ACTIVATE_SECONDARY, false);
         p->SetSpecsCount(2);
         p->SetActiveSpec(1);
-        p->SetFreeTalentPoints(p->CalculateTalentsPoints());
+        p->SetFreeTalentPoints(points);
         SetSpecTalents(p, spec2, false);
         TrainerPass(p, horde);
         HeroKit const* kit = KitFor(cls, spec.kit);
@@ -1301,11 +1305,8 @@ namespace LeylineBFHeroes
         if (!IsHeroPlayer(p))
             return;
         g_offlineUnbind.erase(p->GetGUID().GetCounter());
-        if (!OnBossMap(p->GetMapId()))
-        {
-            ToPlatform(p);
-            return;
-        }
+        // (off the boss maps, which the login path shouldn't allow: the queued join's start brings it to the platform;
+        // no teleport from inside the login hook)
         auto it = g_accounts.find(p->GetSession()->GetAccountId());
         std::string go = "bf:frozen-throne:normal:bots";
         if (it != g_accounts.end())

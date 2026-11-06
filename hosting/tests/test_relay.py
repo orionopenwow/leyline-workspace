@@ -46,6 +46,10 @@ class Public(unittest.IsolatedAsyncioTestCase):
             st, body, _ = await http("POST", f"{r.http}/api/realms/{r.rid}/accounts", {"user": "x", "pass": "y"},
                                      {"Origin": "https://evil.example"})
             self.assertEqual(st, 403, body)
+            # the relay's own join page (/join/<id> is served by the relay itself) may knock (player report, 5 Nov)
+            st, body, _ = await http("POST", f"{r.http}/api/realms/{r.rid}/knock", {},
+                                     {"Origin": f"https://{r.relay.cfg.name}"})
+            self.assertEqual(st, 200, body)
             st, body, hdr = await http("POST", f"{r.http}/api/realms/{r.rid}/knock", {},
                                        {"Origin": "https://openvanilla.test"})
             self.assertEqual(st, 200, body)

@@ -747,9 +747,21 @@ class Relay:
     def streams_total(self):
         return sum(len(s.streams) for s in self.sessions.values())
 
+    def own_origins(self):
+        """The relay's own pages: /join/<id> is served here (and the join base, both names), so its knock and account
+        posts come from these. Missing them stopped every invite link at step 1 (player report, 5 Nov)."""
+        names = [self.cfg.name, domains.RELAY, domains.OLD.get("relay") or ""]
+        out = {f"https://{n}".lower() for n in names if n}
+        if self.cfg.join_base:
+            m = re.match(r"^(https?://[^/]+)", self.cfg.join_base)
+            if m:
+                out.add(m.group(1).lower())
+        return out
+
     def ws_origin_ok(self, req):
         origin = req.headers.get("origin")
-        return origin is None or origin in self.cfg.play_origins or origin in self.cfg.site_origins
+        return (origin is None or origin in self.cfg.play_origins or origin in self.cfg.site_origins
+                or origin.lower() in self.own_origins())
 
     # ---------------------------------------------------------------- player pump
     async def pump(self, session: Session, st: Stream):

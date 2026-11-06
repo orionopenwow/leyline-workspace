@@ -223,7 +223,7 @@ test('a two-finger tap right-clicks under the first finger, in the world and on 
     await p.waitForTimeout(300);
     const pr = await presses(p);
     assert.ok(pr.includes('d2@400,160') && pr.includes('u2@400,160'), `${on || 'world'}: a right-click at the first finger: ${pr}`);
-    assert.ok(!pr.some((x) => /^u0@400,160/.test(x)), `${on || 'world'}: no left click there: ${pr}`);
+    assert.ok(!pr.some((x) => /^[du]0@400,160/.test(x)), `${on || 'world'}: no left press or click there first (a bag item would be picked up): ${pr}`);
     const last = await p.evaluate(() => T.taps.at(-1));
     assert.equal(last.how, 'two');
     assert.deepEqual(errors, []);
@@ -240,6 +240,16 @@ test('Touch and hold: right-click (Menu > Controls) right-clicks once, and the l
   const pr = await presses(p);
   assert.deepEqual(pr.filter((x) => /@420,170/.test(x)), ['d2@420,170', 'u2@420,170'], `one right-click: ${pr}`);
   assert.equal(await p.evaluate(() => T.taps.at(-1).how), 'hold');
+  // on a window (a bag item): no left press first, and a quick tap there still left-clicks
+  await p.evaluate(() => { window.LUAFN = async (c) => (/GetMouseFocus/.test(c) ? ['ContainerFrame1Item3'] : undefined); LOG.length = 0; });
+  await finger(p, [[420, 170], [421, 170]], 700);
+  await p.waitForTimeout(400);
+  assert.deepEqual((await presses(p)).filter((x) => /@420,170/.test(x)), ['d2@420,170', 'u2@420,170'], 'a bag item: right-click only');
+  await p.evaluate(() => { LOG.length = 0; });
+  await finger(p, [[420, 170]], 60);
+  await p.waitForTimeout(500);
+  assert.deepEqual((await presses(p)).filter((x) => /@420,170/.test(x)), ['d0@420,170', 'u0@420,170'], 'a quick tap on it: a left click');
+  await p.evaluate(() => { window.LUAFN = null; });
   // the setting back to tooltips: a hold is a hover again (no press at all)
   await p.evaluate(() => { localStorage.removeItem('ow:hold'); LOG.length = 0; });
   await finger(p, [[420, 170], [421, 170]], 700);

@@ -889,8 +889,8 @@ export function installTouch(bridge) {
         <button class="opt" data-scheme="pc"><b>Keyboard &amp; mouse</b>No touch controls; the normal PC interface with its action bars and chat. For a tablet with a keyboard, or a phone on a controller. The small phone button in the corner brings touch back.</button>
         <div class="ctlrow"><button data-c="taptest">Tap test</button><button data-c="debug">Copy debug info</button><button data-c="edit">Edit layout</button></div>
         <div class="ctlrow"><button data-c="preset">Layout: Auto</button><button data-c="lefty">Left-handed: off</button>
-          <button data-c="haptics">Vibration: on</button><button data-c="softlock">Soft lock: on</button></div>
-        <div class="ctlrow"><button data-c="hold">Touch and hold: tooltip</button><button data-c="kbdhide">Keyboard hides touch: on</button></div>
+          <button data-c="haptics">Vibration: on</button></div>
+        <div class="ctlrow"><button data-c="softlock">Soft lock: on</button><button data-c="hold">Touch and hold: tooltip</button><button data-c="kbdhide">Keyboard hides touch: on</button></div>
         <label class="slider">Bigger interface <input type="range" min="70" max="140" step="5" data-c="uisize"><span class="v">100%</span></label>
         <label class="slider">Button size <input type="range" min="80" max="140" step="10" data-c="size"><span class="v">100%</span></label>
         <label class="slider">Opacity <input type="range" min="30" max="100" step="10" data-c="alpha"><span class="v">100%</span></label>
@@ -2345,10 +2345,15 @@ SetCVar("autoLootDefault", "${want}")`);
   const onWindow = (t) => !!t.focus && t.focus !== 'WorldFrame';
   function pressIn(t, id) {
     // a quick second tap on a window is another click (paging, +/-, Next): only in the world is it a right-click
-    if (!onWindow(t) || t.moved || t.lifted || t.right || pinch || touches.get(id) !== t) return;
+    // Touch and hold: right-click never presses a window in (a left press let go off a bag item can start the game's
+    // drag): a quick tap there still clicks on the lift, a hold right-clicks
+    if (holdRight() || !onWindow(t) || t.moved || t.lifted || t.right || pinch || touches.get(id) !== t) return;
     inTurn(async () => {
       // the focus answer came from a game update after the move; one more and its hover is current
       await gameTicks(1);
+      // and not before 100 ms: a two-finger tap's second finger comes by then, so it is no left press first
+      const early = 100 - (performance.now() - t.t0);
+      if (early > 0) await wait(early);
       if (t.moved || t.lifted || t.right || pinch || touches.get(id) !== t || t.pressed) return;
       moveTo(t.x0, t.y0);
       mouse('pointerdown', t.x0, t.y0, 0, 1);

@@ -283,6 +283,20 @@ class Stream:
         self.bytes = 0
         self.auth_seen = 0     # logon answers looked at (service 3724 only: the challenge, then the proof)
         self.down = 0          # bytes from the host to the player (none at all: the host's realm never answered)
+        self.probe = False     # the launcher's "Ready for friends?" self-test (is_probe): one question, never a login
+
+
+# The launcher's self-test and the join page's "host answering" check (launcher host/ready.rs): the game's first login
+# message for this account, which no realm has. The realm answers "unknown account" at once; that answer is not counted
+# as a wrong password (or a host pressing Check would lock their own home address out), and a probe stream carries
+# nothing after it (no proof can follow, so the name can't be used to guess a password without being counted).
+PROBE_ACCOUNT = b"LEYLINECHECK"
+
+
+def is_probe(data):
+    n = len(PROBE_ACCOUNT)
+    return (len(data) >= 34 + n and data[0] == 0x00 and data[33] == n
+            and bytes(data[34:34 + n]).upper() == PROBE_ACCOUNT)
 
 
 # ------------------------------------------------------------------------------ realm session
@@ -671,7 +685,7 @@ class Relay:
         proof answer [0x01, error, ...]. A non-zero result is a failed logon (wrong password, unknown or banned account)
         and counts against the player's IP for this realm. Nothing else of the stream is read."""
         st.auth_seen += 1
-        if len(data) < 2:
+        if len(data) < 2 or st.probe:
             return
         failed = (data[0] == 0x01 and data[1] != 0) or (data[0] == 0x00 and len(data) >= 3 and data[2] != 0)
         if data[0] == 0x01:
@@ -776,6 +790,12 @@ class Relay:
                 data = await st.conn.read()
                 if not data:
                     break
+                if st.port == 3724:
+                    if st.bytes == 0 and is_probe(data):
+                        st.probe = True
+                        self.metrics["probes"] += 1
+                    elif st.probe:
+                        break   # a probe asks once
                 st.last = time.monotonic()
                 st.bytes += len(data)
                 self.count_bytes(session, len(data))

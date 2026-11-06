@@ -78,6 +78,10 @@ Login, realm list, character list and character creation take taps as mouse clic
 - **Keyboard button** (top right) for typing a name; the **Controls button** next to it opens Menu > Controls
   (so the tap test and the debug copy work before you are in the world).
 - A phone held upright is asked to turn sideways; sideways, one tap goes full screen ("Not now" skips it).
+- The very first tap anywhere on the game page goes full screen on a phone (6 Nov, wrath-early.js `first-tap-fullscreen`):
+  on the loading screen and on "Signing in…" too, with a "Tap anywhere for full screen" hint. Buttons and links keep their
+  own tap; `?fs=0` and "Not now" turn it off. The prompts take no browser pan (`touch-action: none`), so a finger that
+  rolls a few pixels is still a tap. docs/MOBILE-WEB-OVERHAUL.md.
   "Add Leyline to your home screen" installs it (full screen, landscape, the Leyline icon).
 
 ## Phone keyboard, background, zoom, notch (5 Nov night)
@@ -197,6 +201,8 @@ page and a fake bridge, `stream/tests/touch-harness.cjs`):
 - `touch-edit`: Edit layout (drag, clamp, resize, per character, reload, reset, codes), the Controls toggles and the
   slider, the controller card.
 - `touch-fullscreen`: full screen on the lift, the home screen button, Not now.
+- `phone-fullscreen` (stream/tests, phone-sim.cjs: iPhone 13 / Pixel 7, real CDP touches): the first tap anywhere, a rolled
+  tap on the prompt, upright, buttons left alone, the off switches.
 - `touch-mobile`: an iPhone with its notch, an Android phone and a tablet, landscape and portrait (every control inside
   the safe area, the game frames moved in, one scripted click per tap, the turn-sideways cover, a turn mid-game); the
   composing keyboard; focus inside the lift; the chat sheet over the keyboard; pinches; the two-finger tap (world and

@@ -24,6 +24,8 @@ int main()
     std::string longName = HeroAccountName("ABCDEFGHIJKLMNO");
     check("hero account: a long name hashes to BF + 14 hex", longName.size() == 16 && longName.rfind("BF", 0) == 0
         && longName != HeroAccountName("ABCDEFGHIJKLMNP") && longName == HeroAccountName("abcdefghijklmno"));
+    check("hero account: the website's rule gives the same (stream/tests/test_bossfights_heroes.py)",
+        HeroAccountName("ABCDEFGHIJKLMNO") == "BF0263AAD3AE34E1" && HeroAccountName("wr0001234567890x") == "BF96F76C9CEAE255");
     check("hero account: nothing for a bad name", HeroAccountName("") == "" && HeroAccountName("a b") == ""
         && HeroAccountName("ABCDEFGHIJKLMNOPQ") == "" && HeroAccountName("x;DROP") == "");
     check("hero account: always a plain account name", PlainAccountName(HeroAccountName("WR1")) && PlainAccountName(longName));

@@ -33,6 +33,7 @@
 #include "BossfightHeroes.h"
 
 #include "CharacterCache.h"
+#include "Creature.h"
 #include "Chat.h"
 #include "CommandScript.h"
 #include "Config.h"
@@ -93,6 +94,7 @@ namespace
         uint32 botWaitSec = 45;        // how long the start waits for bots to log in
         uint32 returnAfterClearSec = 120;
         uint32 wipeIdleSec = 900;      // a wiped raid that never tries again is sent home
+        bool allFights = false;        // LeylineBossfight.AllFights: Boss Rush's whole catalog (else the featured fight only)
         std::vector<Seat> seats = DefaultSeats();
     };
 
@@ -137,6 +139,7 @@ namespace
         uint32 botsAtEngage = 0;
         bool botsDismissed = false;
         uint64 autoRetryAt = 0;            // heroes-only runs: the restart after a wipe (steady ms)
+        bool scriptedDone = false;         // BossDef::scripted set through the raid script, and BossDef::despawn gone (once)
     };
 
     struct LobbyEntry
@@ -147,13 +150,18 @@ namespace
         TeamId team = TEAM_NEUTRAL;
     };
 
-    enum EventType { EV_ENGAGE, EV_WIPE, EV_DONE, EV_CLEAR, EV_REASSERT };
+    // From the map threads: a boss state change (which boss, from and to) or a spell a creature began. Which fight
+    // it concerns is decided in HandleEvent, from the run of that instance (several fights share a map).
+    enum EventType { EV_STATE, EV_SPELL };
 
     struct BfEvent
     {
         EventType type;
         uint32 instanceId;
         uint64 ms;
+        uint32 a = 0;   // EV_STATE: the boss id; EV_SPELL: the spell
+        uint32 b = 0;   // EV_STATE: the new state; EV_SPELL: the caster's entry
+        uint32 c = 0;   // EV_STATE: the old state
     };
 
     BfSettings g_cfg;
@@ -190,12 +198,12 @@ namespace
             g_liveInstances.erase(instanceId);
     }
 
-    void PushEvent(EventType type, uint32 instanceId)
+    void PushEvent(EventType type, uint32 instanceId, uint32 a, uint32 b, uint32 c)
     {
         uint64 ms = NowMs();
         std::lock_guard<std::mutex> guard(g_eventLock);
         if (g_liveInstances.count(instanceId))
-            g_events.push_back({ type, instanceId, ms });
+            g_events.push_back({ type, instanceId, ms, a, b, c });
     }
 
     bool IsLive(uint32 instanceId)
@@ -218,6 +226,7 @@ namespace
         s.botWaitSec = sConfigMgr->GetOption<uint32>("LeylineBossfight.BotWaitSec", 45, false);
         s.returnAfterClearSec = sConfigMgr->GetOption<uint32>("LeylineBossfight.ReturnAfterClearSec", 120, false);
         s.wipeIdleSec = sConfigMgr->GetOption<uint32>("LeylineBossfight.WipeIdleSec", 900, false);
+        s.allFights = sConfigMgr->GetOption<bool>("LeylineBossfight.AllFights", false, false);
         std::string seats = sConfigMgr->GetOption<std::string>("LeylineBossfight.BotSeats", "", false);
         s.seats = seats.empty() ? DefaultSeats() : ParseSeats(seats);
 #if !LEYLINE_BF_PLAYERBOTS
@@ -348,6 +357,28 @@ namespace
                 script->InstanceScript::SetBossState(id, NOT_STARTED);
             script->InstanceScript::SetBossState(id, DONE);
         }
+        if (run.scriptedDone)
+            return;
+        run.scriptedDone = true;
+        // through the raid script's own SetBossState (virtual): what the script does then is part of the fight
+        // (the Ruby Sanctum: Zarithrian DONE starts the boss's intro)
+        for (uint32 id : run.boss->scripted)
+        {
+            if (script->GetBossState(id) == TO_BE_DECIDED)
+                script->InstanceScript::SetBossState(id, NOT_STARTED);
+            if (script->GetBossState(id) != DONE)
+                script->SetBossState(id, DONE);
+        }
+        if (!run.boss->despawn.empty())
+            if (Map* map = sMapMgr->FindMap(run.boss->mapId, run.instanceId))
+            {
+                std::vector<Creature*> gone;
+                for (auto const& kv : map->GetCreatureBySpawnIdStore())
+                    if (kv.second && std::find(run.boss->despawn.begin(), run.boss->despawn.end(), kv.second->GetEntry()) != run.boss->despawn.end())
+                        gone.push_back(kv.second);
+                for (Creature* c : gone)
+                    c->DespawnOrUnsummon();
+            }
     }
 
     void UnbindNow(Player* p, uint32 mapId)
@@ -404,7 +435,7 @@ namespace
         if (p->GetMapId() == b.mapId && (p->GetInstanceId() == run.instanceId || !run.instanceId))
             p->NearTeleportTo(b.x + dx, b.y + dy, b.z, b.o);
         else if (p->GetMapId() == b.mapId)
-            LeylineBFHeroes::HopInto(p, b.x + dx, b.y + dy, b.z, b.o);   // a hero in its own waiting instance
+            LeylineBFHeroes::HopInto(p, b.mapId, b.x + dx, b.y + dy, b.z, b.o);   // a hero in its own waiting instance
         else
             p->TeleportTo(b.mapId, b.x + dx, b.y + dy, b.z, b.o, TELE_TO_GM_MODE);
     }
@@ -770,7 +801,10 @@ namespace
         run.autoRetryAt = 0;
         SetPhase(run, BfPhase::Ready);
         AddonRun(run, MsgStarting(run.boss->key, run.diff));
-        SayRun(run, "Ready again. Speak to the paladin in front of the throne to begin.");
+        std::string hint = run.boss->startHint;
+        if (!hint.empty())
+            hint[0] = char(std::toupper(static_cast<unsigned char>(hint[0])));
+        SayRun(run, "Ready again. " + hint + ".");
     }
 
     // ---- events from the map threads --------------------------------------------------------------------------
@@ -784,13 +818,28 @@ namespace
         if (rr == g_runs.end())
             return;
         BfRun& run = rr->second;
-        switch (ev.type)
+        if (!run.boss)
+            return;
+        // what the raw event means for this run's fight
+        enum { K_NONE, K_ENGAGE, K_WIPE, K_DONE, K_CLEAR, K_REASSERT } kind = K_NONE;
+        if (ev.type == EV_STATE)
         {
-            case EV_REASSERT:
+            if (ev.a == run.boss->bossData)
+                kind = ev.b == IN_PROGRESS ? K_ENGAGE : ev.b == FAIL ? K_WIPE : ev.b == DONE ? K_DONE : K_NONE;
+            else if (ev.c == DONE && ev.b != DONE && IsPrereq(*run.boss, ev.a))
+                kind = K_REASSERT;   // a boss's AI reset it (its creature loaded)
+        }
+        else if (ev.type == EV_SPELL && run.boss->endSpell && ev.a == run.boss->endSpell && ev.b == run.boss->bossEntry)
+            kind = K_CLEAR;
+        switch (kind)
+        {
+            case K_NONE:
+                break;
+            case K_REASSERT:
                 if (run.phase != BfPhase::Engaged)
                     EnsurePrereqs(run);
                 break;
-            case EV_ENGAGE:
+            case K_ENGAGE:
                 if (run.phase == BfPhase::Ready || run.phase == BfPhase::Wiped || run.phase == BfPhase::Prepare)
                 {
                     SetPhase(run, BfPhase::Engaged);
@@ -802,8 +851,8 @@ namespace
                     AddonRun(run, MsgTimer(0));
                 }
                 break;
-            case EV_CLEAR:
-            case EV_DONE:
+            case K_CLEAR:
+            case K_DONE:
                 if (run.phase == BfPhase::Engaged)
                 {
                     uint64 ms = ev.ms > run.engageMs ? ev.ms - run.engageMs : 0;
@@ -816,7 +865,7 @@ namespace
                         " You go back in " + std::to_string(g_cfg.returnAfterClearSec) + " s, or type .bossfight leave.");
                 }
                 break;
-            case EV_WIPE:
+            case K_WIPE:
                 if (run.phase == BfPhase::Engaged)
                 {
                     uint64 ms = ev.ms > run.engageMs ? ev.ms - run.engageMs : 0;
@@ -986,7 +1035,7 @@ namespace
                     Arrive(p, run, n++);
                 }
                 SetPhase(run, BfPhase::Ready);
-                SayRun(run, std::string(b.title) + " (" + DifficultyName(run.diff) + "): speak to the paladin in front of the throne to begin. "
+                SayRun(run, std::string(b.title) + " (" + DifficultyName(run.diff) + "): " + b.startHint + ". "
                     "The clock starts when the fight does.");
                 break;
             }
@@ -1228,7 +1277,7 @@ namespace
             switch (run->phase)
             {
                 case BfPhase::Forming: case BfPhase::PortLeader: case BfPhase::Prepare: phase = "starting"; break;
-                case BfPhase::Ready: phase = "ready: speak to the paladin in front of the throne"; break;
+                case BfPhase::Ready: phase = std::string("ready: ") + run->boss->startHint; break;
                 case BfPhase::Engaged: phase = "fighting, " + FormatMs(NowMs() - run->engageMs); break;
                 case BfPhase::Wiped: phase = "wiped (" + std::to_string(run->wipes) + "): .bossfight join to try again"; break;
                 case BfPhase::Cleared: phase = "cleared"; break;
@@ -1348,7 +1397,7 @@ namespace
         Player* p = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
         if (!p)
             return true;
-        JoinArgs a = ParseJoin(Arg(bossArg), Arg(diffArg), Arg(modeArg));
+        JoinArgs a = ParseJoin(Arg(bossArg), Arg(diffArg), Arg(modeArg), g_cfg.allFights);
         if (!a.error.empty() && g_cfg.enable)
         {
             handler->SendSysMessage(std::string(TAG) + a.error + ". Usage: .bossfight join <boss> <normal|heroic> <bots|group|group-only>");
@@ -1401,8 +1450,9 @@ namespace
     bool HandleList(ChatHandler* handler)
     {
         for (BossDef const& b : Bosses())
-            handler->SendSysMessage(std::string(TAG) + b.key + ": " + b.title + " (" + std::to_string(b.size) + " players, normal or heroic). "
-                ".bossfight join " + b.key + " normal bots");
+            if (Offered(b, g_cfg.allFights))
+                handler->SendSysMessage(std::string(TAG) + b.key + ": " + b.title + " (" + std::to_string(b.size) + " players, " +
+                    (b.heroic ? "normal or heroic" : "normal") + "). .bossfight join " + b.key + " normal bots");
         handler->SendSysMessage(std::string(TAG) + "Modes: bots (you and 9 bots, now), group (a raid of players; bots fill after " +
             std::to_string(g_cfg.lobbyWaitSec / 60) + " min), group-only (players only).");
         return true;
@@ -1420,7 +1470,7 @@ namespace
             handler->SendSysMessage("bossfight start: no such character online. Usage: .bossfight start <leader> <boss> <normal|heroic> <bots|group|group-only>");
             return true;
         }
-        JoinArgs a = ParseJoin(Arg(bossArg), Arg(diffArg), Arg(modeArg));
+        JoinArgs a = ParseJoin(Arg(bossArg), Arg(diffArg), Arg(modeArg), g_cfg.allFights);
         if (!a.error.empty())
         {
             handler->SendSysMessage("bossfight start: " + a.error);
@@ -1554,20 +1604,9 @@ public:
     {
         if (!instance || newState == oldState || oldState == TO_BE_DECIDED)
             return;
-        BossDef const* b = FindBossByMap(instance->GetId());
-        if (!b || !IsLive(instance->GetInstanceId()))
+        if (!FindBossByMap(instance->GetId()) || !IsLive(instance->GetInstanceId()))
             return;
-        if (id == b->bossData)
-        {
-            if (newState == IN_PROGRESS)
-                PushEvent(EV_ENGAGE, instance->GetInstanceId());
-            else if (newState == FAIL)
-                PushEvent(EV_WIPE, instance->GetInstanceId());
-            else if (newState == DONE)
-                PushEvent(EV_DONE, instance->GetInstanceId());
-        }
-        else if (oldState == DONE && newState != DONE && IsPrereq(*b, id))
-            PushEvent(EV_REASSERT, instance->GetInstanceId());   // a boss's AI reset it (its creature loaded)
+        PushEvent(EV_STATE, instance->GetInstanceId(), id, uint32(newState), uint32(oldState));
     }
 };
 
@@ -1586,10 +1625,12 @@ public:
         Map* map = caster->GetMap();
         if (!map)
             return;
-        BossDef const* b = FindBossByMap(map->GetId());
-        if (!b || spellInfo->Id != b->endSpell || caster->GetEntry() != b->bossEntry)
+        bool ends = false;
+        for (BossDef const& b : Bosses())
+            ends = ends || (b.mapId == map->GetId() && b.endSpell && spellInfo->Id == b.endSpell && caster->GetEntry() == b.bossEntry);
+        if (!ends)
             return;
-        PushEvent(EV_CLEAR, map->GetInstanceId());
+        PushEvent(EV_SPELL, map->GetInstanceId(), spellInfo->Id, caster->GetEntry(), 0);
     }
 };
 
@@ -1746,6 +1787,8 @@ namespace LeylineBFCore
     bool InstanceUsed(uint32 instanceId) { return instanceId && g_knownInstances.count(instanceId) != 0; }
 
     bool Enabled() { return g_cfg.enable; }
+
+    bool AllFights() { return g_cfg.allFights; }
 
     void UnbindBossMaps(Player* p)
     {

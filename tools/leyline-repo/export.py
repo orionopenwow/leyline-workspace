@@ -72,6 +72,7 @@ SKIP_DIRS = {"state", "cache", "logs", "realm-files", "__pycache__", ".git", "no
 JUNK = re.compile(r"(\.pyc|\.pyo|~|\.swp|\.DS_Store|Thumbs\.db|desktop\.ini)$", re.I)
 
 GAME_DATA = re.compile(r"\.(mpq|m2|wmo|adt|wdt|wdl|blp|dbc|db2|skin|anim|bls|phys|bone|lit|mdx|wlw|wlq|zmp)$"
+                       r"|\.(vmtree|vmtile|mmap|mmtile)$|(^|/)\d{7}\.map$"   # server data made from a client
                        r"|\.tgz($|\.)|\.tar\.gz$|\.part\.?\d+$|\.part\.[a-z0-9]+$", re.I)
 SECRET_NAME = re.compile(r"(^|/)\.env$|\.env$|\.(pem|key|p12|pfx|jks|keystore|crt|der|secret|kdbx)$"
                          r"|(^|/)id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$|token|credential|passw|host-login|"

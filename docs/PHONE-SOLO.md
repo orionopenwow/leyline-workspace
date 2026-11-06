@@ -149,6 +149,10 @@ half-built ships), but it means the PC Den Lite isn't updated until it is fixed.
   only read again when the world one closes). There is one realm, so the client has no reason to.
 - **The Android web view**: SharedArrayBuffer there depends on the web view honouring cross-origin isolation. Not
   verified on a device. If it doesn't, the page says so in one line and plays on the realm; Open in Chrome is the way.
+- **A panic ends the worker.** wasm32-wasip1 builds abort on panic, so `world.rs`'s `catch_unwind` around the message
+  crate's reader does nothing there: a message that makes the crate panic stops Den Lite, the bus reports
+  `failed` and the client's sockets close. The page doesn't restart the worker by itself yet (the world is saved up to
+  the last autosave, 2 s). Next: restart once on failure; or Rust's wasm exception handling when it is stable.
 - **Memory on phones**: the worker holds Den Lite's heap plus the Dens folder in memory (kilobytes to a few MB). The
   client is still the big one.
 - **Save copy UI**: `exportSave` / `importSave` / `reset` exist on `window.__wuSolo`, but no button calls them yet (the
@@ -183,7 +187,8 @@ origin, where the app can send COOP/COEP itself), but the client and the slice w
 
 Owner presses, in order:
 1. `setup\Turn on GitHub builds.bat` (puts `den-lite-web.yml` in `.github/workflows/`; double-click, not a step).
-2. `ship` (the branch's commits to GitHub: CI builds and tests Den Lite and the wasm).
+2. `den-lite-all` on the PC first (Den Lite's own tests built there: the uncompiled edits get compiled before they
+   reach GitHub), then `ship` (CI builds and tests Den Lite and the wasm).
 3. `solo-wasm` (once CI is green: the wasm into `stream\www-files\solo`).
 4. `page` (the game page with `solo/`), and `signin` (the site's realm list card and `go=solo`).
 5. Try it: Play solo on this device on the site's realm list, and Play solo on this phone in the app.

@@ -1,0 +1,36 @@
+#
+# mod-leyline-qol: Dalaran quality of life for Leyline's Wrath Unleashed realm (README.md). The realm runs on
+# environment settings (AzerothCore reads AC_<KEY> for every key: LeylineQol.Dalaran.InstantLogout is
+# AC_LEYLINE_QOL_DALARAN_INSTANT_LOGOUT; realm/profiles/main.env sets them); the defaults below are built into the
+# module, so a realm without this file behaves exactly as described here.
+#
+[worldserver]
+
+#    LeylineQol.Enable
+#        1 = the module's rules apply; 0 = everything below is off (the core's own rules).
+LeylineQol.Enable = 1
+
+#    LeylineQol.Dalaran.InstantLogout
+#        1 = logging out in the areas below is instant (no 20-second countdown), unless the player is in combat,
+#            falling, in a duel, frozen by a GM or held by the AFK rules (then the core answers as usual).
+#            Rested XP is not changed. 0 = the core's rules (instant only in inns and rest areas).
+LeylineQol.Dalaran.InstantLogout = 1
+
+#    LeylineQol.Dalaran.LogoutAreas
+#        Zone or area ids, comma separated; an area counts when it, or any area above it, is listed.
+#        4395 = the city (every street, Krasus' Landing, the sewers), 2817 = the forest under it.
+LeylineQol.Dalaran.LogoutAreas = "4395,2817"
+
+#    LeylineQol.Dalaran.DuelsAnywhere
+#        1 = duels are allowed in every area under LeylineQol.Dalaran.DuelAreas (the "duels allowed" area flag is set
+#            at start-up and on a config reload). The sanctuary stays: nobody but the two duelists can attack.
+#        0 = the core's own duel areas (a reload puts back the rows this module changed).
+LeylineQol.Dalaran.DuelsAnywhere = 1
+
+#    LeylineQol.Dalaran.DuelAreas
+#        Zone or area ids, as above. 4395 = the city. Add 2817 for every corner of the forest under it.
+LeylineQol.Dalaran.DuelAreas = "4395"
+
+#    LeylineQol.Dalaran.MapId
+#        The map both lists are on (571, Northrend). The Dalaran arena is its own map and never counts.
+LeylineQol.Dalaran.MapId = 571

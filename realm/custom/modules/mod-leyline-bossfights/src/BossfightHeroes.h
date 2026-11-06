@@ -27,6 +27,7 @@ namespace LeylineBFCore
     bool Enabled();
     void UnbindBossMaps(Player* p);            // now: only when the player isn't on a boss map's grid
     void Say(Player* p, std::string const& text);
+    void Addon(Player* p, std::string const& payload);   // an LYBF message to the player's own panel
 }
 
 // BossfightHeroes.cpp
@@ -53,6 +54,7 @@ namespace LeylineBFHeroes
     void Refresh(Player* p);
     // ".bossfight hero ..." / ".bf hero ...": the console form (SOAP, the website) or the player's.
     bool Command(ChatHandler* handler, std::string const& args);
+    void SendState(Player* p);                 // LYBF "H" to a hero's panel (login, .bossfight status, spec changes)
     void AddScripts();
 }
 

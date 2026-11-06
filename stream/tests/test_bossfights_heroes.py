@@ -250,5 +250,15 @@ for cls, key in re.findall(r'\{ (\d+), "([a-z]+)", "[^"]+", "[a-z]+", \d, ROLE_'
 site = {c: [k for k, _, _ in specs] for c, (_, specs) in BF.HERO_CLASSES.items()}
 check("the class and spec table equals the module's (BossfightsHeroLogic.h Specs)", mod == site, (mod, site))
 
+js = open(os.path.join(HERE, "www-files", "wrath-page.js"), encoding="utf-8").read()
+check("wrath-page.js: a hero pass keeps the sign-in cover up past the character list",
+      "export function heroPass" in js and "env.bf === '1'" in js and "guestPass() || hero" in js
+      and "if (guest && name === 'charselect') return;" in js)
+
+import subprocess
+gen = os.path.join(REPO, "realm", "custom", "modules", "mod-leyline-bossfights", "tools", "gen_hero_data.py")
+res = subprocess.run([sys.executable, "-I", gen, "--check"], capture_output=True, text=True, timeout=60)
+check("BossfightsHeroData.h matches ov_kits.lua and ov_main.lua (gen_hero_data.py --check)", res.returncode == 0, res.stdout + res.stderr)
+
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(1 if failed else 0)

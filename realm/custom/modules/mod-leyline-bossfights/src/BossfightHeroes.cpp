@@ -1031,6 +1031,7 @@ namespace
                 return true;
             }
             std::string why = Respec(p, *s);
+            LeylineBFHeroes::SendState(p);
             Line(h, why.empty() ? std::string("Now ") + s->label + ": talents, gear and bars are set." : "Not now: " + why + ".", false);
             return true;
         }
@@ -1148,6 +1149,7 @@ namespace
                 WearKit(player, *kit, true);
             if (player->getPowerType() == POWER_MANA)
                 player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
+            LeylineBFHeroes::SendState(player);
         }
 
         void OnPlayerDelete(ObjectGuid guid, uint32) override
@@ -1321,6 +1323,7 @@ namespace LeylineBFHeroes
         JoinArgs a = ParseHeroGo(go);
         if (!a.error.empty())
             a = ParseJoin("", "", "");
+        SendState(p);
         QueueJoin(p->GetGUID(), a, 1500, 60000);
     }
 
@@ -1334,6 +1337,15 @@ namespace LeylineBFHeroes
         if (p->GetGroup())
             p->RemoveFromGroup();
         g_offlineUnbind.insert(p->GetGUID().GetCounter());
+    }
+
+    void SendState(Player* p)
+    {
+        if (!IsHeroPlayer(p))
+            return;
+        HeroRow const* r = HeroOf(p->GetGUID().GetCounter());
+        if (r)
+            LeylineBFCore::Addon(p, MsgHero(p->GetName(), r->cls, r->spec, r->spec2, p->GetActiveSpec()));
     }
 
     void Refresh(Player* p)

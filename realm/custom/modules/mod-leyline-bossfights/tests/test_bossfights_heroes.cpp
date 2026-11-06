@@ -159,6 +159,7 @@ int main()
     check("reply: ok", ReplyHeroOk("Kalin", 8, f, *FindSpec(8, "frost"), true, "WR1BF") == "bfhero ok Kalin mage fire frost made WR1BF");
     check("reply: no, plain words, one line", ReplyHeroNo("no\tsuch\naccount") == "bfhero no nosuchaccount");
     check("reply: list line", ReplyHeroLine("Kalin", 6, "blood", "frost", true) == "bfhero hero Kalin deathknight blood frost current");
+    check("LYBF H: the hero you are on", MsgHero("Kalinra", 8, "fire", "frost", 1) == "H\tKalinra\tmage\tfire\tfrost\t1");
     BossDef const* ft = FindBoss("frozen-throne");
     check("go text", HeroGo(*ft, DIFF_HEROIC, MODE_GROUP_ONLY) == "bf:frozen-throne:heroic:group-only");
     JoinArgs g = ParseHeroGo("bf:frozen-throne:heroic:group");

@@ -1389,7 +1389,10 @@ namespace
     bool HandleStatus(ChatHandler* handler)
     {
         if (Player* p = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+        {
+            LeylineBFHeroes::SendState(p);   // a hero: the panel's hero row (after a /reload too)
             StatusTo(handler, p);
+        }
         return true;
     }
 
@@ -1751,4 +1754,6 @@ namespace LeylineBFCore
     }
 
     void Say(Player* p, std::string const& text) { ::Say(p, text); }
+
+    void Addon(Player* p, std::string const& payload) { ::Addon(p, payload); }
 }

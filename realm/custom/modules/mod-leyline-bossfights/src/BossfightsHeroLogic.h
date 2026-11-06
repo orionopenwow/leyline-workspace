@@ -506,6 +506,12 @@ namespace LeylineBF
         return a;
     }
 
+    // LYBF "H": the hero you are on (the in-game panel's hero row). active: 0 = the first spec is on, 1 = the second.
+    inline std::string MsgHero(std::string const& name, std::uint8_t cls, std::string const& spec, std::string const& spec2, int active)
+    {
+        return "H\t" + name + "\t" + ClassToken(cls) + "\t" + spec + "\t" + spec2 + "\t" + (active ? "1" : "0");
+    }
+
     // Wipe: in a run of heroes only, everyone is brought back and the clock is ready again after this many seconds.
     constexpr unsigned HERO_AUTO_RETRY_SEC = 8;
 }

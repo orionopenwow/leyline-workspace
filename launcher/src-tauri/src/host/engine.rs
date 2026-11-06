@@ -1712,8 +1712,13 @@ mod tests {
     #[test]
     fn the_solo_profile_mapped_to_the_native_world_server() {
         let p = Paths::new(Path::new("C:\\Users\\me\\AppData\\Roaming\\Leyline"));
-        let solo = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/profiles/solo.env")).unwrap();
-        let modules = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/modules.env")).unwrap();
+        // the realm's files are in the workspace, not in the public Leyline repo (its export leaves realm/ out)
+        let (Ok(solo), Ok(modules)) = (
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/profiles/solo.env")),
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/modules.env")),
+        ) else {
+            return;
+        };
         let s = st();
         let v = world_env(&p, &s, &solo, &modules, None);
         let g = |k: &str| get(&v, k).map(str::to_string);

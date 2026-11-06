@@ -460,12 +460,16 @@ pub fn brand_free(s: &str) -> bool {
 mod tests {
     use super::*;
 
-    const LOGIC: &str = include_str!("../../../../realm/custom/modules/mod-leyline-bossfights/src/BossfightsLogic.h");
+    /// The module's table, read at test time: the realm folder is in the workspace, not in the public Leyline repo
+    /// (its export leaves realm/ out, and refuses a launcher that builds a file from there in). None there: skipped.
+    fn logic() -> Option<String> {
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/custom/modules/mod-leyline-bossfights/src/BossfightsLogic.h")).ok()
+    }
 
     /// The module's catalog rows: (key, title, raid, map, heroic).
-    fn module_rows() -> Vec<(String, String, String, u32, bool)> {
+    fn module_rows(logic: &str) -> Vec<(String, String, String, u32, bool)> {
         let mut v = Vec::new();
-        for line in LOGIC.lines() {
+        for line in logic.lines() {
             let t = line.trim();
             if !t.starts_with("{ \"") {
                 continue;
@@ -487,7 +491,8 @@ mod tests {
 
     #[test]
     fn the_catalog_is_the_modules_own() {
-        let rows = module_rows();
+        let Some(logic) = logic() else { return };
+        let rows = module_rows(&logic);
         assert_eq!(rows.len(), FIGHTS.len(), "{rows:?}");
         for (f, r) in FIGHTS.iter().zip(&rows) {
             assert_eq!((f.key, f.title, f.raid, f.map, f.heroic), (r.0.as_str(), r.1.as_str(), r.2.as_str(), r.3, r.4));

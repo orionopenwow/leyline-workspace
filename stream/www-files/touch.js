@@ -397,6 +397,9 @@ function style() {
        switches between the world's controls and the glue screens' taps */
     #ow-touch .flip { position: absolute; right: calc(env(safe-area-inset-right, 0px) + 56px); top: calc(env(safe-area-inset-top, 0px) + 10px); display: none; pointer-events: auto; opacity: .7; }
     #ow-touch.on.keys:not(.loading) .flip { display: flex; }
+    /* (5 Nov night) it sat on the open tray's Bags button, and on the character screens under the Controls button */
+    #ow-touch.on.keys:not(.loading) .tray.open ~ .flip { display: none; }
+    #ow-touch.glue-touch:not(.inworld) .flip { right: calc(env(safe-area-inset-right, 0px) + 12px); top: calc(env(safe-area-inset-top, 0px) + 56px); }
     #ow-touch.pcmode { display: block; }
     #ow-touch.pcmode .restore { display: flex; }
     #ow-touch.pcmode > :not(.restore):not(.toast):not(.sheet) { display: none !important; }

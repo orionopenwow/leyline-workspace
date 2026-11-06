@@ -415,3 +415,79 @@ test('Copy debug info in the world: the layout (not "?"), the notch, the keyboar
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('the tray (no bridge, as on the live page): nothing covers it; Bags and Quests open on the lift (pushed in and buzzing on the press), Chat and Menu open their sheets', async () => {
+  const { ctx, p, errors } = await open(browser, { state: 'inworld', live: false, w: 844, h: 390 });
+  await finger(p, [await centre(p, '#ow-touch .tray .handle')], 40);
+  await p.waitForTimeout(120);
+  const cdp = await ctx.newCDPSession(p);
+  const [bx, by] = await centre(p, '#ow-touch .tray [data-act="bags"]');
+  // no bridge (the live client today): the screen-switch button used to sit on top of Bags
+  for (const act of ['bags', 'quests', 'chat', 'menu']) {
+    const [x, y] = await centre(p, `#ow-touch .tray [data-act="${act}"]`);
+    assert.equal(await p.evaluate(([x, y]) => document.elementFromPoint(x, y).closest('.rbtn')?.dataset.act, [x, y]), act, `${act} is on top`);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: bx, y: by }] });
+  await p.waitForTimeout(60);
+  assert.ok(await p.evaluate(() => document.querySelector('#ow-touch .tray [data-act="bags"]').classList.contains('pressed')), 'shows pushed');
+  const bKeys = () => p.evaluate(() => LOG.filter((e) => e.t === 'keydown' && e.key === 'b').length);
+  assert.equal(await bKeys(), 0, 'nothing yet');
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await p.waitForTimeout(60);
+  assert.equal(await bKeys(), 1, 'Bags (its B key, no bridge) on the lift');
+  assert.ok(await p.evaluate(() => document.querySelector('#ow-touch .closer').classList.contains('on')), 'Close shows');
+  await finger(p, [await centre(p, '#ow-touch .tray .handle')], 40);
+  await p.waitForTimeout(120);
+  await finger(p, [await centre(p, '#ow-touch .tray [data-act="menu"]')], 40);
+  await p.waitForTimeout(120);
+  assert.ok(await p.evaluate(() => document.querySelector('#ow-touch .sheet.menu').classList.contains('open')), 'the Menu sheet');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the character screens with no bridge: the screen-switch button and the Controls button are both reachable', async () => {
+  const { ctx, p, errors } = await open(browser, { state: 'charselect', live: false, w: 844, h: 390 });
+  for (const sel of ['.flip', '.gear', '.kbd']) {
+    const [x, y] = await centre(p, '#ow-touch ' + sel);
+    assert.ok(await p.evaluate(([x, y, s]) => !!document.elementFromPoint(x, y).closest('#ow-touch ' + s), [x, y, sel]), `${sel} is on top at its centre`);
+  }
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('turning the phone mid-game: upright asks to turn back, sideways again lays every control out on the new screen', async () => {
+  const ctx = await device(DEVICES[0]);
+  const { p, errors } = await open(browser, { ctx, state: 'inworld', live: true, w: 844, h: 390 });
+  await p.setViewportSize({ width: 390, height: 844 });
+  await p.waitForTimeout(200);
+  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector('#ow-touch .rotate')).display), 'flex');
+  await p.setViewportSize({ width: 844, height: 390 });
+  await p.waitForTimeout(200);
+  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector('#ow-touch .rotate')).display), 'none');
+  const L = await p.evaluate(() => T.layout);
+  assert.deepEqual([L.W, L.H], [844, 390]);
+  for (const sel of ['.attack', '.jump', '.tray .handle', '.key[data-k="3"]']) {
+    const b = await box(p, '#ow-touch ' + sel);
+    assert.ok(b.l >= 0 && b.r <= 844 && b.t >= 0 && b.b <= 390, `${sel} on screen after the turn`);
+  }
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('played from the home screen (the installed app): no full-screen prompt or install button, "app" on the debug line', async () => {
+  const init = () => {
+    const mm = window.matchMedia.bind(window);
+    window.matchMedia = (q) => (/display-mode:\s*(fullscreen|standalone)/.test(q) ? { matches: true, media: q, addEventListener() {}, removeEventListener() {} } : mm(q));
+    try { sessionStorage.removeItem('ow:fs-skip'); } catch { /* fine */ }
+    try { Object.defineProperty(Document.prototype, 'fullscreenEnabled', { get: () => true }); } catch { /* fine */ }
+  };
+  const ctx = await device(DEVICES[1]);
+  const { p, errors } = await open(browser, { ctx, state: 'charselect', w: 915, h: 412, init });
+  const root = await p.evaluate(() => document.querySelector('#ow-touch').className);
+  assert.doesNotMatch(root, /\bcanfs\b/, 'no full-screen offer in the app');
+  assert.doesNotMatch(root, /\bcaninstall\b/, 'no install button in the app');
+  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector('#ow-touch .fsgo')).display), 'none');
+  assert.match(await p.evaluate(() => T.debugReport()), / app \|/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

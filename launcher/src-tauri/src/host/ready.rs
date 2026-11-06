@@ -265,6 +265,16 @@ pub fn link_parts(link: &str) -> Option<(String, String)> {
     ok.then(|| (host.to_string(), rid.to_string()))
 }
 
+/// An address a friend's launcher may test after joining (`realm_answers`): Leyline's own relay at a port, or a
+/// same-network address (the Den's LAN way). Nothing else, so the page can't make the core knock on other servers.
+pub fn may_test(addr: &str, relays: &[&str]) -> bool {
+    let Some((host, port)) = addr.rsplit_once(':') else { return false };
+    if port.parse::<u16>().map_or(true, |p| p == 0) {
+        return false;
+    }
+    relays.contains(&host) || host.parse::<std::net::IpAddr>().is_ok_and(crate::host::denways::private)
+}
+
 /// A realm list address with its port ("host" alone is the login port 3724).
 pub fn with_port(addr: &str) -> String {
     if addr.contains(':') { addr.to_string() } else { format!("{addr}:3724") }
@@ -410,6 +420,11 @@ mod tests {
         assert_eq!(link_parts("https://relay.x/join/../etc"), None);
         assert_eq!(link_parts("http://relay.x/join/kzdvvj2umnduyauf"), None);
         assert_eq!(with_port("relay.x"), "relay.x:3724");
+        assert!(may_test("relay.x:40002", &["relay.x"]));
+        assert!(may_test("192.168.1.20:3724", &["relay.x"]));
+        assert!(!may_test("evil.example:22", &["relay.x"]));
+        assert!(!may_test("8.8.8.8:53", &["relay.x"]));
+        assert!(!may_test("relay.x", &["relay.x"]));
         assert_eq!(with_port("relay.x:40002"), "relay.x:40002");
     }
 

@@ -1097,6 +1097,17 @@ fn host_ready_now(kind: &str, kit: Option<PathBuf>) -> crate::host::ready::Ready
     ready::judge(&f)
 }
 
+/// The friend's side, after Join: does the host's world answer at the address Join used? Ok(ms), or why not (a world
+/// that isn't answering is what loops the game between Connecting and Connected).
+#[tauri::command]
+async fn realm_answers(address: String) -> Result<u32, String> {
+    let address = crate::host::ready::with_port(address.trim());
+    if !crate::host::ready::may_test(&address, &[crate::addresses::RELAY_HOST, crate::addresses::OLD_RELAY_HOST]) {
+        return Err("Leyline only tests its own relay and your own network.".into());
+    }
+    blocking(move || crate::host::ready::login_answers(&address, Duration::from_secs(6))).await
+}
+
 /// A fix button on the checklist that opens the PC's own settings: "power" (sleep) or "firewall" (allowed apps).
 #[tauri::command]
 fn host_ready_fix(app: AppHandle, what: String) -> Result<String, String> {
@@ -2653,6 +2664,7 @@ pub fn run() {
             den_net_stop,
             host_ready, // Ready for friends?: the checklist before an invite (host/ready.rs)
             host_ready_fix,
+            realm_answers, // the friend's side: the host's world answers (host/ready.rs)
             den_own_address, // Invite: your own address for friends (host/denways.rs)
             den_models, // My models (host/denmodels.rs)
             den_models_add,

@@ -30,8 +30,10 @@ pub const NAME: &str = "Sky Island";
 pub const FALL: f32 = 14.0;
 /// Sunk this far into the ground (the game drew a piece late, or its model has no collision there): back on top.
 pub const SINK: f32 = 0.8;
-/// Where you land and come back to: by the tree, facing it (relative to the middle; yaw in radians).
-pub const LANDING: [f32; 4] = [0.0, -9.0, 0.1, std::f32::consts::FRAC_PI_2];
+/// The tree stands this far north of the middle (the Den's middle is where you come in: never inside the trunk).
+pub const TREE_AT: [f32; 2] = [0.0, 8.0];
+/// Where you land and come back to: south of the tree, facing it (relative to the middle; yaw in radians).
+pub const LANDING: [f32; 4] = [0.0, -4.0, 0.1, std::f32::consts::FRAC_PI_2];
 /// Where the training dummies stand (east of the tree, facing the landing).
 pub const DUMMIES_AT: [f32; 4] = [12.0, -4.0, 0.0, std::f32::consts::PI];
 
@@ -76,7 +78,7 @@ pub fn plan() -> Vec<(u32, f32, f32, f32, f32, f32)> {
     }
     out.push((UNDER, 0.0, 0.0, -22.0, 0.0, 5.0));
     // the tree in the middle
-    out.push((TREE, 0.0, 0.0, 0.0, 0.0, 2.0));
+    out.push((TREE, TREE_AT[0], TREE_AT[1], 0.0, 0.0, 2.0));
     // a sign post by the landing
     out.push((LANTERN, 3.0, -12.0, 0.0, std::f32::consts::FRAC_PI_2, 1.0));
     out
@@ -131,7 +133,7 @@ step Say hello
   goal talk jaina
 step Touch the old tree
   say jaina \"Everything here grows from that tree. Go and touch it.\"
-  goal reach 0 0 7
+  goal reach 0 8 6
 step Spar a little
   say jaina \"The dummies by the tree can take a hit. Show me three good ones.\"
   goal defeat 3 dummies

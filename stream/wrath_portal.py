@@ -324,10 +324,13 @@ playmodes = _load_module("wu_playmodes", "playmodes.py")   # game modes: /wrath/
 modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can host and fork: /wrath/modes/<id>, /jam (stream/modepack.py)
 survivors = _load_module("wu_survivors", "survivors.py")   # Azeroth Survivors: /wrath/survivors and its own address's gate (stream/survivors.py)
 site_pages = _load_module("wu_site_pages", "site_pages.py")   # Single player, the Modes shelf, the guides, the press kit (stream/site_pages.py)
+mobile_page = _load_module("wu_mobile_page", "mobile_page.py")   # /wrath/mobile: Leyline on your phone (stream/mobile_page.py)
 if survivors is not None:
     survivors.bind(lambda name: globals()[name])
 if site_pages is not None:
     site_pages.bind(lambda name: globals()[name])
+if mobile_page is not None:
+    mobile_page.bind(lambda name: globals()[name])
 if modepacks is not None:
     modepacks.bind(lambda name: globals()[name])
 if hub_mod is not None:
@@ -1662,6 +1665,10 @@ HOME_JSON = "home/home.json"
 SLOT_ART_RE = re.compile(r"slots/[a-z0-9][a-z0-9-]{0,60}\.(?:webp|webm|mp4)")
 SLOT_TYPES = {"webp": "image/webp", "webm": "video/webm", "mp4": "video/mp4"}
 SLOT_ART_MAX = 4_000_000   # art_bytes reads at most this much: a longer film needs another home (owner)
+# The mobile release page's screenshots (stream/mobile_page.py, made by tools/mobile-shots/mobile_shots.cjs from the real
+# pages at phone sizes: the launcher's phone layout and the touch controls over a plain field), in ART_DIR/mobile/
+# (www-files/art/mobile/). Pictures of our own UI, no game data: they stay up with the killswitch. A real WebP only.
+MOBILE_ART_RE = re.compile(r"mobile/[a-z0-9][a-z0-9-]{0,60}\.webp")
 HOME_ART_MAX = 1_500_000
 HOME_JSON_MAX = 64_000
 HOME_ART_MAX_AGE = 3600   # an hour: a new screenshot under the same name shows the same day
@@ -1686,6 +1693,8 @@ def art_type(name: str) -> str:
         return "image/webp" if name.endswith(".webp") else "image/jpeg"
     if SLOT_ART_RE.fullmatch(name):
         return SLOT_TYPES[name.rsplit(".", 1)[1]]
+    if MOBILE_ART_RE.fullmatch(name):
+        return "image/webp"
     return ""
 
 
@@ -2821,6 +2830,8 @@ def site_nav(current: str = "", signed_in: bool = False) -> str:
         if site_pages.single_public():
             items.insert(2, ("single", "Single player", site_pages.SINGLE))
         items.append(("guides", "Guides", site_pages.GUIDES))
+    if mobile_page is not None:   # stream/mobile_page.py: Leyline on your phone
+        items.append(("mobile", "Phone", mobile_page.PATH))
     links_html = "".join(_nav_item(k, label, href, current) for k, label, href in items)
     links_html += _nav_item("server", "Server", HOST_URL, current, external=True)
     links_html += _nav_item("discord", "Discord", DISCORD_URL, current, external=True)
@@ -2940,7 +2951,7 @@ def site_chrome(page: bytes, path: str, next_step: str = "play") -> bytes:
 # small HUB_JS). Off, or without the hub: the old frames below, as before.
 
 HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "mods", "docs": "docs", "host": "host", "looks": "looks",
-              "single": "single", "guides": "guides"}   # stream/site_pages.py's pages (Single player only with its flag on)
+              "single": "single", "guides": "guides", "mobile": "mobile"}   # stream/site_pages.py's pages (Single player only with its flag on)
 _HUB_DESC_RE = re.compile(rb'<meta name="description" content="Leyline: one launcher[^"]*">')
 
 
@@ -4695,6 +4706,9 @@ class PageHandler(BaseHTTPRequestHandler):
                                             mods=workshop.mod if workshop else None,
                                             made=creations.card_item if creations is not None else None,
                                             labels=RULESET_LABELS, host=PUBLIC_HOST, get_launcher=download_link()))
+            return
+        if mobile_page is not None and mobile_page.match(path):   # /wrath/mobile: Leyline on your phone
+            mobile_page.get(self, path, query)
             return
         if site_pages is not None and site_pages.match(path):   # /wrath/single-player (flag), /wrath/modes/<way>, /wrath/guides, /wrath/press
             site_pages.get(self, path, query)

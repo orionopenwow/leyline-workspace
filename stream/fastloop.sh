@@ -67,6 +67,8 @@ had_bossfights=""
 if [ -f "$WU/portal/bossfights.py" ]; then cp -p "$WU/portal/bossfights.py" "$BK/bossfights.py"; had_bossfights=1; fi
 had_survivors=""
 if [ -f "$WU/portal/survivors.py" ]; then cp -p "$WU/portal/survivors.py" "$BK/survivors.py"; had_survivors=1; fi
+# the showcase pages and Leyline on your phone (site_pages.py, mobile_page.py)
+for f in site_pages.py mobile_page.py; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_profiles=""
 if [ -f "$WU/portal/profiles.py" ]; then cp -p "$WU/portal/profiles.py" "$BK/profiles.py"; had_profiles=1; fi
 had_herokeys=""
@@ -124,6 +126,7 @@ put_back() {
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_bossfights" ]; then cp -p "$BK/bossfights.py" "$WU/portal/bossfights.py"; else rm -f "$WU/portal/bossfights.py"; fi
   if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
+  for f in site_pages.py mobile_page.py; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
@@ -254,6 +257,10 @@ if [ -f bossfights.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.a
 # Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors): optional; its address is
 # $WU/portal/survivors.url (hosting/survivors/sv-site-up.sh)
 if [ -f survivors.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' survivors.py && install -m 644 survivors.py "$WU/portal/survivors.py"; fi
+# the showcase pages (/wrath/guides, /wrath/press, /wrath/modes/<way>) and Leyline on your phone (/wrath/mobile): optional
+for f in site_pages.py mobile_page.py; do
+  if [ -f "$f" ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$f" && install -m 644 "$f" "$WU/portal/$f"; fi
+done
 # Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar): optional; its store is
 # $WU/portal-data/profiles.sqlite3
 if [ -f profiles.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' profiles.py && install -m 644 profiles.py "$WU/portal/profiles.py"; fi
@@ -331,6 +338,12 @@ if [ -d www-files/art ] && [ -f www-files/art/wu-theme.css ]; then
     rm -rf "$WU/portal/art/slots"; install -d -m 755 "$WU/portal/art/slots"
     find www-files/art/slots -maxdepth 1 -type f \( -name '*.webp' -o -name '*.webm' -o -name '*.mp4' \) -exec install -m 644 {} "$WU/portal/art/slots/" \;
     echo "  slots: $(find www-files/art/slots -maxdepth 1 -type f | wc -l) -> $WU/portal/art/slots"
+  fi
+  # the mobile release page's screenshots (stream/mobile_page.py, tools/mobile-shots), served at /wrath/art/mobile/
+  if [ -d www-files/art/mobile ]; then
+    rm -rf "$WU/portal/art/mobile"; install -d -m 755 "$WU/portal/art/mobile"
+    find www-files/art/mobile -maxdepth 1 -type f -name '*.webp' -exec install -m 644 {} "$WU/portal/art/mobile/" \;
+    echo "  mobile shots: $(find www-files/art/mobile -maxdepth 1 -type f -name '*.webp' | wc -l) -> $WU/portal/art/mobile"
   fi
   if [ -d www-files/art/hub-thumbs ]; then
     rm -rf "$WU/portal/art/hub-thumbs"; install -d -m 755 "$WU/portal/art/hub-thumbs"
@@ -503,6 +516,9 @@ c7m=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/mode
 echo "  /wrath/modes.json game modes (200 = on): $c7m"
 c7b=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/api/bossfights || true)
 echo "  /wrath/api/bossfights boss fight boards (200 = on): $c7b"
+c7p=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/mobile || true)
+c7q=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/art/mobile/phone-play.webp || true)
+echo "  /wrath/mobile Leyline on your phone (200 = on): $c7p, its screenshots: $c7q"
 c8=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/docs || true)
 c8w=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/workshop || true)
 echo "  /wrath/workshop player creations (200 = on): $c8w"

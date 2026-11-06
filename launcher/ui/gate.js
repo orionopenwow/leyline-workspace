@@ -76,7 +76,14 @@
       // a key file from before the last Log out isn't used by itself, but it is offered: "Log in as …" (one click)
       const was = known ? known.path + known.mtime_ms : "";
       known = f && f.path && f.mtime_ms <= outAt() ? { path: f.path, name: f.name || "", mtime_ms: f.mtime_ms } : null;
-      if ((known ? known.path + known.mtime_ms : "") !== was && open && phase === "in") render();
+      if ((known ? known.path + known.mtime_ms : "") !== was && open && phase === "in") {
+        // the file can be found after the dialog put the focus on its first way: "Log in as …" takes it, so Enter
+        // logs in (it was left on nothing about one time in five), unless the player is typing in a field
+        const a = document.activeElement;
+        const typing = !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+        render();
+        if (known && !typing) { const g = $("gate-again"); if (g) g.focus(); }
+      }
       if (!f || !f.path || !(f.mtime_ms > outAt()) || !(f.mtime_ms > triedAt())) return false;
       try { localStorage.setItem("leyline.keyFileTried", String(f.mtime_ms)); } catch (_) { /* fine */ }
       here = open;

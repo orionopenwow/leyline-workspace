@@ -583,7 +583,8 @@ class Smoke(unittest.TestCase):
         self.assertEqual(subprocess.run(["bash", "-n", os.path.join(BOTS, "bots-smoke.sh")]).returncode, 0)
         self.assertIn("bots_smoke.py\" smoke", open(os.path.join(BOTS, "bots-smoke.sh")).read())
         bat = open(os.path.join(REPO, "realm", "Bots smoke test.bat"), newline="").read()
-        self.assertIn("\r\n", bat)
+        # CRLF on the owner's PC; git (autocrlf there) stores LF, so a Linux checkout (CI) has LF: never mixed
+        self.assertTrue(bat.count("\n") == bat.count("\r\n") or "\r" not in bat, "mixed line endings")
         self.assertIn("bots_smoke.py\" smoke --tag", bat)
         self.assertEqual(bs.main(["smoke", "--tag", "x;rm"]), 2)
         # the probe is test only: never in the realm scripts the kit ships

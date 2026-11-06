@@ -150,6 +150,10 @@ STEPS = {
     "den-check": ("tools/den-check/Den check.bat", "My Den check (read-only): game folder, login archive, Config.wtf, Den Lite and a test sign-in", False),
     "client-smoke": ("tools/client-smoke/Client smoke test.bat", "Client smoke test: your game started as PLAY starts it on Wrath Unleashed (the launcher's sign-in skips the login screen), a screenshot every few seconds, then closed and the sign-in taken out (logs\\client-smoke)", False),
     "client-smoke-world": ("tools/client-smoke/Client smoke test - world.bat", "Client smoke test, on into the world with your last character (logs\\client-smoke)", False),
+    # Boss Rush (docs/BOSS-RUSH.md): boss-rush looks (read-only: the exact engine's install, the raid maps, the light
+    # version, the board); boss-rush-test runs its tests here (the light version and its test client, the profile)
+    "boss-rush": ("tools/boss-rush/Boss Rush check.bat", "Boss Rush check (read-only): the exact engine's own install and its raid maps, the shared engine files, the light version, the board", False),
+    "boss-rush-test": ("tools/boss-rush/Boss Rush tests.bat", "Boss Rush tests: the light version (its fights, then a test client onto the platform: pull, wipe, try again, phase, clear), the profile and the module's catalog (a few minutes)", False),
     "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, then builds, saves and loads, the white room, Forge's files, a shareable Den file, an invite a test friend signs in with, the autosave; a screenshot, closes it (logs in tools\\den-check\\logs)", False),
     # the first-run test (tools/first-run/first_run.py, docs/FIRST-RUN-TEST.md): a brand-new launcher through to in the game
     "first-run-test": ("tools/first-run/First run test.bat", "First-run test: today's download in an empty data folder, your game folder added, a test Hero Key logged in, PLAY on Wrath Unleashed, the game logs in by itself, into the world, then the Den test; screenshots, then the test account and temp folders removed (logs in tools\\first-run\\logs)", False),
@@ -415,7 +419,7 @@ def watch_step(p, step: str, why: dict) -> threading.Event:
 
 
 # Autopilot runs only these by itself; anything else waits for "Launch all".
-READ_ONLY = {"check", "combos-check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
+READ_ONLY = {"check", "boss-rush", "combos-check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
              "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make", "announce-check"}

@@ -49,6 +49,24 @@ or a `DEN-` code is refused with one line: Den worlds are not in the browser gam
 | Mods with a realm half and a game half | the realm half only |
 | Client mods, looks, HD packs, themes, graphics settings, loadouts | No: they change a game folder |
 
+## Screenshots
+
+Made from the real pages at phone sizes by `tools/mobile-shots/mobile_shots.cjs` (the phone app with the tests' fake
+core; the touch controls over a plain stand-in field, so no game picture), small WebP files in
+`stream/www-files/art/mobile/`: `phone-play`, `phone-play-landscape`, `phone-realms`, `phone-mods`, `phone-account`,
+`phone-join`, `phone-solo`, `phone-touch`. Served at `/wrath/art/mobile/<name>.webp` (not behind the game data
+killswitch: our own UI only). Run it again after a layout change:
+`NODE_PATH=$(npm root -g) node tools/mobile-shots/mobile_shots.cjs`.
+
+## Control presses
+
+1. **signin**: the site's `/wrath/mobile`, `/wrath/docs/mobile`, the menu item and the screenshots. It now also
+   ships `site_pages.py` (the guides and press pages were never packed by this step before) and checks
+   `/wrath/mobile` in its self-check.
+2. **ship**: the app changes (Join a friend, community realms, mod lines, layout) reach GitHub; the `leyline` step
+   exports them and the `leyline android` workflow (now with `publish`) builds the APK.
+3. **leyline-mobile**, after the repo exists (below).
+
 ## Not done (honest)
 
 - **The app has never been compiled.** Nothing in the cloud can build Rust for Android; the first `leyline android`

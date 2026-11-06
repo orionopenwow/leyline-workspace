@@ -59,6 +59,21 @@
 //     everything clamped on screen. Left-handed mirrors the stick and the ring. Vibration on / off. Bigger
 //     interface is a slider (the game's interface size).
 //
+// Mobile pass, 5 Nov night (build 2026-11-05c):
+//   * Fixes: typing a name with a phone keyboard that composes words (Android's): each letter went to the game again
+//     with every new letter ("Bob" arrived as "BBoBob"); the keyboard button and the chat box now focus on the lift (a
+//     finger's press is no user gesture to Android, so its keyboard never came up); a quick pinch no longer ends in
+//     a click from the last finger; going to another app (or a call) lets go of the stick, Jump and a camera drag (the
+//     character ran on), and the screen lock comes back after it; a lost lift no longer jams the stick or turns the
+//     next taps into a pinch; no page zoom (iOS pinch, double-tap, a name box under 16 px); the chat sheet sits above
+//     the phone's keyboard (visualViewport); the notch: the corner buttons and the game's player frame, minimap and
+//     tracker are kept clear of it.
+//   * New: right-click in windows and the world with a two-finger tap (use or sell a bag item, talk, loot); Touch and
+//     hold: Tooltip or Right-click (Menu > Controls); Button size and Opacity sliders; a hardware keyboard hides the
+//     touch controls until the next touch (setting); stronger, device-aware vibration (iPhone: the switch haptic);
+//     timers paused while the page is hidden; a typed-text echo while the phone keyboard covers the name box; more
+//     in Copy debug info (notch, keyboard, haptics, settings).
+//
 // The art is drawn here as vector graphics (crisp at any screen density), in the look of the
 // Open Vanilla mobile mockups: dark stone faces and bronze-gold rims.
 //
@@ -88,7 +103,7 @@
 import { gamePointerEvent } from './input.js';
 import { makeDriver } from './touch-driver.js';
 
-export const TOUCH_BUILD = 'wrath 2026-11-05b (tap re-send, button magnet, tap test, debug copy; nearest enemy, target swipe, soft lock; cast bar, ground spells; layouts, edit, left-handed; controller card)';
+export const TOUCH_BUILD = 'wrath 2026-11-05c (mobile pass: phone keyboard, two-finger right-click, hold mode, size and opacity, keyboard hides, background let-go, no page zoom, notch; tap re-send, magnet, tap test, debug copy; targeting, cast bar, ground spells; layouts; controller card)';
 // the driver installTouch made (gameTicks below asks it for game updates)
 let DRIVER = null;
 
@@ -110,6 +125,21 @@ export function wanted() {
   if (pref === 'on') return true;
   if (pref === 'off') return false;
   return matchMedia('(pointer: coarse)').matches && (navigator.maxTouchPoints || 0) > 0;
+}
+
+/** An iPhone or iPad (an iPad asks for desktop pages and calls itself a Mac with touch points). */
+export function iOSDevice() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/** The ghost box's text change as game keys: Backspaces for what went, then what came. A phone keyboard that composes
+ *  words (Android's) rewrites the word in the box at each letter, and IME events can't be cancelled, so the box is
+ *  diffed instead of read event by event. ZWSP (the box's padding, so Backspace always has something to delete) is
+ *  never sent. Returns { back, text }. */
+export function ghostDiff(prev, next) {
+  let i = 0;
+  while (i < prev.length && i < next.length && prev[i] === next[i]) i++;
+  return { back: prev.length - i, text: next.slice(i).replace(/​/g, '') };
 }
 
 // -- Art (SVG) ----------------------------------------------------------------------------------
@@ -227,9 +257,9 @@ function style() {
     #ow-touch.mouse .world { pointer-events: none; }
     #ow-touch .stick-zone { position: absolute; left: 0; bottom: 0; width: 42%; height: 62%; }
     #ow-touch .stick { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px;
-      background: ${ART.stickBase} center / contain no-repeat; opacity: .55; transition: opacity .15s;
+      background: ${ART.stickBase} center / contain no-repeat; opacity: calc(.55 * var(--ow-alpha, 1)); transition: opacity .15s;
       pointer-events: none; }
-    #ow-touch .stick.live { opacity: .95; transition: none; }
+    #ow-touch .stick.live { opacity: calc(.5 + .45 * var(--ow-alpha, 1)); transition: none; }
     #ow-touch.windows .stick:not(.live) { opacity: .28; }
     #ow-touch .knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px;
       background: ${ART.knob} center / contain no-repeat; }
@@ -287,8 +317,8 @@ function style() {
     #ow-touch .tray .item { display: none; }
     #ow-touch .tray.open .item { display: flex; animation: ow-slide .16s ease-out both; }
     @keyframes ow-slide { from { opacity: 0; transform: translateX(10px); } }
-    #ow-touch .sheet { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(10px, env(safe-area-inset-bottom));
-      width: min(560px, 92vw); max-height: 82vh; display: none; flex-direction: column; pointer-events: auto;
+    #ow-touch .sheet { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(max(10px, env(safe-area-inset-bottom)) + var(--ow-kb, 0px));
+      width: min(560px, 92vw); max-height: calc(var(--ow-vvh, 100vh) * .82); display: none; flex-direction: column; pointer-events: auto;
       background: rgba(13, 11, 18, .94); border: 1px solid #8a6a2a; box-shadow: inset 0 0 0 1px #3d2c10, 0 10px 40px #000;
       border-radius: 10px; padding: 12px 14px; color: #e8dcc0; font: 14px system-ui, sans-serif; }
     #ow-touch .sheet.open { display: flex; }
@@ -340,9 +370,18 @@ function style() {
     #ow-touch .info button, #ow-touch .settings button { flex: 1 1 auto; height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid #9b7a33;
       background: linear-gradient(#3a2f1a, #1d170c); color: #f0d79a; font: 600 12px 'OW Cinzel', Georgia, serif; }
     #ow-touch .settings { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-    #ow-touch .kbd { position: absolute; right: 12px; top: 12px; display: none; pointer-events: auto; }
+    #ow-touch .kbd { position: absolute; right: calc(env(safe-area-inset-right, 0px) + 12px); top: calc(env(safe-area-inset-top, 0px) + 12px); display: none; pointer-events: auto; }
     #ow-touch.glue-type .kbd { display: flex; }
-    #ow-touch .ghost { position: absolute; left: -9999px; top: 0; width: 10px; height: 10px; opacity: 0; }
+    /* on screen (iOS scrolls the page to an input focused off it) and 16 px (iOS zooms the page into a smaller one) */
+    #ow-touch .ghost { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; border: 0; padding: 0; pointer-events: none; }
+    /* what the phone keyboard typed, while it covers the name box */
+    #ow-touch .kecho { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 10px); transform: translateX(-50%); display: none;
+      max-width: 60vw; padding: 6px 14px; border-radius: 3px; background: rgba(8, 8, 10, .88); border: 1px solid rgba(150, 132, 96, .6);
+      color: #fff; font: 15px 'OW Friz', Georgia, serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; z-index: 4; }
+    #ow-touch .kecho:empty::before { content: 'Type with your keyboard'; color: #c9c1b2; }
+    #ow-touch.ghosting .kecho { display: block; }
+    /* the switch whose toggle gives an iPhone's haptic tick (no navigator.vibrate there) */
+    #ow-touch .hap { position: fixed; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
     #ow-touch .opts { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
     #ow-touch .opt { text-align: left; padding: 9px 12px; border-radius: 8px; border: 1px solid #5d4720; background: rgba(40, 32, 18, .55);
       color: #e8dcc0; font: 13px/1.35 system-ui, sans-serif; }
@@ -353,11 +392,14 @@ function style() {
     #ow-touch table.vs th { text-align: left; color: #f0c058; font: 600 12px 'OW Cinzel', Georgia, serif; padding: 4px 6px; border-bottom: 1px solid #5d4720; }
     #ow-touch table.vs td { padding: 4px 6px; border-bottom: 1px solid rgba(93, 71, 32, .45); vertical-align: top; }
     #ow-touch table.vs td:first-child { color: #c9b98f; white-space: nowrap; }
-    #ow-touch .restore { position: absolute; right: 8px; top: 46%; display: none; pointer-events: auto; opacity: .75; }
+    #ow-touch .restore { position: absolute; right: calc(env(safe-area-inset-right, 0px) + 8px); top: 46%; display: none; pointer-events: auto; opacity: .75; }
     /* no bridge: the screen can't be told apart from the world in an older client, so a button
        switches between the world's controls and the glue screens' taps */
     #ow-touch .flip { position: absolute; right: calc(env(safe-area-inset-right, 0px) + 56px); top: calc(env(safe-area-inset-top, 0px) + 10px); display: none; pointer-events: auto; opacity: .7; }
     #ow-touch.on.keys:not(.loading) .flip { display: flex; }
+    /* (5 Nov night) it sat on the open tray's Bags button, and on the character screens under the Controls button */
+    #ow-touch.on.keys:not(.loading) .tray.open ~ .flip { display: none; }
+    #ow-touch.glue-touch:not(.inworld) .flip { right: calc(env(safe-area-inset-right, 0px) + 12px); top: calc(env(safe-area-inset-top, 0px) + 56px); }
     #ow-touch.pcmode { display: block; }
     #ow-touch.pcmode .restore { display: flex; }
     #ow-touch.pcmode > :not(.restore):not(.toast):not(.sheet) { display: none !important; }
@@ -400,7 +442,7 @@ function style() {
     #ow-touch .tapring.go { animation: ow-ring .45s ease-out; }
     #ow-touch .tapring.snap { border-color: #7dff9a; box-shadow: 0 0 8px rgba(120, 255, 150, .8); }
     @keyframes ow-ring { from { opacity: 1; transform: scale(.5); } to { opacity: 0; transform: scale(1.5); } }
-    #ow-touch .tdebug { position: absolute; left: 6px; bottom: 6px; display: none; padding: 4px 7px; border-radius: 4px; pointer-events: none;
+    #ow-touch .tdebug { position: absolute; left: calc(env(safe-area-inset-left, 0px) + 6px); bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); display: none; padding: 4px 7px; border-radius: 4px; pointer-events: none;
       background: rgba(0, 0, 0, .75); color: #9f9; font: 11px/1.3 ui-monospace, monospace; white-space: pre; z-index: 3; }
     #ow-touch.debug .tdebug { display: block; }
     #ow-touch.glue-touch:not(.inworld):not(.loading) .glue { display: block; }
@@ -444,7 +486,7 @@ function style() {
     #ow-touch .slider input { flex: 1; min-width: 0; height: 32px; accent-color: #d9b25a; }
     #ow-touch .slider .v { width: 44px; text-align: right; color: #fff; }
     #ow-touch textarea.dbg { width: 100%; height: 90px; margin-top: 6px; background: rgba(0, 0, 0, .6); color: #cfc; border: 1px solid rgba(150, 132, 96, .5);
-      font: 11px/1.3 ui-monospace, monospace; -webkit-user-select: text; user-select: text; }
+      font: 16px/1.25 ui-monospace, monospace; -webkit-user-select: text; user-select: text; }
     /* the character screens: a corner button for Menu > Controls (the tray only exists in the world) */
     #ow-touch .gear { position: absolute; right: calc(env(safe-area-inset-right, 0px) + 56px); top: calc(env(safe-area-inset-top, 0px) + 12px); display: none; pointer-events: auto; opacity: .8; }
     #ow-touch.glue-touch:not(.inworld):not(.loading) .gear { display: flex; }
@@ -491,6 +533,18 @@ function style() {
     /* the page menu handle moves to the bottom edge, out of the target frame's way */
     body.ow-touch-world #ow-dock { top: auto; bottom: 0; flex-direction: column-reverse; }
     body.ow-touch-world #ow-dock-handle { border-radius: 8px 8px 0 0; border-top: 1px solid rgba(201,162,39,.35); border-bottom: 0; }
+    /* Menu > Controls > Opacity: the controls over the world (a press shows the key at full strength) */
+    #ow-touch .attack, #ow-touch .key, #ow-touch .target, #ow-touch .dots, #ow-touch .jump, #ow-touch .tray, #ow-touch .strip { opacity: var(--ow-alpha, 1); }
+    #ow-touch .play.pressed, #ow-touch.editing .play { opacity: 1; }
+    /* a hardware keyboard is playing: the thumb controls step aside until the next touch (the tray stays) */
+    #ow-touch.kbdmode .stick, #ow-touch.kbdmode .attack, #ow-touch.kbdmode .key, #ow-touch.kbdmode .target,
+    #ow-touch.kbdmode .dots, #ow-touch.kbdmode .jump, #ow-touch.kbdmode .strip { visibility: hidden; }
+    /* no page zoom or scrolling under a finger: panels scroll, nothing pinches or double-taps the page bigger,
+       no pull-to-refresh or rubber band */
+    #ow-touch .sheet, #ow-touch .info, #ow-touch .typebar, #ow-touch .editbar { touch-action: pan-x pan-y; }
+    #ow-touch .log, #ow-touch .grid, #ow-touch .opts, #ow-touch .info .t { overscroll-behavior: contain; }
+    html.ow-touch-on, body.ow-touch-on { overscroll-behavior: none; }
+    body.ow-touch-on canvas { touch-action: none; }
   `;
   document.head.append(s);
 }
@@ -835,15 +889,19 @@ export function installTouch(bridge) {
         <button class="opt" data-scheme="pc"><b>Keyboard &amp; mouse</b>No touch controls; the normal PC interface with its action bars and chat. For a tablet with a keyboard, or a phone on a controller. The small phone button in the corner brings touch back.</button>
         <div class="ctlrow"><button data-c="taptest">Tap test</button><button data-c="debug">Copy debug info</button><button data-c="edit">Edit layout</button></div>
         <div class="ctlrow"><button data-c="preset">Layout: Auto</button><button data-c="lefty">Left-handed: off</button>
-          <button data-c="haptics">Vibration: on</button><button data-c="softlock">Soft lock: on</button></div>
+          <button data-c="haptics">Vibration: on</button></div>
+        <div class="ctlrow"><button data-c="softlock">Soft lock: on</button><button data-c="hold">Touch and hold: tooltip</button><button data-c="kbdhide">Keyboard hides touch: on</button></div>
         <label class="slider">Bigger interface <input type="range" min="70" max="140" step="5" data-c="uisize"><span class="v">100%</span></label>
+        <label class="slider">Button size <input type="range" min="80" max="140" step="10" data-c="size"><span class="v">100%</span></label>
+        <label class="slider">Opacity <input type="range" min="30" max="100" step="10" data-c="alpha"><span class="v">100%</span></label>
         <table class="vs"><tr><th></th><th>Phone</th><th>PC</th></tr>
           <tr><td>Move</td><td>Left stick (double-tap it: auto-run)</td><td>W A S D, Num Lock</td></tr>
           <tr><td>Turn / camera</td><td>Drag the world · pinch to zoom</td><td>Hold right / left mouse · wheel</td></tr>
           <tr><td>Target</td><td>Tap them, or the ⌖ button for the nearest enemy (hold it to clear). Swipe the target's frame for the next or last one</td><td>Click, Tab, Shift-Tab</td></tr>
           <tr><td>Keep your target</td><td>Soft lock: a tap on open ground keeps it</td><td>Click a unit</td></tr>
           <tr><td>Place a spell on the ground</td><td>Tap the spot (the X cancels)</td><td>Click the spot</td></tr>
-          <tr><td>Talk, loot, use</td><td>Double-tap them</td><td>Right-click</td></tr>
+          <tr><td>Talk, loot, use</td><td>Double-tap them, or tap with two fingers</td><td>Right-click</td></tr>
+          <tr><td>Use, equip or sell an item</td><td>Tap it in the bag with two fingers (or set Touch and hold: right-click)</td><td>Right-click it</td></tr>
           <tr><td>Attack</td><td>Attack / Interact</td><td>Right-click the enemy</td></tr>
           <tr><td>Abilities</td><td>Four keys; swipe them for more. Hold one for its details, move or remove it</td><td>1 – 0, - and =</td></tr>
           <tr><td>New ability on a key</td><td>Drag it out of the Spellbook, then tap a key</td><td>Drag it onto the bar</td></tr>
@@ -870,7 +928,9 @@ export function installTouch(bridge) {
         <button type="button" data-e="reset">Reset</button><button type="button" data-e="done">Done</button></div>
       <form class="eb-code"><input autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Layout code">
         <button type="button" data-e="copy">Copy code</button><button type="submit" data-e="use">Use code</button></form></div>
-    <input class="ghost" autocomplete="off" autocapitalize="off" spellcheck="false" aria-hidden="true">
+    <input class="ghost" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" tabindex="-1" aria-hidden="true">
+    <div class="kecho"></div>
+    <label class="hap" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label>
     <div class="toast"></div>
     <div class="fsgo">${ICON.full}<div>Tap to play full screen</div><button type="button" class="inst">Add Leyline to your home screen</button><button type="button" class="skip">Not now</button></div>
     <div class="rotate">${ICON.rotate}<div>Turn your phone sideways</div><div class="sub">The game is laid out for landscape</div><button type="button" class="go">Play full screen</button><button type="button" class="inst">Add Leyline to your home screen</button></div>`;
@@ -889,8 +949,28 @@ export function installTouch(bridge) {
     toastTimer = setTimeout(() => t.classList.remove('on'), ms);
   };
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  // a short buzz on a press (Menu > Controls > Vibration turns it off)
-  const buzz = () => { if (LS('ow:haptics') === 'off') return; try { navigator.vibrate?.(8); } catch { /* none */ } };
+  // A short buzz on a press (Menu > Controls > Vibration turns it off). 12 ms: many phone motors don't start for less
+  // (the old 8 ms was felt on few phones). An iPhone has no navigator.vibrate, but Safari (iOS 18 and later) gives a
+  // haptic tick when a switch toggles, so a hidden one is toggled instead (WebHaptics' way). Never takes the focus.
+  const hapSwitch = $('.hap'), hapInput = hapSwitch.querySelector('input');
+  const HAPTIC = typeof navigator.vibrate === 'function' ? 'vibrate' : (iOSDevice() && 'switch' in hapInput ? 'switch' : 'none');
+  status.haptics = HAPTIC;
+  let lastBuzz = 0;
+  const buzz = (ms = 12) => {
+    if (LS('ow:haptics') === 'off') return;
+    const now = performance.now();
+    if (now - lastBuzz < 40) return;          // one tick per press, not a rattle from a burst of them
+    lastBuzz = now;
+    status.buzzes = (status.buzzes || 0) + 1;
+    try {
+      if (HAPTIC === 'vibrate') navigator.vibrate(ms);
+      else if (HAPTIC === 'switch') {
+        const had = document.activeElement;
+        hapSwitch.click();
+        if (document.activeElement !== had && had?.focus) had.focus({ preventScroll: true });
+      }
+    } catch { /* none */ }
+  };
   const lua = (chunk) => wenilla.lua(chunk, 3000).catch(() => { status.errors += 1; return []; });
   // soft lock (Menu > Controls): a tap on open ground keeps the target
   const softLock = () => LS('ow:softlock') !== 'off';
@@ -919,6 +999,11 @@ export function installTouch(bridge) {
   const lefty = () => LS('ow:lefty') === 'on';
   const clampN = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
   const ZMIN = 0.8, ZMAX = 1.5;
+  // Menu > Controls > Button size (80-140%): the stick and the preset's ring together (an edited ring keeps its own size)
+  const sizePref = () => { const v = +(LS('ow:touch-size') || 1); return Number.isFinite(v) ? clampN(v, 0.8, 1.4) : 1; };
+  // Menu > Controls > Opacity (30-100%): the controls over the world
+  const alphaPref = () => { const v = +(LS('ow:touch-alpha') || 1); return Number.isFinite(v) ? clampN(v, 0.3, 1) : 1; };
+  let stickK = 1;                        // the stick's size now (its range follows)
   let layoutKey = 'ow:touch-layout:_';
   let custom = null;                     // { s, r, j, t: [fx, fy], z } or null (the preset)
   const pair = (v) => Array.isArray(v) && v.length === 2 && v.every((n) => Number.isFinite(n) && n >= 0 && n <= 1);
@@ -937,10 +1022,15 @@ export function installTouch(bridge) {
     const X = (x) => Math.round(mir ? W - x : x);
     const pname = presetNow(), pre = PRESETS[pname];
     const stickLift = custom ? 0 : Math.round(pre.lift * H);
+    const sk = sizePref();
+    stickK = sk;
+    stick.style.scale = sk === 1 ? '' : String(sk);
+    root.style.setProperty('--ow-alpha', String(alphaPref()));
     // the stick's home (where it rests; a touch in its zone moves it under the thumb)
-    let hx = sl + STICK_HOME.left + 60, hy = H - SAFE.b - STICK_HOME.bottom - 60 - stickLift;
+    const sh = 60 * sk, sm = sh + 4;
+    let hx = sl + STICK_HOME.left + sh, hy = H - SAFE.b - STICK_HOME.bottom - sh - stickLift;
     if (custom) { hx = custom.s[0] * W; hy = custom.s[1] * H; }
-    hx = clampN(hx, sl + 64, W - sr - 64); hy = clampN(hy, SAFE.t + 64, H - SAFE.b - 64);
+    hx = clampN(hx, sl + sm, W - sr - sm); hy = clampN(hy, SAFE.t + sm, H - SAFE.b - sm);
     CENTRES.s = [hx, hy];
     stick.dataset.hx = X(hx); stick.dataset.hy = Math.round(hy);
     if (!stick.classList.contains('live')) { stick.style.left = X(hx) + 'px'; stick.style.top = Math.round(hy) + 'px'; }
@@ -985,7 +1075,7 @@ export function installTouch(bridge) {
       return { s, RA, RK, RT, JH, JW, R, step, ANG, dw, tox, toy, doy, ax, ay, top: ay + minY };
     }
     // a preset gives back its lift, then its size, until the ring clears the tray (top right) on a short screen
-    let s = Math.round(clampN(custom ? custom.z : pre.scale, ZMIN, ZMAX) * 100) / 100, lift = custom ? 0 : Math.round(pre.lift * H);
+    let s = Math.round(clampN(custom ? custom.z : pre.scale * sk, ZMIN, ZMAX) * 100) / 100, lift = custom ? 0 : Math.round(pre.lift * H);
     let g = geo(s, lift);
     const trayBottom = SAFE.t + 10 + 36 + GAP;
     while (!custom && !mir && g.top < trayBottom && (lift > 0 || s > 1)) {
@@ -1009,7 +1099,8 @@ export function installTouch(bridge) {
     const cb = $('.castbar');
     cb.style.left = Math.round(clampN(X(ax - R / 2), 84 + EDGE + SAFE.l, W - 84 - EDGE - SAFE.r)) + 'px';
     cb.style.top = Math.round(Math.max(SAFE.t + EDGE + 8, top - GAP - 8)) + 'px';
-    status.layout = { W, H, ax: X(ax), ay, R: Math.round(R), step: Math.round(step), tx: X(tx), ty: Math.round(ty), s, preset: pname, pref: presetPref(), mirror: mir, custom: !!custom };
+    status.layout = { W, H, ax: X(ax), ay, R: Math.round(R), step: Math.round(step), tx: X(tx), ty: Math.round(ty), s, stick: sk, alpha: alphaPref(), preset: pname, pref: presetPref(), mirror: mir, custom: !!custom,
+      safe: [SAFE.l, SAFE.r, SAFE.t, SAFE.b].map(Math.round) };
     const st = $('.strip');
     st.style.left = (W / 2) + 'px'; st.style.top = (H - SAFE.b - 22 - 40) + 'px';
     // the tray: top right (never mirrored: the player frame has the top left), or where it was put
@@ -1024,7 +1115,14 @@ export function installTouch(bridge) {
   const sa = document.createElement('style');
   sa.textContent = ':root{--ow-sl:env(safe-area-inset-left,0px);--ow-sr:env(safe-area-inset-right,0px);--ow-st:env(safe-area-inset-top,0px);--ow-sb:env(safe-area-inset-bottom,0px)}';
   document.head.append(sa);
-  addEventListener('resize', () => { layout(); if (status.inworld) applyGameLayout(); });
+  // the controls at once; the game's frames once the resizing stops (an address bar sliding fires a burst of these, and
+  // each was a Lua call)
+  let resizeTimer = 0;
+  addEventListener('resize', () => {
+    layout();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (status.inworld) applyGameLayout(); }, 250);
+  });
 
   // ---- the stick --------------------------------------------------------------------------------
   // sideways on the stick strafes (camera drags turn), or turns like A/D when "Stick: turn" is set
@@ -1043,12 +1141,13 @@ export function installTouch(bridge) {
   const RANGE = 60, DEAD = 0.22;
   function stickMove(x, y) {
     let dx = x - sx, dy = y - sy;
-    const d = Math.hypot(dx, dy);
+    const d = Math.hypot(dx, dy), range = RANGE * stickK;
     stickFar = Math.max(stickFar, d);
-    if (d > RANGE) { dx *= RANGE / d; dy *= RANGE / d; }
-    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    if (d > range) { dx *= range / d; dy *= range / d; }
+    // the knob is inside the scaled stick: its offset in the stick's own units
+    knob.style.transform = `translate(${dx / stickK}px, ${dy / stickK}px)`;
     const want = new Set();
-    if (d / RANGE > DEAD) {
+    if (d / range > DEAD) {
       const a = Math.atan2(-dy, dx) * 180 / Math.PI;   // 0 = right, 90 = up
       if (a > 22.5 && a < 157.5) want.add('up');
       if (a < -22.5 && a > -157.5) want.add('down');
@@ -1063,7 +1162,10 @@ export function installTouch(bridge) {
       $('.world').dispatchEvent(new PointerEvent('pointerdown', e));
       return;
     }
-    if (stickId !== null) return;
+    // a first finger while another still "holds" the stick: that one's lift was lost (the browser dropped it), so it
+    // lets go instead of blocking the stick for good
+    if (stickId !== null && !(e.isPrimary && e.pointerType !== 'mouse')) return;
+    if (stickId !== null) { stickReset(); status.stale = (status.stale || 0) + 1; }
     stickId = e.pointerId;
     sz.setPointerCapture(e.pointerId);
     stickT0 = performance.now();
@@ -1075,18 +1177,22 @@ export function installTouch(bridge) {
     status.presses += 1;
   });
   sz.addEventListener('pointermove', (e) => { if (e.pointerId === stickId) stickMove(e.clientX, e.clientY); });
-  const stickEnd = (e) => {
-    if (e.pointerId !== stickId) return;
+  // the stick back home, nothing held
+  function stickReset() {
     stickId = null;
     setHolds(new Set());
+    knob.style.transform = '';
+    stick.classList.remove('live');
+    stick.style.left = stick.dataset.hx + 'px'; stick.style.top = stick.dataset.hy + 'px';
+  }
+  const stickEnd = (e) => {
+    if (e.pointerId !== stickId) return;
+    stickReset();
     // two quick taps without moving = auto-run on / off
     const now = performance.now();
     if (now - stickT0 < 220 && stickFar < 10) {
       if (now - lastStickTap < 380) { wenilla.fire('TOGGLEAUTORUN'); toast('Auto-run'); buzz(); lastStickTap = 0; } else lastStickTap = now;
     } else lastStickTap = 0;
-    knob.style.transform = '';
-    stick.classList.remove('live');
-    stick.style.left = stick.dataset.hx + 'px'; stick.style.top = stick.dataset.hy + 'px';
   };
   sz.addEventListener('pointerup', stickEnd);
   sz.addEventListener('pointercancel', stickEnd);
@@ -1114,11 +1220,19 @@ export function installTouch(bridge) {
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
   }
+  // the look and feel of a press (pushed in, a buzz) for a button that acts on the lift (takeTap)
+  function pressLook(el) {
+    el.addEventListener('pointerdown', () => { el.classList.add('pressed'); buzz(); });
+    const up = () => el.classList.remove('pressed');
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  }
   // the reticle on the ring is the nearest-enemy button: TARGETNEARESTENEMY through the bridge (Tab without it); each
 // tap after the first goes on to the next nearest, as Tab does
 press($('.target'), () => { wenilla.fire('TARGETNEARESTENEMY'); status.nearest = (status.nearest || 0) + 1; });
   // Jump: held while the thumb is on it (JUMP's binding swims up while held, as Space does).
   // The 1.12 file drew this pill but never wired it.
+  let releaseJump = () => {};
   {
     const jump = $('.jump');
     let jumpId = null;
@@ -1126,6 +1240,7 @@ press($('.target'), () => { wenilla.fire('TARGETNEARESTENEMY'); status.nearest =
     const jumpUp = (e) => { if (e.pointerId !== jumpId) return; jumpId = null; wenilla.hold('JUMP', false); };
     jump.addEventListener('pointerup', jumpUp);
     jump.addEventListener('pointercancel', jumpUp);
+    releaseJump = () => { if (jumpId === null) return; jumpId = null; wenilla.hold('JUMP', false); jump.classList.remove('pressed'); };
   }
   longPress($('.target'), () => { lua('ClearTarget()'); toast('Target cleared', 1200); });
   let targetState = { exists: false, hostile: false, dead: false };
@@ -1263,7 +1378,9 @@ return table.concat(t, "\\n")`;
   const openSheet = (name) => {
     for (const [n, el] of Object.entries(sheets)) el.classList.toggle('open', n === name && !el.classList.contains('open'));
     root.classList.toggle('sheet-open', Object.values(sheets).some((el) => el.classList.contains('open')));
-    if (name === 'chat' && sheets.chat.classList.contains('open')) { $$('.badge').forEach((b) => b.classList.remove('on')); setTimeout(() => sheets.chat.querySelector('input').focus(), 50); }
+    // the chat box takes the focus at once, inside the tap that opened it: a phone only raises its keyboard for a focus
+    // made in a user gesture (a timer after it, or a finger's press, is not one)
+    if (name === 'chat' && sheets.chat.classList.contains('open')) { $$('.badge').forEach((b) => b.classList.remove('on')); try { sheets.chat.querySelector('input').focus({ preventScroll: true }); } catch { /* fine */ } }
     if (name === 'menu') loadMenuIcons();
   };
   // the tray: one corner button; open, the four buttons slide out along the top edge, folding away after use
@@ -1276,13 +1393,16 @@ return table.concat(t, "\\n")`;
     if (open) trayTimer = setTimeout(() => setTray(false), 5000);
   };
   press(handle, () => setTray(!tray.classList.contains('open')));
-  $$('.tray .item').forEach((b) => press(b, () => {
+  // on the lift (takeTap): Chat focuses its box, and a phone raises its keyboard only for a focus inside a user gesture,
+  // which a finger's press is not; the press still shows pushed and buzzes
+  $$('.tray .item').forEach((b) => { pressLook(b); takeTap(b, () => {
     const a = b.dataset.act;
+    status.presses += 1;
     setTray(false);
     if (a === 'bags') { wenilla.fire('OPENALLBAGS'); showCloser(); }
     else if (a === 'quests') { wenilla.fire('TOGGLEQUESTLOG'); showCloser(); }
     else openSheet(a);
-  }));
+  }); });
   $$('.sheet .x').forEach((x) => x.addEventListener('click', () => openSheet(null)));
   let menuIcons = false;
   function loadMenuIcons() {
@@ -1347,10 +1467,14 @@ return table.concat(t, "\\n")`;
     ctl('lefty').textContent = 'Left-handed: ' + (lefty() ? 'on' : 'off');
     ctl('haptics').textContent = 'Vibration: ' + (LS('ow:haptics') === 'off' ? 'off' : 'on');
     ctl('softlock').textContent = 'Soft lock: ' + (softLock() ? 'on' : 'off');
+    ctl('hold').textContent = 'Touch and hold: ' + (holdRight() ? 'right-click' : 'tooltip');
+    ctl('kbdhide').textContent = 'Keyboard hides touch: ' + (LS('ow:kbdhide') === 'off' ? 'off' : 'on');
     const f = Math.min(1.4, Math.max(0.7, +(LS('ow:touch-ui') || 1)));
-    ctl('uisize').value = String(Math.round(f * 100));
-    root.querySelector('.slider .v').textContent = Math.round(f * 100) + '%';
+    const slide = (c, v) => { ctl(c).value = String(Math.round(v * 100)); ctl(c).nextElementSibling.textContent = Math.round(v * 100) + '%'; };
+    slide('uisize', f); slide('size', sizePref()); slide('alpha', alphaPref());
   }
+  // Touch and hold (Menu > Controls): a tooltip (the hover, as before) or a right-click (use an item, talk, loot)
+  const holdRight = () => LS('ow:hold') === 'right';
   ctlLabels();
   const onCtl = (c, fn) => ctl(c).addEventListener('click', (e) => { e.preventDefault(); try { fn(); } catch { status.errors += 1; } ctlLabels(); });
   onCtl('taptest', () => { openSheet(null); tapTest.start(); });
@@ -1370,12 +1494,36 @@ return table.concat(t, "\\n")`;
   onCtl('lefty', () => { LS('ow:lefty', lefty() ? null : 'on'); layout(); toast(lefty() ? 'Left-handed: the stick on the right' : 'Right-handed: the stick on the left', 1800); });
   onCtl('haptics', () => { LS('ow:haptics', LS('ow:haptics') === 'off' ? null : 'off'); buzz(); });
   onCtl('softlock', () => { LS('ow:softlock', softLock() ? 'off' : null); toast(softLock() ? 'Soft lock: a tap on open ground keeps your target' : 'Soft lock off: a tap on open ground clears your target', 2600); });
+  onCtl('hold', () => {
+    LS('ow:hold', holdRight() ? null : 'right');
+    toast(holdRight() ? 'Touch and hold: right-click (use items, talk, loot). Tooltips show while your finger is down' : 'Touch and hold: tooltip. Tap with two fingers to right-click', 3200);
+  });
+  onCtl('kbdhide', () => {
+    LS('ow:kbdhide', LS('ow:kbdhide') === 'off' ? null : 'off');
+    if (LS('ow:kbdhide') === 'off') setKbdMode(false);
+    toast(LS('ow:kbdhide') === 'off' ? 'A keyboard leaves the touch controls on screen' : 'A keyboard hides the touch controls until you touch the screen', 2600);
+  });
+  // Button size and Opacity: live as the slider moves
+  ctl('size').addEventListener('input', (e) => {
+    const v = clampN((+e.target.value || 100) / 100, 0.8, 1.4);
+    LS('ow:touch-size', v === 1 ? null : String(v));
+    e.target.nextElementSibling.textContent = Math.round(v * 100) + '%';
+    layout();
+    status.sizeFits = !(v > 1 && !custom && status.layout.s < Math.round(PRESETS[presetNow()].scale * v * 100) / 100);
+  });
+  ctl('size').addEventListener('change', () => { if (!status.sizeFits) toast('As big as fits on this screen', 1800); else if (custom) toast('Your edited ring keeps its size: Edit layout > Ring − / +', 2600); });
+  ctl('alpha').addEventListener('input', (e) => {
+    const v = clampN((+e.target.value || 100) / 100, 0.3, 1);
+    LS('ow:touch-alpha', v === 1 ? null : String(v));
+    e.target.nextElementSibling.textContent = Math.round(v * 100) + '%';
+    root.style.setProperty('--ow-alpha', String(v));
+  });
   // Bigger interface: the game's own interface size, live as the slider moves (applied when it stops)
   let uiTimer = 0;
   ctl('uisize').addEventListener('input', (e) => {
     const f = Math.min(1.4, Math.max(0.7, (+e.target.value || 100) / 100));
     LS('ow:touch-ui', String(f));
-    root.querySelector('.slider .v').textContent = Math.round(f * 100) + '%';
+    e.target.nextElementSibling.textContent = Math.round(f * 100) + '%';
     clearTimeout(uiTimer);
     uiTimer = setTimeout(() => { if (status.inworld) applyGameLayout(); }, 250);
   });
@@ -1581,14 +1729,40 @@ SetCVar("autoLootDefault", "${want}")`);
       c.dispatchEvent(new KeyboardEvent(type, { key, code, bubbles: true, cancelable: true }));
     }
   };
-  press($('.kbd'), () => { ghost.value = ''; ghost.focus(); });
-  ghost.addEventListener('beforeinput', (e) => {
-    e.preventDefault();
-    if (e.inputType === 'deleteContentBackward') keyTo('Backspace', 'Backspace');
-    else if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') keyTo('Enter', 'Enter');
-    else if (e.data) for (const ch of e.data) keyTo(ch, /[a-z]/i.test(ch) ? 'Key' + ch.toUpperCase() : /\d/.test(ch) ? 'Digit' + ch : ch === ' ' ? 'Space' : '');
+  // The box keeps what the keyboard typed (padded with ZWSP so Backspace always has something to delete) and each change
+  // goes to the game as its difference (ghostDiff): a keyboard that composes words rewrites the whole word at each
+  // letter and its events can't be cancelled, so reading them one by one sent every letter again ("BBoBob", 5 Nov).
+  // Autocorrect swapping a word is a few Backspaces and the new letters, as a person would type it.
+  // The button focuses the box when the finger LIFTS: a phone raises its keyboard only for a focus made in a user
+  // gesture, and a finger's press is not one (the keyboard never came up on Android). A second tap puts it away.
+  const kecho = $('.kecho');
+  const PAD = '​'.repeat(8);
+  let gPrev = PAD, gTyped = '';
+  const keyCode = (ch) => (/[a-z]/i.test(ch) ? 'Key' + ch.toUpperCase() : /\d/.test(ch) ? 'Digit' + ch : ch === ' ' ? 'Space' : '');
+  const ghostReset = () => { ghost.value = PAD; gPrev = PAD; try { ghost.setSelectionRange(PAD.length, PAD.length); } catch { /* fine */ } };
+  pressLook($('.kbd'));
+  takeTap($('.kbd'), () => {
+    if (document.activeElement === ghost) { ghost.blur(); return; }
+    ghostReset(); gTyped = ''; kecho.textContent = '';
+    try { ghost.focus({ preventScroll: true }); } catch { /* fine */ }
   });
-  ghost.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Backspace') { e.preventDefault(); keyTo(e.key, e.key); } });
+  ghost.addEventListener('focus', () => root.classList.add('ghosting'));
+  ghost.addEventListener('blur', () => root.classList.remove('ghosting'));
+  ghost.addEventListener('input', (e) => {
+    const v = ghost.value;
+    const { back, text } = ghostDiff(gPrev, v);
+    for (let k = 0; k < back; k++) { keyTo('Backspace', 'Backspace'); gTyped = gTyped.slice(0, -1); }
+    for (const ch of text) {
+      if (ch === '\n') { keyTo('Enter', 'Enter'); continue; }
+      keyTo(ch, keyCode(ch)); gTyped += ch;
+    }
+    gPrev = v;
+    kecho.textContent = gTyped.slice(-24);
+    status.typed = (status.typed || 0) + back + text.length;
+    // padding nearly used up, or a long run: a fresh box (never mid-word, which would break the keyboard's word)
+    if (!e.isComposing && (!v.startsWith(PAD.slice(0, 3)) || v.length > 64)) ghostReset();
+  });
+  ghost.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); keyTo('Enter', 'Enter'); ghost.blur(); } });
 
   root.querySelector('[data-x="full"]').addEventListener('click', () => { fullscreen(); openSheet(null); });
   root.querySelector('[data-x="site"]').addEventListener('click', () => { openSheet(null); document.getElementById('ow-dock-handle')?.click(); });
@@ -1789,7 +1963,10 @@ SetCVar("autoLootDefault", "${want}")`);
       `dpr ${devicePixelRatio} buffer ${c?.width}x${c?.height} css ${c?.clientWidth}x${c?.clientHeight} page ${innerWidth}x${innerHeight}` +
       `${fsEl() ? ' fullscreen' : ''}${installed() ? ' app' : ''} | factor ${fx.toFixed(2)},${fy.toFixed(2)} mode ${TAPMODE} | ` +
       `buttons ${targets.length} taps ${status.tapCount} dropped ${status.dropped || 0} resent ${TAPTIME.resent} frame ${frameMs()}ms | ` +
-      `layout ${status.layout?.preset || '?'}${status.layout?.custom ? ' edited' : ''}${status.layout?.mirror ? ' left-handed' : ''} | ` +
+      `layout ${status.layout?.preset || '?'}${status.layout?.custom ? ' edited' : ''}${status.layout?.mirror ? ' left-handed' : ''}` +
+      ` size ${Math.round(sizePref() * 100)} alpha ${Math.round(alphaPref() * 100)} hold ${holdRight() ? 'right' : 'tip'}${kbdMode ? ' kbdmode' : ''}${root.classList.contains('padmode') ? ' padmode' : ''} | ` +
+      `safe ${(status.layout?.safe || [0, 0, 0, 0]).join(',')} vv ${window.visualViewport ? Math.round(visualViewport.width) + 'x' + Math.round(visualViewport.height) : '-'} kb ${status.keyboard || 0}` +
+      ` ${screen.orientation?.type || (innerWidth > innerHeight ? 'landscape' : 'portrait')} haptics ${HAPTIC} two ${status.twoTaps || 0} stale ${status.stale || 0} letgo ${status.letGo || 0} | ` +
       `last ${tapLog.map(tapShort).join('; ') || '-'} | game took${tapTrace.last || ' -'} errors ${tapTrace.errors + status.errors}` +
       `${tapTrace.error ? ' ' + tapTrace.error : ''}${tt} | ${ua}`;
   }
@@ -2049,7 +2226,7 @@ SetCVar("autoLootDefault", "${want}")`);
   })();
   status.tapTest = null;
   status.startTapTest = () => tapTest.start();
-  if (root.classList.contains('debug')) setInterval(() => debugLine(), 1000);   // numbers from the start, not only after a tap
+  if (root.classList.contains('debug')) setInterval(() => { if (!document.hidden) debugLine(); }, 1000);   // numbers from the start, not only after a tap
   const GLUE = (st) => st === 'login' || st === 'charselect' || st === 'charcreate' || /realm/i.test(st || '');
   const glueState = (st) => {
     glueNow = st || '';
@@ -2076,7 +2253,7 @@ SetCVar("autoLootDefault", "${want}")`);
     root.classList.add('mouse');
   }, true);
   addEventListener('pointerdown', (e) => {
-    if (e.isTrusted && e.pointerType !== 'mouse') { lastFinger = performance.now(); root.classList.remove('mouse'); }
+    if (e.isTrusted && e.pointerType !== 'mouse') { lastFinger = performance.now(); root.classList.remove('mouse'); if (kbdMode) setKbdMode(false); }
   }, true);
   // a finger that reached the game's canvas anyway (input.js stops it there): the layers are back for the next one
   // No compatibility mouse events or scrolling from a finger on our own layers (touch-action covers most browsers;
@@ -2091,10 +2268,17 @@ SetCVar("autoLootDefault", "${want}")`);
     world.setPointerCapture(e.pointerId);
     info.classList.remove('on');
     if (moving) { const from = moving; moving = null; lua(`${SLOT_FN}\nPlaceAction(slot(${from})) ClearCursor()`).then(() => refreshActions(true)); toast('Move cancelled', 900); }
+    // a first finger (no other on the screen, the browser says) while fingers are still counted: their lifts were lost,
+    // so they go (else this touch made a "pinch" with a finger long gone, and every tap after it was swallowed)
+    if (e.isPrimary && e.pointerType !== 'mouse' && touches.size) dropTouches();
     touches.set(e.pointerId, { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), s0: e.timeStamp, moved: false, focus: null });
+    if (pinch) { touches.get(e.pointerId).pinched = true; return; }   // a third finger: part of the pinch
     if (touches.size === 2) {
       const [a, b] = [...touches.values()];
-      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) };
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      // x, y: the first finger, where a two-finger tap right-clicks
+      pinch = { d, t0: performance.now(), first: a.t0, x: a.x0, y: a.y0, zoomed: 0, travel: Math.hypot(a.x - a.x0, a.y - a.y0) };
+      a.pinched = b.pinched = true;
       for (const o of [a, b]) if (o.pressed && !o.out) { o.out = true; pressOut(o, false); }   // a pinch is no click
       endCam();
       clearTimeout(hoverTimer);
@@ -2114,8 +2298,46 @@ SetCVar("autoLootDefault", "${want}")`);
       t.focus = r?.[0] ?? '';
       pressIn(t, id);
     });
-    hoverTimer = setTimeout(() => { t.long = true; moveTo(t.x, t.y); }, LONG_MS);
+    hoverTimer = setTimeout(() => {
+      t.long = true; moveTo(t.x, t.y);
+      // Touch and hold: right-click (Menu > Controls), on a window or in the world, never while placing a ground spell
+      // (a right-click there cancels it)
+      if (holdRight() && !t.moved && !pinch && !aimGround && touches.get(id) === t) holdClick(t);
+    }, LONG_MS);
   });
+  // a right-click where the finger rests (Touch and hold: right-click). A window button the finger had pressed in is let
+  // out off it first (no left click), then the right-click goes in.
+  function holdClick(t) {
+    t.right = true;
+    buzz(20);
+    status.tapCount += 1;
+    const rec = noteTap({ how: 'hold', screen: 'inworld', x: t.x0, y: t.y0, px: t.x0, py: t.y0, on: t.focus || '' });
+    lastTap = { t: 0, x: 0, y: 0 };
+    inTurn(async () => {
+      if (t.pressed && !t.out) { t.out = true; await settle(); moveTo(-40, -40, 1); mouse('pointerup', -40, -40, 0, 0); await afterFrame(); }
+      await clickNow(t.x0, t.y0, 2, rec);
+    });
+  }
+  // A two-finger tap (both down and up quickly, no zoom, hardly moved): a right-click under the first finger. The way
+  // to use, equip or sell a bag item and to talk or loot without a double-tap (a double-tap on a window is two clicks).
+  function twoTap(x, y) {
+    status.tapCount += 1;
+    status.twoTaps = (status.twoTaps || 0) + 1;
+    buzz(20);
+    lastTap = { t: 0, x: 0, y: 0 };
+    flash(x, y, true);
+    click(x, y, 2, noteTap({ how: 'two', screen: 'inworld', x, y, px: x, py: y }));
+  }
+  // every finger the world layer counts goes (lost lifts, or the page hidden): buttons pressed in are let out off them,
+  // a camera drag ends
+  function dropTouches() {
+    endCam();
+    for (const o of touches.values()) if (o.pressed && !o.out) { o.out = true; pressOut(o, false); }
+    if (touches.size) status.stale = (status.stale || 0) + touches.size;
+    touches.clear();
+    pinch = null;
+    clearTimeout(hoverTimer);
+  }
   // A finger on a game button presses it in at once and lets it out on lift, as a mouse button
   // does: the button shows pushed while the finger is on it, and the click is the release (players'
   // reports: "not in-out pressing on a single tap", 2026-10-21). Only once the game has said a window
@@ -2123,11 +2345,16 @@ SetCVar("autoLootDefault", "${want}")`);
   const onWindow = (t) => !!t.focus && t.focus !== 'WorldFrame';
   function pressIn(t, id) {
     // a quick second tap on a window is another click (paging, +/-, Next): only in the world is it a right-click
-    if (!onWindow(t) || t.moved || t.lifted || pinch || touches.get(id) !== t) return;
+    // Touch and hold: right-click never presses a window in (a left press let go off a bag item can start the game's
+    // drag): a quick tap there still clicks on the lift, a hold right-clicks
+    if (holdRight() || !onWindow(t) || t.moved || t.lifted || t.right || pinch || touches.get(id) !== t) return;
     inTurn(async () => {
       // the focus answer came from a game update after the move; one more and its hover is current
       await gameTicks(1);
-      if (t.moved || t.lifted || pinch || touches.get(id) !== t || t.pressed) return;
+      // and not before 100 ms: a two-finger tap's second finger comes by then, so it is no left press first
+      const early = 100 - (performance.now() - t.t0);
+      if (early > 0) await wait(early);
+      if (t.moved || t.lifted || t.right || pinch || touches.get(id) !== t || t.pressed) return;
       moveTo(t.x0, t.y0);
       mouse('pointerdown', t.x0, t.y0, 0, 1);
       t.pressed = performance.now();
@@ -2150,10 +2377,13 @@ SetCVar("autoLootDefault", "${want}")`);
     if (pinch && touches.size === 2) {
       const [a, b] = [...touches.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
-      while (d - pinch.d > 28) { wenilla.fire('CAMERAZOOMIN'); pinch.d += 28; }
-      while (pinch.d - d > 28) { wenilla.fire('CAMERAZOOMOUT'); pinch.d -= 28; }
+      pinch.travel = Math.max(pinch.travel, Math.hypot(t.x - t.x0, t.y - t.y0));
+      while (d - pinch.d > 28) { wenilla.fire('CAMERAZOOMIN'); pinch.d += 28; pinch.zoomed += 1; }
+      while (pinch.d - d > 28) { wenilla.fire('CAMERAZOOMOUT'); pinch.d -= 28; pinch.zoomed += 1; }
       return;
     }
+    // a finger that was part of a pinch does nothing more (it never turns into a camera drag or a tap)
+    if (t.pinched || t.right) return;
     if (t.swiped) return;
     if (t.tf && !t.moved) {
       // Swipe the target frame: left for the next enemy (the nearest one, then on round them, as Tab does), right for
@@ -2203,7 +2433,20 @@ SetCVar("autoLootDefault", "${want}")`);
     const t = touches.get(e.pointerId);
     if (!t) return;
     clearTimeout(hoverTimer);
-    if (pinch) { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; return; }
+    // A pinch's fingers: the first lift ends it (a quick one that zoomed nothing is a two-finger tap: a right-click).
+    // The last finger's lift does nothing: before, it was taken for a tap and clicked (the target changed after a zoom).
+    if (t.pinched) {
+      touches.delete(e.pointerId);
+      if (pinch && !pinch.ended) {
+        pinch.ended = true;
+        const now = performance.now();
+        if (e.type === 'pointerup' && !pinch.zoomed && pinch.travel < 24 && now - pinch.t0 < 400 && now - pinch.first < 650) twoTap(pinch.x, pinch.y);
+      }
+      if (![...touches.values()].some((o) => o.pinched)) pinch = null;
+      return;
+    }
+    // a touch and hold that right-clicked: nothing more on the lift
+    if (t.right) { touches.delete(e.pointerId); return; }
     t.lifted = e.type === 'pointerup';
     if (t.pressed && !t.out && !t.moved && cam !== e.pointerId && uiDrag !== e.pointerId) {
       // pressed in on a game button: out where it went in. A quick lift is the click; a long press
@@ -2458,21 +2701,27 @@ return table.concat(out, "\\n"), ex, ho, de, kfn, kft, open, cur, table.concat(s
       if (tfRect.length !== 4 || tfRect.some((n) => !Number.isFinite(n))) tfRect = null;
       castUpdate(parseCast(r[14]) || snapCast());
       if (r[15] != null) setAimGround(r[15] == 1);
+      // four times a second: only what changed is written (an unchanged text set again still costs a layout)
+      const setText = (el, v) => { v = String(v); if (el.textContent !== v) el.textContent = v; };
       keys.forEach((k, i) => {
         const a = actions[slotOf(i) - 1];
         const face = k.querySelector('.face');
-        if (!a || !a.tex) { face.style.backgroundImage = ''; face.dataset.tex = ''; face.classList.remove('icon'); k.className = 'ctl key play empty'; k.querySelector('.count').textContent = ''; return; }
+        if (!a || !a.tex) {
+          if (face.dataset.tex || !k.classList.contains('empty')) { face.style.backgroundImage = ''; face.dataset.tex = ''; face.classList.remove('icon'); k.className = 'ctl key play empty'; }
+          setText(k.querySelector('.count'), '');
+          return;
+        }
         k.classList.remove('empty');
         if (face.dataset.tex !== a.tex) {
           face.dataset.tex = a.tex;
           iconUrl(a.tex).then((u) => { if (u && face.dataset.tex === a.tex) { face.style.backgroundImage = `url(${u})`; face.classList.add('icon'); } });
         }
         k.classList.toggle('cooling', a.rem > 0);
-        k.querySelector('.cd').textContent = a.rem > 0 ? (a.rem >= 60 ? Math.ceil(a.rem / 60) + 'm' : Math.ceil(a.rem)) : '';
+        setText(k.querySelector('.cd'), a.rem > 0 ? (a.rem >= 60 ? Math.ceil(a.rem / 60) + 'm' : Math.ceil(a.rem)) : '');
         k.classList.toggle('unusable', !a.usable && !a.nomana);
         k.classList.toggle('nomana', a.nomana);
         k.classList.toggle('far', a.range === '0');
-        k.querySelector('.count').textContent = a.count > 1 ? a.count : '';
+        setText(k.querySelector('.count'), a.count > 1 ? a.count : '');
       });
     } finally { actBusy = false; }
   }
@@ -2491,7 +2740,9 @@ return table.concat(out, "\\n"), ex, ho, de, kfn, kft, open, cur, table.concat(s
     // interface height in game units: 560 on a phone, up to the stock 768 on a tablet
     const size = Math.min(1.4, Math.max(0.7, +(LS('ow:touch-ui') || 1)));
     const vh = Math.round(Math.min(768, Math.max(560, cssH * 1.5)) / size);
-    const drawer = 10 + 36 + 8;   // the tray button's column right of the minimap
+    // the notch (landscape: a side inset), in css px: the frames along the top edges stay clear of it
+    const sl = Math.round(SAFE.l), sr = Math.round(SAFE.r);
+    const drawer = 10 + 36 + 8 + sr;   // the tray button's column right of the minimap
     return `local on = ${on ? 'true' : 'false'}
 if not __OWTOUCH then __OWTOUCH = { hidden = {}, orig = {} } end
 local T = __OWTOUCH
@@ -2530,8 +2781,8 @@ if on then
   local u = UIParent:GetHeight() / ${cssH}
   T.cssH = ${cssH}
   -- player and target side by side along the top-left edge, one scale, one style
-  place("PlayerFrame", "TOPLEFT", "TOPLEFT", 16 * u - 19, -12 * u + 4, 1)
-  place("TargetFrame", "TOPLEFT", "TOPLEFT", 16 * u - 19 + 238, -12 * u + 4, 1)
+  place("PlayerFrame", "TOPLEFT", "TOPLEFT", (16 + ${sl}) * u - 19, -12 * u + 4, 1)
+  place("TargetFrame", "TOPLEFT", "TOPLEFT", (16 + ${sl}) * u - 19 + 238, -12 * u + 4, 1)
   local ms = 100 * u / 140
   place("MinimapCluster", "TOPRIGHT", "TOPRIGHT", -${drawer} * u + 14 * ms, -12 * u + 10 * ms, ms)
   -- buffs: the game hangs BuffFrame off TemporaryEnchantFrame, so that is the one to move
@@ -2548,10 +2799,10 @@ if on then
   if ${cssH} >= 480 then
     place("WatchFrame", "TOPRIGHT", "TOPRIGHT", -${drawer} * u, -(12 + 100 + 52) * u, 0.9)
   else
-    place("WatchFrame", "TOPLEFT", "TOPLEFT", 16 * u, -70 * u, 0.85)
+    place("WatchFrame", "TOPLEFT", "TOPLEFT", (16 + ${sl}) * u, -70 * u, 0.85)
   end
   -- the vehicle seat picture would sit on the minimap's spot: below the target frame instead
-  place("VehicleSeatIndicator", "TOPLEFT", "TOPLEFT", 16 * u + 238, -100 * u, 0.7)
+  place("VehicleSeatIndicator", "TOPLEFT", "TOPLEFT", (16 + ${sl}) * u + 238, -100 * u, 0.7)
   -- the bars, every time (the vehicle and possess bars only show once they are needed)
   T.hideNames = ${luaList(HIDE_FRAMES)}
   for _, n in ipairs(T.hideNames) do hide(_G[n]) end
@@ -2592,7 +2843,8 @@ end`;
     layoutBusy = true;
     try {
       const r = await lua(gameLayoutLua(true));
-      status.layout = r?.[0] || 'failed';
+      // (its own field: status.layout is the controls' layout, which Copy debug info reports)
+      status.gameLayout = r?.[0] || 'failed';
     } finally { layoutBusy = false; }
   }
 
@@ -2638,7 +2890,7 @@ end`;
   // "Add Leyline to your home screen" (5 Nov): the installed app opens full screen and landscape with the Leyline icon
   // (www-patch.py adds the manifest). Android Chrome hands us its install prompt; iPhone Safari has none, so it says how.
   let installEvt = null;
-  const iOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const iOS = iOSDevice;
   const installState = () => root.classList.toggle('caninstall', !installed() && (!!installEvt || iOS() || phone()));
   addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; installState(); });
   addEventListener('appinstalled', () => { installEvt = null; installState(); toast('Leyline is on your home screen: play from the new icon', 5000); });
@@ -2674,6 +2926,89 @@ end`;
     setTimeout(() => toast('For full screen: tap Share, then Add to Home Screen, and play from the new icon', 7000), 1500);
   };
 
+  // ---- the page in the background, the phone's keyboard, page zoom, a hardware keyboard -----------------------------
+  // Another app, a call, the lock button or the tab switcher: the lift of a finger still down never comes, so the stick,
+  // Jump, a camera drag and a pressed window button are let go here (the character ran on by itself, and a camera
+  // drag's button stayed down). Back again: the screen lock is asked for again (the browser drops it when hidden).
+  function letGo() {
+    if (stickId !== null) stickReset();
+    setHolds(new Set());
+    releaseJump();
+    dropTouches();
+    if (gl) { clearTimeout(aimTimer); loupe.classList.remove('on'); if (gl.mode === 'drag' || gl.mode === 'held') mouse('pointerup', gl.x, gl.y, 0, 0); gl = null; }
+    try { wenilla.releaseAll?.(); } catch { /* fine */ }
+    status.letGo = (status.letGo || 0) + 1;
+  }
+  status.letGo = 0;
+  const askWake = () => {
+    if (wake || !status.inworld || document.hidden || !navigator.wakeLock?.request) return;
+    navigator.wakeLock.request('screen').then((w) => { wake = w; w.addEventListener?.('release', () => { if (wake === w) wake = null; }); }).catch(() => {});
+  };
+  // (the browser drops the screen lock of a hidden page itself: forgotten here, so coming back asks again)
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { letGo(); wake = null; } else askWake(); });
+  addEventListener('pagehide', () => letGo());
+  addEventListener('blur', () => { if (stickId !== null || touches.size || held.size) letGo(); });
+  status.wake = () => !!wake;
+
+  // The phone's keyboard covers the bottom of the page without resizing it (Android Chrome and iPhone Safari both
+  // shrink only the visual viewport): the chat sheet is lifted over it (--ow-kb) and kept to the visible height.
+  // iPhone Safari also scrolls the page up to the box and can leave it there: put back when the box lets go.
+  const vv = window.visualViewport;
+  function vvUpdate() {
+    if (!vv) return;
+    const kb = Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop));
+    root.style.setProperty('--ow-kb', kb + 'px');
+    root.style.setProperty('--ow-vvh', Math.round(vv.height) + 'px');
+    root.classList.toggle('kbopen', kb > 80);
+    status.keyboard = kb;
+  }
+  vv?.addEventListener('resize', vvUpdate);
+  vv?.addEventListener('scroll', vvUpdate);
+  vvUpdate();
+  root.addEventListener('focusout', (e) => {
+    if (!/^(INPUT|TEXTAREA)$/.test(e.target?.tagName || '')) return;
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName)) return;          // on to another box
+      if (scrollX || scrollY) scrollTo(0, 0);
+      vvUpdate();
+    }, 60);
+  });
+
+  // No page zoom while touch is on: iPhone Safari ignores user-scalable=no and zooms on a pinch or a double-tap
+  // anywhere the page lets it (its own gesture events, cancelled here); Android honours the viewport tag, which gets
+  // maximum-scale=1,user-scalable=no while touch is on (put back when it is turned off). The game zooms with a pinch.
+  const vpMeta = document.querySelector('meta[name="viewport"]');
+  const vp0 = vpMeta?.getAttribute('content') ?? null;
+  const noZoom = (on) => {
+    document.documentElement.classList.toggle('ow-touch-on', on);
+    if (!vpMeta || vp0 === null) return;
+    vpMeta.setAttribute('content', on && !/user-scalable/i.test(vp0) ? vp0 + ',maximum-scale=1,user-scalable=no' : vp0);
+  };
+  for (const g of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(g, (e) => { if (status.on) e.preventDefault(); }, { passive: false });
+
+  // A hardware keyboard (a tablet's, a phone's Bluetooth one) moving the character: the thumb controls step aside until
+  // the next touch (Menu > Controls > Keyboard hides touch). Only real keys on the game (not a text box, not the keys
+  // this layer sends itself).
+  let kbdMode = false;
+  const HWKEY = /^(w|a|s|d|q|e|arrowup|arrowdown|arrowleft|arrowright| )$/i;
+  function setKbdMode(on) {
+    on = !!on;
+    if (on === kbdMode) return;
+    kbdMode = on;
+    status.kbdMode = on;
+    root.classList.toggle('kbdmode', on);
+    if (on) { if (stickId !== null) stickReset(); setTray(false); toast('Keyboard: touch controls hidden. Touch the screen to bring them back', 3200); }
+  }
+  addEventListener('keydown', (e) => {
+    if (!e.isTrusted || kbdMode || !status.on || !status.inworld || LS('ow:kbdhide') === 'off') return;
+    const tg = e.target;
+    if (tg && (/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName) || tg.isContentEditable)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || !HWKEY.test(e.key || '')) return;
+    setKbdMode(true);
+  }, true);
+  status.setKbdMode = setKbdMode;
+
   function enterWorld() {
     document.body.classList.add('ow-touch-world');
     if (LS('ow:scheme') === 'simple') lua('if SetCVar then SetCVar("cameraSmoothStyle", "1") end');
@@ -2688,6 +3023,7 @@ end`;
     clearInterval(layTimer);
     // re-apply after a /reload (a fresh interface comes back at its stock layout)
     layTimer = setInterval(async () => {
+      if (document.hidden) return;                     // nothing to keep tidy on a page nobody sees (battery)
       // anything an addon showed again (its own upkeep) goes back out of the way
       const r = await lua(`local T = __OWTOUCH
 if not (T and T.applied) then return "no" end
@@ -2700,7 +3036,7 @@ return "yes"`);
     actTimer = setInterval(() => { if (!document.hidden) refreshActions(); }, 250);
     // warm the menu sheet's icons once the world has settled, so it opens fully drawn
     setTimeout(() => { MENU.forEach((m) => iconUrl(m.icon).catch(() => {})); Object.values(ROLE_TEX).forEach((t) => iconUrl(t).catch(() => {})); }, 8000);
-    navigator.wakeLock?.request?.('screen').then((w) => { wake = w; }).catch(() => {});
+    askWake();
     const seen = +(LS('ow:touch-hints') || 0);
     if (seen < 3) { LS('ow:touch-hints', String(seen + 1)); setTimeout(() => toast('Drag to look · Tap to target · Double-tap to talk and loot · Menu ▸ Controls to change how it plays', 6000), 2500); }
   }
@@ -2717,6 +3053,7 @@ return "yes"`);
     status.on = true;
     root.classList.add('on');
     document.body.classList.add('ow-touch-on');
+    noZoom(true);
     layout();
     if (wenilla.session() === 'inworld') enterWorld();
   }
@@ -2727,6 +3064,8 @@ return "yes"`);
     status.on = false;
     root.classList.remove('on');
     document.body.classList.remove('ow-touch-on', 'ow-touch-world');
+    noZoom(false);
+    setKbdMode(false);
   }
   // the Lua this layer sends, for the tests (tests/lua_chunks.mjs runs them under luac / a stub)
   status.luaChunks = () => ({ action: ACTION_LUA, tip: TIP_LUA(1), layoutOn: gameLayoutLua(true), layoutOff: gameLayoutLua(false), cursor: CURSOR_LUA, focus: FOCUS_LUA });

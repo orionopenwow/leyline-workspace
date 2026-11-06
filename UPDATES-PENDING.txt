@@ -890,3 +890,5 @@
 1344b signin  Website: private realms can be joined in the browser from their invite link
 1344c page  Browser page: the invite goes along into the game's join step
 1344d ship  Save to GitHub: private realms in the browser
+1344e page  Touch controls 2026-11-05c: 13 phone fixes, two-finger right-click, size and opacity, keyboard, notch
+1344f ship  Save to GitHub: the mobile pass

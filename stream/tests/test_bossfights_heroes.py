@@ -227,13 +227,26 @@ def get(path, cookie="", ip="10.9.0.9"):
 # --- the picker on /wrath/bossfights ----------------------------------------------------------------------------------
 title, body = BF.boss_page({}, False)
 links = re.findall(r'href="([^"]+)"', body)
-check("picker: every class and spec has a link", all(any(f"hero%3D{c}-{k}" in l or f"hero={c}-{k}" in l for l in links)
-                                                      for c, (_, specs) in BF.HERO_CLASSES.items() for k, _, _ in specs))
-check("picker signed out: through Log in with the go and the pick", any(re.match(r"/(wrath/signin|login)\?next=", l) and "hero%3Dmage-fire" in l
-                                                                         for l in links), [l for l in links if "mage-fire" in l][:2])
+# the widget (owner 5 Nov: "a character creation widget ... instead of ugly switches"): one GET form to /wrath
+check("picker: one form to /wrath carrying the go", re.search(r'<form class="bfw" method="get" action="/wrath"', body)
+      and 'name="go" value="bf:frozen-throne:normal:bots"' in body)
+check("picker: a tile for every class", all(f'name="cls" value="{c}"' in body for c in BF.HERO_CLASSES))
+check("picker: every class and spec is a choice", all(f'name="spec-{c}" value="{k}"' in body
+                                                       for c, (_, specs) in BF.HERO_CLASSES.items() for k, _, _ in specs))
+check("picker: each class starts on one spec of its own (switching class never sends another class's spec)",
+      all(len(re.findall(rf'name="spec-{c}" value="[a-z]+" id="[^"]+" class="bfw-r" checked', body)) == 1 for c in BF.HERO_CLASSES))
+check("picker: Frost Mage chosen first", 'name="cls" value="mage" id="bfw-c-mage" class="bfw-r" checked' in body
+      and 'name="spec-mage" value="frost" id="bfw-s-mage-frost" class="bfw-r" checked' in body)
+check("picker: no script (the page has no nonce)", "<script" not in body)
+check("hero_pick: the form's class + that class's spec", BF.hero_pick({"cls": ["warrior"], "spec-warrior": ["prot"], "spec-mage": ["fire"]}) == "warrior-prot")
+check("hero_pick: ?hero= still wins; junk refused", BF.hero_pick({"hero": ["druid-cat"], "cls": ["mage"]}) == "druid-cat"
+      and BF.hero_pick({"cls": ["mage"], "spec-mage": ["holy"]}) is None and BF.hero_pick({"cls": ["x"], "spec-x": ["y"]}) is None)
+check("hero_param: the form's pick becomes &hero=", BF.hero_param({"cls": ["paladin"], "spec-paladin": ["holy"]}) == "&hero=paladin-holy")
 title, body = BF.boss_page({"d": ["heroic"]}, True, heroes=[{"name": "Kalinra", "class": "mage", "spec": "fire", "spec2": "frost", "current": True}])
-check("picker signed in: plain play links on the chosen difficulty",
-      "/wrath?go=bf:frozen-throne:heroic:bots&amp;hero=druid-cat" in body)
+check("picker signed in: the form on the chosen difficulty", 'name="go" value="bf:frozen-throne:heroic:bots"' in body)
+check("picker: the current hero's class and spec chosen first", 'value="mage" id="bfw-c-mage" class="bfw-r" checked' in body
+      and 'name="spec-mage" value="fire" id="bfw-s-mage-fire" class="bfw-r" checked' in body)
+check("picker: the player's own heroes are one-tap links", "/wrath?go=bf:frozen-throne:heroic:bots&amp;hero=mage-fire" in body)
 check("picker: the player's heroes, the current one marked", "Kalinra" in body and "Fire Mage" in body and "bf-hero-me on" in body)
 text = re.sub(r"<[^>]+>", " ", body)
 check("picker: no brand words, no client versions", not BANNED.search(text) and not re.search(r"\b3\.3\.5|\b1\.12\b", text))

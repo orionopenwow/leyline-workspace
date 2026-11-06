@@ -898,3 +898,5 @@
 1346d page  Browser page: heroes skip character select, the host-not-answering note, phone solo
 1346e foreverui  In-game UI in the browser: the hero row in the boss fight panel, the tale tracker
 1346f addons  Desktop addon pack: the hero row, the tale tracker
+1347a signin  Website: the boss fight hero picker as a small built-in widget (class tiles, spec chips, Fight now)
+1347b ship  Save to GitHub: the hero picker widget, the bots' SQL in the server image

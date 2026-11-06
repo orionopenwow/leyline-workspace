@@ -1,0 +1,16 @@
+# One commit is one undo; Esc leaves the Den as it was.
+mode build
+card chair 0 -0.3
+commit
+card chair 0.2 -0.3
+commit
+expect props 2
+undo
+expect props 1
+card lantern 0 -0.2
+hover 0.1 -0.2
+esc
+expect props 1
+expect nothing
+undo
+expect props 0

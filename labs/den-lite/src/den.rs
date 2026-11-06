@@ -209,6 +209,8 @@ pub const LOOKS: &[Look] = &[
     Look { name: "white", floor: 0, wall: 0, light: 0, tile: 4.0, rows: 0 },
     Look { name: "stone", floor: 190024, wall: 19444, light: 180043, tile: 4.0, rows: 1 },
     Look { name: "wood", floor: 190615, wall: 211062, light: 179977, tile: 4.0, rows: 1 },
+    // Sky Island (skyisland.rs): the floating island's ground, rim, rocks and tree are this look's pieces
+    Look { name: crate::skyisland::LOOK, floor: crate::skyisland::GROUND, wall: crate::skyisland::RIM, light: crate::skyisland::LANTERN, tile: crate::skyisland::GROUND_TILE, rows: 0 },
 ];
 
 pub fn look(name: &str) -> Option<Look> {
@@ -739,12 +741,18 @@ impl Den {
     /// Puts the room up in the current look; returns the guids of the old room (to destroy).
     pub fn build_room(&mut self) -> Vec<u64> {
         let old: Vec<u64> = self.room.iter().map(|o| o.guid).collect();
-        let plan = room_plan(&self.spot, &self.look);
+        // Sky Island's pieces carry their own size (skyisland.rs plan); every other look's stand at the model's own
+        let plan: Vec<(u32, f32, f32, f32, f32, Option<f32>)> = if self.look.name == crate::skyisland::LOOK {
+            let (sx, sy, sz) = (self.spot.x, self.spot.y, self.spot.z);
+            crate::skyisland::plan().into_iter().map(|(e, x, y, z, o, k)| (e, sx + x, sy + y, sz + z, o, Some(k))).collect()
+        } else {
+            room_plan(&self.spot, &self.look).into_iter().map(|(e, x, y, z, o)| (e, x, y, z, o, None)).collect()
+        };
         let mut room = Vec::with_capacity(plan.len());
-        for (entry, x, y, z, o) in plan {
+        for (entry, x, y, z, o, size) in plan {
             if let Some(t) = template(entry) {
                 let guid = self.guid(entry);
-                room.push(WorldObject { guid, entry, display: t.display, kind: t.kind, scale: t.size, x, y, z, o, pitch: 0.0, roll: 0.0 });
+                room.push(WorldObject { guid, entry, display: t.display, kind: t.kind, scale: size.unwrap_or(t.size), x, y, z, o, pitch: 0.0, roll: 0.0 });
             }
         }
         self.room = room;
@@ -1362,7 +1370,8 @@ impl Den {
             self.paths = doc.paths.clone();
             self.extra = doc.extra.clone();
             // the tournaments' results (tourney.rs) and a shared Den's credits (docs/DEN-MARKETPLACE.md) stay with it
-            self.extra.retain(|k, _| matches!(k.as_str(), "notes" | "door" | "mailbox" | "terrain" | "tournaments" | "credit" | "credits"));
+            // ... and its tales and island (docs/DEN-NEXT.md: a Den file carries its questlines)
+            self.extra.retain(|k, _| matches!(k.as_str(), "notes" | "door" | "mailbox" | "terrain" | "tournaments" | "credit" | "credits" | "tales" | "island"));
             // the file's look and size (the room grows to fit what it was saved in; it never shrinks under props)
             let l = doc.room.as_ref().and_then(|r| look(&r.look)).unwrap_or(self.look);
             let half = doc.room.as_ref().filter(|r| r.size.is_finite()).map(|r| ring_half(ring_for(r.size))).unwrap_or(self.spot.half);

@@ -143,6 +143,9 @@ pub const TOOLS: &[Tool] = &[
     Tool { name: "den_say", title: "My companion says", tier: Tier::Ask,
         description: "Asks the player: a line their companion says in their Den, in game (up to 200 letters, plain words).",
         props: r#"{"text": {"type": "string", "maxLength": 200}}"#, required: &["text"] },
+    Tool { name: "den_tale_draft", title: "A tale for my Den", tier: Tier::Ask,
+        description: "Asks the player: a Den tale (a small questline: people to talk to, things to find, dummies to beat, places to reach, cosmetic rewards) their companion shows them in game for a yes or no. Use it when they asked their companion for a quest or a tale (den_messages). The text is the tale script: `tale <title>` first; `npc <id> \"<Name>\" look <villager|guard|mage|dwarf|elf|ghost|dummy> at <x> <y>`; `item <id> \"<Name>\" prop <a catalog word> at <x> <y>`; `sign <id> at <x> <y> \"<text>\"`; `portal <id> at <x> <y> to <x> <y>`; steps: `step <title>` then `goal talk <npc|companion>` | `goal collect <item>` | `goal visit <id>` | `goal defeat <n> dummies` | `goal reach <x> <y> [radius]` | `goal wait <seconds>`, with `say [npc] \"...\"`, `hint ...`, `done [npc] \"...\"`; triggers `when enter <x> <y> <r> | near <id> | timer <s> | step <n> do say|teleport|show|hide ... [again]`; `reward title <text> | badge <text> | cheer | glow`. Places are yards from the Den's middle (den_status: its size). Ids: a-z 0-9 - _. Up to 8 KB, 24 steps, no links; checked whole in game, which says what's wrong.",
+        props: r#"{"text": {"type": "string", "maxLength": 8192}}"#, required: &["text"] },
     Tool { name: "den_recipe_save", title: "Add to the building library", tier: Tier::Ask,
         description: "Asks the player: save a new recipe in their building library, so the next build like it needs no layout written. Either `recipe` (a JSON template: params, let, pieces; docs/DEN.md \"Building brain\") or `script` (Lua 5.1 text that sets `recipe` and a function build(params) returning pieces; it runs only on the player's PC, sandboxed; only in launcher builds with scripted recipes). It must make a layout that fits a Den with its default settings.",
         props: r#"{"name": {"type": "string", "maxLength": 24}, "recipe": {"type": "object"}, "script": {"type": "string", "maxLength": 65536}}"#,
@@ -1141,7 +1144,7 @@ mod tests {
         }
         let ask: Vec<&str> = TOOLS.iter().filter(|t| t.tier == Tier::Ask).map(|t| t.name).collect();
         assert_eq!(ask, ["mod_install", "mod_remove", "realm_start", "realm_stop", "host_plan_propose", "forum_new_thread", "forum_reply",
-            "den_place_layout", "den_say", "den_recipe_save"]);
+            "den_place_layout", "den_say", "den_tale_draft", "den_recipe_save"]);
         for t in TOOLS {
             let j = tool_json(t);
             assert_eq!(j["annotations"]["readOnlyHint"], json!(t.tier == Tier::Read), "{}", t.name);

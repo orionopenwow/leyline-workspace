@@ -2278,6 +2278,15 @@ async function handleDeepLink() {
     window.LeylinePendingDen = link.id;
     return;
   }
+  // a Den code's link (leyline://pack/<code>, deeplink.rs): Your Den's page with the code in its box; nothing opens until
+  // the player presses Open the code (den.js)
+  if (link && link.action === "pack" && typeof link.id === "string") {
+    if (window.LeylineNav) window.LeylineNav.show("den"); else show("den", true);
+    const box = document.getElementById("yd-code");
+    if (box) { box.value = link.id; box.focus(); }
+    else window.LeylinePendingCode = link.id;
+    return;
+  }
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
   if (link.id.startsWith("look:")) {   // the website's Looks page: Discover › Looks, that card (looks.js); nothing installs yet
     show("mods", true, "discover");

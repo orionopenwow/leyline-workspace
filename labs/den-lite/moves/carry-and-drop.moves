@@ -1,0 +1,21 @@
+# Click to carry (owner 4 Nov: "select with left click, immediately start moving the mouse and the object follows"):
+# no jump at the pickup, it follows over the ground, the next click puts it down; one more carry onto a table's top.
+prop chair 6 0
+prop table 3 -5
+mode build
+click 0 0.2298 carry
+hover 0 0.2298
+hover 0.05 0.20
+hover 0.10 0.15
+hover 0.15 0.10
+hover 0.20 0.05
+commit
+expect props 2
+expect nothing
+click 0.2173 0.1067 carry
+hover 0.25 0.06
+hover 0.30 0.02
+hover 0.3493 -0.0286
+commit
+expect nothing
+expect prop 1 2.22 -4.6 2 0 0.1    # on the table's top

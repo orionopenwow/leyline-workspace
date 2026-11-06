@@ -308,7 +308,7 @@ class Caps(unittest.IsolatedAsyncioTestCase):
                     self.n += len(data)
                     return self.n <= mux.MAX_BUFFER
 
-                def close(self):
+                def close(self, *a):
                     pass
             st.conn = Stuck()
             for _ in range(40):

@@ -2799,6 +2799,15 @@ fn check_open(shared: &Shared, w: &Writer, file: &str) -> io::Result<()> {
         Err(e) => return say(w, &format!("The launcher asked to open '{file}': {e}")),
     };
     say(w, &format!("Opening '{file}' from the launcher."))?;
+    // a Sky Island file (its look: skyisland.rs): the Den floats up first and you land on it, then the file's own
+    // props and tales go on it
+    if doc.room.as_ref().is_some_and(|r| r.look == crate::skyisland::LOOK) {
+        let live = shared.live.lk().clone();
+        if let Some((sess_id, _, _)) = live {
+            let sess = Sess { id: sess_id, addons: Vec::new(), me: Me::host(shared) };
+            island(w, shared, &sess, "")?;
+        }
+    }
     let mut d = shared.den.lk();
     if !d.props.is_empty() {
         let _ = d.save(&shared.cfg.den_dir, "backup", now());

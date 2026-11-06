@@ -94,6 +94,18 @@ pub fn read(path: &Path) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    /// The launcher's Sky Island button (ui/denpack.js ISLAND_CODE) opens exactly Den Lite's island file: after a change
+    /// to skyisland.rs, make the code again (docs/DEN-NEXT.md, "Sky Island") or this fails.
+    #[test]
+    fn the_launchers_island_code_is_den_lites_island() {
+        let js = include_str!("../../../launcher/ui/denpack.js");
+        let code = js.split("const ISLAND_CODE = \"").nth(1).and_then(|r| r.split('"').next()).expect("ISLAND_CODE in denpack.js");
+        match open(code).unwrap() {
+            Opened::Den(_, text) => assert_eq!(text, crate::skyisland::den_json("sky-island"), "make ISLAND_CODE again"),
+            o => panic!("{o:?}"),
+        }
+    }
+
     #[test]
     fn a_den_a_tale_and_the_island_go_round_as_codes() {
         // the island: small enough for a link

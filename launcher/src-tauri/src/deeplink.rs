@@ -35,6 +35,27 @@ pub enum Link {
     /// A shared Den's showcase on the website ("Open in Leyline", stream/denmarket.py): Mods & Addons › Dens opens
     /// that build with its Open in my Den button. Nothing is downloaded until the player clicks.
     Den(String),
+    /// A Den code (`leyline://pack/<code>`, labs/den-lite denpack.rs; ui/denpack.js): Your Den's page with the code in its
+    /// box. Nothing opens until the player presses Open the code, and what it holds is checked there and again by Den Lite.
+    Pack(String),
+}
+
+/// The longest `leyline://pack/` link (a Den code fits in about 1 900 letters; deeplink's other links stay at 700).
+pub const PACK_MAX: usize = 2_000;
+
+/// A Den code's envelope as a link may carry it: `ley1.<kind>.<r|z>.<base64url>.<8 hex>`, nothing else.
+pub fn pack_code(c: &str) -> Option<String> {
+    let parts: Vec<&str> = c.split('.').collect();
+    let b64 = |s: &str| s.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
+    (parts.len() == 5
+        && parts[0] == "ley1"
+        && matches!(parts[1], "den" | "tale" | "stamp")
+        && matches!(parts[2], "r" | "z")
+        && !parts[3].is_empty()
+        && b64(parts[3])
+        && parts[4].len() == 8
+        && parts[4].chars().all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch)))
+    .then(|| c.to_string())
 }
 
 /// The invite link a `leyline://join?link=` carries, when it is one (realms.rs parse_invite) on Leyline's own relay.
@@ -61,11 +82,17 @@ fn id_ok(id: &str) -> bool {
 /// Parse `leyline://install/<id>` (the id's `:` may come percent-encoded as `%3A`; a trailing `/` is fine).
 pub fn parse(url: &str) -> Option<Link> {
     let url = url.trim();
-    if url.len() > 700 || url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+    if url.len() > PACK_MAX || url.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return None;
     }
     let (scheme, rest) = url.split_once("://")?;
     if !scheme.eq_ignore_ascii_case(SCHEME) {
+        return None;
+    }
+    if let Some(code) = rest.strip_prefix("pack/") {
+        return pack_code(code.trim_end_matches('/')).map(Link::Pack);
+    }
+    if url.len() > 700 {
         return None;
     }
     if let Some(q) = rest.strip_prefix("join?").or_else(|| rest.strip_prefix("join/?")) {
@@ -253,6 +280,22 @@ mod tests {
 
     const GAME: &str = "core=azerothcore&preset=main&name=Frost%20Haven%27s&type=rppvp&xp=5&loot=2&start=level1&bots=40\
         &vis=private&signup=invite&herokey=on&region=eu&lang=pt-BR&tags=pvp%2Crp&max=100";
+
+    #[test]
+    fn parses_den_code_links() {
+        let code = "ley1.tale.r.dGFsZSBIaQpzdGVwIEEKIGdvYWwgdGFsayBqYWluYQo.bdc22d4b";
+        assert_eq!(parse(&format!("leyline://pack/{code}")), Some(Link::Pack(code.into())));
+        assert_eq!(parse(&format!("leyline://pack/{code}/")), Some(Link::Pack(code.into())));
+        let long = format!("leyline://pack/ley1.den.z.{}.0123abcd", "A".repeat(1800));
+        assert!(matches!(parse(&long), Some(Link::Pack(_))), "a Den code is longer than the other links");
+        for bad in ["leyline://pack/", "leyline://pack/ley1.map.r.AAAA.0123abcd", "leyline://pack/ley1.den.r.AA+A.0123abcd",
+            "leyline://pack/ley1.den.r.AAAA.0123ABCD", "leyline://pack/ley1.den.r.AAAA", "leyline://pack/../x"] {
+            assert_eq!(parse(bad), None, "{bad}");
+        }
+        assert_eq!(parse(&format!("leyline://pack/ley1.den.z.{}.0123abcd", "A".repeat(2100))), None, "too long");
+        assert_eq!(parse(&format!("leyline://install/{}", "a".repeat(800))), None, "the other links stay short");
+        assert_eq!(serde_json::to_value(Link::Pack(code.into())).unwrap(), serde_json::json!({"action": "pack", "id": code}));
+    }
 
     #[test]
     fn parses_host_links() {

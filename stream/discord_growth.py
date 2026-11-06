@@ -141,6 +141,11 @@ class Config:
         self.roles = on("WU_DISCORD_ROLES")
         self.roles_hour = _int(env.get("WU_DISCORD_ROLES_HOUR"), 4, 0, 23)
         self.automod = on("WU_DISCORD_AUTOMOD")
+        # which word lists the Discord AutoMod rule blocks (owner 6 Nov: "stop removing swear words, make automod
+        # lighter"): slurs and the owner's own words by default; swearing and the sexual-terms list are allowed.
+        # WU_DISCORD_AUTOMOD_KINDS=slur,sexual,custom adds the sexual terms back; add profanity to block swearing again.
+        kinds = [k.strip() for k in os.environ.get("WU_DISCORD_AUTOMOD_KINDS", "slur,custom").split(",")]
+        self.automod_kinds = tuple(k for k in kinds if k in ("slur", "sexual", "profanity", "custom")) or ("slur", "custom")
         self.mods = on("WU_DISCORD_MODS")
         self.mods_per_hour = _int(env.get("WU_DISCORD_MODS_PER_HOUR"), 6, 1, 60)
         self.official = on("WU_DISCORD_OFFICIAL")
@@ -1061,15 +1066,16 @@ class Growth:
         return m
 
     def words(self) -> tuple[list[str], list[str]]:
-        """(keyword_filter, allow_list) for Discord: "word" words whole, "inside" words as *w*; slurs, sexual terms,
-        profanity and the owner's own words (not the staff and brand rules: those are for names)."""
+        """(keyword_filter, allow_list) for Discord: "word" words whole, "inside" words as *w*; the lists in
+        WU_DISCORD_AUTOMOD_KINDS (default slurs and the owner's own words). Not the
+        staff and brand rules: those are for names."""
         nc = self._namecheck()
         if nc is None:
             return [], []
         L = nc.lists()
         kw, seen = [], set()
         for kind, w, mode, *_r in L.entries:
-            if kind not in ("slur", "sexual", "profanity", "custom"):
+            if kind not in self.cfg.automod_kinds:
                 continue
             k = f"*{w}*" if mode == "inside" else w
             if k not in seen and len(k) <= 60:

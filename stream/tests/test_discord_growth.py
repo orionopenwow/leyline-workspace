@@ -615,7 +615,12 @@ L.drain()
 rule = next(iter(D["rules"].values()), {})
 kw = rule.get("trigger_metadata", {}).get("keyword_filter", [])
 check("on: one keyword rule with our blocked words", rule.get("name") == "Leyline blocked words" and rule.get("trigger_type") == 1
-      and "shit" in kw and "*fuck*" in kw and rule["actions"][0]["type"] == 1, rule)
+      and "*nigger*" in kw and rule["actions"][0]["type"] == 1, rule)
+# owner 6 Nov: "stop removing swear words from automod, make automod lighter": swearing and the sexual-terms list
+# are allowed by default (WU_DISCORD_AUTOMOD_KINDS adds them back); slurs and the owner's own words stay blocked
+check("... swearing is allowed (not in the rule)", "shit" not in kw and "*fuck*" not in kw and "fuck" not in kw)
+check("... the sexual-terms list isn't in it by default", "sexy" not in kw and "dick" not in kw)
+check("... the kinds: slurs and the owner's own words", G.cfg.automod_kinds == ("slur", "custom"), G.cfg.automod_kinds)
 check("... names-only rules (staff words, the game's name) are not in it", "admin" not in kw and "warcraft" not in kw)
 check("... the allow words carried", len(rule["trigger_metadata"]["allow_list"]) > 0)
 n0 = len(D["calls"])

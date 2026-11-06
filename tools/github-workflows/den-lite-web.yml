@@ -70,6 +70,10 @@ jobs:
 
       - name: Build the page's Den Lite
         working-directory: labs/den-lite
+        env:
+          # the same 8 MB stack as labs/den-lite/.cargo/config.toml (sessions run inside each other in the page), set
+          # here too so the build doesn't depend on that file reaching the repo (remote tools can't write .cargo/)
+          CARGO_TARGET_WASM32_WASIP1_RUSTFLAGS: "-C link-arg=-zstack-size=8388608"
         run: |
           set -euo pipefail
           cargo build --locked --release --target wasm32-wasip1 --features web --bin den-lite-web

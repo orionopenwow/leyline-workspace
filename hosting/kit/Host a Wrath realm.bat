@@ -97,6 +97,10 @@ set "PULLERR=%TEMP%\wu-host-pull.txt"
 docker pull -q "%WU_IMAGE%-worldserver:%WU_TAG%" >nul 2>"%PULLERR%" && docker pull -q "%WU_IMAGE%-authserver:%WU_TAG%" >nul 2>>"%PULLERR%" && docker pull -q "%WU_IMAGE%-db-import:%WU_TAG%" >nul 2>>"%PULLERR%" && (set "IMG=%WU_IMAGE%" & set "TAG=%WU_TAG%" & echo   Using the prebuilt WrathUnleashed images.)
 if not defined IMG docker image inspect "%WU_LOCAL_IMAGE%-worldserver:%WU_LOCAL_TAG%" >nul 2>&1 && (set "IMG=%WU_LOCAL_IMAGE%" & set "TAG=%WU_LOCAL_TAG%" & echo   Using the images built on this PC.)
 if not defined IMG call :noimages || (pause & exit /b 1)
+rem What this Docker can run (CPU kind, memory): warnings only, before the long steps (setup.py preflight)
+set "DARCH=" & set "DMEM=0"
+for /f "usebackq tokens=1,2" %%A in (`docker info --format "{{.Architecture}} {{.MemTotal}}" 2^>nul`) do (set "DARCH=%%A" & set "DMEM=%%B")
+if defined DARCH docker run --rm -v "%~dp0.:/kit" -e WU_KIT=/kit %WU_TOOLS_IMAGE% python -m wuhost.setup preflight --arch "!DARCH!" --mem !DMEM! --profile %WU_PROFILE% --host-os Windows
 docker run --rm -v "%~dp0.:/kit" -e WU_KIT=/kit %WU_TOOLS_IMAGE% python -m wuhost.setup init --name "%WU_NAME%" --profile %WU_PROFILE% --visibility %WU_VISIBILITY% --image %IMG% --tag %TAG% --tools-image %WU_TOOLS_IMAGE% --relay %WU_RELAY% %GMARG% >nul || (echo Setup failed ^(see above^). & pause & exit /b 1)
 
 echo.

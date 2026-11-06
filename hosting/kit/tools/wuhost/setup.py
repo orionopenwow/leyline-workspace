@@ -1505,6 +1505,47 @@ def cmd_relay_pick(a):
     sys.stderr.write(f"This realm now uses the relay {host}. Restart the realm's agent.\n")
 
 
+# ------------------------------------------------------------------------------------------------- preflight
+# Hosting audit, 5 Nov ("people should be able to host from anything"): what this PC's Docker can run, said before
+# the long build or download instead of as a crash an hour later. Warnings only: the host decides.
+REALM_MEM_GB = 4.0        # main/brawl/progression with bots: the world server (3 GB cap) + database + login server
+LIGHT_MEM_GB = 2.0        # dalaran/den (no bots, WU_DB_BUFFER 256M)
+DISK_GB = 20              # the realm images + the server data from the client + the database
+
+
+def preflight_notes(arch: str, mem_bytes: int, free_bytes: int | None = None, profile: str = "main",
+                    os_type: str = "", host_os: str = "") -> list[str]:
+    """Plain warnings for this Docker (`docker info`: Architecture, MemTotal) and the kit folder's free disk."""
+    out = []
+    a = (arch or "").lower()
+    if a in ("aarch64", "arm64", "armv7l", "armhf"):
+        if host_os.lower() == "darwin":
+            out.append("This Mac has an Apple chip: Docker Desktop runs the realm through its x86 emulation (Rosetta). "
+                       "It works but is slower; turn on 'Use Rosetta for x86/amd64 emulation' in Docker Desktop's settings.")
+        else:
+            out.append("This computer has an ARM processor and the realm images are made for x86-64 PCs. They run "
+                       "here only with emulation (install qemu-user-static / binfmt for Docker; slow), or build the "
+                       "images on this computer (WU_BUILD=1, a few hours). Your Den (Den Lite, no Docker) works on ARM "
+                       "Linux only when Leyline has a build for it.")
+    need = LIGHT_MEM_GB if profile in ("dalaran", "den") else REALM_MEM_GB
+    gb = mem_bytes / 1024 ** 3 if mem_bytes else 0
+    if mem_bytes and gb < need:
+        tip = ("give Docker more memory (Docker Desktop: Settings > Resources)" if os_type != "linux" or host_os.lower() == "darwin"
+               else "add memory or swap")
+        light = "" if profile in ("dalaran", "den") else ", or pick a lighter profile (dalaran: no bots, about 2 GB)"
+        out.append(f"Docker can use {gb:.1f} GB of memory here; the {profile} profile needs about {need:.0f} GB. "
+                   f"It may stop when busy: {tip}{light}.")
+    if free_bytes is not None and free_bytes >= 0 and free_bytes / 1024 ** 3 < DISK_GB:
+        out.append(f"Only {free_bytes / 1024 ** 3:.0f} GB of disk is free here; a realm needs about {DISK_GB} GB "
+                   "(images, server data, database). Free some space first.")
+    return out
+
+
+def cmd_preflight(a):
+    for n in preflight_notes(a.arch, a.mem, a.free, a.profile or "main", a.os_type, a.host_os):
+        print("  Note: " + n)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Leyline host setup")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1638,6 +1679,14 @@ def main(argv=None):
     p.add_argument("--bootstrap", help="mesh nodes to start from (comma separated https URLs)")
     p.add_argument("--off", action="store_true")
     p.set_defaults(fn=cmd_volunteer_relay)
+    p = sub.add_parser("preflight", help="warnings for this Docker: CPU kind, memory, disk (before the long steps)")
+    p.add_argument("--arch", default="")
+    p.add_argument("--mem", type=int, default=0, help="Docker's MemTotal in bytes")
+    p.add_argument("--free", type=int, default=None, help="free bytes on the kit's disk")
+    p.add_argument("--profile", default="main")
+    p.add_argument("--os-type", default="")
+    p.add_argument("--host-os", default="")
+    p.set_defaults(fn=cmd_preflight)
     p = sub.add_parser("relay-pick", help="choose this realm's relay from the Leyline mesh")
     p.add_argument("--volunteers", action="store_true", help="community relays may be chosen too")
     p.add_argument("--bootstrap")

@@ -347,7 +347,7 @@ mod tests {
         let wrath = client("b", Build::V335a, games.to_str().unwrap());
         let p = find(SOLO).unwrap();
         assert_eq!((p.build, p.core, p.own_folder), (Build::V335a, "azerothcore", false));
-        assert!(p.label.contains("Single player") && !p.label.contains("Single player"));
+        assert!(p.label.contains("Single player") && !p.label.contains("Solo leveling"));
         assert!(!no_bots(SOLO), "its helper bots are the point");
         assert!(private_profile(SOLO) && private_profile(DEN) && !private_profile("main") && !private_profile("dalaran"));
         assert_eq!((first_name(SOLO), first_name(DEN), first_name("main")), (Some("Single player"), Some("My Den"), None));

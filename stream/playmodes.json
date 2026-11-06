@@ -50,7 +50,7 @@
     {
       "id": "azeroth-survivors",
       "title": "Azeroth Survivors",
-      "line": "A survivors-style roguelike: hold out against the waves. It gets its own site soon, with your Leyline sign-in.",
+      "line": "A survivors-style roguelike: hold out against the waves. It plays in your browser now; a launcher version is coming.",
       "kind": "offline",
       "players": { "min": 1, "max": 1 },
       "status": "coming",

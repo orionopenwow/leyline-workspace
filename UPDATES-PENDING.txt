@@ -904,3 +904,7 @@
 1348b boss-rush-test  Boss Rush tests: the profile, the module catalog, the light version
 1348c signin  Website: the mobile page and its guide, the menu items
 1348d ship  Save to GitHub: Boss Rush (exact + light), the mobile release, the server image fixes
+1349a leyline-mobile  First export to the new Leyline-Mobile repo: README with screenshots, guides, touch + phone-solo web files, APK build
+1350a signin  Website on phones: menu sheet, bottom tab bar, 44px targets, lighter art, Phone Lab (/wrath/phonelab)
+1350b page  Game page: the first tap goes full screen (touch wrath 2026-11-06a), Phone Lab recorder
+1350c ship  Save to GitHub: the mobile web overhaul and Phone Lab

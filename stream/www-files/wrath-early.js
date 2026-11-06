@@ -280,6 +280,102 @@
     });
   } catch (e) { /* no Keyboard Lock */ }
 })();
+// >>> first-tap-fullscreen (owner 6 Nov: "mobile controls on site still slow takes a few taps to enter the fullscreen
+// version"; docs/MOBILE-WEB-OVERHAUL.md) ---------------------------------------------------------------------------------
+// On a phone the very first tap anywhere on the game page goes full screen (and turns it sideways where the browser
+// can): on the loading screen, on "Signing in…", on the character list, on touch.js's "Tap to play full screen".
+// Before, only touch.js's prompt did it, and that prompt shows only once the character list is up: every tap on the
+// loading and "Signing in…" screens (10 s and more on a phone) did nothing, and a finger that rolled a few pixels on
+// the prompt was taken by the browser as a pan (pointercancel, no pointerup), so that tap was lost too.
+// Asked from the lift (pointerup of a finger, touchend, or click as the last chance): a browser only lets a page go
+// full screen from a user gesture, and a finger's press is not one. Buttons, links and form fields are left alone
+// (their own tap may need the gesture: a file picker, the install prompt). Off: ?fs=0, "Not now" on touch.js's prompt
+// (sessionStorage ow:fs-skip), the installed app, a mouse, no full screen in this browser (iPhone Safari: touch.js
+// says how to add it to the home screen instead).
+(function () {
+  'use strict';
+  try {
+    var d = document, el = d.documentElement;
+    var q = /[?&]fs=(0|off)\b/.test(location.search);
+    var coarse = function () { try { return matchMedia('(pointer: coarse)').matches; } catch (e) { return false; } };
+    var small = function () { return Math.min(screen.width || innerWidth, screen.height || innerHeight) < 600 || Math.min(innerWidth, innerHeight) < 500; };
+    var installed = function () { try { return matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } };
+    var can = function () { return !!((d.fullscreenEnabled || d.webkitFullscreenEnabled) && (el.requestFullscreen || el.webkitRequestFullscreen)); };
+    var isFs = function () { return !!(d.fullscreenElement || d.webkitFullscreenElement); };
+    var skipped = function () { try { return sessionStorage.getItem('ow:fs-skip') === '1'; } catch (e) { return false; } };
+    if (q || !coarse() || !small()) return;
+    var st = window.__wuFs = { asked: 0, refused: 0, last: '', at: 0 };
+    // the loading screens and the sign-in cover: no browser pan or zoom from a finger there, so a tap that rolls a few
+    // pixels is still a tap (the touch controls' own layers do the same for theirs)
+    var css = d.createElement('style');
+    css.id = 'wu-fs-first';
+    css.textContent = '#wenilla-boot,#wu-loading,#ow-signin,canvas{touch-action:none}'
+      + '#wu-fs-hint{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:2147482500;'
+      + 'padding:7px 14px;border-radius:999px;background:rgba(10,8,18,.82);border:1px solid rgba(201,162,74,.6);color:#f0d79a;'
+      + 'font:600 13px system-ui,sans-serif;pointer-events:none;white-space:nowrap;transition:opacity .3s}'
+      + '#wu-fs-hint.off{opacity:0}';
+    (d.head || el).appendChild(css);
+    var hint = null;
+    var showHint = function () {
+      if (hint || isFs() || skipped() || !can() || installed()) return;
+      hint = d.createElement('div');
+      hint.id = 'wu-fs-hint';
+      hint.setAttribute('aria-hidden', 'true');
+      hint.textContent = 'Tap anywhere for full screen';
+      d.body.appendChild(hint);
+    };
+    var hideHint = function () { if (!hint) return; var h = hint; hint = null; h.className = 'off'; setTimeout(function () { h.remove(); }, 400); };
+    if (d.body) showHint(); else d.addEventListener('DOMContentLoaded', showHint);
+    var lock = function () { try { var o = screen.orientation; if (o && o.lock) o.lock('landscape').catch(function () {}); } catch (e) { /* not here */ } };
+    // touch.js asks through this too, so one tap never asks twice (a second ask in the same tap is refused: the first
+    // used the gesture up)
+    window.__wuGoFull = function (why) {
+      if (isFs()) { lock(); return true; }
+      if (Date.now() - st.at < 1500) return true;   // asked a moment ago (this tap): wait for the answer
+      st.at = Date.now();
+      st.asked++;
+      st.last = why || '';
+      try {
+        var r = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen();
+        Promise.resolve(r).then(function () { lock(); hideHint(); }, function () { st.refused++; st.at = 0; });
+      } catch (e) { st.refused++; st.at = 0; }
+      return true;
+    };
+    var OWN = 'a,button,input,select,textarea,label,summary,[contenteditable],[role=button],[data-nofs],#ow-dock,#ow-dock-panel';
+    var onLift = function (e) {
+      if (skipped()) hideHint();
+      if (!e.isTrusted || e.pointerType === 'mouse' || isFs() || skipped() || installed() || !can()) return;
+      if (st.refused >= 3) return;   // the browser keeps saying no: stop asking
+      var t = e.target;
+      if (t && t.closest && t.closest(OWN)) return;
+      window.__wuGoFull('first tap: ' + e.type);
+    };
+    addEventListener('pointerup', onLift, true);
+    addEventListener('touchend', onLift, true);
+    addEventListener('click', onLift, true);
+    d.addEventListener('fullscreenchange', function () { if (isFs()) hideHint(); });
+    d.addEventListener('webkitfullscreenchange', function () { if (isFs()) hideHint(); });
+  } catch (e) { console.warn('wrath-early.js first tap', e); }
+})();
+// <<< first-tap-fullscreen ------------------------------------------------------------------------------------------
+// >>> phonelab (docs/MOBILE-WEB-OVERHAUL.md): while the owner's phone has a Phone Lab session on (the site's /wrath/phonelab
+// set the wu_phonelab cookie on the site's parent domain, so this page sees it), the site's recorder is loaded from the
+// site (stream/phonelab.py): every tap's timings and target, never typing. Nothing without the cookie.
+(function () {
+  'use strict';
+  try {
+    var m = document.cookie.match(/(?:^|;\s*)wu_phonelab=([A-HJ-NP-Z2-9]{6})\.(\d{9,11})/);
+    if (!m || +m[2] * 1000 <= Date.now()) return;
+    var site = location.hostname === 'play.leylinelauncher.com' ? 'https://leylinelauncher.com'
+      : /(^|\.)openvanilla\.app$/.test(location.hostname) ? 'https://play.openvanilla.app' : (window.__wuPhonelabSite || '');
+    if (!site) return;
+    var s = document.createElement('script');
+    s.src = site + '/wrath/phonelab.js';
+    s.async = true;
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) { /* never in the way */ }
+})();
+// <<< phonelab ------------------------------------------------------------------------------------------------------
 // "Your addons" (wu-addons.js): the addons a player dropped on this page, kept in this browser. The
 // client asks the page's body store (globalThis.__wenilla_prefetch, benilla-formats web.rs) first
 // for every /data read and for the name index /data/__index. This puts a layered store there before

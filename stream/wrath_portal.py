@@ -325,12 +325,15 @@ modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can hos
 survivors = _load_module("wu_survivors", "survivors.py")   # Azeroth Survivors: /wrath/survivors and its own address's gate (stream/survivors.py)
 site_pages = _load_module("wu_site_pages", "site_pages.py")   # Single player, the Modes shelf, the guides, the press kit (stream/site_pages.py)
 mobile_page = _load_module("wu_mobile_page", "mobile_page.py")   # /wrath/mobile: Leyline on your phone (stream/mobile_page.py)
+phonelab = _load_module("wu_phonelab", "phonelab.py")   # /wrath/phonelab: a real phone's taps for debugging (stream/phonelab.py)
 if survivors is not None:
     survivors.bind(lambda name: globals()[name])
 if site_pages is not None:
     site_pages.bind(lambda name: globals()[name])
 if mobile_page is not None:
     mobile_page.bind(lambda name: globals()[name])
+if phonelab is not None:
+    phonelab.bind(lambda name: globals()[name])
 if modepacks is not None:
     modepacks.bind(lambda name: globals()[name])
 if hub_mod is not None:
@@ -1624,10 +1627,10 @@ ART_TYPES = {
     # the round Leyline mark, split so the swirl turns while the crystal stays upright (SPIN_CSS, the hub)
     "leyline-swirl-256.webp": "image/webp", "leyline-crystal-256.webp": "image/webp",
     "leyline-swirl-128.png": "image/png", "leyline-crystal-128.png": "image/png",
-    "leyline-swirl-512.png": "image/png", "leyline-crystal-512.png": "image/png", "leyline-mark-512.png": "image/png", "leyline-favicon-32.png": "image/png", "leyline-favicon-180.png": "image/png",
+    "leyline-swirl-512.png": "image/png", "leyline-swirl-512.webp": "image/webp", "leyline-crystal-512.png": "image/png", "leyline-mark-512.png": "image/png", "leyline-favicon-32.png": "image/png", "leyline-favicon-180.png": "image/png",
     # the launcher's own pages for the hub's feature sections (tools/art/leyline-ui-shots.cjs: sample data, no game art)
     "leyline-ui-home.webp": "image/webp", "leyline-ui-realms.webp": "image/webp", "leyline-ui-modes.webp": "image/webp",
-    "leyline-ui-workshop.webp": "image/webp", "leyline-ui-clients.webp": "image/webp", "leyline-ui-clients-close.webp": "image/webp", "leyline-ui-launcher.webp": "image/webp", "leyline-ui-hosting.webp": "image/webp",
+    "leyline-ui-workshop.webp": "image/webp", "leyline-ui-clients.webp": "image/webp", "leyline-ui-clients-1280.webp": "image/webp", "leyline-ui-clients-close.webp": "image/webp", "leyline-ui-launcher.webp": "image/webp", "leyline-ui-hosting.webp": "image/webp",
 }
 ART_MAX_AGE = 7 * 86400
 # Screenshots of the running game (rendered from the game's own files): the killswitch takes them off too
@@ -2714,7 +2717,15 @@ background:linear-gradient(currentColor,currentColor) center/100% 2px no-repeat}
 .ly-nav .ly-links,.ly-nav .ly-end{display:none;order:3;flex:1 0 100%;flex-direction:column;gap:2px;margin:4px 0 2px}
 .ly-nav .ly-end{order:4;flex-direction:row;margin-left:0}
 .ly-menu-t:checked~.ly-links,.ly-menu-t:checked~.ly-end{display:flex}
-.ly-nav .ly-links a{min-height:42px;font-size:13px}}
+.ly-nav .ly-links a{min-height:44px;font-size:13px}
+/* the open menu scrolls by itself, the page behind stays put (6 Nov, phone sim: inside the sticky bar it was taller than the
+   screen and its last items could not be reached) */
+.ly-nav:has(.ly-menu-t:checked){max-height:100vh;max-height:100dvh;overflow-y:auto;overscroll-behavior:contain}
+html:has(.ly-menu-t:checked){overflow:hidden}
+.ly-menu-b{min-height:44px}}
+/* a link to a #section lands below the sticky bar; room for a finger on touch */
+html{scroll-padding-top:64px}
+@media (pointer:coarse){.ly-share summary,.ly-foot nav a,.ly-nav a{min-height:44px!important}.ly-share summary{display:inline-flex!important;align-items:center}.ly-foot nav a{display:inline-flex;align-items:center}}
 .ly-menu-t:focus-visible+.ly-menu-b{outline:2px solid #5fe3ff;outline-offset:2px}
 .ly-nav a:focus-visible,.ly-foot a:focus-visible,.ly-next a:focus-visible,.ly-share summary:focus-visible,.ly-share code:focus-visible,
 .ly :where(a,button,summary,input,select,textarea,[tabindex]):focus-visible{outline:2px solid #5fe3ff;outline-offset:2px}
@@ -3910,6 +3921,9 @@ class PageHandler(BaseHTTPRequestHandler):
         body = with_tab_icon(body, ctype)   # the Leyline mark on the browser tab (owner 2 Nov)
         body = legacy_body(body, ctype, self.headers.get("Host", ""))   # launcher documents on the old site name
         body = shutdown_body(body, ctype)   # the kill switch's banner (docs/KILL-SWITCH.md; no file: unchanged)
+        if phonelab is not None:   # Phone Lab (stream/phonelab.py): its recorder on this browser's pages while a session is on
+            body, nonce, lab = phonelab.inject(self, body, ctype, nonce)
+            connect = connect or lab
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -4512,6 +4526,9 @@ class PageHandler(BaseHTTPRequestHandler):
             else:
                 self.stream_layer(q)
             return
+        if phonelab is not None and phonelab.match(path):   # Phone Lab's start, stop and the phones' batches (stream/phonelab.py)
+            phonelab.post(self, path)
+            return
         if profiles is not None and profiles.match(path):   # the profile forms (stream/profiles.py)
             profiles.post(self, path)
             return
@@ -4706,6 +4723,9 @@ class PageHandler(BaseHTTPRequestHandler):
                                             mods=workshop.mod if workshop else None,
                                             made=creations.card_item if creations is not None else None,
                                             labels=RULESET_LABELS, host=PUBLIC_HOST, get_launcher=download_link()))
+            return
+        if phonelab is not None and phonelab.match(path):   # /wrath/phonelab: Phone Lab (stream/phonelab.py)
+            phonelab.get(self, path, query)
             return
         if mobile_page is not None and mobile_page.match(path):   # /wrath/mobile: Leyline on your phone
             mobile_page.get(self, path, query)

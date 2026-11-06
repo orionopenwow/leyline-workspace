@@ -1,5 +1,9 @@
 # Boss fights
 
+**Boss Rush** (the launcher's own mode, on the player's PC: the real fights on the Built-in engine, or a light
+version in Den Lite) is [BOSS-RUSH.md](BOSS-RUSH.md); it adds fights to this module's table, offered only where
+`LeylineBossfight.AllFights` is on.
+
 Leyline's instant boss fights. The featured fight is the last fight of the citadel, which players see as
 **The Frozen Throne**. The boss is never named on screen. Other sections (the realm, the board) are written
 separately.

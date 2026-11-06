@@ -359,10 +359,11 @@ Ranked by fun for the effort, highest first. "E" = exact engine, "L" = light ver
 
 * **Nothing has been played.** The exact engine needs an engine build with the module's changes and the core patch
   (the Windows engine workflow) and a Windows PC; the light version needs the owner's real game.
-* **The C++ changes are not compiled here.** The pure header is tested with g++; `Bossfights.cpp` and
-  `BossfightHeroes.cpp` were not compiled against the core this time (no Boost or MySQL headers in this sandbox). The
-  first compile is the engine-windows / wu-images build. Watch: `map->GetCreatureBySpawnIdStore()` and
-  `DespawnOrUnsummon()` in `EnsurePrereqs`, the `HopInto` signature change.
+* **The C++ changes are only syntax-checked:** `g++ -std=gnu++20 -fsyntax-only -Wall -Wextra` of `Bossfights.cpp`,
+  `BossfightHeroes.cpp` and the loader against the pinned core (`3f2969dd`, its own `deps/`, Boost headers from the
+  boostorg repositories, an empty `mysql.h`), without mod-playerbots: clean, and a planted error is caught. The
+  patched `map_extractor/System.cpp` the same way. Not a real build: the first compile and link is the engine-windows
+  / wu-images workflow.
 * **Each fight's start** beyond the featured one is from reading the scripts, not from play: the Ruby Sanctum's intro
   through the script's `SetBossState`, the Sanctum's drakes left out when DONE, the Eye's disc start and its vehicle
   phase with bots (mod-playerbots may not ride the drakes), the vault without Wintergrasp.

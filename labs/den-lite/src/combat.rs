@@ -1449,11 +1449,16 @@ impl Combat {
         if h.swing_next == 0 {
             h.swing_next = now + HIT_BACK_MS;
         }
-        // a training dummy never falls: refilled at a tenth
+        // a training dummy never falls: refilled at a tenth (a tale counts it as brought down: taleplay.rs)
+        let mut down = false;
         if !boss && h.kind.hostile() && h.cur < h.max / 10 {
             h.cur = h.max;
+            down = true;
         }
         let (cur, max) = (h.cur, h.max);
+        if down {
+            out.push(Out::Event("dummy_down", u.kind.word().to_string()));
+        }
         out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(u.guid, &[(field::HEALTH, cur)])));
         let healing = delta < 0;
         let amount = delta.unsigned_abs();
@@ -2613,6 +2618,7 @@ mod tests {
         let out = c.hurt(20_000, &us, DUMMY, 133, 10, 4, false, false);
         let h = body(&out, SMSG_UPDATE_OBJECT);
         assert_eq!(u32::from_le_bytes(h[h.len() - 4..].try_into().unwrap()), 5_000_000);
+        assert!(out.iter().any(|o| matches!(o, Out::Event("dummy_down", _))), "a tale counts it as brought down");
         // a healing dummy is friendly and can't be attacked
         assert_eq!(ops(&c.attack(0, &units(Kind::Healer), DUMMY)), vec![SMSG_ATTACKSWING_CANT_ATTACK]);
     }

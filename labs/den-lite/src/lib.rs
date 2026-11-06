@@ -13,6 +13,7 @@ pub mod classes;
 pub mod combat;
 pub mod companion;
 pub mod den;
+pub mod denpack; // a Den, a tale or a stamp as a short code (docs/DEN-NEXT.md)
 pub mod dojo;
 pub mod events;
 pub mod farsight;
@@ -52,8 +53,10 @@ pub mod settings {
 }
 pub mod hosting;
 pub mod ovmod;
+pub mod packs;
 pub mod login;
 pub mod models;
+pub mod movemodel; // the editor's mouse as it should behave (the replay harness's model)
 pub mod movewatch;
 pub mod noggit; // the editor's conveniences, Noggit's way: duplicate by an offset, select near, lie on the slope, camera frame and marks
 pub mod notice;
@@ -64,10 +67,14 @@ pub mod places;
 pub mod play;
 pub mod mymodels;
 pub mod raw;
+pub mod replay; // .moves scripts against the editor, frame by frame
+pub mod skyisland; // the floating island look
 pub mod showcase; // the shared Dens' pictures: the camera over the build, the game's own Screenshot() (docs/DEN-MARKETPLACE.md)
 pub mod specs;
 pub mod spells;
 pub mod stamps;
+pub mod tale; // the quest script
+pub mod taleplay; // tales in the Den, Jaina writing them
 pub mod testctl;
 pub mod tools;
 pub mod tourney;
@@ -265,12 +272,18 @@ pub struct Shared {
     pub trips: Mutex<HashMap<u64, places::Trip>>,
     /// The Den's map (den.rs Spot::map), kept apart so sending objects never waits on the Den's lock.
     pub den_map: std::sync::atomic::AtomicU32,
+    /// The tale under way, Jaina's draft, Sky Island's edge (taleplay.rs).
+    pub tales: Mutex<taleplay::Tales>,
 }
 
 impl Shared {
     /// One milestone in `<dens>/den-lite.events` (events.rs; never anything secret).
     pub fn event(&self, ev: &str, who: &str, detail: &str) {
         self.events.note(ev, who, detail);
+        // a tale counts the dummies brought down (combat.rs `dummy_down`)
+        if ev == "dummy_down" {
+            taleplay::defeated(self);
+        }
     }
 
     pub fn log(&self, s: &str) {
@@ -497,6 +510,7 @@ pub(crate) fn build_shared(cfg: Config, login_port: u16, world_addr: SocketAddr,
         seen: Mutex::new(HashMap::new()),
         trips: Mutex::new(HashMap::new()),
         den_map: std::sync::atomic::AtomicU32::new(den_map),
+        tales: Mutex::new(taleplay::Tales::default()),
     });
     note_panics(&shared);
     shared

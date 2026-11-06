@@ -2878,20 +2878,12 @@ def test(args, rep):
             rep.add("INFO", "the gliding copy's rows", why + ": made now")
             glide_rows(rep, root / "bin" / exe_name("den-lite"), Path(c["path"]), den_dir)
     hold = 300
-    start = int(time.time() * 1000)
-    proc = subprocess.Popen([str(exe), "den-play", "--test", "--client", c["id"], "--hold", str(hold)],
-                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    rep.add("INFO", "started", "%s den-play --test (the same code as the My Den button)" % exe.name)
-    rpt = None
-    end = time.time() + args.timeout
-    while time.time() < end:
-        rpt = read_json(root / "den-click.json")
-        if rpt and rpt.get("start", 0) >= start - 5000 and rpt.get("phase") in ("in_world", "stopped", "done"):
-            break
-        if proc.poll() is not None:
-            rpt = read_json(root / "den-click.json")
-            break
-        time.sleep(0.5)
+    # before the start (den-move was flaky on the owner's PC 5 Nov: "game window didn't open"): what would stop the
+    # game from opening, said plainly; then the start, again when the game's window never came (at most RETRIES more)
+    if not preflight(rep, Path(c["path"]), root, exe):
+        return
+    retries = args.retries if getattr(args, "retries", None) is not None else (RETRIES if getattr(args, "move", False) else 0)
+    proc, rpt, start = start_den_play(rep, exe, c["id"], hold, root, args.timeout, retries)
     if not rpt or rpt.get("start", 0) < start - 5000:
         rep.add("FAIL", "My Den's start", "no report from the launcher", "Send %s\\den-click.log if it exists." % root)
         proc.kill()
@@ -2995,6 +2987,94 @@ def test(args, rep):
            "Start and close My Den once; it takes the sign-in out.")
     no_secrets_in_logs(rep, secrets, [root / "den-click.log", den_dir / "den-lite.events", den_dir / "den-lite.test-out", den_dir / "companion-in.json"],
                        rep.text())
+
+
+# ------------------------------------------------------------------------------------------------ preflight, retries
+
+RETRIES = 2
+GAME_EXES = ("Wow.exe", "WoW.exe", "wow.exe", "Ascension.exe", "Project-Epoch.exe")
+PREFLIGHT_DISK_MB = 300
+
+
+def game_running(run=subprocess.run):
+    """The game programs running now (Windows tasklist), by name."""
+    if os.name != "nt":
+        return []
+    try:
+        out = run(["tasklist", "/fo", "csv", "/nh"], capture_output=True, text=True, timeout=15).stdout
+    except Exception:  # noqa: BLE001 - no tasklist: nothing known
+        return []
+    names = {n.lower() for n in GAME_EXES}
+    return sorted({line.split(",")[0].strip('"') for line in out.splitlines() if line.split(",")[0].strip('"').lower() in names})
+
+
+def preflight(rep, game, root, exe, running=game_running, port=port_open, free_mb=None):
+    """What would stop the game from opening, before anything starts: the game's program in its folder, no game
+    already running (a second one never opens its window), the Den's ports free (or Den Lite's own), room on the disk.
+    False: a FAIL was said and nothing should start."""
+    ok = True
+    have = next((n for n in GAME_EXES if (game / n).is_file()), None)
+    ok &= rep.ok(have is not None, "preflight: the game's program", str(game / (have or GAME_EXES[0])),
+                 "The game folder in the launcher has no game program in it: pick the folder that has it.")
+    already = running()
+    ok &= rep.ok(not already, "preflight: no game running", ", ".join(already) or "none",
+                 "Close the game (%s) first: a second one never opens its window." % ", ".join(already))
+    busy = [p for p in (3724, 8085) if port(p)]
+    lite_bin = root / "bin" / exe_name("den-lite")
+    rep.add("INFO", "preflight: the Den's ports", ("in use: %s (Den Lite's own when it is running: it is restarted for the test)" % busy) if busy else "free")
+    rep.add("INFO", "preflight: Den Lite", str(lite_bin) + (" (there)" if lite_bin.is_file() else " (not there yet: the launcher gets it)"))
+    try:
+        mb = free_mb if free_mb is not None else shutil.disk_usage(str(root if root.exists() else root.anchor or ".")).free // (1 << 20)
+    except OSError:
+        mb = None
+    ok &= rep.ok(mb is None or mb >= PREFLIGHT_DISK_MB, "preflight: room on the disk", "%s MB free" % mb,
+                 "Free some room on the disk: the game writes its caches as it starts.")
+    return ok
+
+
+def window_opened(rpt):
+    """The launcher's report says the game's window opened."""
+    return any("window is open" in str(a[1] if isinstance(a, (list, tuple)) and len(a) > 1 else a) for a in (rpt or {}).get("actions", []))
+
+
+def start_den_play(rep, exe, client, hold, root, timeout, retries, popen=subprocess.Popen, now=time.time, sleep=time.sleep, kill_game=None):
+    """`den-play --test` (the My Den button's code), waited for until the game is in the world (or stops); started
+    again, at most `retries` times, when the game's window never opened. (proc, report, start ms)."""
+    proc, rpt, start = None, None, 0
+    for attempt in range(retries + 1):
+        start = int(now() * 1000)
+        proc = popen([str(exe), "den-play", "--test", "--client", client, "--hold", str(hold)],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        rep.add("INFO", "started" if attempt == 0 else "started again (%d of %d)" % (attempt, retries),
+                "%s den-play --test (the same code as the My Den button)" % Path(str(exe)).name)
+        rpt = None
+        end = now() + timeout
+        while now() < end:
+            rpt = read_json(root / "den-click.json")
+            if rpt and rpt.get("start", 0) >= start - 5000 and rpt.get("phase") in ("in_world", "stopped", "done"):
+                break
+            if proc.poll() is not None:
+                rpt = read_json(root / "den-click.json")
+                break
+            sleep(0.5)
+        fresh = rpt and rpt.get("start", 0) >= start - 5000
+        if fresh and (rpt.get("phase") == "in_world" or window_opened(rpt)):
+            return proc, rpt, start
+        why = "no report from the launcher" if not fresh else "the game's window never opened (%s)" % str(rpt.get("outcome", ""))[:120]
+        if attempt == retries:
+            rep.add("INFO", "start %d" % (attempt + 1), why)
+            return proc, rpt, start
+        rep.add("INFO", "start %d" % (attempt + 1), why + ": trying again")
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001 - it may be gone
+            pass
+        if kill_game:
+            kill_game(rpt)
+        elif os.name == "nt" and fresh and rpt.get("pid"):
+            subprocess.run(["taskkill", "/pid", str(rpt["pid"]), "/f"], capture_output=True)
+        sleep(5)
+    return proc, rpt, start
 
 
 def _quiet_add(r):
@@ -3109,6 +3189,7 @@ def main(argv=None):
     ap.add_argument("--invite", action="store_true", help="kept for the den-test-invite step: the invite is always tested now")
     ap.add_argument("--no-update", action="store_true", help="test: use the Den Lite on this PC as it is")
     ap.add_argument("--timeout", type=int, default=150)
+    ap.add_argument("--retries", type=int, default=None, help="test: start again this many times when the game's window never opens (den-move: 2)")
     a = ap.parse_args(argv)
     rep = Report()
     if a.mode in ("glide", "glide-undo"):

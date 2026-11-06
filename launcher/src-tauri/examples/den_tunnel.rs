@@ -26,7 +26,7 @@ fn main() {
     let (host, port) = hp.split_once(':').expect("host:port");
     let ep = Endpoint { host: host.into(), port: port.parse().unwrap(), tls: false, path: format!("/{path}") };
     let seed = litenet::load_or_create_key(&key).unwrap();
-    litenet::start(Setup { endpoint: ep, relay_name: name, seed, name: den_name, invite_secret: secret, den_dir: dens });
+    litenet::start(Setup { endpoint: ep, relay_name: name, seed, name: den_name, invite_secret: secret, den_dir: dens, realm_list: false });
     loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
         println!("{}", serde_json::to_string(&litenet::state()).unwrap());

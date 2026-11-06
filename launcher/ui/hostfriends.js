@@ -5,7 +5,9 @@
 // the Host page's banner; Your Den's Share card shows the same checklist under its own Invite a friend:
 //   1. Your world: Your Den (Den Lite, built in: no Docker, starts in seconds; the default for friends) or a full
 //      realm (the Host pack in Docker: the whole game; needs Docker Desktop and a one-time setup). Play solo opens it
-//      for just you.
+//      for just you. Single player and the original world on the Built-in engine get their own tiles once they are
+//      set up here (app.rs world_invite: the relay with the realm list rewritten, and the same network through the
+//      launcher; docs/SINGLE-PLAYER-ONE-CLICK.md).
 //   2. Invite a friend: ONE button. Your Den: app.rs den_invite (gets Den Lite on first use, starts it, puts it on the
 //      Leyline relay privately, makes one friend's login) ; a full realm: its invite link (host_invite).
 //   3. Ready for friends?: before the link is shown, app.rs host_ready (host/ready.rs) checks the path a friend's game
@@ -193,12 +195,18 @@
 
   // ---------------------------------------------------------------- the window
   let root = null, st = null, kitNow = null, kind = "lite", invited = null, busy = false;
+  // the single player worlds on the Built-in engine (world_status): { single, vanilla }
+  let worlds = {};
+  const ENGINE = { single: "Single player", vanilla: "Original world" };
+  const isEngine = (k) => Object.prototype.hasOwnProperty.call(ENGINE, k);
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* fine */ } } };
   const KIND_KEY = "leyline.friendsKind";
 
   async function look() {
-    const [d, k] = await Promise.all([call("den_state").catch(() => null), call("host_info").catch(() => null)]);
+    const [d, k, w1, w2] = await Promise.all([call("den_state").catch(() => null), call("host_info").catch(() => null),
+      call("world_status", { kind: "single" }).catch(() => null), call("world_status", { kind: "vanilla" }).catch(() => null)]);
     st = d; kitNow = k;
+    worlds = { single: w1 && w1.set_up ? w1 : null, vanilla: w2 && w2.set_up ? w2 : null };
   }
   const liteCan = () => !!(st && st.lite && (st.lite.available || st.lite.can_get || st.lite.running));
   const realmHere = () => !!(kitNow && kitNow.realm && kitNow.realm.profile !== "den");
@@ -237,9 +245,18 @@
       pickTile("docker", "Full realm", "The whole game together: quests, dungeons, bots, your own rules.",
         realmHere() ? `Set up here: ${kitNow.realm.name || "your realm"}.` : "Needs: Docker Desktop (free), about 4 GB of free memory, and a one-time setup (5 to 20 minutes).",
         () => { if (!realmHere()) { close(); nav("host"); if (window.LeylineHostFlow && window.LeylineHostFlow.show) window.LeylineHostFlow.show(); return; } kind = "docker"; store.set(KIND_KEY, kind); invited = null; paint(); }, true));
+    for (const id of Object.keys(ENGINE)) {
+      const w = worlds[id];
+      if (!w) continue;
+      picks.append(pickTile(id, ENGINE[id], id === "vanilla" ? "The original world to level 60, with your companions: your friend levels beside you."
+        : "Your Single player world: your friend joins you and your companions.",
+        w.running ? "Running on this PC. Friends need Leyline, their own game folder and a Hero Key." : "Start it first (its card on the Single player page): friends join while it runs.",
+        () => { kind = id; store.set(KIND_KEY, kind); invited = null; paint(); }, !!w.running));
+    }
     const solo = btn("Play solo", "btn small", () => {
       close();
       if (kind === "docker") { nav("host"); return; }
+      if (isEngine(kind)) { nav("single"); return; }
       if (window.LeylineDen) { nav("den"); window.LeylineDen.go(); } else nav("den");
     }, "wf-solo");
     solo.title = "Just you, on this PC: nothing to set up";
@@ -250,8 +267,8 @@
     s2.id = "wf-step-invite";
     s2.append(mk("h3", "", "2. Invite a friend"));
     const go = btn(busy ? "Working…" : invited ? "Invite another friend" : "Invite a friend", "btn primary wf-go", () => invite(), "wf-invite");
-    go.disabled = busy || (kind === "lite" && !liteCan());
-    s2.append(go, mk("p", "wf-hint", kind === "lite"
+    go.disabled = busy || (kind === "lite" && !liteCan()) || (isEngine(kind) && !(worlds[kind] && worlds[kind].running));
+    s2.append(go, mk("p", "wf-hint", kind === "lite" || isEngine(kind)
       ? "One link for one friend, with their own login inside. Private: only people with your link get in. No router settings, no ports."
       : "Your realm's invite link. Private realms let in only people with the link. No router settings, no ports."));
     const status = mk("p", "status wf-status");
@@ -275,7 +292,7 @@
       if (navigator.share) row.append(btn("Share…", "btn small", () => navigator.share({ title: "Join my world in Leyline", url: invited.link }).catch(() => { /* closed */ }), "wf-share"));
       lb.append(row);
       // TODO(owner): the words
-      lb.append(mk("p", "wf-hint", `Your friend opens it and presses Open in Leyline${kind === "lite" ? "" : " (or plays in their browser)"}.${invited.hours ? ` It works for ${invited.hours} hours (Keep on Your Den's Friends list makes it last).` : ""}`));
+      lb.append(mk("p", "wf-hint", `Your friend opens it and presses Open in Leyline${kind === "lite" || isEngine(kind) ? "" : " (or plays in their browser)"}.${invited.hours ? ` It works for ${invited.hours} hours (Keep on Your Den's Friends list makes it last).` : ""}`));
       const ll = btn("Copy the Leyline link", "link-s", () => copy("leyline://join?link=" + encodeURIComponent(invited.link), "Leyline link copied: it opens straight in your friend's Leyline."), "wf-copy-ll");
       ll.title = "For a friend who has Leyline open: leyline://join?link=…";
       lb.append(ll);
@@ -295,12 +312,16 @@
     invited = null;
     paint();
     say(kind === "lite" ? "Starting your Den and putting it on the Leyline network… (a few seconds; the first time it also gets Your Den's server)"
+      : isEngine(kind) ? `Putting ${ENGINE[kind]} on the Leyline network and making your friend's login… (a few seconds)`
       : "Getting your realm's invite link…");
     let link = null, hours = null;
     try {
       if (kind === "lite") {
         const r = await call("den_invite", { name: null });
         link = r.link; hours = 24;
+      } else if (isEngine(kind)) {
+        const r = await call("world_invite", { kind });
+        link = r.link;
       } else {
         try { link = await call("host_invite"); } catch (_) { link = null; }
         if (!link) link = await call("host_new_invite");
@@ -392,7 +413,8 @@
     root.hidden = false;
     await look();
     kind = o.kind || (realmHere() && !liteCan() ? "docker" : store.get(KIND_KEY) === "docker" && realmHere() ? "docker" : "lite");
-    if (!liteCan() && realmHere()) kind = "docker";
+    if (!isEngine(kind) && !liteCan() && realmHere()) kind = "docker";
+    if (isEngine(kind) && !worlds[kind]) kind = liteCan() ? "lite" : realmHere() ? "docker" : "lite";
     paint();
     const go = root.querySelector("#wf-invite");
     if (go) go.focus();

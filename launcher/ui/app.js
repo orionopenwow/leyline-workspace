@@ -2976,7 +2976,7 @@ function renderRealms() {
     acts.prepend(play);
     if (window.LeylineHostModes) window.LeylineHostModes.realmRow(r, main, acts);   // its mode, "based on", Fork this mode (hostmodes.js)
     // Play solo right after Play (solo.js, owner 3 Nov): the same game on this PC, with your own game files
-    if (window.LeylineSolo) window.LeylineSolo.attach(acts, main, window.LeylineSolo.forRealm(r));
+    if (window.LeylineSolo) window.LeylineSolo.attach(acts, main, window.LeylineSolo.forRealm(r), window.LeylineSolo.LABEL + " · ");
     card.append(realmIcon(r.name, r.official), main, pop, acts);
     box.append(card);
   }

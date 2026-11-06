@@ -368,8 +368,9 @@ pub fn start(shared: &Shared, text: &str) -> Result<Vec<Out>, String> {
     Ok(out)
 }
 
-/// The player moved (world.rs, each move): Sky Island's edge, then the tale.
-pub fn moved(shared: &Shared, me: At, flying: bool) -> Vec<Out> {
+/// A player moved (world.rs, each move): Sky Island's edge (everyone: a friend falls off too), then the tale (the
+/// host's).
+pub fn moved(shared: &Shared, me: At, flying: bool, host: bool) -> Vec<Out> {
     let mut out = Vec::new();
     let (spot, island) = {
         let d = shared.den.lk();
@@ -398,6 +399,9 @@ pub fn moved(shared: &Shared, me: At, flying: bool) -> Vec<Out> {
                 return out;
             }
         }
+    }
+    if !host {
+        return out;
     }
     let jaina = {
         let c = shared.companion.lk();

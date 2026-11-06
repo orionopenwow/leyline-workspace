@@ -3135,13 +3135,10 @@ fn tale_outs(c: &Writer, shared: &Shared, guid: u64, outs: Vec<crate::taleplay::
     Ok(())
 }
 
-/// The host moved: Sky Island's edge and the tale under way (taleplay.rs).
+/// A player moved: Sky Island's edge (everyone) and the tale under way (the host's; taleplay.rs).
 fn tale_moved(c: &Writer, shared: &Shared, sess: &Sess, n: Pos, op: u32, body: &[u8]) -> io::Result<()> {
-    if !sess.me.host {
-        return Ok(());
-    }
     let flags = raw_move(op, body).and_then(|_| movewatch::raw_flags(body)).unwrap_or(0);
-    let outs = crate::taleplay::moved(shared, n, flags & (movewatch::FLYING | movewatch::CAN_FLY) != 0);
+    let outs = crate::taleplay::moved(shared, n, flags & (movewatch::FLYING | movewatch::CAN_FLY) != 0, sess.me.host);
     if outs.is_empty() {
         return Ok(());
     }

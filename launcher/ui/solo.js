@@ -299,10 +299,9 @@
       mk("p", "solo-join-line", "Join starts your game on their world, through the Leyline relay. Your address isn't shown to them."));
     const st = mk("p", "status solo-join-status");
     st.setAttribute("role", "status");
-    // what's happening (hostfriends.js): reaching the host, the host answering, logging in, and the fix when stuck
-    const HF = window.LeylineHostFriends;
-    const list = HF ? HF.steps() : null;
-    if (list) { list.id = "solo-join-steps"; list.hidden = true; }
+    // what's happening (hostfriends.js, looked up on Join: a leyline:// link can arrive before it loads): reaching the
+    // host, the host answering, logging in, and the fix when stuck
+    let HF = null, list = null;
     const acts = mk("div", "solo-join-acts");
     const join = mk("button", "btn primary", "Join");
     join.type = "button";
@@ -327,6 +326,7 @@
         return;
       }
       line("Joining…");
+      if (!list && window.LeylineHostFriends) { HF = window.LeylineHostFriends; list = HF.steps(); list.id = "solo-join-steps"; card.append(list); }
       if (list) { list.hidden = false; list.set("reach", "wait", "Asking the Leyline relay…"); list.set("answer", "wait", ""); list.set("login", "wait", ""); }
       try {
         const j = await call("join_invite", { client: c.id, link });
@@ -357,7 +357,6 @@
     });
     acts.append(join, later);
     card.append(acts, st);
-    if (list) card.append(list);
     box.append(card);
     document.body.append(box);
     join.focus();

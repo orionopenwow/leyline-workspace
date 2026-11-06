@@ -97,8 +97,9 @@
       if (list) list.set("answer", "ok", `Yes (${ms} ms).`);
       return true;
     }
-    if (!why) { if (list) list.set("answer", "skip", ""); return null; }   // an older core: not asked
-    const x = explainJoin(why.match(/answer|closed/) ? "not answering" : why);
+    // an older core (no such command) or an address it doesn't test: not asked
+    if (!why || /not found|unknown|only tests/i.test(why)) { if (list) list.set("answer", "skip", ""); return null; }
+    const x = explainJoin("not answering");
     if (list) { list.set("answer", "bad", x.line + " " + x.fix); list.set("login", "skip", ""); }
     if (sayTo) sayTo(`${x.line} ${x.fix}`, "warn");
     return false;

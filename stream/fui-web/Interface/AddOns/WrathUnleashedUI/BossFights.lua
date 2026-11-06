@@ -19,6 +19,9 @@
 --   T <ms>                                              the fight's time (at the pull, then every 5 s)
 --   R <clear|wipe> <ms> <rank_hint|->                   the result
 --   L                                                   left / cancelled
+--   H <name> <class> <spec> <spec2> <0|1>               you are on a boss fight hero (docs/BOSS-FIGHT-HEROES.md): the
+--                                                       window's hero row (its specs: a free respec of the spec that
+--                                                       is on, .bossfight hero spec <spec>; Swap spec: .bossfight hero swap)
 -- After /reload (or any loading screen) the addon asks ".bossfight status" and the realm's answer puts the bar back.
 -- Your last pick is kept per character (WrathUnleashedUIChar.bossfights), so Try again works after a reload too.
 -- Nothing from the realm is run; texts are shown plain.
@@ -35,6 +38,24 @@ BF.BOSSES = { { id = "frozen-throne", name = "The Frozen Throne",
     tip = "The last fight at the top of the citadel: a ten-player raid fight" } }
 BF.DIFFS = { normal = "Normal", heroic = "Heroic" }
 BF.MODES = { bots = true, group = true, ["group-only"] = true }
+-- the specs of each class, as the realm's BossfightsHeroLogic.h Specs() (the hero row's chips)
+BF.CLASSES = { warrior = "Warrior", paladin = "Paladin", hunter = "Hunter", rogue = "Rogue", priest = "Priest",
+    deathknight = "Death Knight", shaman = "Shaman", mage = "Mage", warlock = "Warlock", druid = "Druid" }
+BF.SPECS = {
+    warrior = { { "arms", "Arms" }, { "fury", "Fury" }, { "prot", "Protection" } },
+    paladin = { { "holy", "Holy" }, { "prot", "Protection" }, { "ret", "Retribution" } },
+    hunter = { { "bm", "Beast Mastery" }, { "mm", "Marksmanship" }, { "sv", "Survival" } },
+    rogue = { { "assa", "Assassination" }, { "combat", "Combat" }, { "sub", "Subtlety" } },
+    priest = { { "disc", "Discipline" }, { "holy", "Holy" }, { "shadow", "Shadow" } },
+    deathknight = { { "blood", "Blood" }, { "frost", "Frost" }, { "unholy", "Unholy" } },
+    shaman = { { "ele", "Elemental" }, { "enh", "Enhancement" }, { "resto", "Restoration" } },
+    mage = { { "arcane", "Arcane" }, { "fire", "Fire" }, { "frost", "Frost" } },
+    warlock = { { "affli", "Affliction" }, { "demo", "Demonology" }, { "destro", "Destruction" } },
+    druid = { { "balance", "Balance" }, { "bear", "Bear" }, { "resto", "Restoration" }, { "cat", "Cat" } },
+}
+function BF.SpecLabel(cls, key)
+    for _, s in ipairs(BF.SPECS[cls] or {}) do if s[1] == key then return s[2] end end
+end
 BF.ASK_WAIT = 8        -- seconds for the realm to answer a join before the bar gives up
 BF.TOUCH_PX = 44       -- the smallest control on a phone, in CSS pixels
 BF.CTRL = 36           -- the smallest control here, in UI units (chips, inputs, the close button)
@@ -125,6 +146,18 @@ function BF.Status()
     BF.Command("status")
     return true
 end
+-- on a hero: a free respec of the spec that is on, or the other spec now (both out of combat, between pulls)
+function BF.Respec(key)
+    local h = BF.hero
+    if not h or not BF.SpecLabel(h.class, key) or BF.state == "engaged" then return false end
+    BF.Command("hero spec " .. key)
+    return true
+end
+function BF.SwapSpec()
+    if not BF.hero or BF.state == "engaged" then return false end
+    BF.Command("hero swap")
+    return true
+end
 
 -- ---------------------------------------------------------------- the realm's answers
 local function split(msg)
@@ -173,6 +206,13 @@ function BF.OnMessage(prefix, msg, channel, sender)
         BF.state = "idle"
         BF.queue, BF.timer, BF.result = nil, nil, nil
         if card then card:Hide() end
+    elseif kind == "H" then
+        local name, cls, spec, spec2, active = f[2], f[3], f[4], f[5], f[6]
+        if not (type(name) == "string" and name:match("^%u%l+$") and #name <= 12 and BF.Clean(name, 12) == name
+            and BF.SpecLabel(cls, spec) and BF.SpecLabel(cls, spec2) and (active == "0" or active == "1")) then return end
+        BF.hero = { name = name, class = cls, spec = spec, spec2 = spec2, active = tonumber(active) }
+        BF.Paint()
+        return
     else
         return
     end
@@ -262,7 +302,29 @@ local function buildWindow()
     win.status:SetWidth(inner); win.status:SetJustifyH("LEFT")
     local m = S().ED.muted
     win.status:SetTextColor(m[1], m[2], m[3])
-    win:SetHeight(-y + 16 + PAD)
+    win.baseH = -y + 16 + PAD
+    -- the hero row (only on a boss fight hero): who, then its class's specs and Swap spec
+    y = y - 18 - GAP
+    win.heroLine = S().EdText(win, S().ED_SIZE.small)
+    win.heroLine:SetPoint("TOPLEFT", win, "TOPLEFT", PAD, y)
+    win.heroLine:SetWidth(inner); win.heroLine:SetJustifyH("LEFT")
+    local g = S().ED.gold
+    win.heroLine:SetTextColor(g[1], g[2], g[3])
+    y = y - 16 - GAP
+    win.specs = {}
+    local sw = math.floor((inner - 3 * GAP) / 4)
+    for i = 1, 4 do
+        local c = chip(win, "", sw, function(self) if self.spec then BF.Respec(self.spec) end end,
+            "Change the spec that is on to this one: free, talents, gear and bars at once")
+        c:SetPoint("TOPLEFT", win, "TOPLEFT", PAD + (i - 1) * (sw + GAP), y)
+        win.specs[i] = c
+    end
+    y = y - BF.CTRL - GAP
+    win.swap = chip(win, "Swap spec", inner, function() BF.SwapSpec() end, "The other spec, now, with its gear")
+    win.swap:SetPoint("TOPLEFT", win, "TOPLEFT", PAD, y)
+    y = y - BF.CTRL - GAP
+    win.heroH = -y + PAD
+    win:SetHeight(win.baseH)
     win:Hide()
     if UISpecialFrames then tinsert(UISpecialFrames, "LeylineBossFights") end
 end
@@ -459,6 +521,33 @@ function BF.Paint()
     win.only:SetText(BF.playersOnly and "Players only: on" or "Players only")
     local on = W.LeylineRealm and not BF.Busy()
     for _, b in ipairs({ win.go, win.queue }) do if on then b:Enable() else b:Disable() end end
+    local h = BF.hero
+    win:SetHeight(h and win.heroH or win.baseH)
+    if h then
+        local cur = h.active == 1 and h.spec2 or h.spec
+        local other = h.active == 1 and h.spec or h.spec2
+        win.heroLine:SetText(string.format("Hero: %s, %s %s (other spec: %s)", h.name, BF.SpecLabel(h.class, cur) or "",
+            BF.CLASSES[h.class] or "", BF.SpecLabel(h.class, other) or ""))
+        win.heroLine:Show()
+        local specs = BF.SPECS[h.class] or {}
+        local free = W.LeylineRealm and BF.state ~= "engaged"
+        for i, c in ipairs(win.specs) do
+            local sp = specs[i]
+            if sp then
+                c.spec = sp[1]
+                c:SetText(sp[2]); c:SetActive(sp[1] == cur); c:Show()
+                if free then c:Enable() else c:Disable() end
+            else
+                c.spec = nil; c:Hide()
+            end
+        end
+        win.swap:Show()
+        if free then win.swap:Enable() else win.swap:Disable() end
+    else
+        win.heroLine:Hide()
+        for _, c in ipairs(win.specs) do c:Hide() end
+        win.swap:Hide()
+    end
     if not W.LeylineRealm then
         win.status:SetText("Boss fights are on Leyline realms.")
     elseif BF.Busy() then
@@ -514,5 +603,7 @@ SlashCmdList.LEYLINEBOSSFIGHTS = function(msg)
     if word == "status" then return BF.Status() end
     if word == "go" then return BF.GoNow() end
     if word == "queue" then return BF.QueueUp() end
+    if word == "hero" then return BF.Command(("hero " .. tostring(msg or ""):match("^%s*%S+%s*(.-)%s*$")):gsub("%s+$", "")) end
+    if word == "swap" then return BF.SwapSpec() end
     return BF.Toggle()
 end

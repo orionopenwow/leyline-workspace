@@ -35,7 +35,11 @@ local function result(rows)
     return r
 end
 function CharDBExecute() end
-function CharDBQuery() return nil end
+local bossfightsLive = true   -- mod-leyline-bossfights' heartbeat row (characters.leyline_bossfight_live)
+function CharDBQuery(sql)
+    if sql:find("leyline_bossfight_live", 1, true) and bossfightsLive then return result({ { 1 } }) end
+    return nil
+end
 local accounts = { WR000001 = 1, WR000002 = 2, WR000003 = 3 }
 local intentRows, authSql = {}, {}
 function AuthDBExecute(s)
@@ -274,6 +278,14 @@ tick(10)
 clear(ann)
 command(ann, ".playmode frozen-throne")
 check("frozen-throne: runs .bossfight join frozen-throne normal bots", ann.ran and ann.ran[#ann.ran] == "bossfight join frozen-throne normal bots")
+bossfightsLive = false
+tick(10)
+clear(ann)
+local ranBefore = ann.ran and #ann.ran or 0
+command(ann, ".playmode frozen-throne")
+check("frozen-throne without the module: says so in plain words, runs nothing",
+    (ann.ran and #ann.ran or 0) == ranBefore and said(ann, "aren't open on this realm yet"))
+bossfightsLive = true
 tick(10)
 command(ann, ".playmode arena-queue")
 check("arena-queue: runs .q1v1 unrated", ann.ran and ann.ran[#ann.ran] == "q1v1 unrated")

@@ -3256,7 +3256,7 @@ fn pack(c: &Writer, shared: &Shared, sess: &Sess, args: &[String]) -> io::Result
                 let tdir = dir.join(crate::taleplay::TALES_DIR);
                 let _ = std::fs::create_dir_all(&tdir);
                 match crate::settings::write_atomic(&tdir.join(format!("{slug}.tale")), text.as_bytes()) {
-                    Ok(()) => say(c, &format!("The tale "{}" is here: .den tale play {slug}", t.title)),
+                    Ok(()) => say(c, &format!("The tale \"{}\" is here: .den tale play {slug}", t.title)),
                     Err(_) => say(c, "That tale can't be written."),
                 }
             }

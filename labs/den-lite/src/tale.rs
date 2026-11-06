@@ -317,7 +317,10 @@ fn face_of(w: &[String], i: usize, line: usize) -> Result<f32, Problem> {
 fn goal_of(w: &[String], line: usize) -> Result<Goal, Problem> {
     let k = w.get(1).map(|s| s.to_ascii_lowercase()).unwrap_or_default();
     let id = |i: usize| -> Result<String, Problem> {
-        let v = w.get(i).map(|s| s.to_ascii_lowercase()).unwrap_or_default();
+        let mut v = w.get(i).map(|s| s.to_ascii_lowercase()).unwrap_or_default();
+        if v == "companion" {
+            v = JAINA.to_string(); // the launcher's word for her (its tool text never names her)
+        }
         if id_ok(&v) { Ok(v) } else { Err(bad(line, format!("goal {k}: an id"))) }
     };
     let g = match k.as_str() {

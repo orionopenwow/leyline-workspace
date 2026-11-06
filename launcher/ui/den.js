@@ -333,6 +333,7 @@
   // goes on the Leyline network from this PC at once (private: only people with a link get in; the relay only
   // passes the game's connection through), and the link for one friend, with their own login in it, is copied.
   let net = null;   // den_net_state
+  let readyBox = null;   // Ready for friends? (hostfriends.js checklist, app.rs host_ready): the checks after an invite
   async function inviteLite() {
     busy = true; paint();
     say("Putting your Den on the Leyline network… (a few seconds)");
@@ -340,6 +341,8 @@
       const r = await call("den_invite", { name: null });
       net = r.tunnel;
       invited = r;
+      // the way a friend comes in, checked line by line (each red line with its fix)
+      if (window.LeylineHostFriends) readyBox = window.LeylineHostFriends.checklist({ kind: "lite", id: "yd-ready", prefix: "yd-c-", quietWithout: true, onStart: () => inviteLite() });
       let copied = true;
       try { await navigator.clipboard.writeText(r.link); } catch (_) { copied = false; }
       // TODO(owner): the words
@@ -362,7 +365,7 @@
     netTimer = setTimeout(tick, 1500);
   }
   async function stopSharing() {
-    try { await call("den_net_stop"); net = null; invited = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
+    try { await call("den_net_stop"); net = null; invited = null; readyBox = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
     catch (e) { say(oops(e), "bad"); }
     await loadFriends();
     paint();
@@ -881,6 +884,7 @@
       row1.append(inv);
       sb.append(row1);
       if (invited && invited.code) sb.append(codeRow());
+      if (invited && readyBox) sb.append(readyBox);
       sb.append(friendsBox());
       // the bigger server, for a Den that should run without this PC's Den Lite (the Host pack, Docker)
       const more = mk("div", "yd-row yd-share-more");

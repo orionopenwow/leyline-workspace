@@ -134,6 +134,7 @@ pub const LINKS: &[(&str, &str)] = &[
     // (ui/gmcenter.js, the GM command center's one line for the official realm)
     ("hq", crate::site!("/wrath/admin")),
     ("hostguide", crate::site!("/wrath/docs/hosting")), // the Host pack and its settings
+    ("hostfriends", crate::site!("/wrath/docs/host-for-friends")), // Play with friends: steps and fixes (ui/hostfriends.js)
     ("agentsguide", crate::site!("/wrath/docs/agents")), // Agents and Help: docs/leyline/agents.md
     ("hostdocs", crate::site!("/wrath/docs/hosting")), // the host console's guide (host/console.rs)
     ("hostarealm", crate::site!("/wrath/docs/host-a-realm")), // the Host page's full guide (ui/hostflow.js; docs/leyline/host-a-realm.md)

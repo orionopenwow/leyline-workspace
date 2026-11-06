@@ -509,7 +509,7 @@
       const se = btn("Settings", "btn small", settings); se.id = "sp-settings";
       se.title = "The Host page, with Single player picked";
       acts.append(se);
-      if (window.LeylineSolo && window.LeylineSolo.inviteButton) acts.append(window.LeylineSolo.inviteButton((t, k) => say(t, k)));
+      if (window.LeylineSolo && window.LeylineSolo.inviteButton) acts.append(window.LeylineSolo.inviteButton((t, k) => say(t, k), "docker"));
     }
     card.append(head, acts, mk("p", "sp-line", "Play starts it if it's stopped, then takes you in. Stop saves everyone and shuts it down."));
     if (built && es.account) {

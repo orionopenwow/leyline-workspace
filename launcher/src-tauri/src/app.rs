@@ -762,9 +762,15 @@ fn den_invite_with(name: Option<&str>, tunnel: bool) -> Result<DenInvite, String
     let tunnel_on = tunnel;
     {
         let app = crate::settings::app_dir();
-        let l = lite::Binary::find(&app);
+        let mut l = lite::Binary::find(&app);
         if !l.available() {
-            return Err("Press Play solo once first: it gets your Den's server.".to_string());
+            // one step for the host (owner 5 Nov: "invite a friend easy 1 step"): Your Den's server is got here, as
+            // Play solo gets it (one small download, its sha256 checked)
+            if !tunnel_on {
+                return Err("Press Play solo once first: it gets your Den's server.".to_string());
+            }
+            lite::install(&app).map_err(|e| format!("{e} Check this PC is online, then press Invite a friend again."))?;
+            l = lite::Binary::find(&app);
         }
         if !l.status().running {
             l.start()?;

@@ -3137,7 +3137,12 @@ $("rl-join").addEventListener("click", async () => {
     else say("rl-status", `${j.name || "The realm"} is open for this PC; ${c.name} now points at ${j.address}. Press PLAY.`, "ok");
     $("rl-invite").value = "";
     await refresh();
-  } catch (e) { sayErr("rl-status", e); }
+    // does the host's world answer there? (hostfriends.js afterJoin: the friend's "what's happening" line)
+    if (window.LeylineHostFriends) window.LeylineHostFriends.afterJoin(j, null, (t, k) => say("rl-status", t, k));
+  } catch (e) {
+    const x = window.LeylineHostFriends ? window.LeylineHostFriends.explainJoin(e) : null;
+    if (x) say("rl-status", `${x.line} ${x.fix}`, "bad"); else sayErr("rl-status", e);
+  }
 });
 
 // ------------------------------------------------------------------ Host

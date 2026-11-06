@@ -29,12 +29,22 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          # Lua 5.1: the hybrid login's glue tests (hybrid.rs runs glue/test_hybrid_glue.lua when a Lua is installed)
+          sudo apt-get install -y lua5.1
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
       - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: launcher/src-tauri
+      - name: TEMP write the den-check fixture (removed once committed)
+        working-directory: launcher/src-tauri
+        run: LEYLINE_WRITE_FIXTURES=1 cargo test --locked --no-default-features the_den_check_sample
+      - name: TEMP upload the fixture
+        uses: actions/upload-artifact@v4
+        with:
+          name: den-check-fixture
+          path: tools/den-check/fixtures/patch-Z-sample.bin
       - name: cargo test (core, no webview)
         working-directory: launcher/src-tauri
         run: cargo test --locked --no-default-features

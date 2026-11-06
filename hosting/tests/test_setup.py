@@ -297,9 +297,9 @@ class Preflight(unittest.TestCase):
     def test_both_scripts_run_it_before_setup(self):
         kit = os.path.join(helpers.ROOT, "kit")
         sh = open(os.path.join(kit, "host-wrath-realm.sh")).read()
-        self.assertLess(sh.index("|| preflight"), sh.index("tools init --name"))
+        self.assertLess(sh.index("    preflight      #"), sh.index("    pick_images\n  fi"))
         bat = open(os.path.join(kit, "Host a Wrath realm.bat"), newline="").read()
-        self.assertLess(bat.index("wuhost.setup preflight"), bat.index("wuhost.setup init"))
+        self.assertLess(bat.index("wuhost.setup preflight"), bat.index("== Realm images"))
         self.assertTrue(bat.count("\n") == bat.count("\r\n") or "\r" not in bat)
         out = io.StringIO()
         from wuhost import setup

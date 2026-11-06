@@ -311,9 +311,10 @@ cmd_up() {
     IMG="${WU_IMAGE}"; TAG="${WU_TAG}"
     ensure_tools
   else
+    ensure_tools
+    preflight      # before the long download or build
     pick_images
   fi
-  [ "${WU_CONFIG_ONLY:-0}" = 1 ] || preflight
   tools init --name "$WU_NAME" --profile "$WU_PROFILE" --visibility "$WU_VISIBILITY" --image "$IMG" --tag "$TAG" \
         --tools-image "$WU_TOOLS_IMAGE" --relay "$WU_RELAY" ${extra[@]+"${extra[@]}"} >/dev/null || die "Setup failed (see above)."
   if [ "${WU_CONFIG_ONLY:-0}" = 1 ]; then

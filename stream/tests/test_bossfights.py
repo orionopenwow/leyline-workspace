@@ -78,6 +78,8 @@ check("go_href: signed out, Log in first with the same play link next", nxt == "
 # --- the portal: go_param, remember_go, the sign-in -------------------------------------------------------------------
 check("go_param carries a boss fight", wp.go_param({"go": ["bf:frozen-throne:heroic:group"]}) == "&go=bf:frozen-throne:heroic:group")
 check("go_param carries the arena queue", wp.go_param({"go": ["arena:1v1"]}) == "&go=arena:1v1")
+check("go_param carries solo on this device (docs/PHONE-SOLO.md)", wp.go_param({"go": ["solo"]}) == "&go=solo:phone" == wp.go_param({"go": ["solo:phone"]})
+      and wp.go_param({"go": ["solo:x"]}) == "")
 check("go_param: the launcher's mode id becomes its go", wp.go_param({"go": ["mode:frozen-throne"]}) == "&go=bf:frozen-throne:normal:bots"
       and wp.go_param({"go": ["mode:arena-queue"]}) == "&go=arena:1v1")
 check("go_param: other modes still carry nothing", wp.go_param({"go": ["mode:minigolf"]}) == "")

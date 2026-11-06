@@ -908,3 +908,5 @@
 1350a signin  Website on phones: menu sheet, bottom tab bar, 44px targets, lighter art, Phone Lab (/wrath/phonelab)
 1350b page  Game page: the first tap goes full screen (touch wrath 2026-11-06a), Phone Lab recorder
 1350c ship  Save to GitHub: the mobile web overhaul and Phone Lab
+1351a signin  Discord AutoMod lighter: swearing allowed, slurs and your own words still blocked
+1351b ship  Save to GitHub: the lighter AutoMod

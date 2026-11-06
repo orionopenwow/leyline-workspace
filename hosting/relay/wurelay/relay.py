@@ -1142,6 +1142,9 @@ class Relay:
             page = f.read()
         origins = [o for o in self.cfg.play_origins if re.match(r"^https?://[A-Za-z0-9.:-]+$", o)]
         page = page.replace(b'data-hop-origins=""', b'data-hop-origins="' + " ".join(origins).encode() + b'"', 1)
+        # the site's browser game, for "Play in your browser" (private realms too: the invite rides in the #fragment)
+        site = self.cfg.site_url if re.match(r"^https://[A-Za-z0-9.:-]+$", self.cfg.site_url or "") else ""
+        page = page.replace(b'data-site=""', b'data-site="' + site.encode() + b'"', 1)
         return httpd.response(200, page, "text/html; charset=utf-8",
                               {"Cache-Control": "no-cache", "Referrer-Policy": "no-referrer",
                                "Content-Security-Policy": "frame-ancestors " + (" ".join(origins) or "'none'"),

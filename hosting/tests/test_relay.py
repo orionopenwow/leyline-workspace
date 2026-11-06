@@ -157,6 +157,16 @@ class Private(unittest.IsolatedAsyncioTestCase):
 
 
 class Accounts(unittest.IsolatedAsyncioTestCase):
+    async def test_join_page_names_the_site_for_browser_play(self):
+        # owner 5 Nov "turn on allow private relay too": the join page's Play in your browser goes to the site's game
+        async with Rig(visibility="private") as r:
+            st, page, _ = await http("GET", f"{r.http}/join/{r.rid}")
+            self.assertEqual(st, 200)
+            site = r.relay.cfg.site_url
+            self.assertIn(f'data-site="{site}"', page)
+            self.assertIn('id="browser-play"', page)
+            self.assertIn('"/wrath?go=r:"', page)
+
     async def test_signup_from_join_page_then_play(self):
         async with Rig(visibility="private") as r:
             acc = srp_account("friend1", "hunter2")

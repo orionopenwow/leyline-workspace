@@ -26,6 +26,7 @@ spec = importlib.util.spec_from_file_location("wp", sys.argv[1])
 wp = importlib.util.module_from_spec(spec); spec.loader.exec_module(wp)
 
 LIVE, OFF, HANG = "abcdefghijklmnop", "qrstuvwxyz234567", "hangouthangout22"
+PRIV, PRIVOFF = "privateprivate22", "privateoffline22"   # private Beacons: not on the listing
 SOAP_CMDS = []
 
 
@@ -38,6 +39,14 @@ class Relay(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
     def do_GET(self):
+        if self.path.startswith("/api/realms/"):   # one realm, as the relay answers it (private ones too)
+            rid = self.path.rsplit("/", 1)[-1]
+            doc = {PRIV: {"realm_id": PRIV, "online": True, "visibility": "private", "name": "Our Secret Den"},
+                   PRIVOFF: {"realm_id": PRIVOFF, "online": False, "visibility": None, "name": "Gone Home"}}.get(rid)
+            body = json.dumps(doc or {"error": "unknown realm"}).encode()
+            self.send_response(200 if doc else 404); self.send_header("Content-Length", str(len(body))); self.end_headers()
+            self.wfile.write(body)
+            return
         hang = rec(HANG, "Wrath Unleashed", True)
         hang["community"]["lastHeartbeat"]["players"] = 1
         body = json.dumps({"realms": [rec(LIVE, "Frost Haven", True), rec(OFF, "Quiet Corner", False), hang,
@@ -353,6 +362,20 @@ m = wp.SliceMisses(os.path.join(tempfile.mkdtemp(), "m.json"))
 m.MAX = 2
 m.note(["A\\a.m2", "B\\b.m2", "C\\c.m2"], "mini", now=100)
 check("misses: at most MAX names", sorted(m.names) == ["a\\a.m2", "b\\b.m2"])
+
+# --- private Beacons (owner 5 Nov: "turn on allow private relay too"): not listed, asked of the relay one by one
+gate, land, env, txt = session_env(f"/wrath/play?mini=mini&go=r:{PRIV}")
+check("private: an online private realm is a hop", env.get("hop") == PRIV and env.get("hop_name") == "Our Secret Den", env)
+check("private: its bridge and join page", env.get("hop_ws") == f"wss://relay.example/ws/{PRIV}"
+      and env.get("hop_join") == f"https://relay.example/join/{PRIV}?hop=1", env)
+check("private: no Wrath login", "Pa55word" not in txt and "WR000123" not in txt)
+check("private: offline is no hop", wp.hop_for({"go": ["r:" + PRIVOFF]}) is None)
+check("private: unknown is no hop", wp.hop_for({"go": ["r:" + "zzzzzzzzzzzzzzzz"]}) is None)
+wp.HOP_PRIVATE = False
+wp._private_seen.clear()
+check("private: WU_HOP_PRIVATE=0 turns it off", wp.hop_for({"go": ["r:" + PRIV]}) is None)
+wp.HOP_PRIVATE = True
+check("private: a public listed realm still comes from the listing", (wp.hop_for({"go": ["r:" + LIVE]}) or {}).get("private") is None)
 
 print(f"\n{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

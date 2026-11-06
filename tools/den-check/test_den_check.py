@@ -1639,5 +1639,148 @@ class GlideRows(unittest.TestCase):
         self.assertIn("from before glide-rows", rep.rows[0][2])
 
 
+class StartAgain(unittest.TestCase):
+    """den-move's start (owner 5 Nov: flaky, "game window didn't open"): a preflight that says why first, and the start
+    again when the window never came."""
+
+    def test_preflight_names_what_would_stop_the_game(self):
+        d = Path(tempfile.mkdtemp())
+        try:
+            game, root = d / "game", d / "den-lite"
+            game.mkdir()
+            rep = den_check.Report()
+            ok, _ = quiet(den_check.preflight, rep, game, root, d / "Leyline.exe", lambda: [], lambda p: False, 5000)
+            self.assertFalse(ok)
+            self.assertTrue(any(r[0] == "FAIL" and "game's program" in r[1] for r in rep.rows))
+            (game / "Wow.exe").write_bytes(b"MZ")
+            rep = den_check.Report()
+            ok, _ = quiet(den_check.preflight, rep, game, root, d / "Leyline.exe", lambda: ["Wow.exe"], lambda p: p == 3724, 5000)
+            self.assertFalse(ok, "a game already running")
+            self.assertTrue(any("Close the game" in r[3] for r in rep.rows))
+            self.assertTrue(any("in use: [3724]" in r[2] for r in rep.rows))
+            rep = den_check.Report()
+            ok, _ = quiet(den_check.preflight, rep, game, root, d / "Leyline.exe", lambda: [], lambda p: False, 10)
+            self.assertFalse(ok, "no room on the disk")
+            rep = den_check.Report()
+            ok, _ = quiet(den_check.preflight, rep, game, root, d / "Leyline.exe", lambda: [], lambda p: False, 5000)
+            self.assertTrue(ok)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def _run(self, reports, retries):
+        d = Path(tempfile.mkdtemp())
+        clock = [1000.0]
+        started = []
+
+        class Proc:
+            def __init__(self):
+                self.killed = False
+
+            def poll(self):
+                return None
+
+            def kill(self):
+                self.killed = True
+
+        def popen(cmd, **_):
+            started.append(cmd)
+            r = reports[min(len(started), len(reports)) - 1]
+            if r is not None:
+                r = dict(r, start=int(clock[0] * 1000))
+                (d / "den-click.json").write_text(json.dumps(r))
+            elif (d / "den-click.json").exists():
+                (d / "den-click.json").unlink()
+            return Proc()
+
+        def sleep(s):
+            clock[0] += s
+
+        try:
+            rep = den_check.Report()
+            (proc, rpt, _), _ = quiet(den_check.start_den_play, rep, Path("Leyline.exe"), "c1", 300, d, 3, retries, popen, lambda: clock[0], sleep, lambda r: None)
+            return started, rpt, rep
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_a_window_that_never_opened_is_started_again(self):
+        no_window = {"phase": "stopped", "outcome": "GiveUp(\"no game window\")", "actions": [[100, "game started"]]}
+        in_world = {"phase": "in_world", "actions": [[100, "game started"], [4000, "the game's window is open"]]}
+        started, rpt, rep = self._run([no_window, in_world], 2)
+        self.assertEqual(len(started), 2)
+        self.assertEqual(rpt["phase"], "in_world")
+        self.assertTrue(any("never opened" in r[2] and "trying again" in r[2] for r in rep.rows))
+        self.assertTrue(started[0][1:3] == ["den-play", "--test"])
+
+    def test_the_retries_end_and_a_world_needs_none(self):
+        no_window = {"phase": "stopped", "outcome": "x", "actions": []}
+        started, rpt, _ = self._run([no_window], 2)
+        self.assertEqual(len(started), 3, "once and twice again")
+        started, _, _ = self._run([None], 1)
+        self.assertEqual(len(started), 2, "no report: again")
+        started, rpt, _ = self._run([{"phase": "in_world", "actions": []}], 2)
+        self.assertEqual(len(started), 1)
+        # the window opened but the sign-in stopped: not the flake, no second start
+        started, _, _ = self._run([{"phase": "stopped", "actions": [[1, "the game's window is open"]]}], 2)
+        self.assertEqual(len(started), 1)
+
+
+class Smoke(unittest.TestCase):
+    """den_smoke.py (the Den with no game window) and sky_island.py (the Control step)."""
+
+    def test_the_wire_helpers(self):
+        import den_smoke
+        text = b"You fell off the island: back by the tree."
+        body = bytes([0]) + struct_pack("<I", 0) + struct_pack("<Q", 0) + struct_pack("<I", 0) + struct_pack("<Q", 0) + struct_pack("<I", len(text) + 1) + text + b"\0" + b"\0"
+        self.assertEqual(den_smoke.system_line(0x096, body), text.decode())
+        self.assertIsNone(den_smoke.system_line(0x095, body))
+        addon = bytes([7]) + b"\xff\xff\xff\xff" + body[5:]
+        self.assertIsNone(den_smoke.system_line(0x096, addon), "an addon line isn't a system line")
+        self.assertEqual(den_smoke.addon_line(0x096, addon), text.decode())
+        tp = b"\x01\x01" + struct_pack("<I", 77) + struct_pack("<IHI", 0, 0, 5) + struct_pack("<ffff", 15700.0, 15696.0, 180.6, 1.5)
+        self.assertEqual(den_smoke.teleport_spot(tp), (15700.0, 15696.0, struct.unpack("<f", struct_pack("<f", 180.6))[0]))
+        self.assertEqual(den_smoke.teleport_ack(tp)[:6], b"\x01\x01" + struct_pack("<I", 77))
+        self.assertEqual(len(den_smoke.heartbeat(1, 2, 3)), 2 + 10 + 16 + 4)
+        self.assertEqual(len(den_smoke.heartbeat(1, 2, 3, den_smoke.FALLING)), 2 + 10 + 16 + 4 + 16)
+        self.assertEqual(den_smoke.say_body(".den island")[:8], struct_pack("<II", 1, 7))
+
+    def test_the_island_code_and_file(self):
+        import den_smoke
+        import sky_island
+        code = sky_island.island_code()
+        kind, text = den_smoke.decode_code(code)
+        self.assertEqual(kind, "den")
+        doc = json.loads(text)
+        self.assertEqual(doc["room"]["look"], "sky")
+        self.assertTrue(doc["tales"][0].startswith("tale Welcome to Sky Island"))
+        with self.assertRaises(ValueError):
+            den_smoke.decode_code(code[:-1] + ("1" if code[-1] == "0" else "0"))
+        d = Path(tempfile.mkdtemp())
+        try:
+            p = sky_island.island_file(d / "dens", code, lambda: 1234)
+            self.assertEqual(p.read_text(), text)
+            self.assertEqual(json.loads((d / "dens" / "open.json").read_text()), {"file": "sky-island", "id": "sky1234"})
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+        with self.assertRaises(ValueError):
+            sky_island.island_code("no code here")
+
+    def test_against_a_real_den_lite_when_built_here(self):
+        prog = os.environ.get("DEN_LITE_BIN")
+        if not prog or not Path(prog).is_file():
+            self.skipTest("no Den Lite built here (DEN_LITE_BIN)")
+        import den_smoke
+        rep = den_check.Report()
+        quiet(den_smoke.smoke, rep, Path(prog))
+        self.assertEqual(rep.failed(), [], rep.rows)
+
+
+def struct_pack(fmt, *v):
+    import struct as _s
+    return _s.pack(fmt, *v)
+
+
+import struct  # noqa: E402
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

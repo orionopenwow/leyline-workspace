@@ -29,6 +29,10 @@ PAGE_ART = ["wu-load-bg.webp", "wu-load-orion.webp", "wu-corner-tl.webp", "wu-co
             "Cinzel-SemiBold.woff2", "Cinzel-OFL.txt",
             # the Leyline brand's loading logo (leyline-look.css, only with the brand switch on)
             "leyline-swirl-256.webp", "leyline-crystal-256.webp", "leyline-swirl-128.png", "leyline-crystal-128.png"]
+# Solo on this device (docs/PHONE-SOLO.md): www-files/solo/ -> www/solo/ (our own code: the page's server in a worker;
+# den-lite-web.wasm is Den Lite's own build, from CI's den-lite-latest release, put there by the solo-wasm step). Without
+# the wasm the scripts still go (wrath-early.js only loads them for ?go=solo).
+SOLO_FILES = ["solo.js", "solo-ring.js", "solo-wasi.js", "den-lite-worker.js", "den-lite-web.wasm"]
 PAGE_TAG = '<script src="./wrath-early.js"></script>\n'
 # where the tag goes, first anchor found wins: after the sign-in env (so __wenilla_env is set when
 # it runs), else before the page's module script; else at the end of the page
@@ -192,6 +196,26 @@ def install_page_layer(www: str, files: str) -> None:
         print(f"  {len(PAGE_LAYER)} page layer files and {len(art)} art files copied (touch controls, dock, signing in, loading screens)")
     except OSError as e:
         print(f"  WARNING: page layer not installed: {e}", file=sys.stderr)
+    install_solo(www, files)
+
+
+def install_solo(www: str, files: str) -> None:
+    """Copy www-files/solo/ (SOLO_FILES that are there) to www/solo/; a problem is a warning, never a failure."""
+    src = os.path.join(files, "solo")
+    have = [n for n in SOLO_FILES if os.path.isfile(os.path.join(src, n))]
+    if not have:
+        return
+    try:
+        os.makedirs(os.path.join(www, "solo"), exist_ok=True)
+        for name in have:
+            shutil.copyfile(os.path.join(src, name), os.path.join(www, "solo", name))
+            for ext in (".br", ".gz"):
+                if os.path.exists(os.path.join(www, "solo", name + ext)):
+                    os.remove(os.path.join(www, "solo", name + ext))
+        wasm = "den-lite-web.wasm" in have
+        print(f"  solo: {len(have)} files copied" + ("" if wasm else " (no den-lite-web.wasm yet: run the solo-wasm step)"))
+    except OSError as e:
+        print(f"  WARNING: solo not installed: {e}", file=sys.stderr)
 
 
 def main(argv: list[str]) -> int:

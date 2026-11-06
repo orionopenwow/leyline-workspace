@@ -171,6 +171,8 @@ STEPS = {
     "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),
     "page":    ("stream/Update game page.bat", "Game page only (keeps the live game build)", False),
+    # Solo on this device (docs/PHONE-SOLO.md): Den Lite's page build from CI (den-lite-web.yml) into www-files\solo; then page
+    "solo-wasm": ("tools/solo/Get solo wasm.bat", "Solo on this device: Den Lite's page build (den-lite-web.wasm) from the den-lite-latest release, checked, into stream\\www-files\\solo (then the page step puts it on the game page)", False),
     "frontpage": ("tools/front-page/Front page as home - on.bat", "The site's home (/) opens the Leyline front page", False),
     "frontpage-off": ("tools/front-page/Front page as home - off.bat", "Undo: the site's home opens the game's sign-in page again", False),
     "ov112-check": ("tools/ov112-off/Turn off 1.12 jobs - dry run.bat", "1.12 Open Vanilla jobs: what would be turned off (read-only)", False),

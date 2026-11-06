@@ -11,7 +11,8 @@
 3. The workflow files, copied from tools/github-workflows/ (the source copies) and pushed with gh's credential:
      WrathUnleashed (.github/workflows/): wu-images.yml, wu-hosting.yml, forge.yml (Forge.zip on the rolling
        release forge-latest, built when forge/ changes), den-lite.yml (Play solo's server on the rolling
-       release den-lite-latest, built when labs/den-lite/ changes), engine-windows.yml (Single player's Built-in
+       release den-lite-latest, built when labs/den-lite/ changes), den-lite-web.yml (the same Den Lite as wasm for the
+       browser's Play solo on this device, docs/PHONE-SOLO.md, beside it on den-lite-latest), engine-windows.yml (Single player's Built-in
        engine on the rolling release engine-latest, docs/BUILTIN-ENGINE.md), survivors.yml (Azeroth Survivors' browser build and
        its Windows host on the rolling release survivors-latest, built when its lock changes), and realm-scripts.yml once the deploy
        secret exists ("setup\\Set up automatic deploys.bat"), so its deploy job can't fail for lack of it;
@@ -54,8 +55,8 @@ WU_REPO_NEW = f"{OWNER}/leyline-workspace"
 LY_REPO = f"{OWNER}/Leyline"
 SRC = ROOT / "tools" / "github-workflows"
 NEED_SCOPES = ("workflow", "write:packages", "admin:org")
-WU_FILES = ("wu-images.yml", "wu-hosting.yml", "hub-index.yml", "scout.yml", "forge.yml", "den-lite.yml", "survivors.yml",
-            "bots-canary.yml", "engine-windows.yml")
+WU_FILES = ("wu-images.yml", "wu-hosting.yml", "hub-index.yml", "scout.yml", "forge.yml", "den-lite.yml", "den-lite-web.yml",
+            "survivors.yml", "bots-canary.yml", "engine-windows.yml")
 DEPLOY_FILE, DEPLOY_SECRET = "realm-scripts.yml", "WU_DEPLOY_SSH_KEY"
 LY_FILES = ("leyline-launcher.yml", "leyline-android.yml")   # the desktop launcher; the phone app (docs/ANDROID.md)
 LY_TEMPLATES = ("submit-mod.yml",)                  # .github/ISSUE_TEMPLATE in Leyline: "Submit a mod" (hub index)

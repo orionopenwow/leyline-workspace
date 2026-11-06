@@ -32,7 +32,7 @@ def steps(doc, job):
 class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
-        self.assertEqual(names, ["bots-canary.yml", "den-lite.yml", "engine-windows.yml", "forge.yml", "hub-index.yml", "leyline-android.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
+        self.assertEqual(names, ["bots-canary.yml", "den-lite-web.yml", "den-lite.yml", "engine-windows.yml", "forge.yml", "hub-index.yml", "leyline-android.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
                                  "survivors.yml", "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
@@ -94,6 +94,41 @@ class Workflows(unittest.TestCase):
             self.assertIn(f'"{name}"', lite, f"the launcher downloads {name}")
             self.assertNotRegex(run, r"(?i)\.mpq|\bData/")
         self.assertIn('releases/download/den-lite-latest/"', lite)
+
+    def test_den_lite_web(self):
+        """Den Lite in the page (docs/PHONE-SOLO.md): only when Den Lite or the solo layer changes, or by hand; Den Lite's
+        own tests before the wasm build; the wasm (wasm32-wasip1, feature web, bin den-lite-web) tested by the solo tests
+        (node, then Chromium) before it goes with its sha256 on den-lite-latest, at the name Control's solo-wasm step
+        downloads and www-patch.py copies; one release queue with den-lite.yml; the built-in token only; installed."""
+        text, doc = load("den-lite-web.yml")
+        paths = doc["on"]["push"]["paths"]
+        for p in ("labs/den-lite/**", "stream/www-files/solo/**", ".github/workflows/den-lite-web.yml"):
+            self.assertIn(p, paths)
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(doc["concurrency"]["group"], load("den-lite.yml")[1]["concurrency"]["group"])
+        self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        j = doc["jobs"]["web"]
+        self.assertEqual(j["permissions"], {"contents": "write"})
+        run = "\n".join(s.get("run", "") for s in j["steps"])
+        self.assertLess(run.index("cargo test --locked"), run.index("--target wasm32-wasip1 --features web --bin den-lite-web"))
+        self.assertLess(run.index("--bin den-lite-web"), run.index("tests/solo.node.test.cjs"))
+        self.assertLess(run.index("tests/solo.browser.test.cjs"), run.index("gh release upload"))
+        self.assertRegex(run, r"gh release upload den-lite-latest den-lite-web\.wasm den-lite-web\.wasm\.sha256")
+        self.assertNotRegex(run, r"(?i)\.mpq|\bData/")
+        toml = (REPO / "labs" / "den-lite" / "Cargo.toml").read_text(encoding="utf-8")
+        self.assertIn('name = "den-lite-web"', toml)
+        self.assertIn('required-features = ["web"]', toml, "the PC build never builds the web bin")
+        patch = (REPO / "stream" / "server" / "www-patch.py").read_text(encoding="utf-8")
+        self.assertIn('"den-lite-web.wasm"', patch)
+        builds = (REPO / "tools" / "github-builds" / "github_builds.py").read_text(encoding="utf-8")
+        self.assertIn('"den-lite-web.yml"', builds)
+        ctl = (REPO / "tools" / "control" / "control.py").read_text(encoding="utf-8")
+        self.assertIn('"solo-wasm"', ctl)
+        step = (REPO / "tools" / "solo" / "solo_wasm.py").read_text(encoding="utf-8")
+        self.assertIn("leyline-workspace/releases/download/den-lite-latest/", step)
+        self.assertIn('NAME = "den-lite-web.wasm"', step)
 
     def test_engine_windows(self):
         """Single player's Built-in engine (docs/BUILTIN-ENGINE.md): the realm's own sources (fetch.sh at the pinned

@@ -1,0 +1,104 @@
+# Den Lite in the page (docs/PHONE-SOLO.md): the browser game's "Play solo on this device" runs Den Lite (labs/den-lite)
+# inside the page, in a Web Worker. This builds that wasm (wasm32-wasip1, feature "web", bin den-lite-web), runs the
+# solo tests against it (node: the whole way in through the real worker; Chromium: the game-like page with ?go=solo),
+# and puts it with its checksum on the rolling release "den-lite-latest" beside the PC programs:
+#   https://github.com/<this repo>/releases/download/den-lite-latest/den-lite-web.wasm   (+ .sha256)
+# Leyline Control's solo-wasm step downloads it into stream/www-files/solo/, and the page step puts it on the game page.
+# MIT like Den Lite; never holds game data (Den Lite's own tables only; the client streams the approved slice as always).
+#
+# Runs in the workspace repo. Source copy: tools/github-workflows/den-lite-web.yml; "setup\Turn on GitHub builds.bat"
+# (tools/github-builds/github_builds.py, WU_FILES) puts it in .github/workflows/.
+# Only when Den Lite or the solo layer changes, or by hand (Actions > den-lite-web > Run workflow).
+name: den-lite-web
+on:
+  push:
+    branches: [main]
+    paths:
+      - "labs/den-lite/**"
+      - "stream/www-files/solo/**"
+      - "stream/tests/solo/**"
+      - "stream/tests/solo.*.test.cjs"
+      - ".github/workflows/den-lite-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-lite-latest
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: never
+  # the C compiler for wasm (zlib, through flate2's libz-sys): the WASI SDK, pinned
+  WASI_SDK_VERSION: "25"
+  PLAYWRIGHT_VERSION: "1.63.0"
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: wasm32-wasip1
+
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: labs/den-lite
+          key: web
+
+      - name: The WASI SDK (C for wasm32-wasip1)
+        run: |
+          set -euo pipefail
+          v="$WASI_SDK_VERSION"
+          curl -fsSL -o wasi-sdk.tgz "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$v/wasi-sdk-$v.0-x86_64-linux.tar.gz"
+          mkdir -p "$RUNNER_TEMP/wasi-sdk" && tar -xzf wasi-sdk.tgz -C "$RUNNER_TEMP/wasi-sdk" --strip-components=1
+          w="$RUNNER_TEMP/wasi-sdk"
+          echo "CC_wasm32_wasip1=$w/bin/clang" >> "$GITHUB_ENV"
+          echo "AR_wasm32_wasip1=$w/bin/llvm-ar" >> "$GITHUB_ENV"
+          echo "CFLAGS_wasm32_wasip1=--sysroot=$w/share/wasi-sysroot" >> "$GITHUB_ENV"
+
+      - name: "Den Lite's own tests (the PC build, which the transport change must keep green)"
+        working-directory: labs/den-lite
+        run: cargo test --locked --release
+
+      - name: Build the page's Den Lite
+        working-directory: labs/den-lite
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --target wasm32-wasip1 --features web --bin den-lite-web
+          ls -la target/wasm32-wasip1/release/den-lite-web.wasm
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Solo tests against the wasm (node, then Chromium)
+        working-directory: stream
+        env:
+          DEN_LITE_WASM: ${{ github.workspace }}/labs/den-lite/target/wasm32-wasip1/release/den-lite-web.wasm
+        run: |
+          set -euo pipefail
+          node --test tests/solo.node.test.cjs
+          npm install --no-save --no-package-lock "playwright@$PLAYWRIGHT_VERSION"
+          npx playwright install --with-deps chromium
+          node --test tests/solo.browser.test.cjs
+
+      - name: Package with its checksum and put it on den-lite-latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cp labs/den-lite/target/wasm32-wasip1/release/den-lite-web.wasm den-lite-web.wasm
+          sha256sum den-lite-web.wasm | awk '{print $1"  den-lite-web.wasm"}' > den-lite-web.wasm.sha256
+          cat den-lite-web.wasm.sha256
+          if ! gh release view den-lite-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create den-lite-latest -R "$GITHUB_REPOSITORY" --title "Den Lite (latest)" --notes "Den Lite, the local server behind Leyline's Play solo. MIT licence; source: labs/den-lite. It never contains or downloads game data." --target "$GITHUB_SHA" --latest=false
+          fi
+          gh release upload den-lite-latest den-lite-web.wasm den-lite-web.wasm.sha256 -R "$GITHUB_REPOSITORY" --clobber

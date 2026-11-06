@@ -1,0 +1,4 @@
+# The page's Den Lite (src/web.rs) runs sessions inside each other on one stack (a world session inside the login
+# one's wait): 8 MB of stack instead of wasm's default 1 MB. Native builds are not touched.
+[target.wasm32-wasip1]
+rustflags = ["-C", "link-arg=-zstack-size=8388608"]

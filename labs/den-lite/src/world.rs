@@ -16,7 +16,8 @@ use crate::notice::{self, Item, Old, Route};
 use crate::{buildtools, dojo, gizmo, movewatch, mymodels, ovmod, places, play, raw, testctl};
 use crate::{Gender as HeroGender, Lock, Shared};
 use std::io::{self, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use crate::wire::Stream;
+use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -54,7 +55,7 @@ pub fn serve(listener: TcpListener, shared: Arc<Shared>, remote: bool) {
             let _ = stream.set_nodelay(true);
             let _ = stream.set_read_timeout(Some(Duration::from_secs(300)));
             let remote = remote || !stream.peer_addr().map(|a| a.ip().is_loopback()).unwrap_or(false);
-            if let Err(e) = session(stream, &shared, remote) {
+            if let Err(e) = session(Stream::tcp(stream), &shared, remote) {
                 if e.kind() != io::ErrorKind::UnexpectedEof {
                     shared.log(&format!("world: {e}"));
                 }
@@ -70,7 +71,7 @@ fn bad(what: impl Into<String>) -> io::Error {
 /// The writing half of a connection: the stream and the header encrypter, shared with the session's _watcher thread
 /// (the launcher's open.json), so either may send.
 #[derive(Clone)]
-pub struct Writer(Arc<Mutex<(TcpStream, Option<ServerEncrypterHalf>)>>);
+pub struct Writer(Arc<Mutex<(Stream, Option<ServerEncrypterHalf>)>>);
 
 impl Writer {
     fn send<M: ServerMessage>(&self, m: &M) -> io::Result<()> {
@@ -105,7 +106,7 @@ impl Writer {
 }
 
 struct Conn {
-    s: TcpStream,
+    s: Stream,
     dec: Option<ServerDecrypterHalf>,
     w: Writer,
 }
@@ -317,7 +318,8 @@ fn now_ms() -> u64 {
 }
 
 #[allow(unused_assignments)]
-fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
+/// One world connection, from the auth challenge to its end (also the page's own Den Lite: web.rs).
+pub fn session(s: Stream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     let w = Writer(Arc::new(Mutex::new((s.try_clone()?, None))));
     let mut c = Conn { s, dec: None, w };
     let seed = ProofSeed::new();
@@ -2480,14 +2482,20 @@ pub fn companion_ticker(shared: Arc<Shared>) {
     loop {
         std::thread::sleep(Duration::from_millis(500));
         n += 1;
-        let _ = companion_tick(&shared, n % 2 == 0);
-        notices_due(&shared);
-        // every 2 seconds, when the Den changed; the Den bar shows "Saved 2 s ago"
-        if n % 4 == 0 && shared.autosave() {
-            let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|l| (l.0, l.1.clone()));
-            if let Some((sess, w)) = live {
-                let _ = bar_data(&w, &shared, sess, PLAYER_GUID, "saved", "auto");
-            }
+        companion_step(&shared, n);
+    }
+}
+
+/// One beat of [`companion_ticker`] (every 500 ms; `n` counts them): the page's Den Lite calls it from its own clock
+/// (web.rs), as it has no threads.
+pub fn companion_step(shared: &Shared, n: u64) {
+    let _ = companion_tick(shared, n % 2 == 0);
+    notices_due(shared);
+    // every 2 seconds, when the Den changed; the Den bar shows "Saved 2 s ago"
+    if n % 4 == 0 && shared.autosave() {
+        let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|l| (l.0, l.1.clone()));
+        if let Some((sess, w)) = live {
+            let _ = bar_data(&w, shared, sess, PLAYER_GUID, "saved", "auto");
         }
     }
 }
@@ -2626,6 +2634,10 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
 /// (a copy of what was there is kept as "backup"); each id opens once, also across restarts (`.open-done`).
 fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
     let stop = Arc::new(AtomicBool::new(false));
+    // the page's Den Lite (web.rs) has no launcher beside it and no threads: nothing to watch
+    if cfg!(target_arch = "wasm32") {
+        return StopOnDrop(stop);
+    }
     let flag = stop.clone();
     let dir = shared.cfg.den_dir.clone();
     let shared = shared.clone();
@@ -3067,6 +3079,11 @@ pub fn dojo_ticker(shared: Arc<Shared>) {
         std::thread::sleep(Duration::from_millis(50));
         let _ = dojo_tick(&shared);
     }
+}
+
+/// One beat of [`dojo_ticker`] (every 50 ms), for the page's Den Lite (web.rs).
+pub fn dojo_step(shared: &Shared) {
+    let _ = dojo_tick(shared);
 }
 
 fn dojo_tick(shared: &Shared) -> io::Result<()> {

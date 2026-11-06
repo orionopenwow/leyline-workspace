@@ -37,7 +37,7 @@ names = [n for n, _ in d.PAGES]
 
 # ---------------------------------------------------------------- 1. the page list and the files
 check("the pages, in a fixed order", names == ["index", "network", "getting-started", "play", "wrath-unleashed", "commands", "mods", "publishing",
-                                              "hosting", "host-a-realm", "den-invite", "always-on", "join-network", "be-a-node", "launcher", "den", "agents", "hero-key",
+                                              "hosting", "host-a-realm", "den-invite", "host-for-friends", "always-on", "join-network", "be-a-node", "launcher", "den", "agents", "hero-key",
                                               "cross-server", "unite"], names)
 on_disk = sorted(f[:-3] for f in os.listdir(DOCS_DIR) if f.endswith(".md"))
 check("every page has its file in docs/leyline", all(n in on_disk for n in names), set(names) - set(on_disk))

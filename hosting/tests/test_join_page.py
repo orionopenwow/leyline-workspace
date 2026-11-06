@@ -1,5 +1,6 @@
 """The join page's in-browser SRP6 verifier must match AzerothCore's (via wunet.srp6), and the relay
 serves the page. Needs node for the JS part (skipped without it)."""
+import asyncio
 import json
 import os
 import shutil
@@ -68,6 +69,69 @@ class JoinPageServed(unittest.IsolatedAsyncioTestCase):
             self.assertIn("no-referrer", hdr["referrer-policy"])
             st, _, _ = await http("GET", f"{r.http}/join/NOTANID")
             self.assertEqual(st, 404)
+
+
+def page_js(a, b):
+    src = open(PAGE, encoding="utf-8").read()
+    return src[src.index(a):src.index(b)]
+
+
+@unittest.skipUnless(shutil.which("node"), "node not installed")
+class JoinPageSaysWhatsHappening(unittest.IsolatedAsyncioTestCase):
+    """The friend's side (owner 5 Nov): reaching the host, the host answering, logging in, and the one fix when it's
+    stuck. The page's own probe (the game's first login message for LEYLINECHECK over the relay's WebSocket) runs in
+    node against a real relay and agent: a realm that answers, and one that doesn't (4502)."""
+
+    PROBE = "  const PROBE_ACCOUNT", "  window.__wuExplain"
+
+    async def run_probe(self, url):
+        js = page_js(*self.PROBE) + "probe(process.argv[1], 6000).then((r) => console.log(JSON.stringify(r)));"
+        p = await asyncio.create_subprocess_exec("node", "-e", js, url, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        out, err = await asyncio.wait_for(p.communicate(), 30)
+        self.assertEqual(p.returncode, 0, err.decode())
+        return json.loads(out.decode())
+
+    async def test_the_probe_sees_a_realm_answer_and_one_that_doesnt(self):
+        async with Rig() as r:
+            got = await self.run_probe(f"{r.base}/r/{r.rid}/ws/3724")
+            self.assertTrue(got["ok"], got)
+            self.assertIn(("unknown_account", "LEYLINECHECK"), r.realm.events)
+            self.assertEqual(r.relay.metrics["auth_failed"], 0, "never a wrong password")
+            await r.realm.stop()
+            got = await self.run_probe(f"{r.base}/r/{r.rid}/ws/3724")
+            self.assertFalse(got["ok"], got)
+            self.assertEqual((got["why"], got.get("code")), ("silent", 4502), got)
+
+    def test_every_way_it_stops_has_a_fix(self):
+        js = page_js("  const PROBE_ACCOUNT", "  window.__wuExplain") + """
+const out = {};
+for (const [k, s, e] of [["relay"], ["unknown"], ["offline"], ["knock", 403, "this invite link is not valid (the host may have made a new one)"],
+    ["knock", 429, "slow down"], ["silent"], ["busy", 4000, "realm is full"]]) out[k + (s || "")] = explain(k, s, e);
+out.hello = Array.from(hello("leylinecheck"));
+console.log(JSON.stringify(out));"""
+        res = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=30)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        out = json.loads(res.stdout)
+        hello = out.pop("hello")
+        for k, x in out.items():
+            self.assertTrue(x["line"] and x["fix"], k)
+            self.assertIn(x["step"], ("reach", "answer"), k)
+        self.assertIn("new link", out["knock403"]["fix"])
+        self.assertIn("open Leyline", out["offline"]["fix"])
+        self.assertEqual(out["silent"]["step"], "answer")
+        from test_ready_probe import hello as py_hello
+        self.assertEqual(bytes(hello), py_hello("LEYLINECHECK"), "the same bytes as the launcher's check")
+
+    def test_the_steps_card_and_the_dens_login(self):
+        src = open(PAGE, encoding="utf-8").read()
+        for id_ in ("steps-card", "st-reach", "st-answer", "st-login", "retry", "den-login"):
+            self.assertIn(f'id="{id_}"', src)
+        self.assertIn("again = setTimeout(start, 20000)", src, "an offline host is asked again by itself")
+        self.assertRegex(src, r"const denLogin = \(frag\[2\]")
+        import re
+        banned = re.compile(r"(?i)world\s+of\s+warcraft|\bwow\b|warcraft|lich\s+king|blizzard")
+        visible = re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", src, flags=re.S)
+        self.assertFalse(banned.search(visible))
 
 
 if __name__ == "__main__":

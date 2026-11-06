@@ -874,6 +874,7 @@ pub fn begin(app_dir: &Path, game: Option<PathBuf>, update: bool) -> Result<Stri
             Instant::now(),
         ));
     }
+    let msg = if steps.contains(&Step::Download) { "Getting the engine…" } else { "Starting Single player…" };
     std::thread::spawn(move || {
         let r = run(&p, game.as_deref(), &steps);
         setup_log(&p, &match &r {
@@ -896,7 +897,7 @@ pub fn begin(app_dir: &Path, game: Option<PathBuf>, update: bool) -> Result<Stri
             }
         });
     });
-    Ok(if steps.contains(&Step::Download) { "Getting the engine…".into() } else { "Starting Single player…".into() })
+    Ok(msg.into())
 }
 
 fn setup_log(p: &Paths, line: &str) {

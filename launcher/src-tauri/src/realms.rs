@@ -449,6 +449,7 @@ pub fn parse_community_in(v: &Value, all: bool) -> Vec<Realm> {
                 group: String::new(),
                 report_url: Some(format!("{REPORT_BASE}{rid}")),
                 temporary: false,
+                combos: String::new(),
                 mods: parse_mods(r.get("mods")),
                 loadout: parse_loadout(r.get("loadout"), &s(r, "name", 32)),
                 mode: crate::host::modes::from_listing(r.get("mode")),

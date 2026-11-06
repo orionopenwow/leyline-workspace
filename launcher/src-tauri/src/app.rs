@@ -271,6 +271,13 @@ fn point_and_play_with(
         if let Err(e) = r {
             ground_note = format!(" (Your Den's ground: {e})");
         }
+        // The official realm's race and class choices (crate::combos, docs/RACE-CLASS-COMBOS.md): the create screen's
+        // tables from the player's own files, in patch-Y, before PLAY there; taken away before anywhere else. Never
+        // stops the start either.
+        let preset = if crate::addresses::is_official_realm(&realm) { crate::combos::official_preset(&core.dir) } else { crate::combos::Preset::Off };
+        if let Err(e) = crate::combos::prepare_client(&profile.path, preset) {
+            ground_note.push_str(&format!(" (The realm's race and class choices: {e})"));
+        }
     }
     let plan = launch::plan(&profile, &wine, launch::Os::current())?;
     let child = launch::run(&plan).inspect_err(|_| {

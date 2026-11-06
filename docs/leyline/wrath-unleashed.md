@@ -20,6 +20,7 @@ Everything that is different on Wrath Unleashed, in one place. In the game, the 
 - A new character picks how to begin: play from level 1 (riding and your race's mount included), or boost to 80 with your spec's gear, two professions and a start in Dalaran.
 - Closed the window? It comes back at your next login at level 1, and .boost opens it any time below level 10.
 - Death Knights are open from your first character.
+- More race and class pairs than the original game: every pair the game has today, such as a Human Hunter, a Tauren Paladin, a Dwarf Shaman or a Gnome Priest. Each starts in its race's own lands with its class's gear. In your own game, PLAY from the Leyline launcher to see them on the create screen.
 - Spells are learned for you as you level, and weapon and defense skills stay at their best.
 
 | Command | What it does |

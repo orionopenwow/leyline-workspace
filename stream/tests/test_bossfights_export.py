@@ -175,7 +175,13 @@ class InStep(unittest.TestCase):
 
     def test_bosses_match_the_module(self):
         h = open(os.path.join(MOD, "src", "BossfightsLogic.h"), encoding="utf-8").read()
-        self.assertEqual(tuple(re.findall(r'\{ "([a-z0-9-]+)", "', h)), ex.BOSSES)
+        # The official realm offers the module's featured fight only (the first; the rest are Boss Rush's, offered
+        # with LeylineBossfight.AllFights on the player's own PC: docs/BOSS-RUSH.md). The boards and ov_go.lua list
+        # what the official realm offers.
+        keys = tuple(re.findall(r'\{ "([a-z0-9-]+)", "', h))
+        self.assertEqual(keys[:len(ex.BOSSES)], ex.BOSSES)
+        self.assertEqual(ex.BOSSES, ("frozen-throne",))
+        self.assertEqual(len(set(keys)), len(keys))
         go = open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_go.lua"), encoding="utf-8").read()
         self.assertEqual(set(re.findall(r'\["([a-z0-9-]+)"\] = "', go.split("local BOSSFIGHTS = ")[1].split("\n")[0])), set(ex.BOSSES))
 

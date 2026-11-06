@@ -25,6 +25,7 @@ namespace LeylineBFCore
     bool RunAllHeroes(ObjectGuid guid);        // in a run whose real players are all heroes
     bool InstanceUsed(std::uint32_t instanceId);  // an instance a run already used (a hero needs a fresh one)
     bool Enabled();
+    bool AllFights();                          // LeylineBossfight.AllFights: Boss Rush's whole catalog is offered
     void UnbindBossMaps(Player* p);            // now: only when the player isn't on a boss map's grid
     void Say(Player* p, std::string const& text);
     void Addon(Player* p, std::string const& payload);   // an LYBF message to the player's own panel
@@ -45,7 +46,7 @@ namespace LeylineBFHeroes
     bool HopFirst(Player* p, LeylineBF::JoinArgs const& a);
     // Move a hero of a starting run into the run's instance (it waits in an instance of its own): a far teleport
     // within the map, its own bind dropped so it lands with its leader.
-    void HopInto(Player* p, float x, float y, float z, float o);
+    void HopInto(Player* p, std::uint32_t mapId, float x, float y, float z, float o);
     void OnLoadFromDB(Player* p);
     void OnLogin(Player* p);
     void OnLogout(Player* p);

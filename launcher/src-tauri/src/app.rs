@@ -1849,6 +1849,287 @@ fn engine_play(core: State<Core>, client: String) -> Result<EnginePlay, String> 
     Ok(EnginePlay { message, account: st.account, password: st.password })
 }
 
+// ---- Boss Rush (host/bossrush.rs, docs/BOSS-RUSH.md; ui/bossrush.js): the exact engine (the Built-in engine's
+// Boss Rush install, the real fights) or the light one (Den Lite's own recreation at the real spot).
+
+fn bossrush_paths() -> crate::host::engine::Paths {
+    crate::host::engine::Paths::for_kind(&settings::app_dir(), crate::host::engine::Kind::BossRush)
+}
+
+fn bossrush_dir() -> PathBuf {
+    settings::app_dir().join("bossrush")
+}
+
+#[derive(Serialize)]
+struct BossRushFight {
+    key: &'static str,
+    title: &'static str,
+    raid: &'static str,
+    map: u32,
+    heroic: bool,
+    light: bool,
+    blurb: &'static str,
+}
+
+#[derive(Serialize)]
+struct BossRushClass {
+    word: &'static str,
+    label: &'static str,
+    specs: Vec<(&'static str, &'static str, &'static str)>,
+}
+
+#[derive(Serialize)]
+struct BossRushCatalog {
+    fights: Vec<BossRushFight>,
+    classes: Vec<BossRushClass>,
+    maps: Vec<u32>,
+    exact: crate::host::engine::EngineStatus,
+    light: bool,
+}
+
+/// The tile's catalog, the exact engine's state and whether the light one can run here.
+#[tauri::command]
+async fn bossrush_catalog() -> Result<BossRushCatalog, String> {
+    use crate::host::bossrush as br;
+    use crate::host::lite::DenLite;
+    blocking(|| {
+        Ok(BossRushCatalog {
+            fights: br::FIGHTS.iter().map(|f| BossRushFight { key: f.key, title: f.title, raid: f.raid, map: f.map, heroic: f.heroic, light: f.light, blurb: f.blurb }).collect(),
+            classes: br::CLASSES.iter().map(|c| BossRushClass { word: c.0, label: c.1, specs: c.2.to_vec() }).collect(),
+            maps: br::maps(),
+            exact: crate::host::engine::status(&bossrush_paths()),
+            light: {
+                let l = crate::host::lite::Binary::find(&settings::app_dir());
+                l.available() || crate::host::lite::asset().is_some()
+            },
+        })
+    })
+    .await
+}
+
+/// Set the exact engine up for Boss Rush (whatever isn't done: the engine, the raid maps from this game folder, the
+/// database, the login) and start it.
+#[tauri::command]
+fn bossrush_setup(core: State<Core>, client: String) -> Result<String, String> {
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err("Boss Rush plays with a different game folder: pick one of its version.".into());
+    }
+    crate::host::engine::begin_kind(&settings::app_dir(), crate::host::engine::Kind::BossRush, Some(profile.path), false)
+}
+
+#[tauri::command]
+fn bossrush_start() -> Result<String, String> {
+    crate::host::engine::begin_kind(&settings::app_dir(), crate::host::engine::Kind::BossRush, None, false)
+}
+
+#[tauri::command]
+async fn bossrush_stop() -> Result<String, String> {
+    blocking(|| crate::host::engine::stop(&bossrush_paths())).await
+}
+
+#[tauri::command]
+async fn bossrush_logs(lines: Option<usize>) -> Result<String, String> {
+    blocking(move || Ok(crate::host::engine::logs(&bossrush_paths(), lines.unwrap_or(200).clamp(20, 2000)))).await
+}
+
+#[derive(Serialize)]
+struct BossRushPlay {
+    message: String,
+    engine: String,
+    hero: String,
+    made: bool,
+    /// Signed in by itself (our login screen code), else the login to type.
+    auto: bool,
+    account: String,
+    password: String,
+    code: String,
+}
+
+/// The fight picked on the tile, readied and played. Exact: the hero account's login set (once), the module asked
+/// for the hero and the fight (`bossfight hero go`), then the game started signed in to the hero account, whose
+/// login lands on the fight's platform. Light: the fight written for Den Lite (`<dens>/bossrush.json`), then Your
+/// Den's own one-click start (the page calls den_play_lite after this).
+#[tauri::command]
+async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, diff: String, class: String, spec: String, engine: String) -> Result<BossRushPlay, String> {
+    use crate::host::{bossrush as br, engine as eng};
+    let pick = br::check(&fight, &diff, &class, &spec, &engine)?;
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err("Boss Rush plays with a different game folder: pick one of its version.".into());
+    }
+    let code = br::share_code(&pick);
+    if pick.engine == br::Engine::Light {
+        let p = pick.clone();
+        blocking(move || {
+            use crate::host::lite::DenLite;
+            let dens = crate::host::lite::Binary::find(&settings::app_dir()).den_dir();
+            std::fs::create_dir_all(&dens).map_err(|e| e.to_string())?;
+            let id = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
+            let doc = serde_json::json!({ "fight": p.fight, "diff": p.diff(), "class": p.class, "spec": p.spec, "id": id });
+            settings::write_atomic(&dens.join("bossrush.json"), doc.to_string().as_bytes()).map_err(|e| e.to_string())
+        })
+        .await?;
+        return Ok(BossRushPlay { message: "Your fight is ready: Den Lite opens it.".into(), engine: "light".into(), hero: String::new(), made: false, auto: true, account: String::new(), password: String::new(), code });
+    }
+    let p = bossrush_paths();
+    let st = eng::status(&p);
+    if !st.set_up {
+        return Err("Set Boss Rush up first: press Set up on its page.".into());
+    }
+    if !st.running {
+        return Err("Boss Rush isn't running: press Start first.".into());
+    }
+    let pk = pick.clone();
+    let (reply, hero_acc, pass) = blocking(move || {
+        let p = bossrush_paths();
+        let main = eng::load_state(&p).account;
+        let hero_acc = br::hero_account(&main);
+        let pass = eng::hero_password(&p)?;
+        let [create, set] = br::account_lines(&hero_acc, &pass)?;
+        let _ = eng::console(&p, &create); // there already: fine
+        eng::console(&p, &set).map_err(|e| format!("Boss Rush's realm didn't take the hero's login ({e}). Is it still starting? Try again in a minute."))?;
+        let text = eng::console(&p, &br::go_line(&main, &pk)).map_err(|e| {
+            if e.to_ascii_lowercase().contains("no such command") {
+                "Boss Rush's engine doesn't have boss fights yet: update the engine on this page.".to_string()
+            } else {
+                format!("Boss Rush's realm didn't answer ({e}).")
+            }
+        })?;
+        Ok((br::parse_reply(&text), hero_acc, pass))
+    })
+    .await?;
+    let (hero, made) = match reply {
+        br::HeroReply::Ok { name, made, .. } => (name, made),
+        br::HeroReply::No(why) => return Err(format!("The fight couldn't start: {why}.")),
+        br::HeroReply::Nothing => return Err("Boss Rush's realm gave no answer. Try again in a moment.".into()),
+    };
+    let realm = eng::Kind::BossRush.realm_name();
+    let _ = crate::herokey::set_login(&profile.path, &hero_acc, Some(realm));
+    let refused = crate::hybrid::refused_marker(&profile.path).exists();
+    let session = if refused { None } else { Some(crate::hybrid::Session { user: hero_acc.clone(), pass: pass.clone(), realm: Some(realm.into()), enter: true }) };
+    let (message, hybrid) = point_and_play_with(&core, &client, eng::REALM, true, session, true)?;
+    let auto = hybrid.is_ok();
+    Ok(BossRushPlay { message, engine: "exact".into(), hero, made, auto, account: if auto { String::new() } else { hero_acc }, password: if auto { String::new() } else { pass }, code })
+}
+
+#[derive(Serialize)]
+struct BossRushBoard {
+    bests: Vec<BossRushRun>,
+    recent: Vec<BossRushRun>,
+}
+
+#[derive(Serialize)]
+struct BossRushRun {
+    fight: String,
+    title: String,
+    difficulty: String,
+    engine: String,
+    class: String,
+    spec: String,
+    ms: u64,
+    clock: String,
+    cleared: bool,
+    at: u64,
+    new_best: bool,
+}
+
+fn board_view(runs: &[crate::host::bossrush::Run]) -> BossRushBoard {
+    use crate::host::bossrush as br;
+    let view = |r: &br::Run, new_best: bool| BossRushRun {
+        fight: r.fight.clone(),
+        title: br::fight(&r.fight).map(|f| f.title).unwrap_or("").into(),
+        difficulty: if r.heroic { "heroic" } else { "normal" }.into(),
+        engine: r.engine.word().into(),
+        class: r.class.clone(),
+        spec: r.spec.clone(),
+        ms: r.ms,
+        clock: br::clock(r.ms),
+        cleared: r.cleared,
+        at: r.at,
+        new_best,
+    };
+    let bests = br::bests(runs).iter().map(|r| view(r, false)).collect();
+    let recent = runs.iter().rev().take(10).map(|r| view(r, br::is_new_best(runs, r))).collect();
+    BossRushBoard { bests, recent }
+}
+
+/// The local board (best times, the last runs): the exact engine's new attempts read from its own record first
+/// (the module's leyline_bossfight_runs), when it is running.
+#[tauri::command]
+async fn bossrush_board() -> Result<BossRushBoard, String> {
+    use crate::host::bossrush as br;
+    blocking(|| {
+        let dir = bossrush_dir();
+        let file = dir.join("board.tsv");
+        let last_file = dir.join("exact-last-id");
+        let mut text = std::fs::read_to_string(&file).unwrap_or_default();
+        // the light version's runs: Den Lite appends board lines to <dens>/bossrush-results.tsv (labs/den-lite
+        // bossrush.rs RESULTS); the lines already taken are counted in light-taken
+        {
+            use crate::host::lite::DenLite;
+            let dens = crate::host::lite::Binary::find(&settings::app_dir()).den_dir();
+            let light = std::fs::read_to_string(dens.join("bossrush-results.tsv")).unwrap_or_default();
+            let taken_file = dir.join("light-taken");
+            let taken: usize = std::fs::read_to_string(&taken_file).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0);
+            let lines: Vec<&str> = light.lines().collect();
+            let taken = if taken > lines.len() { 0 } else { taken };   // the file was started again
+            if lines.len() > taken {
+                for r in br::read_board(&lines[taken..].join("\n")).into_iter().filter(|r| r.engine == br::Engine::Light) {
+                    text = br::add_run(&text, &r);
+                }
+                let _ = std::fs::create_dir_all(&dir);
+                let _ = settings::write_atomic(&file, text.as_bytes());
+                let _ = settings::write_atomic(&taken_file, lines.len().to_string().as_bytes());
+            }
+        }
+        let p = bossrush_paths();
+        if crate::host::engine::status(&p).running {
+            let after: u64 = std::fs::read_to_string(&last_file).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0);
+            if let Ok(rows) = crate::host::engine::query(&p, "acore_characters", &br::runs_sql(after)) {
+                let new = br::parse_db_runs(&rows);
+                if let Some(last) = new.last().map(|x| x.0) {
+                    for (_, r) in &new {
+                        text = br::add_run(&text, r);
+                    }
+                    let _ = std::fs::create_dir_all(&dir);
+                    let _ = settings::write_atomic(&file, text.as_bytes());
+                    let _ = settings::write_atomic(&last_file, last.to_string().as_bytes());
+                }
+            }
+        }
+        Ok(board_view(&br::read_board(&text)))
+    })
+    .await
+}
+
+/// A run the light engine finished (Den Lite writes it into the Dens folder; the page passes it on), kept on the
+/// board: whether it is a new best.
+#[tauri::command]
+async fn bossrush_record(fight: String, diff: String, class: String, spec: String, ms: u64, cleared: bool) -> Result<bool, String> {
+    use crate::host::bossrush as br;
+    blocking(move || {
+        let p = br::check(&fight, &diff, &class, &spec, "light")?;
+        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let r = br::Run { fight: p.fight, heroic: p.heroic, engine: br::Engine::Light, class: p.class, spec: p.spec, ms: ms.min(24 * 3_600_000), cleared, at };
+        let dir = bossrush_dir();
+        let file = dir.join("board.tsv");
+        let text = std::fs::read_to_string(&file).unwrap_or_default();
+        let best = br::is_new_best(&br::read_board(&text), &r);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        settings::write_atomic(&file, br::add_run(&text, &r).as_bytes()).map_err(|e| e.to_string())?;
+        Ok(best)
+    })
+    .await
+}
+
+/// A fight code a friend shared, read back as a pick (nothing in it runs).
+#[tauri::command]
+fn bossrush_code(code: String) -> Result<serde_json::Value, String> {
+    let p = crate::host::bossrush::read_code(&code)?;
+    Ok(serde_json::json!({ "fight": p.fight, "diff": p.diff(), "class": p.class, "spec": p.spec, "engine": p.engine.word() }))
+}
+
 /// Forge, the Den's terrain editor (host/forge.rs): installed or not, open or not, and what its last close did.
 #[tauri::command]
 fn forge_state() -> crate::host::forge::ForgeState {
@@ -2686,6 +2967,15 @@ pub fn run() {
             engine_backup,
             engine_update_check,
             engine_play,
+            bossrush_catalog, // Boss Rush (host/bossrush.rs, ui/bossrush.js)
+            bossrush_setup,
+            bossrush_start,
+            bossrush_stop,
+            bossrush_logs,
+            bossrush_play,
+            bossrush_board,
+            bossrush_record,
+            bossrush_code,
             forge_state, // Forge, the Den's terrain editor (host/forge.rs, ui/den.js "Open in Forge")
             forge_install,
             forge_open,

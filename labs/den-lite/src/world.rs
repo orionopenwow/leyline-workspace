@@ -30,6 +30,9 @@ use wow_world_messages::{DateTime, Guid};
 /// The sandbox combat and the class picker (sandbox.rs: a child module, so these hooks stay small).
 #[path = "sandbox.rs"]
 mod sandbox;
+/// Boss Rush's light version in the world (bossrush_world.rs: a child module, so these hooks stay small).
+#[path = "bossrush_world.rs"]
+mod bossrush_world;
 /// Jaina's brain in the world (jaina_world.rs: a child module, so these hooks stay small; owner 4 Nov).
 #[path = "jaina_world.rs"]
 mod jaina_world;
@@ -2197,8 +2200,13 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             }
             Ok(())
         }
+        // Boss Rush, the light version (bossrush.rs, bossrush_world.rs): the host's fight at a raid's real spot
+        (".den", "bossrush") | (".den", "br") | (".bossrush", _) if sess.me.host => {
+            let from = if w(0) == ".bossrush" { 1 } else { 2 };
+            bossrush_world::cmd(c, shared, sess, p, &words[from.min(words.len())..])
+        }
         (".den", "invite") | (".den", "forge") => ask_launcher(c, shared, w(1)),
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class, .den gear, .den mounts, .den go, .den here, .den places, .den tourney."),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class, .den gear, .den mounts, .den go, .den here, .den places, .den tourney, .den bossrush."),
         // Another server's commands (GM addons send ".server info", ".account onlinelist" on login): not said
         // aloud, and nothing to answer in a Den.
         (w0, _) if w0.starts_with('.') => Ok(()),
@@ -2380,6 +2388,9 @@ fn companion_create(at: At) -> SMSG_UPDATE_OBJECT {
 
 /// CMSG_CREATURE_QUERY: her name (what the client shows over her), "<Your companion>" under it, humanoid, her model.
 fn creature_answer(entry: u32) -> SMSG_CREATURE_QUERY_RESPONSE {
+    if let Some(a) = bossrush_world::answer(entry) {
+        return a;
+    }
     if let Some(a) = crate::farsight::creature(entry) {
         return a;
     }
@@ -3296,6 +3307,7 @@ pub fn dojo_step(shared: &Shared) {
 
 fn dojo_tick(shared: &Shared) -> io::Result<()> {
     sandbox::tick(shared);
+    bossrush_world::tick(shared);
     let _ = flight_tick(shared);
     let _ = tale_tick(shared);
     if shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job.is_none() {

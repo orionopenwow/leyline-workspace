@@ -226,7 +226,9 @@ jobs:
                   mods[p[0]] = p[3]
           doc = {"name": "leyline-engine", "version": sys.argv[2], "layout": int(os.environ["PKG_LAYOUT"]), "core": core,
                  "modules": mods, "mysql": os.environ["MYSQL_VERSION"], "boost": os.environ["BOOST_VERSION"], "lua": "lua52",
-                 "built_from": os.environ["GITHUB_SHA"]}
+                 "built_from": os.environ["GITHUB_SHA"],
+                 # map_extractor takes -m <map ids> (realm/custom/patches/core.patch): Boss Rush reads only its raid maps
+                 "map_filter": 1}
           json.dump(doc, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
           EOF
           cat "$pkg/engine.json"

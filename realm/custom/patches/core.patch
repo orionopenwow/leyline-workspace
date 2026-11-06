@@ -1,0 +1,85 @@
+diff --git a/src/tools/map_extractor/System.cpp b/src/tools/map_extractor/System.cpp
+index 635f55b..809e103 100644
+--- a/src/tools/map_extractor/System.cpp
++++ b/src/tools/map_extractor/System.cpp
+@@ -88,6 +88,23 @@ enum Extract
+ 
+ // Select data for extract
+ int   CONF_extract = EXTRACT_MAP | EXTRACT_DBC | EXTRACT_CAMERA;
++// Leyline (realm/custom/patches/core.patch, docs/BOSS-RUSH.md): "-m 631,724,..." reads only these maps, plus the
++// few tiles of the continents that the world server checks at start (World.cpp: the starting areas), so a realm
++// that only ever plays a handful of instances needs a small part of the full extraction.
++std::set<uint32> CONF_only_maps;
++bool OnlyMapsTile(uint32 mapId, uint32 gx, uint32 gy)
++{
++    static float const startTiles[][3] = {
++        { 0, -6240.32f, 331.033f }, { 0, -8949.95f, -132.493f }, { 1, -618.518f, -4251.67f }, { 0, 1676.35f, 1677.45f },
++        { 1, 10311.3f, 832.463f }, { 1, -2917.58f, -257.98f }, { 530, 10349.6f, -6357.29f }, { 530, -3961.64f, -13931.2f } };
++    for (auto const& t : startTiles)
++    {
++        int tx = int(32.0f - t[1] / 533.33333f), ty = int(32.0f - t[2] / 533.33333f);
++        if (uint32(t[0]) == mapId && uint32(tx < 0 ? 0 : tx) == gx && uint32(ty < 0 ? 0 : ty) == gy)
++            return true;
++    }
++    return false;
++}
+ // This option allow limit minimum height to some value (Allow save some memory)
+ bool  CONF_allow_height_limit = true;
+ float CONF_use_minHeight = -500.0f;
+@@ -162,6 +179,7 @@ void Usage(char* prg)
+         "-o set output path\n"\
+         "-e extract only MAP(1)/DBC(2)/Camera(4) - standard: all(7)\n"\
+         "-f height stored as int (less map size but lost some accuracy) 1 by default\n"\
++        "-m only these maps (comma separated ids) and the start-area tiles the world server checks\n"\
+         "Example: %s -f 0 -i \"c:\\games\\game\"", prg, prg);
+     exit(1);
+ }
+@@ -214,6 +232,29 @@ void HandleArgs(int argc, char* arg[])
+                     Usage(arg[0]);
+                 }
+                 break;
++            case 'm':
++                if (c + 1 < argc)
++                {
++                    std::string list = arg[(c++) + 1];
++                    std::size_t at = 0;
++                    while (at <= list.size())
++                    {
++                        std::size_t comma = list.find(',', at);
++                        std::string one = list.substr(at, comma == std::string::npos ? std::string::npos : comma - at);
++                        if (!one.empty())
++                            CONF_only_maps.insert(uint32(atoi(one.c_str())));
++                        if (comma == std::string::npos)
++                            break;
++                        at = comma + 1;
++                    }
++                    if (CONF_only_maps.empty())
++                        Usage(arg[0]);
++                }
++                else
++                {
++                    Usage(arg[0]);
++                }
++                break;
+             case 'e':
+                 if (c + 1 < argc)                           // all ok
+                 {
+@@ -992,6 +1033,9 @@ void ExtractMapsFromMpq(uint32 build)
+     printf("Convert map files\n");
+     for (uint32 z = 0; z < map_count; ++z)
+     {
++        bool wholeMap = CONF_only_maps.empty() || CONF_only_maps.count(map_ids[z].id);
++        if (!wholeMap && map_ids[z].id != 0 && map_ids[z].id != 1 && map_ids[z].id != 530)
++            continue;
+         printf("Extract %s (%d/%u)                  \n", map_ids[z].name, z + 1, map_count);
+         // Loadup map grid data
+         mpqMapName = Acore::StringFormat(R"(World\Maps\{}\{}.wdt)", map_ids[z].name, map_ids[z].name);
+@@ -1008,6 +1052,8 @@ void ExtractMapsFromMpq(uint32 build)
+             {
+                 if (!wdt.main->adt_list[y][x].exist)
+                     continue;
++                if (!wholeMap && !OnlyMapsTile(map_ids[z].id, y, x))
++                    continue;
+                 mpqFileName = Acore::StringFormat(R"(World\Maps\{}\{}_{}_{}.adt)", map_ids[z].name, map_ids[z].name, x, y);
+                 outputFileName = Acore::StringFormat("{}/maps/{:03}{:02}{:02}.map", output_path, map_ids[z].id, y, x);
+                 ConvertADT(mpqFileName, outputFileName, y, x, build);

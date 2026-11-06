@@ -131,6 +131,28 @@ namespace
 
     BossDef const& Featured() { return Bosses().front(); }
 
+    // Where a hero account's heroes wait: the fight of its waiting go, else its last one, else the featured fight
+    // (Boss Rush, docs/BOSS-RUSH.md: each fight has its own platform on its own map).
+    BossDef const& HomeOf(std::uint32_t heroAccount)
+    {
+        auto it = g_accounts.find(heroAccount);
+        if (it != g_accounts.end())
+            for (std::string const& go : { it->second.pendingGo, it->second.lastGo })
+            {
+                if (go.empty())
+                    continue;
+                JoinArgs a = ParseHeroGo(go);
+                if (a.error.empty() && a.boss)
+                    return *a.boss;
+            }
+        return Featured();
+    }
+
+    BossDef const& HomeOfPlayer(Player* p)
+    {
+        return p && p->GetSession() ? HomeOf(p->GetSession()->GetAccountId()) : Featured();
+    }
+
     std::string Esc(std::string s)
     {
         CharacterDatabase.EscapeString(s);
@@ -632,13 +654,13 @@ namespace
         if (p->getPowerType() == POWER_MANA)
             p->SetPower(POWER_MANA, p->GetMaxPower(POWER_MANA));
 
-        BossDef const& b = Featured();
+        BossDef const& b = HomeOf(l.hero);
         std::uint32_t guid = p->GetGUID().GetCounter();
         CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
         p->SaveToDB(trans, true, false);
         trans->Append("UPDATE characters SET map = {}, position_x = {}, position_y = {}, position_z = {}, orientation = {}, "
             "zone = {}, instance_id = 0, instance_mode_mask = 0, cinematic = 1, at_login = 0 WHERE guid = {}",
-            b.mapId, b.x, b.y, b.z, b.o, HERO_ZONE, guid);
+            b.mapId, b.x, b.y, b.z, b.o, b.zone, guid);
         for (Button const& btn : bars2)
         {
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHAR_ACTION);
@@ -683,7 +705,7 @@ namespace
 
     // An offline hero: out of any group left over (a stale raid would change its difficulty at login and send it to
     // its homebind), unbound, and saved on the platform at the waiting go's difficulty.
-    void PrepareOffline(std::uint32_t guidLow, int diff)
+    void PrepareOffline(std::uint32_t guidLow, int diff, BossDef const& b)
     {
         ObjectGuid g = ObjectGuid::Create<HighGuid::Player>(guidLow);
         if (ObjectGuid groupGuid = sCharacterCache->GetCharacterGroupGuidByGuid(g))
@@ -691,10 +713,9 @@ namespace
                 if (group->IsMember(g))
                     group->RemoveMember(g);
         UnbindOffline(guidLow);
-        BossDef const& b = Featured();
         CharacterDatabase.Execute("UPDATE characters SET map = {}, position_x = {}, position_y = {}, position_z = {}, orientation = {}, "
             "zone = {}, instance_id = 0, instance_mode_mask = {} WHERE guid = {} AND online = 0",
-            b.mapId, b.x, b.y, b.z, b.o, HERO_ZONE, InstanceModeMask(diff), guidLow);
+            b.mapId, b.x, b.y, b.z, b.o, b.zone, InstanceModeMask(diff), guidLow);
     }
 
     void QueueJoin(ObjectGuid guid, JoinArgs const& a, std::uint64_t delayMs, std::uint64_t waitMs)
@@ -922,7 +943,7 @@ namespace
                 h->SendSysMessage(ReplyHeroNo("hero go needs a boss, a difficulty and a mode"));
                 return true;
             }
-            a = ParseJoin(w[2], w[3], w[4]);
+            a = ParseJoin(w[2], w[3], w[4], LeylineBFCore::AllFights());
             if (!a.error.empty())
             {
                 h->SendSysMessage(ReplyHeroNo(a.error));
@@ -956,7 +977,7 @@ namespace
                 QueueJoin(online->GetGUID(), a, 500, 60000);
             }
             else if (!online)
-                PrepareOffline(m.guid, a.diff);
+                PrepareOffline(m.guid, a.diff, *a.boss);
         }
         SaveAccount(l.hero);
         h->SendSysMessage(OkLine(l, m, made));
@@ -1002,7 +1023,7 @@ namespace
             }
             g_accounts[l.hero].current = m.guid;
             SaveAccount(l.hero);
-            PrepareOffline(m.guid, DIFF_NORMAL);
+            PrepareOffline(m.guid, DIFF_NORMAL, HomeOf(l.hero));
             Line(h, (made ? "Made " : "You already have ") + m.name + ", level 80 and ready. " +
                 (hero ? "Log out to the character list to play it." :
                         "Play it from the website's Boss fights page (Fight now), which signs in to your hero account."), false);
@@ -1086,7 +1107,7 @@ namespace
         {
             if (!player || !LeylineBFHeroes::IsHeroPlayer(player) || OnBossMap(mapid) || Exempt(player))
                 return true;
-            Say(player, "Heroes stay at The Frozen Throne. Log out to the character list to leave.");
+            Say(player, "Heroes stay at their boss fight. Log out to the character list to leave.");
             return false;
         }
 
@@ -1231,7 +1252,7 @@ namespace LeylineBFHeroes
     {
         if (!p)
             return;
-        BossDef const& b = Featured();
+        BossDef const& b = HomeOfPlayer(p);
         if (p->isDead())
         {
             p->ResurrectPlayer(1.0f);
@@ -1240,13 +1261,12 @@ namespace LeylineBFHeroes
         if (p->GetMapId() == b.mapId)
             p->NearTeleportTo(b.x, b.y, b.z, b.o);
         else
-            HopInto(p, b.x, b.y, b.z, b.o);
+            HopInto(p, b.mapId, b.x, b.y, b.z, b.o);
     }
 
-    void HopInto(Player* p, float x, float y, float z, float o)
+    void HopInto(Player* p, std::uint32_t mapId, float x, float y, float z, float o)
     {
-        BossDef const& b = Featured();
-        if (!p->TeleportTo(b.mapId, x, y, z, o, TELE_TO_GM_MODE, nullptr, true))
+        if (!p->TeleportTo(mapId, x, y, z, o, TELE_TO_GM_MODE, nullptr, true))
             return;
         // TeleportTo has taken the player off the old instance's grid: its own bind can go now, so the new map is the
         // leader's instance (a grouped player) or a fresh one. If the teleport was delayed, the tick does it.
@@ -1271,7 +1291,7 @@ namespace LeylineBFHeroes
                 g->SetRaidDifficulty(want);
         p->SetRaidDifficulty(want);
         Say(p, "Getting a fresh raid ready...");
-        HopInto(p, a.boss->x, a.boss->y, a.boss->z, a.boss->o);
+        HopInto(p, a.boss->mapId, a.boss->x, a.boss->y, a.boss->z, a.boss->o);
         QueueJoin(p->GetGUID(), a, 1500, 45000);
         return true;
     }
@@ -1280,9 +1300,12 @@ namespace LeylineBFHeroes
     {
         if (!IsHeroPlayer(p))
             return;
-        BossDef const& b = Featured();
-        if (p->GetMapId() != b.mapId)
+        BossDef const* home = &HomeOfPlayer(p);
+        if (p->GetMapId() != home->mapId)
+            home = FindBossByMap(p->GetMapId());
+        if (!home)
             return;   // somewhere else (a GM moved it): OnLogin brings it back
+        BossDef const& b = *home;
         // A raid of its own: the core lets nobody into a raid instance without one (CheckInstanceLoginValid).
         if (!p->GetGroup())
         {

@@ -344,6 +344,9 @@ fn units(shared: &Shared) -> Vec<Unit> {
     if comp.out {
         v.push(Unit { guid: companion::GUID, at: comp.pos(now_ms()), kind: Kind::Friend, level: 80 });
     }
+    drop(comp);
+    // Boss Rush's boss and adds (bossrush_world.rs)
+    v.extend(super::bossrush_world::units(shared));
     v
 }
 

@@ -181,6 +181,9 @@ pub enum Kind {
     Group,
     /// A distance marker on the range (friendly, nothing happens to it).
     Marker,
+    /// Boss Rush's light version (bossrush.rs): a raid boss or add. It dies at 0 (never refilled), its health is set
+    /// by the fight ([`Combat::set_health`]), and the fight does its swings, not this module.
+    Raid,
 }
 
 impl Kind {
@@ -190,14 +193,14 @@ impl Kind {
     /// Armour against physical damage.
     pub fn armor(self) -> u32 {
         match self {
-            Kind::Heavy | Kind::Boss => HEAVY_ARMOR,
+            Kind::Heavy | Kind::Boss | Kind::Raid => HEAVY_ARMOR,
             _ => 0,
         }
     }
     /// FactionTemplate: 7 (neutral to all: yellow, attackable), 14 (hostile: the ones that hit back), 35 (friendly).
     pub fn faction(self) -> u32 {
         match self {
-            Kind::Tank | Kind::Boss => 14,
+            Kind::Tank | Kind::Boss | Kind::Raid => 14,
             Kind::Healer | Kind::Friend | Kind::Group | Kind::Marker => 35,
             _ => 7,
         }
@@ -210,6 +213,7 @@ impl Kind {
             Kind::Group => 15_000 + 200 * level,
             Kind::Boss => 1500 * level.max(1) + 30_000,
             Kind::Friend | Kind::Marker => 100,
+            Kind::Raid => 1_000_000,
         }
     }
     /// Health when it goes up (the healing dummy starts hurt).
@@ -233,6 +237,7 @@ impl Kind {
             Kind::Heavy => "heavy",
             Kind::Group => "group",
             Kind::Marker => "range",
+            Kind::Raid => "raid",
         }
     }
     pub fn from_word(w: &str) -> Option<Kind> {
@@ -1134,6 +1139,42 @@ impl Combat {
         }
     }
 
+    /// A unit's health set from outside (Boss Rush's fight owns its boss's and adds' health).
+    pub fn set_health(&mut self, guid: u64, kind: Kind, max: u32, cur: u32) {
+        let h = self.hp.entry(guid).or_insert(Hp { max, cur, kind, last_hit: 0, swing_next: 0 });
+        (h.max, h.cur, h.kind) = (max.max(1), cur.min(max.max(1)), kind);
+    }
+
+    pub fn health_of(&self, guid: u64) -> Option<u32> {
+        self.hp.get(&guid).map(|h| h.cur)
+    }
+
+    /// A hit from Boss Rush's fight: this one can take the player to 0 (the fight then ends in a wipe).
+    pub fn raid_hit(&mut self, now: u64, dmg: u32) -> Vec<Out> {
+        self.last_hurt = now;
+        if self.god {
+            return Vec::new();
+        }
+        let dmg = (dmg as f32 * (1.0 - armor_reduction(self.mods.armor, 83).min(0.6)) * (1.0 - self.mods.avoid / 100.0)) as u32;
+        self.health = self.health.saturating_sub(dmg);
+        vec![self.me_update()]
+    }
+
+    /// Healing from Boss Rush's companions.
+    pub fn raid_heal(&mut self, amount: u32) -> Vec<Out> {
+        if self.health == 0 {
+            return Vec::new();
+        }
+        self.health = (self.health + amount).min(self.stats.health);
+        vec![self.me_update()]
+    }
+
+    /// Full again (a new pull).
+    pub fn refill_me(&mut self) -> Vec<Out> {
+        self.health = self.stats.health;
+        vec![self.me_update()]
+    }
+
     pub fn select(&mut self, guid: u64) {
         self.selection = guid;
     }
@@ -1451,7 +1492,7 @@ impl Combat {
         }
         // a training dummy never falls: refilled at a tenth (a tale counts it as brought down: taleplay.rs)
         let mut down = false;
-        if !boss && h.kind.hostile() && h.cur < h.max / 10 {
+        if !boss && h.kind != Kind::Raid && h.kind.hostile() && h.cur < h.max / 10 {
             h.cur = h.max;
             down = true;
         }
@@ -1962,7 +2003,7 @@ impl Combat {
                     out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(u.guid, &[(field::HEALTH, x.cur)])));
                 }
             }
-            let hits_back = u.kind == Kind::Tank || (self.fight && u.kind.hostile() && u.kind != Kind::Boss);
+            let hits_back = u.kind == Kind::Tank || (self.fight && u.kind.hostile() && u.kind != Kind::Boss && u.kind != Kind::Raid);
             if hits_back && h.cur > 0 && h.last_hit > 0 && now < h.last_hit + 10_000 && h.swing_next > 0 && now >= h.swing_next && dist(me, u.at) <= MELEE + 2.0 {
                 if let Some(x) = self.hp.get_mut(&u.guid) {
                     x.swing_next = now + HIT_BACK_MS;
@@ -2320,6 +2361,7 @@ pub fn dummy_name(k: Kind) -> &'static str {
         Kind::Heavy => "Raider's Training Dummy",
         Kind::Group => "Wounded Friend",
         Kind::Marker => "Range Marker",
+        Kind::Raid => "Raid Boss",
     }
 }
 

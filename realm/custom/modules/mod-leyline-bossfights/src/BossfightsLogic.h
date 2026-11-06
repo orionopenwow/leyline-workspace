@@ -3,7 +3,7 @@
  * with a plain g++. Everything here works on plain numbers and strings: the bosses table, argument parsing, the
  * bot seat plan, the lobby decision, the roster text and the LYBF addon messages (docs/BOSS-FIGHTS.md).
  *
- * Player-facing words: the featured fight is "The Frozen Throne". The boss's own name never appears here or in
+ * Player-facing words: the featured fight is "The Frozen Throne"; Boss Rush's other fights have descriptive names too. The boss's own name never appears here or in
  * any message (stream/hub.py BANNED_RE: no game, publisher or boss brand words).
  */
 #ifndef LEYLINE_BOSSFIGHTS_LOGIC_H
@@ -25,19 +25,29 @@ namespace LeylineBF
     enum Mode : int { MODE_NONE = -1, MODE_BOTS = 0, MODE_GROUP = 1, MODE_GROUP_ONLY = 2 };
     enum Role : int { ROLE_TANK = 0, ROLE_HEAL = 1, ROLE_DPS = 2 };
 
-    // A boss fight. v1 has one: the final fight of the ICC raid (map 631), 10 players, normal or heroic.
+    // A boss fight: the real encounter on its real map, played with the core's own boss script. v1 had one (the
+    // final fight of the ICC raid, map 631); Boss Rush (docs/BOSS-RUSH.md, the launcher's local "exact" engine) adds
+    // the others below. Only the featured (first) fight is offered unless LeylineBossfight.AllFights is on, so the
+    // official realm keeps exactly what it had.
     struct BossDef
     {
-        char const* key;              // the id players, the website and the addon use
-        char const* title;            // what players see
+        char const* key;              // the id players, the website, the launcher and the addon use
+        char const* title;            // what players see (never the boss's own name)
+        char const* raid;             // the raid's own place name (a zone name, not a brand word), for the launcher
         std::uint32_t mapId;
+        std::uint32_t zone;           // AreaTable zone id (the character list shows it for a hero saved there)
         std::uint32_t bossEntry;      // creature entry
         std::uint32_t bossData;       // the instance script's boss id (DATA_*)
-        std::uint32_t endSpell;       // the clock stops when the boss starts casting this
+        std::uint32_t endSpell;       // the clock stops when the boss starts casting this; 0 = when the boss is DONE
         std::uint8_t size;            // seats
-        float x, y, z, o;             // where the raid is put: on the platform, in front of the NPC that starts it
+        bool heroic;                  // the game has a heroic 10 for this raid (else normal only)
+        float x, y, z, o;             // where the raid is put: on the platform, in front of the boss (or the NPC that starts it)
         float fenceX, fenceY, fenceR, fenceMinZ;  // outside this circle (or below the floor) = off the platform
-        std::vector<std::uint32_t> prereq;        // boss ids that must be DONE before the boss will fight
+        std::vector<std::uint32_t> prereq;        // boss ids set DONE quietly (the base SetBossState) before the fight
+        std::vector<std::uint32_t> scripted;      // boss ids set DONE through the raid script's own SetBossState, once,
+                                                  // because the script does what the fight needs then (an intro, a spawn)
+        std::vector<std::uint32_t> despawn;       // creature entries taken away at the start (e.g. the drakes of a solo fight)
+        char const* startHint;        // how the fight begins, said when the raid is ready
     };
 
     // icecrown_citadel.h (pinned core): DATA_LORD_MARROWGAR 0 ... DATA_SINDRAGOSA 11, DATA_THE_LICH_KING 12,
@@ -47,15 +57,101 @@ namespace LeylineBF
     // Platform: boss_the_lich_king.cpp CenterPosition (503.6282, -2124.655, 840.8569) and TirionSpawn (505.2, -2124.4):
     // the raid lands 12 yards east of the NPC, facing him (west, pi). Spell 72350 is the fight's 10% cast
     // (SPELL_FURY_OF_FROSTMOURNE), the same end point the public ICC speedrun rules use.
+    //
+    // The other fights (Boss Rush, docs/BOSS-RUSH.md "The catalog"): the boss's spot is its row in the pinned core's
+    // data/sql/base/db_world/creature.sql; the raid lands 25 yards in front of it (along its facing), turned to it.
+    // The ids are each raid's own header (ruby_sanctum.h, obsidian_sanctum.h, onyxias_lair.h, vault_of_archavon.h,
+    // eye_of_eternity.h). Nothing here has been played yet: docs/BOSS-RUSH.md "Not verified".
     inline std::vector<BossDef> const& Bosses()
     {
         static std::vector<BossDef> const bosses = {
-            { "frozen-throne", "The Frozen Throne", 631, 36597, 12, 72350, 10,
+            { "frozen-throne", "The Frozen Throne", "Icecrown Citadel", 631, 4812, 36597, 12, 72350, 10, true,
               517.0f, -2124.6f, 840.86f, 3.141593f,
               503.63f, -2124.66f, 75.0f, 820.0f,
-              { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13 } },
+              { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13 }, {}, {},
+              "speak to the paladin in front of the throne to begin" },
+            // Marrowgar (36612) at (-401.37, 2211.14, 42.08), facing east (0): the first hall of the citadel.
+            { "bone-lord", "The Bone Lord", "Icecrown Citadel", 631, 4812, 36612, 0, 0, 10, true,
+              -376.37f, 2211.14f, 42.08f, 3.141593f,
+              -401.37f, 2211.14f, 70.0f, 30.0f,
+              {}, {}, {},
+              "pull the boss in the middle of the hall to begin" },
+            // Deathwhisper (36855) at (-634.69, 2211.39, 51.98) on her dais; the cult's doors (SummonPositions) at
+            // x -579 to -619, y 2154 and 2269, z 51.0. Marrowgar DONE opens her hall as in the real raid.
+            { "cult-mistress", "The Cult Mistress", "Icecrown Citadel", 631, 4812, 36855, 1, 0, 10, true,
+              -609.71f, 2212.26f, 52.0f, 3.176500f,
+              -610.0f, 2211.4f, 70.0f, 40.0f,
+              { 0 }, {}, {},
+              "walk up to the dais to begin" },
+            // Halion (39863) at (3156.0, 533.81, 72.99). Baltharus (0) and Saviana (2) quietly; Zarithrian (1) through
+            // the script's own SetBossState: that is what starts Halion's intro (instance_ruby_sanctum.cpp).
+            { "twilight-destroyer", "The Twilight Destroyer", "The Ruby Sanctum", 724, 4987, 39863, 6, 0, 10, true,
+              3131.0f, 533.37f, 72.99f, 0.017500f,
+              3156.0f, 533.81f, 70.0f, 55.0f,
+              { 0, 2 }, { 1 }, {},
+              "wait for the boss to land, then pull to begin" },
+            // Sartharion (28860) at (3246.57, 551.26, 58.62) facing south. Tenebron 1, Vesperon 2, Shadron 3: DONE
+            // drakes are left out of the fight (boss_sartharion.cpp JustEngagedWith), and their creatures go away.
+            { "obsidian-sanctum", "The Obsidian Sanctum", "The Obsidian Sanctum", 615, 4493, 28860, 0, 0, 10, false,
+              3245.26f, 526.30f, 58.62f, 1.518400f,
+              3246.57f, 551.26f, 75.0f, 40.0f,
+              { 1, 2, 3 }, {}, { 30449, 30451, 30452 },
+              "pull the boss on the island to begin" },
+            // The same with all three drakes up: they join the fight one by one (the game's hardest version of it).
+            { "obsidian-three", "The Obsidian Sanctum, three drakes", "The Obsidian Sanctum", 615, 4493, 28860, 0, 0, 10, false,
+              3245.26f, 526.30f, 58.62f, 1.518400f,
+              3246.57f, 551.26f, 75.0f, 40.0f,
+              {}, {}, {},
+              "pull the boss on the island to begin" },
+            // Onyxia (10184) at (-10.62, -219.36, -87.73) at the back of her lair, facing the way in.
+            { "brood-mother", "The Brood Mother's Lair", "Onyxia's Lair", 249, 2159, 10184, 0, 0, 10, false,
+              -35.48f, -216.72f, -87.73f, 6.177400f,
+              -10.62f, -219.36f, 80.0f, -110.0f,
+              {}, {}, {},
+              "pull the dragon to begin" },
+            // The vault's four watchers (vault_of_archavon.h EVENT_*): Archavon 31125, Emalon 33993, Koralon 35013,
+            // Toravon 38433, each in its own room. The realm's Wintergrasp lock is off in Boss Rush's profile.
+            { "stone-watcher", "The Stone Watcher", "Vault of Archavon", 624, 4603, 31125, 0, 0, 10, false,
+              113.89f, -101.09f, 91.40f, 6.265700f,
+              138.89f, -101.53f, 55.0f, 70.0f,
+              {}, {}, {},
+              "pull the watcher to begin" },
+            { "storm-watcher", "The Storm Watcher", "Vault of Archavon", 624, 4603, 33993, 1, 0, 10, false,
+              -219.16f, -263.57f, 91.55f, 4.729800f,
+              -218.73f, -288.57f, 55.0f, 70.0f,
+              {}, {}, {},
+              "pull the watcher to begin" },
+            { "flame-watcher", "The Flame Watcher", "Vault of Archavon", 624, 4603, 35013, 2, 0, 10, false,
+              -218.96f, 79.39f, 91.83f, 1.553300f,
+              -218.52f, 104.39f, 55.0f, 70.0f,
+              {}, {}, {},
+              "pull the watcher to begin" },
+            { "frost-watcher", "The Frost Watcher", "Vault of Archavon", 624, 4603, 38433, 3, 0, 10, false,
+              -43.77f, -263.71f, 91.25f, 4.729800f,
+              -43.33f, -288.71f, 55.0f, 70.0f,
+              {}, {}, {},
+              "pull the watcher to begin" },
+            // Malygos (28859) circles above the disc; the disc's middle is eye_of_eternity.h CenterPos
+            // (754.40, 1301.27, 266.10). The raid lands 20 yards west of it, facing the middle.
+            { "spell-weaver", "The Spellweaver's Eye", "The Eye of Eternity", 616, 4500, 28859, 0, 0, 10, false,
+              734.40f, 1301.27f, 266.20f, 0.0f,
+              754.40f, 1301.27f, 60.0f, 250.0f,
+              {}, {}, {},
+              "walk to the middle of the disc to begin" },
         };
         return bosses;
+    }
+
+    // The featured fight (the official realm's only one) is the first; the rest need LeylineBossfight.AllFights.
+    inline bool Offered(BossDef const& b, bool allFights) { return allFights || &b == &Bosses().front(); }
+
+    // The fight on this map whose boss id is `bossData` (several fights share a map: the citadel has three).
+    inline BossDef const* FindBossOnMap(std::uint32_t mapId, std::uint32_t bossData)
+    {
+        for (BossDef const& b : Bosses())
+            if (b.mapId == mapId && b.bossData == bossData)
+                return &b;
+        return nullptr;
     }
 
     inline std::string Lower(std::string s)
@@ -336,10 +432,12 @@ namespace LeylineBF
         std::string error;
     };
 
-    inline JoinArgs ParseJoin(std::string const& boss, std::string const& diff, std::string const& mode)
+    inline JoinArgs ParseJoin(std::string const& boss, std::string const& diff, std::string const& mode, bool allFights = true)
     {
         JoinArgs a;
         a.boss = FindBoss(boss.empty() ? "frozen-throne" : boss);
+        if (a.boss && !Offered(*a.boss, allFights))
+            a.boss = nullptr;
         a.diff = ParseDifficulty(diff.empty() ? "normal" : diff);
         a.mode = ParseMode(mode.empty() ? "bots" : mode);
         if (!a.boss)
@@ -348,6 +446,8 @@ namespace LeylineBF
             a.error = "Difficulty is normal or heroic";
         else if (a.mode == MODE_NONE)
             a.error = "Mode is bots, group or group-only";
+        else if (a.diff == DIFF_HEROIC && !a.boss->heroic)
+            a.error = std::string(a.boss->title) + " has no heroic: play it on normal";
         return a;
     }
 }

@@ -37,11 +37,43 @@ int main()
     check("the raid lands on the platform, inside its own fence",
         (ft->x - ft->fenceX) * (ft->x - ft->fenceX) + (ft->y - ft->fenceY) * (ft->y - ft->fenceY) < ft->fenceR * ft->fenceR
         && ft->z > ft->fenceMinZ);
-    check("FindBossByMap", FindBossByMap(631) == ft && FindBossByMap(0) == nullptr);
+    check("FindBossByMap: the featured fight first on its map", FindBossByMap(631) == ft && FindBossByMap(0) == nullptr && FindBossByMap(249) == FindBoss("brood-mother"));
     bool clean = true;
     for (BossDef const& b : Bosses())
         clean = clean && !hasBrandWord(b.title) && !hasBrandWord(b.key);
     check("no brand words in titles or keys", clean);
+
+    // Boss Rush's catalog (docs/BOSS-RUSH.md): every fight lands inside its own fence, on its own map, with no
+    // brand word; keys are unique; the citadel's three fights are told apart by their boss id
+    bool fenced = true, unique = true, sized = true;
+    for (BossDef const& b : Bosses())
+    {
+        float dx = b.x - b.fenceX, dy = b.y - b.fenceY;
+        fenced = fenced && dx * dx + dy * dy < b.fenceR * b.fenceR && b.z > b.fenceMinZ;
+        sized = sized && b.size == 10 && b.mapId != 0 && b.bossEntry != 0 && b.zone != 0 && b.startHint && *b.startHint;
+        for (BossDef const& c : Bosses())
+            if (&b != &c && std::string(b.key) == c.key)
+                unique = false;
+        clean = clean && !hasBrandWord(b.raid) && !hasBrandWord(b.startHint);
+    }
+    check("catalog: at least 10 fights", Bosses().size() >= 10);
+    check("catalog: everyone lands inside the fence", fenced);
+    check("catalog: unique keys", unique);
+    check("catalog: 10 seats, a map, a boss, a zone and a start hint each", sized);
+    check("catalog: no brand words in raid names or hints", clean);
+    check("the featured fight stays first", &Bosses().front() == ft);
+    check("FindBossOnMap tells the citadel's fights apart", FindBossOnMap(631, 12) == ft && FindBossOnMap(631, 0) == FindBoss("bone-lord")
+        && FindBossOnMap(631, 1) == FindBoss("cult-mistress") && FindBossOnMap(631, 7) == nullptr && FindBossOnMap(724, 6) == FindBoss("twilight-destroyer"));
+    check("Halion's intro goes through the script (Zarithrian, 1), the others quietly", FindBoss("twilight-destroyer")->scripted == std::vector<std::uint32_t>{ 1 }
+        && FindBoss("twilight-destroyer")->prereq == std::vector<std::uint32_t>({ 0, 2 }));
+    check("the solo Sanctum leaves the drakes out; the three-drake one keeps them", FindBoss("obsidian-sanctum")->prereq.size() == 3
+        && FindBoss("obsidian-sanctum")->despawn.size() == 3 && FindBoss("obsidian-three")->prereq.empty() && FindBoss("obsidian-three")->despawn.empty());
+    check("only the featured fight is offered without AllFights", Offered(*ft, false) && !Offered(*FindBoss("bone-lord"), false)
+        && Offered(*FindBoss("bone-lord"), true));
+    check("join: another fight needs AllFights", !ParseJoin("bone-lord", "normal", "bots", false).error.empty()
+        && ParseJoin("bone-lord", "heroic", "bots", true).error.empty());
+    check("join: heroic only where the raid has one", !ParseJoin("brood-mother", "heroic", "bots").error.empty()
+        && ParseJoin("brood-mother", "normal", "bots").error.empty() && ParseJoin("twilight-destroyer", "heroic", "bots").error.empty());
 
     // arguments
     check("difficulty", ParseDifficulty("normal") == DIFF_NORMAL && ParseDifficulty("HEROIC") == DIFF_HEROIC

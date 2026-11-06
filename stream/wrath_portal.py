@@ -1331,7 +1331,46 @@ def hop_for(query: dict) -> dict | None:
         # while the in-game browser already showed it online. Not found: refresh the list once, then look again.
         if attempt == 0 and not refresh_listing_now():
             break
-    return None
+    return private_hop(got[1])
+
+
+# Private Beacons in the browser (owner, 5 Nov: "turn on allow private relay too"). They aren't on the listing, so a
+# ?go=r:<id> the listing doesn't know asks the relay about that one realm: online and private, it is a hop. The relay
+# still lets the game in only from a computer that opened the invite link (its knock) or that carries the invite, so
+# knowing the id is not enough to get in. WU_HOP_PRIVATE=0 turns it off.
+HOP_PRIVATE = os.environ.get("WU_HOP_PRIVATE", "1") != "0"
+_private_seen: dict = {}
+
+
+def relay_api_base() -> str:
+    u = listing_url()
+    m = re.match(r"^(https?://[A-Za-z0-9.:-]+)/api/listing/realms\.json$", u)
+    return m.group(1) if m else f"https://{RELAY_HOST}"
+
+
+def private_hop(rid: str) -> dict | None:
+    if not HOP_PRIVATE or not REALM_ID_RE.match(rid or ""):
+        return None
+    now = time.monotonic()
+    hit = _private_seen.get(rid)
+    if hit and now - hit[0] < 20:
+        return hit[1]
+    got = None
+    try:
+        req = urllib.request.Request(f"{relay_api_base()}/api/realms/{rid}",
+                                     headers={"Accept": "application/json", "User-Agent": "wrath-portal"})
+        with urllib.request.urlopen(req, timeout=LISTING_WAIT) as r:
+            doc = json.loads(r.read(8192))
+        if isinstance(doc, dict) and doc.get("online") is True and doc.get("visibility") == "private":
+            name = str(doc.get("name") or "")
+            name = name if re.match(r"^[A-Za-z0-9 _'-]{1,32}$", name) else "A private realm"
+            got = {"id": rid, "name": name, "home": False, "private": True}
+    except Exception as e:  # noqa: BLE001: unknown, offline or unreachable: no hop
+        log.info("private hop %s: %s", rid, str(e)[:80])
+    if len(_private_seen) > 500:
+        _private_seen.clear()
+    _private_seen[rid] = (now, got)
+    return got
 
 
 def refresh_listing_now(min_age: float = 10.0) -> bool:

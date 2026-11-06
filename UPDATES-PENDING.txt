@@ -886,3 +886,7 @@
 1343g ship  Save to GitHub: the Single player engine test skips in the public repo (its launcher build failed on it)
 1343h relay  Relay: invite links work again (its own join page was refused at step 1 since 2 Nov; player report)
 1343i ship  Save to GitHub: the relay fix
+1344a relay  Relay: the invite page's Play in your browser (private realms in the browser)
+1344b signin  Website: private realms can be joined in the browser from their invite link
+1344c page  Browser page: the invite goes along into the game's join step
+1344d ship  Save to GitHub: private realms in the browser

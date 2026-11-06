@@ -117,6 +117,38 @@ test('the join page frames inside the isolated game page and hands the login bac
   }
 });
 
+test('private realm: the invite in #inv= rides into the join frame\'s own #fragment and leaves the address bar', async () => {
+  // owner 5 Nov "turn on allow private relay too": the join page's Play in your browser goes to /wrath?go=r:<id>#inv=..
+  const envRef = { env: {} };
+  const site = await gamePage(envRef);
+  const gameOrigin = `http://localhost:${site.port}`;
+  const rl = await relay([gameOrigin]);
+  envRef.env = hopEnv(rl.port);
+  const browser = await chromium.launch();
+  try {
+    const page = await (await browser.newContext()).newPage();
+    await page.goto(`${gameOrigin}/?multitab=1#inv=SECRETINVITE22ABCDEF`);
+    await page.waitForSelector('#wu-hop-join iframe', { timeout: 15000 });
+    const src = await page.evaluate(() => document.querySelector('#wu-hop-join iframe').src);
+    assert.ok(src.endsWith('#SECRETINVITE22ABCDEF'), src);
+    assert.equal(await page.evaluate(() => location.hash), '', 'the invite is taken off the address bar');
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('wu.hop.invite.abcdefghijklmnop')), 'SECRETINVITE22ABCDEF');
+    let frame = null;
+    for (let i = 0; i < 100 && !frame; i++) {
+      frame = page.frames().find((f) => f.url().includes(`/join/${RID}`));
+      if (!frame) await page.waitForTimeout(100);
+    }
+    assert.ok(frame, 'the join frame exists');
+    await frame.waitForFunction(() => window.__wuHop, null, { timeout: 15000 });
+    assert.equal(await frame.evaluate(() => decodeURIComponent(location.hash.slice(1))), 'SECRETINVITE22ABCDEF', 'the frame has its invite');
+    assert.equal(await frame.evaluate(() => document.getElementById('browser-play').hidden), true, 'no Play in your browser inside the game');
+  } finally {
+    await browser.close();
+    site.stop();
+    rl.stop();
+  }
+});
+
 test('a game page on an origin the relay does not list cannot frame the join page', async () => {
   const rl = await relay(['https://wrath.openvanilla.app']);
   const site = await gamePage({ env: hopEnv(rl.port) });

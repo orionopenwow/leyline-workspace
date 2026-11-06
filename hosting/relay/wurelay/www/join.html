@@ -32,7 +32,7 @@
 </style>
 </head>
 <body>
-<main data-hop-origins="">
+<main data-hop-origins="" data-site="">
   <h1 id="name">Joining a realm…</h1>
   <p class="sub" id="sub">A Beacon: a realm hosted by a player, reached through the Leyline relay. <span class="pill" id="client-chip" title="The game client this realm needs">3.3.5a</span></p>
 
@@ -77,6 +77,10 @@
 
   <div class="card" id="play-card" hidden>
     <h2>3. Play</h2>
+    <div id="browser-play" hidden style="margin:0 0 12px">
+      <p class="small">No game files on this computer? Play this realm in your browser. Make your account in step 2 first (or use one you have).</p>
+      <a id="browser-play-link" href="#"><button type="button">Play in your browser</button></a>
+    </div>
     <p id="client-note">Use your own game files for the client named at the top. In the game folder, open <code>Data\enUS\realmlist.wtf</code> (or your language's folder) and make it this one line:</p>
     <div class="line"><code id="realmlist">set realmlist …</code><button class="ghost" data-copy="realmlist">Copy</button></div>
     <ol class="small">
@@ -189,6 +193,13 @@
     const k = await api("/api/realms/" + realmId + "/knock", invite ? { invite } : {});
     if (k.status !== 200) { say($("knock-msg"), k.doc.error || "The relay refused this link.", "bad"); return; }
     say($("knock-msg"), "Done: your internet connection may now reach this realm.", "ok");
+    // Play in your browser: the site's browser game hops here (?go=r:<id>); a private realm's invite goes along in
+    // the #fragment (never sent to a server) so the game's join step can make an account here too.
+    const site = document.querySelector("main").getAttribute("data-site") || "";
+    if (!hop && /^https:\/\/[A-Za-z0-9.:-]+$/.test(site)) {
+      $("browser-play-link").href = site + "/wrath?go=r:" + realmId + (invite ? "#inv=" + encodeURIComponent(invite) : "");
+      $("browser-play").hidden = false;
+    }
     api("/r/" + realmId + "/status.json").then((st) => forClient(st.doc.build)).catch(() => {});
     $("realmlist").textContent = "set realmlist " + k.doc.realmlist;
     $("realmlist-port").textContent = "set realmlist " + k.doc.realmlist_port;

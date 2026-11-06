@@ -633,6 +633,23 @@ export function watchHops(wenilla, { env = window.__wenilla_env || {}, go = (u) 
   return h;
 }
 
+/** A private realm's invite, from "Play in your browser" on its join page (#inv=<secret>; a fragment never reaches a
+ * server). Kept for this tab and this realm only, and taken off the address bar. The framed join page gets it back
+ * in its own #fragment, so a friend can make an account on a private realm from the browser game too. */
+export function hopInvite(env = window.__wenilla_env || {}, loc = location, store = sessionStorage) {
+  const id = env && env.hop;
+  if (!/^[a-z2-7]{16}$/.test(id || '')) return '';
+  const key = 'wu.hop.invite.' + id;
+  const m = /(?:^#|&)inv=([^&]{1,200})/.exec(loc.hash || '');
+  if (m) {
+    let v = '';
+    try { v = decodeURIComponent(m[1]); } catch { v = ''; }
+    if (/^[A-Za-z0-9_-]{8,128}$/.test(v)) { try { store.setItem(key, v); } catch { /* blocked */ } }
+    try { history.replaceState(null, '', loc.pathname + loc.search); } catch { /* not ours to change */ }
+  }
+  try { const v = store.getItem(key) || ''; return /^[A-Za-z0-9_-]{8,128}$/.test(v) ? v : ''; } catch { return ''; }
+}
+
 /** A login handed back by the realm's join page (framed below), checked: {user, pass} or null. */
 export function hopLoginMessage(ev, env = window.__wenilla_env || {}) {
   let origin = '';
@@ -738,7 +755,8 @@ export function hopUi(env = window.__wenilla_env || {}, hop = window.__wuHop) {
   const frame = document.createElement('iframe');
   frame.title = 'Join ' + name;
   frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin');
-  frame.src = env.hop_join + '&from=' + encodeURIComponent(location.origin);
+  const inv = hopInvite(env);
+  frame.src = env.hop_join + '&from=' + encodeURIComponent(location.origin) + (inv ? '#' + encodeURIComponent(inv) : '');
   join.querySelector('.panel').append(frame);
   join.querySelector('[data-x="home"]').addEventListener('click', home);
   join.querySelector('[data-x="later"]').addEventListener('click', () => join.remove());

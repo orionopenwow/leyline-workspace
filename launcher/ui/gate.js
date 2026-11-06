@@ -270,15 +270,16 @@
     // the website down: its own box says it, so the error line isn't said twice
     if (err && !isDown) { const p = el("p", "sf-err", err); p.id = "gate-err"; p.setAttribute("role", "alert"); pane.append(p); }
     // the fields point at the line that says what went wrong, so a screen reader reads it with them (review 4 Nov)
+    // Set on the pane as it is built (not a tick later), so a field focused at once is read with its line.
     const why2 = err && !isDown ? "gate-err" : isDown ? "gate-down" : "";
-    setTimeout(() => {
+    const markFields = () => {
       for (const id of ["gate-pwname", "gate-pw", "gate-key"]) {
-        const x = $(id);
+        const x = pane.querySelector("#" + id);
         if (!x) continue;
         if (why2) x.setAttribute("aria-describedby", why2); else x.removeAttribute("aria-describedby");
         if (err && !isDown) x.setAttribute("aria-invalid", "true"); else x.removeAttribute("aria-invalid");
       }
-    }, 0);
+    };
     if (isDown) {
       const d = el("div", "gate-down"); d.id = "gate-down";
       d.append(el("p", "", "The Leyline website isn't answering, so logging in can't work right now. Everything else in the launcher does."));
@@ -290,6 +291,7 @@
       a.append(again, sk); d.append(a); pane.append(d);
     }
     loginPane(pane);
+    markFields();
   }
 
   function loginPane(pane) {

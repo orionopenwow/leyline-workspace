@@ -1675,7 +1675,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self._send(200, '{"ok":true}')
             return self._send(400, '{"error":"nothing to do"}')
         if self.path == "/api/open-game":
-            webbrowser.open("https://play.openvanilla.app/wrath")
+            webbrowser.open("https://leylinelauncher.com/wrath")   # the site's name now (the old one still answers)
             return self._send(200, '{"ok":true}')
         self._send(404, '{"error":"not found"}')
 
@@ -1953,7 +1953,7 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
 <button id="audit" title="Checks every feature as a new player would (about 10 minutes, read-only), then opens the report">Release audit</button>
 <a id="areport" class="sub" href="#" target="_blank" hidden></a>
 <details class="more"><summary>More</summary><div class="menu">
-<button id="hq" title="Leyline HQ: status, what needs you, releases, notes (play.openvanilla.app/wrath/admin)">Open HQ</button>
+<button id="hq" title="Leyline HQ: status, what needs you, releases, notes (leylinelauncher.com/wrath/admin)">Open HQ</button>
 <button id="gmc" title="Opens the GM console (bug reports, players, health, logs) in your browser">GM console</button>
 <button id="game">Open the game</button><button id="check">Check server</button>
 <button id="ask" title="On: deploys wait for Launch all; read-only checks still run by themselves">Ask before deploys: …</button>

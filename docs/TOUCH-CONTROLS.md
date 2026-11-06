@@ -2,11 +2,44 @@
 
 The browser game's touch layer: `stream/www-files/touch.js` (the controls), `touch-driver.js` (the bridge, or the
 default keys when the client has no bridge), `input.js` (pointer fixes). Build shown on the debug line:
-`TOUCH_BUILD` in touch.js (now `wrath 2026-11-05b ...`). Deployed with the Control step **`page`** (the game page
+`TOUCH_BUILD` in touch.js (now `wrath 2026-11-05c ...`). Deployed with the Control step **`page`** (the game page
 only: backs up the live page, runs `www-patch.py`, checks `PAGE OK`, puts the old page back if the check fails).
 
 It switches on by itself on a touch screen (a coarse pointer with touch points). `?touch=1` forces it on, `?touch=0`
 off (both remembered in this browser).
+
+## Phone test (owner)
+
+About 5 minutes. Phone held sideways, the game open in the phone's browser (or from the Leyline home-screen icon).
+
+1. **The build.** On the character list tap the **Controls** button (top right, the sliders icon) > **Copy debug
+   info**, and paste it anywhere (a note, Discord's box). It must start `Leyline touch wrath 2026-11-05c`. If it says
+   `05b`, close the tab, open the game again and check once more.
+2. **Tap test.** Same sheet > **Tap test**: tap the centre of the 5 gold rings. Expect "5 of 5 hit". Close.
+3. **Name and keyboard.** Create New Character. Tap a race and a class: each goes where you tapped. Tap the
+   **keyboard** button (top right): your phone's keyboard comes up, and a dark chip at the top says "Type with your
+   keyboard". Type a name such as `Testbob`: the chip and the game's name box show it once, no doubled letters.
+   Backspace once: one letter goes. Tap the keyboard button again: the keyboard goes away. (No need to create.)
+4. **Move and look.** In the world: walk with the stick, double-tap the stick (auto-run on, again: off), hold Jump.
+   Drag the world: the camera turns. Pinch in and out: it zooms, and your target does not change when you let go.
+5. **Target and fight.** Tap the reticle: the nearest enemy. Tap a mob: it is targeted. Tap Attack.
+6. **Two-finger right-click.** Tray (top right) > **Bags**. Put one finger on a usable item (food, a potion, a piece of
+   gear) and tap a second finger anywhere near it at the same moment: the item is used or equipped (a right-click).
+   Close.
+7. **Chat.** Tray > **Chat**: the keyboard comes up by itself and the chat box sits just above it, not under it.
+   Send `hi`. Close.
+8. **Away and back.** Walk forward with the stick, and while still holding it swipe to the home screen (or pull the
+   notifications down). Come back: your character is standing still, not running off.
+9. **Settings.** Menu > Controls: drag **Button size** to 120% and **Opacity** to 60% (the controls grow and fade).
+   Tap **Touch and hold** until it says right-click, then hold a finger on a bag item for half a second: it is used.
+   Set the three back as you like them.
+10. **Send.** Menu > Controls > **Copy debug info** once more and paste it to us, with your phone model, the browser,
+    and whether you played from the home-screen icon. For any step that did not do what it says: its number, what
+    happened, and a screenshot if something sits in the wrong place.
+
+In the pasted line: `letgo` should be 1 or more after step 8, `two` counts the two-finger right-clicks, `kb` is the
+keyboard's height the last time it was open, `safe` is the notch, `haptics` says how this phone buzzes (`vibrate`,
+`switch` on an iPhone, or `none`).
 
 ## In the world
 
@@ -23,7 +56,8 @@ off (both remembered in this browser).
 | Cast bar | over the ring | Your cast filling, or your channel draining, with the spell's name. |
 | Ground spells | after a key whose spell needs a place | "Tap where it should land" at the top: the next tap in the world places it. The X cancels it. |
 | Target frame | top left, next to your own | Swipe it left: next enemy. Swipe it right: last enemy (Shift-Tab). A tap still clicks it. |
-| The rest of the screen | | Tap: click (target, buttons, windows). Double-tap: right-click (talk, loot, open). Touch and hold: hover (tooltips). Drag: turn the camera (or drag a window). Pinch: zoom. |
+| The rest of the screen | | Tap: click (target, buttons, windows). Double-tap: right-click (talk, loot, open). Touch and hold: hover (tooltips), or a right-click with Touch and hold: right-click. Drag: turn the camera (or drag a window). Pinch: zoom (no click when the fingers lift). |
+| Two-finger tap | anywhere, windows too | A right-click under the first finger: use, equip or sell a bag item, talk, loot. Both fingers down and up quickly, without zooming. |
 | Soft lock | | A tap on open ground (no one under the finger) keeps your target, where the game would clear it. On by default. |
 
 The game's own frames are rearranged for a small screen: player and target frames along the top left, the minimap
@@ -46,17 +80,42 @@ Login, realm list, character list and character creation take taps as mouse clic
 - A phone held upright is asked to turn sideways; sideways, one tap goes full screen ("Not now" skips it).
   "Add Leyline to your home screen" installs it (full screen, landscape, the Leyline icon).
 
+## Phone keyboard, background, zoom, notch (5 Nov night)
+
+- **Name box:** the keyboard button focuses a hidden box when the finger lifts (a phone raises its keyboard only for a
+  focus inside a user gesture; a finger's press is not one). Each change of that box goes to the game as its
+  difference, so a keyboard that composes words (Android's) or autocorrects sends each letter once. A chip at the top
+  shows what was typed while the keyboard covers the game's box. Enter sends Enter and puts the keyboard away.
+- **Chat:** Tray > Chat focuses its box inside the tap, so the keyboard comes up; the sheet is lifted above the
+  keyboard (the visual viewport) and kept to the visible height. When a box lets go, a page that iPhone Safari left
+  scrolled is put back.
+- **In the background** (another app, a call, the lock button): the stick, Jump, a camera drag and a pressed window
+  button are let go, and the screen lock is asked for again on return. The action poll, the layout upkeep and the
+  debug line pause while the page is hidden.
+- **Lost lifts:** a first finger while others are still counted (the browser dropped a lift) clears them, so the
+  stick never jams and a tap is never taken for half a pinch.
+- **No page zoom:** while touch is on the viewport tag gets `maximum-scale=1,user-scalable=no` (Android), iPhone's
+  gesture events are cancelled, the panels only pan, every text box is 16 px or more, no pull-to-refresh.
+- **Notch:** the corner buttons (keyboard, Controls, the touch button, the debug line) and the game's own player
+  frame, target frame, minimap, tracker and buffs keep clear of a side notch.
+- **No bridge (the live client today):** the screen-switch button no longer covers the open tray's Bags, nor hides
+  under the Controls button on the character screens.
+
 ## Menu > Controls
 
 | Setting | What it does |
 |---|---|
 | Classic / Simple / Keyboard & mouse | How the stick and drags behave; Keyboard & mouse turns touch off (a corner button brings it back). |
 | Tap test | Five gold rings, one at a time; tap the centre of each. Says how many hit (within 22 px), how far and which way your taps land, the pointer factor and, once the game answers, how far the game's own cursor lands from your finger. Nothing is clicked in the game. Copy result puts the debug line (with the test) on the clipboard. |
-| Copy debug info | Copies one line for us: the build, the screen, bridge or keys, pixel ratio, buffer and page sizes, full screen, the factor, the tap mode, buttons found, taps, dropped and re-sent releases, the game update length, the layout, the last 10 taps with timings, errors, the tap test result, the browser. |
+| Copy debug info | Copies one line for us: the build, the screen, bridge or keys, pixel ratio, buffer and page sizes, full screen, the factor, the tap mode, buttons found, taps, dropped and re-sent releases, the game update length, the layout, the last 10 taps with timings, errors, the tap test result, Button size, Opacity, the hold mode, the notch, the visual viewport and the keyboard's height, the orientation, how the phone buzzes, two-finger taps, lost lifts and let-gos, the browser. |
 | Edit layout | In the world: drag the stick, the ring (by Attack, a key, the reticle or the dots), Jump and the tray. Ring − / + resize the ring. Phone / Tablet start from a preset, Reset goes back to it, Done saves. Saved per character (on this device). Copy code gives a short layout code (`L1` + 18 letters and digits); paste one and Use code to load it (another phone, a friend's layout). Everything is kept on screen. |
 | Layout: Auto / Phone / Tablet | Auto picks Tablet on a screen 600 px or more on its short side. Tablet: a bigger ring, both thumbs a little higher. On a short screen a preset gives up its lift, then its size, so the ring clears the tray. |
 | Left-handed | The stick on the right, the ring on the left (the tray stays top right). |
-| Vibration | The short buzz on each press, on or off. |
+| Vibration | The short buzz on each press, on or off. 12 ms where the phone has a vibration motor for pages (Android); an iPhone (iOS 18 and later) gets Safari's switch tick instead. |
+| Touch and hold | Tooltip (the hover, as before) or Right-click (half a second on an item, a unit or a button right-clicks it, with a buzz; a window button is then not shown pushed while the finger is on it, and a quick tap still clicks). Not while placing a ground spell. |
+| Keyboard hides touch | On (default): a hardware keyboard moving you (W A S D, Q E, arrows, Space) hides the stick and the ring until the next touch; the tray stays. |
+| Button size | 80% to 140%: the stick and the ring (an edited ring keeps its own size; as big as fits on a short screen). |
+| Opacity | 30% to 100%: the controls over the world (a pressed key shows at full strength). |
 | Soft lock | On: a tap on open ground keeps the target. |
 | Bigger interface | A slider for the game's interface size (70% to 140%). |
 
@@ -99,9 +158,10 @@ The ring showed in the right place but the game did not press. Three fixes and t
 4. The tap test measures the finger and the game's cursor on the player's own phone.
 5. Copy debug info: one line to paste to us.
 
-## Test on your phone
+## Longer phone test (tap problems)
 
-Open the game on the phone (landscape). Add `?touchdebug=1` to the address if you can.
+The 5 Nov tap checklist, for when taps on the character screens miss. Open the game on the phone (landscape). Add
+`?touchdebug=1` to the address if you can.
 
 1. **Character list.** Tap the Controls button (top right, next to the keyboard) > **Tap test**. Tap the centre of
    each of the five rings. Expect: "5 of 5 hit", taps a few px off. Note what it says about the game.
@@ -137,5 +197,11 @@ page and a fake bridge, `stream/tests/touch-harness.cjs`):
 - `touch-edit`: Edit layout (drag, clamp, resize, per character, reload, reset, codes), the Controls toggles and the
   slider, the controller card.
 - `touch-fullscreen`: full screen on the lift, the home screen button, Not now.
+- `touch-mobile`: an iPhone with its notch, an Android phone and a tablet, landscape and portrait (every control inside
+  the safe area, the game frames moved in, one scripted click per tap, the turn-sideways cover, a turn mid-game); the
+  composing keyboard; focus inside the lift; the chat sheet over the keyboard; pinches; the two-finger tap (world and
+  a bag item); Touch and hold: right-click; the page hidden; lost lifts; a hardware keyboard; size and opacity;
+  vibration and the iPhone switch; no page zoom; the debug line; the tray and corner buttons with no bridge; the
+  installed app.
 
 Also `python3 stream/tests/test_brand.py` (no old names in the strings people see).

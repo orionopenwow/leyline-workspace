@@ -1025,7 +1025,8 @@ class Relay:
         except httpd.BadRequest as e:
             out = httpd.response(e.status, {"error": str(e)}, headers=self.cors(req))
         except Exception:  # never let one request take the relay down
-            log.exception("request failed: %s %s", req.method, req.path)
+            # the path can carry an invite (/r/<id>/i/<secret>/ws/<port>): never into the log
+            log.exception("request failed: %s %s", req.method, re.sub(r"/i/[^/]+/", "/i/***/", req.path)[:200])
             out = httpd.response(500, {"error": "internal error"})
         if out is None:  # upgraded to a websocket; that handler owns the socket now
             return

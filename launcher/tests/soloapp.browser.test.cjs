@@ -333,3 +333,19 @@ test('keyboard: the pages and Play are reachable with Tab, and the page heading 
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('the shared art is the launcher\'s own bytes (fonts, the crystal), and the solo window loads nothing remote', () => {
+  const ui = path.join(__dirname, '..', 'ui');
+  const solo = path.join(__dirname, '..', 'ui-solo');
+  for (const [a, b] of [['art/fonts/inter-latin-400-normal.woff2', 'art/fonts/inter-latin-400-normal.woff2'],
+    ['art/fonts/inter-latin-600-normal.woff2', 'art/fonts/inter-latin-600-normal.woff2'], ['art/fonts/Inter-OFL.txt', 'art/fonts/Inter-OFL.txt'],
+    ['art/brand/leyline-crystal-128.png', 'art/leyline-crystal-128.png']]) {
+    assert.ok(fs.readFileSync(path.join(ui, a)).equals(fs.readFileSync(path.join(solo, b))), b);
+  }
+  for (const f of ['index.html', 'solo.js', 'solo.css']) assert.doesNotMatch(fs.readFileSync(path.join(solo, f), 'utf8'), /(src|href)=["']https?:|url\(["']?https?:/, f);
+  const conf = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'tauri.solo.conf.json'), 'utf8'));
+  assert.equal(conf.productName, 'Leyline Solo');
+  assert.equal(conf.build.frontendDist, '../ui-solo');
+  assert.notEqual(conf.identifier, JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'tauri.conf.json'), 'utf8')).identifier);
+  assert.equal(conf.app.windows[0].label, 'main', 'the capabilities are for the window called main');
+});

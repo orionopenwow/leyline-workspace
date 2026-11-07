@@ -72,6 +72,11 @@ just for them inside, and checks the way in before you send it.
 Your friend needs Leyline, their own game folder and a Hero Key. Game files never travel between you. See
 [Host for friends](host-for-friends.md) for the checklist and the fixes.
 
+## The first era on its own: Leyline Solo
+
+Have the first-era game folder? [Leyline Solo](solo.md) is a small app of its own for it: a first-era world on your
+PC with companions, offline, logged in by itself, your characters in one list, and a friend when you want one.
+
 ## Not on Windows
 
 The one-click engine is made for Windows PCs for now. On another computer, the same original world runs in Docker:

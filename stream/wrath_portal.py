@@ -325,6 +325,7 @@ modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can hos
 survivors = _load_module("wu_survivors", "survivors.py")   # Azeroth Survivors: /wrath/survivors and its own address's gate (stream/survivors.py)
 site_pages = _load_module("wu_site_pages", "site_pages.py")   # Single player, the Modes shelf, the guides, the press kit (stream/site_pages.py)
 mobile_page = _load_module("wu_mobile_page", "mobile_page.py")   # /wrath/mobile: Leyline on your phone (stream/mobile_page.py)
+solo_page = _load_module("wu_solo_page", "solo_page.py")   # /wrath/solo: Leyline Solo, the first era on your PC (stream/solo_page.py)
 phonelab = _load_module("wu_phonelab", "phonelab.py")   # /wrath/phonelab: a real phone's taps for debugging (stream/phonelab.py)
 if survivors is not None:
     survivors.bind(lambda name: globals()[name])
@@ -332,6 +333,8 @@ if site_pages is not None:
     site_pages.bind(lambda name: globals()[name])
 if mobile_page is not None:
     mobile_page.bind(lambda name: globals()[name])
+if solo_page is not None:
+    solo_page.bind(lambda name: globals()[name])
 if phonelab is not None:
     phonelab.bind(lambda name: globals()[name])
 if modepacks is not None:
@@ -4729,6 +4732,9 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if mobile_page is not None and mobile_page.match(path):   # /wrath/mobile: Leyline on your phone
             mobile_page.get(self, path, query)
+            return
+        if solo_page is not None and solo_page.match(path):   # /wrath/solo: Leyline Solo (download only with WU_SOLO_RELEASED=1)
+            solo_page.get(self, path, query)
             return
         if site_pages is not None and site_pages.match(path):   # /wrath/single-player (flag), /wrath/modes/<way>, /wrath/guides, /wrath/press
             site_pages.get(self, path, query)

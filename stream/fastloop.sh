@@ -68,7 +68,7 @@ if [ -f "$WU/portal/bossfights.py" ]; then cp -p "$WU/portal/bossfights.py" "$BK
 had_survivors=""
 if [ -f "$WU/portal/survivors.py" ]; then cp -p "$WU/portal/survivors.py" "$BK/survivors.py"; had_survivors=1; fi
 # the showcase pages and Leyline on your phone (site_pages.py, mobile_page.py)
-for f in site_pages.py mobile_page.py phonelab.py; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
+for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_profiles=""
 if [ -f "$WU/portal/profiles.py" ]; then cp -p "$WU/portal/profiles.py" "$BK/profiles.py"; had_profiles=1; fi
 had_herokeys=""
@@ -126,7 +126,7 @@ put_back() {
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_bossfights" ]; then cp -p "$BK/bossfights.py" "$WU/portal/bossfights.py"; else rm -f "$WU/portal/bossfights.py"; fi
   if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
-  for f in site_pages.py mobile_page.py phonelab.py; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
+  for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
@@ -257,8 +257,9 @@ if [ -f bossfights.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.a
 # Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors): optional; its address is
 # $WU/portal/survivors.url (hosting/survivors/sv-site-up.sh)
 if [ -f survivors.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' survivors.py && install -m 644 survivors.py "$WU/portal/survivors.py"; fi
-# the showcase pages (/wrath/guides, /wrath/press, /wrath/modes/<way>) and Leyline on your phone (/wrath/mobile): optional
-for f in site_pages.py mobile_page.py phonelab.py; do
+# the showcase pages (/wrath/guides, /wrath/press, /wrath/modes/<way>), Leyline on your phone (/wrath/mobile) and
+# Leyline Solo (/wrath/solo; its download shows only with WU_SOLO_RELEASED=1 in the portal's environment): optional
+for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do
   if [ -f "$f" ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$f" && install -m 644 "$f" "$WU/portal/$f"; fi
 done
 # Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar): optional; its store is
@@ -519,6 +520,8 @@ echo "  /wrath/api/bossfights boss fight boards (200 = on): $c7b"
 c7p=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/mobile || true)
 c7q=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/art/mobile/phone-play.webp || true)
 echo "  /wrath/mobile Leyline on your phone (200 = on): $c7p, its screenshots: $c7q"
+c7s=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/solo || true)
+echo "  /wrath/solo Leyline Solo (200 = on; the download shows with WU_SOLO_RELEASED=1): $c7s"
 c7l=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/phonelab.js || true)
 c7k=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/phonelab/latest.json || true)
 echo "  /wrath/phonelab Phone Lab: its recorder (200 = on): $c7l, its readings signed out (401 = staff only): $c7k"

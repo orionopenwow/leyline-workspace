@@ -274,6 +274,9 @@ STEPS = {
     "leyline": ("tools/leyline-repo/Update Leyline repo.bat", "Leyline repo: copy and push (github.com/orionopenwow/Leyline)", False),
     # the phone release's own repo (docs/MOBILE-RELEASE.md): press after ship; the owner makes the repo on GitHub once
     "leyline-mobile": ("tools/leyline-repo/Update Leyline-Mobile repo.bat", "Leyline-Mobile repo: the phone release (touch layer, phone solo, the app's phone files, screenshots, guides, the Android build pinned to the Leyline repo's commit), copied and pushed as Orion (github.com/orionopenwow/Leyline-Mobile; make it on GitHub once first)", False),
+    # Leyline Solo's own public repo (docs/LEYLINE-SOLO.md): the single player app's code, window and installer
+    # workflow, copied and pushed; the owner makes the empty repo on GitHub once
+    "leyline-solo": ("tools/solo-repo/Update Leyline Solo repo.bat", "Leyline Solo repo: the single player app (the launcher crate with the solo feature, its window, tools/solo, the installer and engine workflows), copied into .repos\\leyline-solo-clean and pushed as Orion (github.com/orionopenwow/leyline-solo; make it on GitHub once first, empty and public)", False),
     "mods":  ("mods/Put mods on Wrath.bat", "Mods catalog: realm (live reload), streamed addons and /wrath/mods", False),
     # Resilience (docs/RESILIENCE.md): after a ship, our own copy of each Leyline release, the Host pack, the addons and
     # the upstream server source at our pinned commits, on our server with checksums and torrents (and, with the release
@@ -387,7 +390,7 @@ STEPS = {
 # exports and uploads get more, and LEYLINE_STEP_TIMEOUT_MIN changes the default.
 STEP_TIMEOUT_MIN = {"client-build": 360, "slice": 360, "slice-sampler": 360, "sampler": 240, "sv-record": 180,
                     "sv-export": 240, "client": 120, "ship": 120, "ship-again": 120, "leyline": 120,
-                    "leyline-launcher": 120, "leyline-mobile": 120, "release-mirror": 180, "audit": 60, "den-test-variants": 120,
+                    "leyline-launcher": 120, "leyline-mobile": 120, "leyline-solo": 120, "release-mirror": 180, "audit": 60, "den-test-variants": 120,
                     "fresh-test": 180, "fresh-sandbox": 180, "first-run-test": 180, "mods-daily": 180, "thumbs": 120,
                     "addons-curate": 120, "ov112-data-remove": 120, "foreverui": 120,
                     # the maps from the game folder and the database import; with --mmaps up to three hours more

@@ -1,4 +1,4 @@
-// Leyline Solo (docs/LEYLINE-SOLO-APP.md): the first-era game, single player, on the player's own game folder. A world
+// Leyline Solo (docs/LEYLINE-SOLO.md): the first-era game, single player, on the player's own game folder. A world
 // of your own on this PC (the core's classic_* commands), companions, offline, signed in by itself, friends by invite.
 //
 // Screens: First run (the game folder, then Set up with one progress bar), Home (Play, Quick start, Running/Stopped,

@@ -65,7 +65,7 @@ jobs:
         run: cargo test
 
   solo-app:
-    # Leyline Solo (docs/LEYLINE-SOLO-APP.md): the same crate with the `solo` feature and its own window
+    # Leyline Solo (docs/LEYLINE-SOLO.md): the same crate with the `solo` feature and its own window
     # (tauri.solo.conf.json, ui-solo/). Only on its branch: the compile on Linux, then the Windows app as players get it
     # (no installer here; the leyline-solo repo's own workflow makes and signs that).
     if: github.ref == 'refs/heads/feat-solo-app'

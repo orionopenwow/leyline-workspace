@@ -1,4 +1,4 @@
-// Leyline Solo, the app (ui-solo/: docs/LEYLINE-SOLO-APP.md), in Chromium with a fake Tauri core (the core's classic_*
+// Leyline Solo, the app (ui-solo/: docs/LEYLINE-SOLO.md), in Chromium with a fake Tauri core (the core's classic_*
 // commands, the shared clients commands):
 //   * first run: the game folder (a later-era folder said plainly; an incomplete one; nothing typed), then Set up with
 //     one progress bar (the progress line of kind "classic") and the honest time estimate, then Home;

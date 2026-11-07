@@ -188,7 +188,7 @@ FAQ = [
 CSS = """
 .so .so-hero{grid-template-columns:minmax(0,1.25fr) minmax(0,.75fr)}
 .so .so-emblem{margin:0;justify-self:center;max-width:300px}
-.so .so-emblem img{display:block;width:100%;height:auto;filter:drop-shadow(0 12px 36px rgba(110,150,255,.28))}
+.so .so-emblem img{display:block;width:100%;height:auto;border-radius:22px;border:1px solid var(--lp-line);box-shadow:0 14px 40px rgba(0,0,0,.45),0 0 60px rgba(110,150,255,.18)}
 @media (max-width:820px){.so .so-hero{grid-template-columns:1fr}.so .so-emblem{max-width:170px;order:-1}}
 .so .so-toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 0;padding:0;list-style:none}
 .so .so-toc a{display:inline-flex;align-items:center;min-height:40px;padding:6px 14px;border:1px solid var(--lp-line);border-radius:999px;text-decoration:none;color:var(--lp-ink)}

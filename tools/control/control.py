@@ -167,6 +167,9 @@ STEPS = {
     "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, then builds, saves and loads, the white room, Forge's files, a shareable Den file, an invite a test friend signs in with, the autosave; a screenshot, closes it (logs in tools\\den-check\\logs)", False),
     # the first-run test (tools/first-run/first_run.py, docs/FIRST-RUN-TEST.md): a brand-new launcher through to in the game
     "first-run-test": ("tools/first-run/First run test.bat", "First-run test: today's download in an empty data folder, your game folder added, a test Hero Key logged in, PLAY on Wrath Unleashed, the game logs in by itself, into the world, then the Den test; screenshots, then the test account and temp folders removed (logs in tools\\first-run\\logs)", False),
+    # Leyline Solo's fresh-machine test (tools/first-run/solo_first_run.py, docs/FIRST-RUN-TEST.md part 5): not READ_ONLY
+    # (it starts your game and signs it in; your game folder is put back byte for byte after)
+    "solo-first-run": ("tools/first-run/Solo first run test.bat", "Leyline Solo fresh-machine test: a new empty profile (it refuses your own Solo and launcher folders), your first-era folder checked, setup, the world started, the game logs in by itself to character select; then it watches while you Quick start and type .bot group, and puts it all back (logs in tools\\first-run\\logs)", False),
     # the fresh computer test (docs/FRESH-COMPUTER-TEST.md): every feature on a brand-new launcher; changes nothing of
     # yours but a temp profile (your game folder's files are put back), so not READ_ONLY: it starts your game and
     # makes (and closes) a test account on the website
@@ -388,7 +391,7 @@ STEPS = {
 STEP_TIMEOUT_MIN = {"client-build": 360, "slice": 360, "slice-sampler": 360, "sampler": 240, "sv-record": 180,
                     "sv-export": 240, "client": 120, "ship": 120, "ship-again": 120, "leyline": 120,
                     "leyline-launcher": 120, "leyline-mobile": 120, "release-mirror": 180, "audit": 60, "den-test-variants": 120,
-                    "fresh-test": 180, "fresh-sandbox": 180, "first-run-test": 180, "mods-daily": 180, "thumbs": 120,
+                    "fresh-test": 180, "fresh-sandbox": 180, "first-run-test": 180, "solo-first-run": 240, "mods-daily": 180, "thumbs": 120,
                     "addons-curate": 120, "ov112-data-remove": 120, "foreverui": 120,
                     # the maps from the game folder and the database import; with --mmaps up to three hours more
                     "solo-setup": 300, "solo-start": 20}

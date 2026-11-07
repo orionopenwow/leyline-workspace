@@ -2240,10 +2240,6 @@ async fn classic_status() -> Result<crate::host::classic::ClassicStatus, String>
     .await
 }
 
-fn now_secs() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
-}
-
 /// Set Leyline Solo up (whatever isn't done: the engine, the maps from this first-era folder, the database, the
 /// accounts) and start it; follow it with classic_progress. `mmaps`: the monster paths too (1 to 3 hours).
 #[tauri::command]

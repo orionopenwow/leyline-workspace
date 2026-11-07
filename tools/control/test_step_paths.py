@@ -92,6 +92,35 @@ class StepPaths(unittest.TestCase):
             self.assertEqual("(read-only)" in title, cmd in ("check", "status"), step)
         self.assertGreaterEqual(timeouts["solo-setup"], 240)
 
+    def test_leyline_solo_repo_step(self):
+        """Leyline Solo's public repo (docs/LEYLINE-SOLO.md): export into the clean clone, commit as Orion, push to
+        main; never creates the repo (a clear line to make it), never forces, never Chumpton; not READ_ONLY; CRLF."""
+        steps = control_steps()
+        tree = ast.parse(read("tools/control/control.py"))
+        ro = next(ast.literal_eval(n.value) for n in tree.body
+                  if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "READ_ONLY" for t in n.targets))
+        timeouts = next(ast.literal_eval(n.value) for n in tree.body
+                        if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "STEP_TIMEOUT_MIN" for t in n.targets))
+        b, title, interactive = steps["leyline-solo"]
+        self.assertEqual(win(b), "tools/solo-repo/Update Leyline Solo repo.bat")
+        self.assertFalse(interactive)
+        self.assertNotIn("leyline-solo", ro)
+        self.assertGreaterEqual(timeouts["leyline-solo"], 60)
+        self.assertIn("orionopenwow/leyline-solo", title)
+        with open(os.path.join(ROOT, b), "rb") as f:
+            raw = f.read()
+        self.assertNotIn(b"\n", raw.replace(b"\r\n", b""), "CRLF line ends only")
+        text = raw.decode()
+        self.assertIn(r".repos\leyline-solo-clean", text)
+        self.assertIn(r'tools\solo-repo\export.py" "%LS%" --source "%WU%"', text)
+        self.assertIn("create orionopenwow/leyline-solo on GitHub", text)
+        self.assertIn("then press again", text)
+        self.assertIn('git config user.name "Orion"', text)
+        self.assertIn("orionopenwow@users.noreply.github.com", text)
+        self.assertIn("Chumpton", text)
+        self.assertIn("git push -q -u origin HEAD:main", text)
+        self.assertNotRegex(text, r"--force|push -f\b|gh repo create|\.repos\\leyline-launcher\b")
+
     def test_fresh_computer_steps(self):
         """The fresh computer test (docs/FRESH-COMPUTER-TEST.md): fresh-test and fresh-sandbox run first_run.py; neither is
         READ_ONLY (they start the game and make a test account), and first-run-test runs the same tool."""

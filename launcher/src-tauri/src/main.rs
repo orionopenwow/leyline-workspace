@@ -3,6 +3,7 @@
 
 #[cfg(all(feature = "app", desktop))]
 fn main() {
+    solo_dir();
     mcp_first();
     // `Leyline den-play [--test]`: My Den with no launcher window (the owner's den-test step; denclick.rs)
     let args: Vec<String> = std::env::args().collect();
@@ -30,6 +31,22 @@ fn main() {
         None => {}
     }
     leyline_lib::run();
+}
+
+/// Leyline Solo keeps its own data folder (%APPDATA%\\Leyline Solo and the like), so it never shares settings, game
+/// folders or worlds with the Leyline Launcher on the same PC. An absolute LEYLINE_APP_DIR still wins (tests).
+#[cfg(all(feature = "app", desktop))]
+fn solo_dir() {
+    #[cfg(feature = "solo")]
+    {
+        let key = leyline_lib::settings::APP_DIR_ENV;
+        let set = std::env::var_os(key).is_some_and(|v| std::path::Path::new(&v).is_absolute());
+        if !set {
+            if let Some(d) = dirs::data_dir() {
+                std::env::set_var(key, d.join("Leyline Solo"));
+            }
+        }
+    }
 }
 
 /// The phone app starts in the library (`mobile_entry_point`, mobile.rs); this is only here so the binary builds

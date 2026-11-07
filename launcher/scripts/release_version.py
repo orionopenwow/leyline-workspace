@@ -17,6 +17,7 @@ Standard library only.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -26,7 +27,10 @@ ROOT = Path(__file__).resolve().parents[2]
 CONF = ROOT / "launcher" / "src-tauri" / "tauri.conf.json"
 CARGO = ROOT / "launcher" / "src-tauri" / "Cargo.toml"
 LOCK = ROOT / "launcher" / "src-tauri" / "Cargo.lock"
-TAG = "launcher-v"
+# The tag prefix: the launcher's, or another app built from this crate (Leyline Solo's repo sets RELEASE_TAG=solo-v).
+TAG = os.environ.get("RELEASE_TAG") or "launcher-v"
+if not re.fullmatch(r"[a-z][a-z-]*-v", TAG):
+    raise SystemExit(f"RELEASE_TAG must look like name-v, not {TAG!r}")
 WATCH = ("launcher", "stream/playmodes.json", "stream/modepacks.json")   # the catalogs it builds in (modes.rs, host/modes.rs)
 PLAIN = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 

@@ -23,6 +23,10 @@ torrent-engine = ["dep:librqbit", "dep:tokio"]
 # Scripted Den recipes (agents/den.rs): Lua 5.1, compiled from C sources (mlua vendored). Off by default: without it
 # JSON template recipes work as always, and a .recipe.lua is listed but refused in plain words.
 lua-recipes = ["dep:mlua"]
+# Leyline Solo (docs/LEYLINE-SOLO.md): the same app with its own small window (ui-solo/, tauri.solo.conf.json), its own
+# data folder ("Leyline Solo", never the launcher's) and its own updates (the leyline-solo repo's releases). Build it with
+#   npx tauri build --features solo --config src-tauri/tauri.solo.conf.json
+solo = ["app"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [], optional = true }

@@ -27,6 +27,8 @@ pub mod bossrush; // Boss Rush: the catalog, the pick, the hero's console lines,
 pub mod localworld; // Single player's worlds: their characters (On this PC, Online), Quick start's choices (host/localworld.rs)
 pub mod worldshare; // Play with friends from a single player world: the realm list rewrite, the same-network way (host/worldshare.rs)
 pub mod engine; // Single player's Built-in engine: the realm natively on Windows, no Docker (docs/BUILTIN-ENGINE.md)
+pub mod classic; // Leyline Solo: the first-era world on this PC, no Docker (docs/LEYLINE-SOLO.md)
+pub mod classicsign; // Leyline Solo's fast sign-in: realmlist.wtf, Config.wtf, the opt-in add-on, byte-exact restore
 pub mod lite; // Den Lite: the built-in Den server, no Docker (an interface; the program is labs/den-lite)
 pub mod ready; // Ready for friends?: the checklist before an invite, the self-test login through the relay (host/ready.rs)
 pub mod litenet; // Your Den on the Leyline network with no Docker: the relay tunnel for Den Lite's friends (host/litenet.rs)

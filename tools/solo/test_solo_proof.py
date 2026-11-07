@@ -617,6 +617,23 @@ print("LUA OK")
         self.assertIn("LUA OK", p.stdout + p.stderr, p.stdout + p.stderr)
 
 
+class LauncherGlue(unittest.TestCase):
+    """The launcher's copy of the add-on (launcher/src-tauri/glue/, packed by host/classicsign.rs) is this one, and its
+    stand-in login screen tests (pick, Quick start's make, enter) pass on this copy too."""
+    LAUNCHER = ROOT / "launcher" / "src-tauri" / "glue"
+
+    def test_same_files_as_the_launchers(self):
+        for f in ("LeylineSolo.lua", "LeylineSolo.xml"):
+            self.assertEqual((HERE / "glue" / f).read_bytes(), (self.LAUNCHER / f).read_bytes(), f)
+
+    @unittest.skipUnless(shutil.which("texlua") or shutil.which("lua") or shutil.which("lua5.1"), "no Lua on this PC")
+    def test_the_launchers_login_screen_tests(self):
+        lua = shutil.which("lua5.1") or shutil.which("lua") or shutil.which("texlua")
+        p = subprocess.run([lua, str(self.LAUNCHER / "test_solo_glue.lua"), str(HERE / "glue" / "LeylineSolo.lua")],
+                           capture_output=True, text=True)
+        self.assertIn("all passed", p.stdout, p.stdout + p.stderr)
+
+
 class ControlSteps(unittest.TestCase):
     def test_bats_call_the_tool_with_crlf(self):
         for name, cmd in (("Solo check.bat", "check"), ("Solo setup.bat", "setup"), ("Solo start.bat", "start"),

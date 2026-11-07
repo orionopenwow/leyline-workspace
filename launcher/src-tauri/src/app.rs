@@ -1039,7 +1039,22 @@ fn host_ready_now(kind: &str, kit: Option<PathBuf>) -> crate::host::ready::Ready
     let t = Duration::from_secs(6);
     let mut f = ready::Facts { kind: kind.to_string(), os: std::env::consts::OS.into(), relay: realms::RELAY.into(), ..Default::default() };
     let mut secret: Option<String> = None;
-    if let Some(k) = crate::host::engine::Kind::from_word(kind).filter(|k| *k != crate::host::engine::Kind::BossRush) {
+    if kind == "classic" {
+        // Leyline Solo's first-era world (classic_invite): its login on this PC, the tunnel, the same network
+        let p = crate::host::classic::Paths::new(&settings::app_dir());
+        let login = ready::login_answers(&format!("127.0.0.1:{}", crate::host::classic::LOGIN_PORT), t);
+        f.running = login.is_ok() && crate::host::classic::status(&p).running;
+        f.login = Some(login);
+        let st = litenet::state();
+        f.tunnel = Some((st.running, st.connected, st.last_error.clone()));
+        if litenet::key_path(&p.share).is_file() {
+            if let Ok(pk) = litenet::load_or_create_key(&litenet::key_path(&p.share)).and_then(|k| litenet::public_key(&k)) {
+                f.realm_id = litenet::realm_id(&pk);
+            }
+            secret = crate::host::worldshare::invite_secret(&p.share).ok();
+        }
+        f.lan = Some(crate::host::worldshare::lan_layout() == Some(crate::host::worldshare::Layout::Classic));
+    } else if let Some(k) = crate::host::engine::Kind::from_word(kind).filter(|k| *k != crate::host::engine::Kind::BossRush) {
         // a single player world on the Built-in engine (world_invite): its login on this PC, the tunnel, the same network
         let p = crate::host::engine::Paths::for_kind(&settings::app_dir(), k);
         let login = ready::login_answers(crate::host::engine::REALM, t);
@@ -1803,9 +1818,17 @@ fn engine_start() -> Result<String, String> {
     crate::host::engine::begin(&settings::app_dir(), None, false)
 }
 
+/// The progress line of whichever world is setting up or starting: Single player's engine, or Leyline Solo's
+/// (`kind: "classic"`, the same as classic_progress) while its job runs or when it was the last one.
 #[tauri::command]
 fn engine_progress() -> crate::host::engine::Job {
-    crate::host::engine::progress()
+    let e = crate::host::engine::progress();
+    let c = crate::host::classic::progress();
+    if c.running || (!e.running && e.idle && !c.idle) {
+        c
+    } else {
+        e
+    }
 }
 
 /// Everyone saved, everything stopped.
@@ -2187,6 +2210,380 @@ async fn world_share_stop(kind: String) -> Result<String, String> {
     blocking(move || {
         world_share_off(k);
         Ok("Sharing stopped: friends' links don't work until you invite again.".to_string())
+    })
+    .await
+}
+
+// ---- Leyline Solo (host/classic.rs, host/classicsign.rs; docs/LEYLINE-SOLO.md: the contract the Solo app codes
+// against): the first-era world on this PC, its fast sign-in, its characters and companions, Invite a friend.
+
+fn classic_paths() -> crate::host::classic::Paths {
+    crate::host::classic::Paths::new(&settings::app_dir())
+}
+
+/// A game folder of the first era, by its id.
+fn classic_client(core: &Core, client: &str) -> Result<ClientProfile, String> {
+    let profile = core.client(client)?;
+    if profile.build != clients::Build::V1121 {
+        return Err("Leyline Solo plays with your first-era game folder: pick that one.".into());
+    }
+    Ok(profile)
+}
+
+#[tauri::command]
+async fn classic_status() -> Result<crate::host::classic::ClassicStatus, String> {
+    blocking(|| {
+        let p = classic_paths();
+        let st = crate::host::classic::status(&p);
+        // friends' logins whose time ran out go while the world runs (host/classic.rs sweep_friends)
+        if st.running && st.friends > 0 {
+            let mut s = crate::host::classic::load_state(&p);
+            if s.friends.iter().any(|f| f.expires <= now_secs()) {
+                crate::host::classic::sweep_friends(&p, &mut s, now_secs(), false);
+                return Ok(crate::host::classic::status(&p));
+            }
+        }
+        Ok(st)
+    })
+    .await
+}
+
+/// Set Leyline Solo up (whatever isn't done: the engine, the maps from this first-era folder, the database, the
+/// accounts) and start it; follow it with classic_progress. `mmaps`: the monster paths too (1 to 3 hours).
+#[tauri::command]
+fn classic_setup(core: State<Core>, client: String, mmaps: Option<bool>, update: Option<bool>) -> Result<String, String> {
+    let profile = classic_client(&core, &client)?;
+    crate::host::classic::begin(&settings::app_dir(), Some(profile.path), mmaps.unwrap_or(false), update.unwrap_or(false))
+}
+
+/// Start it (set up already). `roaming`: other adventurers roam the world (taken now and kept). `stopOther`: another
+/// world on these ports is stopped first (else the answer says "ports busy").
+#[tauri::command]
+async fn classic_start(roaming: Option<bool>, stop_other: Option<bool>) -> Result<String, String> {
+    blocking(move || {
+        if let Some(r) = roaming {
+            crate::host::classic::set_roaming(&classic_paths(), r)?;
+        }
+        if stop_other.unwrap_or(false) {
+            stop_other_worlds();
+        }
+        crate::host::classic::begin(&settings::app_dir(), None, false, false)
+    })
+    .await
+}
+
+/// Whatever else is on Leyline Solo's ports, stopped: the Built-in engine's worlds and Your Den on Den Lite.
+fn stop_other_worlds() {
+    use crate::host::lite::DenLite;
+    let p = classic_paths();
+    if crate::host::classic::other_running(&p).is_none() {
+        return;
+    }
+    for k in crate::host::engine::KINDS {
+        let wp = world_paths(k);
+        if crate::host::engine::active() == Some(k) || crate::host::engine::status(&wp).running {
+            world_share_off(k);
+            let _ = crate::host::engine::stop(&wp);
+        }
+    }
+    let app = settings::app_dir();
+    if crate::host::lite::beat_fresh(&crate::host::dens::dir(&crate::host::lite::root(&app))) {
+        let _ = crate::host::lite::Binary::find(&app).stop();
+    }
+}
+
+#[tauri::command]
+fn classic_progress() -> crate::host::engine::Job {
+    crate::host::classic::progress()
+}
+
+/// Friends' logins removed, everyone saved, everything stopped; sharing ends with it.
+#[tauri::command]
+async fn classic_stop() -> Result<String, String> {
+    blocking(|| {
+        classic_share_off();
+        crate::host::classic::stop(&classic_paths())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn classic_logs(lines: Option<usize>) -> Result<String, String> {
+    blocking(move || Ok(crate::host::classic::logs(&classic_paths(), lines.unwrap_or(200).clamp(20, 2000)))).await
+}
+
+#[tauri::command]
+async fn classic_update_check() -> Result<crate::host::classic::ClassicStatus, String> {
+    blocking(|| {
+        let p = classic_paths();
+        crate::host::classic::check_update(&p)?;
+        Ok(crate::host::classic::status(&p))
+    })
+    .await
+}
+
+/// Settings: `signin` ("simple": the account name filled in, the password typed once; "quick": the sign-in add-on,
+/// opt-in, TODO(owner) approval) saved as settings.json `solo_signin`; `roaming` (other adventurers in the world)
+/// kept in the world's state for its next start. Back to simple takes our archive out of the game folder.
+#[tauri::command]
+async fn classic_settings(core: State<'_, Core>, signin: Option<String>, roaming: Option<bool>) -> Result<String, String> {
+    use crate::host::classicsign::Mode;
+    let m = signin.as_deref().map(Mode::parse).transpose()?;
+    if let Some(m) = m {
+        core.update(|s| {
+            s.solo_signin = m.word().into();
+            Ok(())
+        })?;
+    }
+    blocking(move || {
+        let p = classic_paths();
+        if let Some(r) = roaming {
+            crate::host::classic::set_roaming(&p, r)?;
+        }
+        if m == Some(Mode::Prefill) {
+            let mut s = crate::host::classic::load_state(&p);
+            if s.signin.on && !s.signin.added.is_empty() {
+                let game = PathBuf::from(&s.signin.game);
+                crate::host::classicsign::install(&game, &p.backup, &mut s.signin, Mode::Prefill, None)?;
+                crate::host::classic::save_state(&p, &s)?;
+            }
+        }
+        Ok("Saved.".to_string())
+    })
+    .await
+}
+
+#[derive(Serialize)]
+struct ClassicPlay {
+    message: String,
+    mode: String,
+    /// The add-on signs in by itself this time.
+    auto: bool,
+    account: String,
+    /// Prefill (or the add-on couldn't be used): the page offers "Show password" (classic_password).
+    password_needed: bool,
+    /// Quick start's character's name (the add-on makes it; empty otherwise).
+    made: String,
+}
+
+/// Play Leyline Solo: the sign-in written (backups first), then the game started from its own folder. `signin`:
+/// "simple" or "quick" (else the saved setting). `pick` enters that character, `quick` makes a new one first (both:
+/// the quick sign-in only). `stopOther`: another world on these ports is stopped first; without it that is an error
+/// saying "ports busy".
+#[tauri::command]
+async fn classic_play(core: State<'_, Core>, client: String, signin: Option<String>, pick: Option<String>, quick: Option<QuickPick>, stop_other: Option<bool>) -> Result<ClassicPlay, String> {
+    use crate::host::{classic, classicsign::Mode, localworld as lw};
+    let profile = classic_client(&core, &client)?;
+    let p = classic_paths();
+    if let Some(o) = classic::other_running(&p) {
+        if !stop_other.unwrap_or(false) {
+            return Err(format!("{o} is running on this PC and uses the same ports (ports busy)."));
+        }
+        blocking(|| {
+            stop_other_worlds();
+            Ok(())
+        })
+        .await?;
+    }
+    let st = classic::status(&p);
+    if !st.set_up {
+        return Err("Set Leyline Solo up first: press Start on its page.".into());
+    }
+    if !st.running {
+        return Err("Leyline Solo isn't running: press Start first.".into());
+    }
+    if let Some(n) = &pick {
+        if !crate::hybrid::char_name_ok(n) {
+            return Err("That character's name doesn't look right.".into());
+        }
+    }
+    let mode = match &signin {
+        Some(w) => Mode::parse(w)?,
+        None => Mode::from_word(&core.snapshot().solo_signin),
+    };
+    let make = match &quick {
+        Some(q) => {
+            let (race, class) = lw::quick_ok(q.race, q.class, true)?;
+            let taken: Vec<String> = classic::refresh_chars(&p).unwrap_or_else(|_| classic::read_kept(&p).chars).into_iter().map(|c| c.base.name).collect();
+            let name = lw::name_for(q.name.as_deref().unwrap_or(""), &taken)?;
+            if taken.iter().any(|t| t.eq_ignore_ascii_case(&name)) {
+                return Err(format!("You already have a character named {name} here: pick another name."));
+            }
+            Some(crate::hybrid::NewChar { name, race: race.into(), class: class.into(), female: q.female.unwrap_or(false) })
+        }
+        None => None,
+    };
+    let made = if mode == Mode::Addon { make.as_ref().map(|m| m.name.clone()).unwrap_or_default() } else { String::new() };
+    let game = profile.path.clone();
+    let signed = blocking(move || classic::sign_in(&classic_paths(), &game, mode, pick, make)).await?;
+    let wine = core.snapshot().wine;
+    let plan = launch::plan(&profile, &wine, launch::Os::current())?;
+    let child = launch::run(&plan).inspect_err(|_| {
+        let _ = classic::scrub_signin(&classic_paths());
+    })?;
+    LAST_GAME_PID.store(child.id(), std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut g) = core.games.lock() {
+        g.push(child);
+    }
+    if signed.auto {
+        classic_scrub_when_closed();
+    }
+    let message = if signed.auto {
+        format!("Started {}: it signs in to Leyline Solo by itself.", profile.name)
+    } else if signed.why.is_empty() {
+        format!("Started {}: the account {} is filled in; type its password once (Show password).", profile.name, classic::ACCOUNT)
+    } else {
+        format!("Started {}: the account {} is filled in; type its password once (Show password). The sign-in add-on wasn't used: {}.", profile.name, classic::ACCOUNT, signed.why)
+    };
+    Ok(ClassicPlay { message, mode: signed.mode.ui_word().into(), auto: signed.auto, account: classic::ACCOUNT.into(), password_needed: !signed.auto, made: if signed.auto { made } else { String::new() } })
+}
+
+/// The password out of the add-on's archive once the game lets go of it (the add-on read it at the start): first
+/// after 90 s, then every 15 s, for at most 12 hours; and on stop.
+fn classic_scrub_when_closed() {
+    std::thread::spawn(|| {
+        std::thread::sleep(Duration::from_secs(90));
+        for _ in 0..(12 * 240) {
+            if crate::host::classic::scrub_signin(&classic_paths()).is_ok() {
+                return;
+            }
+            std::thread::sleep(Duration::from_secs(15));
+        }
+    });
+}
+
+#[derive(Serialize)]
+struct ClassicPassword {
+    account: String,
+    password: String,
+}
+
+/// SOLO's account and password for the page to show once and copy: returned only here, never logged.
+#[tauri::command]
+fn classic_password() -> Result<ClassicPassword, String> {
+    let password = crate::host::classic::password(&classic_paths())?;
+    Ok(ClassicPassword { account: crate::host::classic::ACCOUNT.into(), password })
+}
+
+/// Sign-in off: every file of the game folder put back as it was, our archive removed (close the game first).
+/// `client`, when given, must be the folder the sign-in is in.
+#[tauri::command]
+async fn classic_signin_off(core: State<'_, Core>, client: Option<String>) -> Result<String, String> {
+    if let Some(c) = client.as_deref().filter(|c| !c.is_empty()) {
+        let path = classic_client(&core, c)?.path;
+        let st = crate::host::classic::load_state(&classic_paths());
+        if st.signin.on && PathBuf::from(&st.signin.game) != path {
+            return Err("The Solo sign-in is in another game folder: pick that folder, then try again.".into());
+        }
+    }
+    blocking(|| crate::host::classic::signin_off(&classic_paths())).await
+}
+
+/// The characters: `[{name, level, race_label, class_label, zone, companion, online, ...}]`.
+#[tauri::command]
+async fn classic_characters() -> Result<Vec<crate::host::classic::ClassicChar>, String> {
+    blocking(|| Ok(crate::host::classic::characters(&classic_paths()).chars)).await
+}
+
+/// The logs folder opened in the PC's file manager.
+#[tauri::command]
+fn classic_open_logs(app: AppHandle) -> Result<String, String> {
+    let p = classic_paths();
+    std::fs::create_dir_all(&p.logs).map_err(|e| e.to_string())?;
+    app.opener().open_path(p.logs.display().to_string(), None::<&str>).map_err(|e| e.to_string())?;
+    Ok(p.logs.display().to_string())
+}
+
+#[tauri::command]
+fn classic_choices() -> crate::host::classic::ClassicChoices {
+    crate::host::classic::choices(&classic_paths())
+}
+
+/// Invite a friend into Leyline Solo while it runs: one friend's login for 7 days (made over the world's console),
+/// the same network through the launcher's forwarder (the first era's realm list), the relay tunnel.
+#[tauri::command]
+async fn classic_invite() -> Result<DenInvite, String> {
+    blocking(classic_invite_now).await
+}
+
+fn classic_invite_now() -> Result<DenInvite, String> {
+    use crate::host::{classic, denhost, denways, litenet, worldshare as ws};
+    let p = classic_paths();
+    if !classic::status(&p).running {
+        return Err("Start Leyline Solo first: friends join it while it runs.".into());
+    }
+    classic::share_files(&p)?;
+    let seed = litenet::load_or_create_key(&litenet::key_path(&p.share))?;
+    let secret = ws::invite_secret(&p.share)?;
+    let mine = litenet::realm_id(&litenet::public_key(&seed)?);
+    let now = litenet::state();
+    if now.running && now.realm_id != mine {
+        litenet::stop();
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    let mut tunnel = litenet::start(litenet::Setup {
+        endpoint: litenet::Endpoint::relay(realms::RELAY),
+        relay_name: realms::RELAY.into(),
+        seed,
+        name: classic::REALM_NAME.into(),
+        invite_secret: secret.clone(),
+        den_dir: p.share.clone(),
+        realm_list: true,
+    });
+    for _ in 0..40 {
+        if tunnel.connected || !tunnel.last_error.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        tunnel = litenet::state();
+    }
+    let (user, pass, expires) = classic::add_friend(&p)?;
+    let (lan, lan_way) = match denways::lan_address() {
+        None => (None, InviteWay { id: "lan", ok: false, line: "Same network: this PC isn't on a home or office network.".into() }),
+        Some(ip) => match ws::lan_start_layout(ip, classic::LOGIN_PORT, classic::WORLD_PORT, ws::Layout::Classic) {
+            Ok((ip, lp, _)) => (Some(format!("{ip}:{lp}")), InviteWay { id: "lan", ok: true, line: format!("Same network: on, at {ip} (friends at your home or on your network come in here first).") }),
+            Err(e) => (None, InviteWay { id: "lan", ok: false, line: format!("Same network: off ({e}). Allow Leyline on private networks in your firewall, then Invite again.") }),
+        },
+    };
+    let relay_way = if tunnel.last_error.is_empty() {
+        InviteWay { id: "relay", ok: true, line: "Leyline relay: on (works from anywhere; the relay only passes the game's connection through).".into() }
+    } else {
+        InviteWay { id: "relay", ok: false, line: format!("Leyline relay: {}", tunnel.last_error) }
+    };
+    let own_way = InviteWay { id: "own", ok: false, line: "Your own address: not used for Leyline Solo.".into() };
+    let link = litenet::invite_link(realms::RELAY, &tunnel.realm_id, &secret, Some((&user, &pass)));
+    let code = denhost::code_from_link(&link).unwrap_or_default();
+    let link = denways::with_ways(&link, lan.as_deref(), None);
+    Ok(DenInvite { link, code, name: "your friend".into(), expires, tunnel, ways: vec![lan_way, own_way, relay_way] })
+}
+
+/// Sharing Leyline Solo ends: its same-network forwarder and its tunnel (when they are its own).
+fn classic_share_off() {
+    use crate::host::{litenet, worldshare as ws};
+    let p = classic_paths();
+    if litenet::key_path(&p.share).is_file() {
+        let mine = litenet::load_or_create_key(&litenet::key_path(&p.share)).and_then(|s| litenet::public_key(&s)).map(|k| litenet::realm_id(&k)).ok();
+        if mine.is_some_and(|m| litenet::state().realm_id == m) {
+            litenet::stop();
+        }
+    }
+    if ws::lan_layout() == Some(ws::Layout::Classic) {
+        ws::lan_stop();
+    }
+}
+
+#[tauri::command]
+fn classic_friends() -> Vec<crate::host::classic::Friend> {
+    crate::host::classic::friends(&classic_paths())
+}
+
+/// Sharing off, and every friend's login removed.
+#[tauri::command]
+async fn classic_share_stop() -> Result<String, String> {
+    blocking(|| {
+        classic_share_off();
+        let n = crate::host::classic::remove_friends(&classic_paths());
+        Ok(format!("Sharing stopped: friends' links don't work until you invite again ({n} friend login(s) removed)."))
     })
     .await
 }
@@ -3321,6 +3718,23 @@ pub fn run() {
             online_characters,
             world_invite,
             world_share_stop,
+            classic_status, // Leyline Solo (host/classic.rs, host/classicsign.rs; docs/LEYLINE-SOLO.md)
+            classic_setup,
+            classic_start,
+            classic_progress,
+            classic_stop,
+            classic_logs,
+            classic_update_check,
+            classic_settings,
+            classic_open_logs,
+            classic_play,
+            classic_password,
+            classic_signin_off,
+            classic_characters,
+            classic_choices,
+            classic_invite,
+            classic_friends,
+            classic_share_stop,
             bossrush_catalog, // Boss Rush (host/bossrush.rs, ui/bossrush.js)
             bossrush_setup,
             bossrush_start,

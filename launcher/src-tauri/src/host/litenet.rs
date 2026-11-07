@@ -513,7 +513,7 @@ pub fn run_once(s: &Setup, stop: &AtomicBool, state: &Mutex<TunnelState>) -> Res
                                 Some(c) => {
                                     let _ = c.set_nodelay(true);
                                     let rw = if s.realm_list && svc == 3724 {
-                                        std::fs::read_to_string(s.den_dir.join("den-lite.public")).ok().map(|t| crate::host::worldshare::AuthRewriter::new(t.trim()))
+                                        std::fs::read_to_string(s.den_dir.join("den-lite.public")).ok().map(|t| crate::host::worldshare::AuthRewriter::with_layout(t.trim(), crate::host::worldshare::layout_in(&s.den_dir)))
                                     } else {
                                         None
                                     };

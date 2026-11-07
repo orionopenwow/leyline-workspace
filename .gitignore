@@ -140,3 +140,6 @@ desktop.ini
 
 # Den Lite's page build, downloaded by the solo-wasm step (tools/solo/solo_wasm.py); never committed
 stream/www-files/solo/den-lite-web.wasm
+
+# Leyline Solo, Phase 0: the owner's first-era game folder for the solo-* Control steps (docs/LEYLINE-SOLO-PHASE0.md)
+/tools/solo/folder.txt

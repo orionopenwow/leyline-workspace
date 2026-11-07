@@ -1,0 +1,394 @@
+# Leyline Solo, Phase 0 (docs/LEYLINE-SOLO-PHASE0.md): the first-era world server with companions, built natively
+# for Windows and packed as one zip on the rolling release "solo-engine-latest" of this repo, always at the same
+# addresses, each with its checksum:
+#   https://github.com/<this repo>/releases/download/solo-engine-latest/leyline-solo-engine-win64.zip     (+ .sha256)
+#   https://github.com/<this repo>/releases/download/solo-engine-latest/leyline-solo-engine-win64.json    (solo-engine.json)
+# tools/solo/solo_proof.py (the Control steps solo-setup, solo-start...) downloads the zip, checks its .sha256 and
+# unpacks it on the player's PC.
+#
+# The sources: CMaNGOS Classic and its world database at the commits of the host kit's cmangos-1.12.1 profile
+# (hosting/kit/profiles/cmangos-1.12.1/profile.lock), the playerbots module at the commit in tools/solo/solo.lock,
+# built with BUILD_PLAYERBOTS=ON and BUILD_EXTRACTORS=ON, Release. The toolchain is the core's own windows.yml: MSVC
+# from the runner image, Boost prebuilt (install-boost, as the core's CI), the core's bundled libmysql and OpenSSL
+# (dep/lib). The MySQL 8.4 zip, trimmed, is the bundled database server (the same as the Built-in engine's).
+#
+# The databases are made here by the project's own installer (classic-db's InstallFullDB.sh -InstallAll, which
+# includes playerbots' SQL), then dumped into one file (sql/solo-databases.sql) that the player's PC imports in one go;
+# the raw SQL is in the package too (source/), for the GPL and for anyone who wants to rebuild it.
+#
+# No game data: the job fails if any game-data file is in the sources or in the package. The core's Warden module
+# binaries (src/game/Anticheat/module/warden_modules) are not ours to ship and are left out (Warden is off in Solo).
+# The player's maps are extracted on their own PC from their own game folder by the bundled extractors.
+# Only the built-in token (contents: write for the release); no other secrets.
+#
+# Source copy: tools/github-workflows/solo-engine.yml (the same file as .github/workflows/solo-engine.yml).
+name: solo-engine
+on:
+  push:
+    branches: [main, feat-solo-engine]
+    paths:
+      - "tools/solo/**"
+      - "hosting/kit/profiles/cmangos-1.12.1/profile.lock"
+      - ".github/workflows/solo-engine.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solo-engine-latest
+  cancel-in-progress: false
+
+env:
+  PKG_LAYOUT: "1"
+  # bump to rebuild the programs although the commits did not change (the build cache's key)
+  BUILD_REV: "1"
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 300
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: The pins (profile.lock for the core and the database, tools/solo/solo.lock for playerbots and MySQL)
+        shell: bash
+        run: |
+          set -euo pipefail
+          get() { grep -E "^$1=" "$2" | head -1 | cut -d= -f2-; }
+          L=hosting/kit/profiles/cmangos-1.12.1/profile.lock
+          S=tools/solo/solo.lock
+          {
+            echo "CORE_REPO=$(get LL_CORE_REPO $L)"
+            echo "CORE_COMMIT=$(get LL_CORE_COMMIT $L)"
+            echo "DB_REPO=$(get LL_DB_REPO $L)"
+            echo "DB_COMMIT=$(get LL_DB_COMMIT $L)"
+            echo "PB_REPO=$(get LL_PLAYERBOTS_REPO $S)"
+            echo "PB_COMMIT=$(get LL_PLAYERBOTS_COMMIT $S)"
+            echo "MYSQL_VERSION=$(get LL_MYSQL_VERSION $S)"
+            echo "BOOST_VERSION=$(get LL_BOOST_VERSION $S)"
+          } | tee -a "$GITHUB_ENV"
+
+      - name: Sources at the pinned commits (HTTPS, the CMaNGOS project only, every commit checked)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for v in "$CORE_COMMIT" "$DB_COMMIT" "$PB_COMMIT"; do [[ "$v" =~ ^[0-9a-f]{40}$ ]] || { echo "not a full commit: $v"; exit 1; }; done
+          for r in "$CORE_REPO" "$DB_REPO" "$PB_REPO"; do
+            case "$r" in https://github.com/cmangos/*) ;; *) echo "refused: $r is not the CMaNGOS project"; exit 1 ;; esac
+          done
+          fetch() { mkdir -p "$2"; git -C "$2" init -q; git -C "$2" remote add origin "$1"; \
+                    git -C "$2" fetch -q --depth 1 origin "$3"; git -C "$2" checkout -q FETCH_HEAD; \
+                    [ "$(git -C "$2" rev-parse HEAD)" = "$3" ] || { echo "$1 is not at $3"; exit 1; }; }
+          fetch "$CORE_REPO" /c/s/core "$CORE_COMMIT"
+          # the module where the core's own FetchContent puts it (src/modules/PlayerBots), at our pin, not its "master"
+          fetch "$PB_REPO" /c/s/core/src/modules/PlayerBots "$PB_COMMIT"
+          fetch "$DB_REPO" /c/s/db "$DB_COMMIT"
+          echo "core $(git -C /c/s/core rev-parse HEAD)"
+          echo "playerbots $(git -C /c/s/core/src/modules/PlayerBots rev-parse HEAD)"
+          echo "db $(git -C /c/s/db rev-parse HEAD)"
+
+      - name: No game data in the sources (the Warden module binaries are removed, never shipped)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /c/s/core/src/game/Anticheat/module/warden_modules
+          bad=$(find /c/s -path '*/.git' -prune -o -type f \( -iname '*.dbc' -o -iname '*.db2' -o -iname '*.mpq' \
+                -o -iname '*.m2' -o -iname '*.wmo' -o -iname '*.adt' -o -iname '*.blp' -o -iname '*.vmtree' -o -iname '*.vmtile' \
+                -o -iname '*.mmap' -o -iname '*.mmtile' \) -print | head -20)
+          if [ -n "$bad" ]; then echo "game data in the sources, stopping:"; echo "$bad"; exit 1; fi
+          echo "clean"
+
+      - name: The build cache (the programs, by the commits and BUILD_REV; saved right after the build)
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\inst
+          key: solo-engine-inst-${{ env.CORE_COMMIT }}-${{ env.PB_COMMIT }}-${{ env.BUILD_REV }}
+
+      - name: Boost (the core's own CI recipe)
+        if: steps.cache.outputs.cache-hit != 'true'
+        id: boost
+        uses: MarkusJx/install-boost@f9d34f6fe427b8f2ae424d7bf2a3ebccb0dae5a3 # v2
+        with:
+          boost_version: ${{ env.BOOST_VERSION }}
+          platform_version: "2022"
+          toolset: msvc
+
+      - name: Configure (Release, playerbots and the extractors on, auction house bot off)
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        env:
+          BOOST_ROOT: ${{ steps.boost.outputs.BOOST_ROOT }}
+        run: |
+          cmake -S C:\s\core -B C:\b -G "Visual Studio 17 2022" -A x64 -DCMAKE_INSTALL_PREFIX=C:\inst `
+            -DBUILD_GAME_SERVER=ON -DBUILD_LOGIN_SERVER=ON -DBUILD_EXTRACTORS=ON -DBUILD_PLAYERBOTS=ON `
+            -DBUILD_AHBOT=OFF -DBUILD_METRICS=OFF -DBUILD_RECASTDEMOMOD=OFF -DBUILD_DOCS=OFF -DPCH=ON `
+            -DFETCHCONTENT_SOURCE_DIR_PLAYERBOTS=C:/s/core/src/modules/PlayerBots
+          if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
+
+      - name: Build (the long one, about an hour)
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          cmake --build C:\b --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+          cmake --install C:\b --config Release
+          if ($LASTEXITCODE -ne 0) { throw "install failed" }
+          # the module's config template, wherever the install put it
+          Get-ChildItem -Recurse C:\b -Filter aiplayerbot.conf.dist | Select-Object -First 1 | ForEach-Object { Copy-Item $_.FullName C:\inst\ -Force }
+          Remove-Item -Recurse -Force C:\inst\warden_modules -ErrorAction SilentlyContinue
+          Get-ChildItem -Recurse C:\inst | ForEach-Object { "{0,10:N0} KB  {1}" -f ($_.Length / 1KB), $_.FullName }
+
+      - name: Keep the programs for the next run (a later step failing doesn't cost the build)
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\inst
+          key: solo-engine-inst-${{ env.CORE_COMMIT }}-${{ env.PB_COMMIT }}-${{ env.BUILD_REV }}
+
+      - name: MySQL 8.4 (the bundled database server, as the Built-in engine's)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $mv = $env:MYSQL_VERSION
+          $mz = Join-Path $env:RUNNER_TEMP 'mysql.zip'
+          Invoke-WebRequest -Uri "https://cdn.mysql.com/archives/mysql-8.4/mysql-$mv-winx64.zip" -OutFile $mz -UserAgent 'Mozilla/5.0'
+          if (((Get-Item $mz).Length / 1MB) -lt 50) { throw 'MySQL zip looks wrong' }
+          $msha = (Get-FileHash -Algorithm SHA256 $mz).Hash.ToLower()
+          Write-Host "mysql-$mv-winx64.zip sha256 $msha"
+          "MYSQL_ZIP_SHA256=$msha" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          New-Item -ItemType Directory -Force -Path 'C:\tools\mysql' | Out-Null
+          Expand-Archive -Path $mz -DestinationPath 'C:\tools\mysql' -Force
+          Rename-Item "C:\tools\mysql\mysql-$mv-winx64" 'C:\tools\mysql\current'
+
+      - name: Package (programs, the extractors, a trimmed MySQL, our settings; never game data)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = 'C:\pkg'
+          New-Item -ItemType Directory -Force -Path "$pkg\bin\conf-dist", "$pkg\tools", "$pkg\mysql\bin", "$pkg\sql", "$pkg\conf", `
+            "$pkg\source\core-sql", "$pkg\source\playerbots-sql\world", "$pkg\source\classic-db", "$pkg\LICENSES" | Out-Null
+          $exe = @{}
+          Get-ChildItem -Recurse C:\inst -Include *.exe | ForEach-Object { $exe[$_.BaseName] = $_.FullName }
+          foreach ($n in 'mangosd', 'realmd') {
+            if (-not $exe[$n]) { throw "$n.exe was not built" }
+            Copy-Item $exe[$n] "$pkg\bin\"
+          }
+          foreach ($n in 'ad', 'vmap_extractor', 'vmap_assembler', 'MoveMapGen') {
+            if (-not $exe[$n]) { throw "$n.exe was not built" }
+            Copy-Item $exe[$n] "$pkg\tools\"
+          }
+          Copy-Item 'C:\s\core\contrib\extractor_scripts\config.json', 'C:\s\core\contrib\extractor_scripts\offmesh.txt' "$pkg\tools\"
+          foreach ($n in 'mangosd.conf.dist', 'realmd.conf.dist', 'aiplayerbot.conf.dist', 'anticheat.conf.dist') {
+            $f = Get-ChildItem -Recurse C:\inst -Filter $n | Select-Object -First 1
+            if (-not $f) { throw "$n is missing" }
+            Copy-Item $f.FullName "$pkg\bin\conf-dist\"
+          }
+          # DLLs: what the install put beside the programs (the core's libmysql, OpenSSL), the VC++ runtime (app-local)
+          $dlls = @()
+          $dlls += Get-ChildItem -Recurse C:\inst -Filter *.dll | ForEach-Object FullName
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT" -Directory | Sort-Object FullName | Select-Object -Last 1
+          if (-not $crt) { throw 'VC++ runtime folder not found' }
+          $dlls += Get-ChildItem $crt.FullName -Filter *.dll | ForEach-Object FullName
+          foreach ($d in ($dlls | Sort-Object -Unique)) { Copy-Item $d "$pkg\bin\" -Force; Copy-Item $d "$pkg\tools\" -Force }
+          # MySQL, trimmed: the server, the client, admin and dump, their DLLs, share\ (the VC++ runtime too)
+          $my = 'C:\tools\mysql\current'
+          foreach ($n in 'mysqld.exe', 'mysql.exe', 'mysqladmin.exe', 'mysqldump.exe') { Copy-Item "$my\bin\$n" "$pkg\mysql\bin\" }
+          Get-ChildItem "$my\bin" -Filter *.dll | ForEach-Object { Copy-Item $_.FullName "$pkg\mysql\bin\" }
+          Get-ChildItem $crt.FullName -Filter *.dll | ForEach-Object { Copy-Item $_.FullName "$pkg\mysql\bin\" -Force }
+          Copy-Item -Recurse "$my\share" "$pkg\mysql\share"
+          New-Item -ItemType Directory -Force -Path "$pkg\LICENSES\mysql" | Out-Null
+          Get-ChildItem $my -File | Where-Object { $_.Name -match '^(LICENSE|README)' } | ForEach-Object { Copy-Item $_.FullName "$pkg\LICENSES\mysql\" }
+          # the raw SQL (GPL-2.0): the core's, playerbots' (the shared and the classic files), the world database's
+          foreach ($d in 'base', 'create', 'scriptdev2', 'updates') { Copy-Item -Recurse "C:\s\core\sql\$d" "$pkg\source\core-sql\$d" }
+          $pb = 'C:\s\core\src\modules\PlayerBots\sql'
+          Get-ChildItem "$pb\world" -Filter *.sql | ForEach-Object { Copy-Item $_.FullName "$pkg\source\playerbots-sql\world\" }
+          Copy-Item -Recurse "$pb\world\classic" "$pkg\source\playerbots-sql\world\classic"
+          Copy-Item -Recurse "$pb\characters" "$pkg\source\playerbots-sql\characters"
+          foreach ($d in 'Full_DB', 'Updates', 'ACID', 'utilities') { Copy-Item -Recurse "C:\s\db\$d" "$pkg\source\classic-db\$d" }
+          Copy-Item 'C:\s\db\InstallFullDB.sh' "$pkg\source\classic-db\"
+          # licences
+          New-Item -ItemType Directory -Force -Path "$pkg\LICENSES\cmangos", "$pkg\LICENSES\classic-db", "$pkg\LICENSES\playerbots" | Out-Null
+          foreach ($f in 'LICENSE', 'COPYRIGHT.md', 'AUTHORS.md') { Copy-Item "C:\s\core\$f" "$pkg\LICENSES\cmangos\" }
+          foreach ($f in 'LICENSE.md', 'COPYRIGHT.md') { Copy-Item "C:\s\db\$f" "$pkg\LICENSES\classic-db\" }
+          Get-ChildItem 'C:\s\core\src\modules\PlayerBots' -File | Where-Object { $_.Name -match '^(LICENSE|COPYING|README)' } |
+            ForEach-Object { Copy-Item $_.FullName "$pkg\LICENSES\playerbots\" }
+          # ours: the Solo settings profile
+          Copy-Item 'tools\solo\conf\*.conf' "$pkg\conf\"
+
+      - name: The databases (the project's own installer, -InstallAll with playerbots, then one dump)
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg=/c/pkg
+          t=/c/dbw
+          mkdir -p $t/db $t/logs
+          pw="$(python -c 'import secrets,string; print("".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(20)))')"
+          echo "::add-mask::$pw"
+          cat > $t/my.ini <<EOF
+          [mysqld]
+          basedir=C:/pkg/mysql
+          datadir=C:/dbw/db
+          port=13306
+          bind-address=127.0.0.1
+          mysqlx=OFF
+          skip-name-resolve
+          skip-log-bin
+          sql_mode=NO_ENGINE_SUBSTITUTION
+          max_allowed_packet=256M
+          log-error=C:/dbw/logs/mysqld.err
+          EOF
+          printf "CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION; ALTER USER 'root'@'localhost' IDENTIFIED BY '%s';\n" "$pw" "$pw" > $t/init.sql
+          "$pkg/mysql/bin/mysqld.exe" --defaults-file=C:/dbw/my.ini --initialize-insecure --init-file=C:/dbw/init.sql --console \
+            || { cat $t/logs/mysqld.err || true; exit 1; }
+          "$pkg/mysql/bin/mysqld.exe" --defaults-file=C:/dbw/my.ini &
+          export MYSQL_PWD="$pw"
+          for i in $(seq 1 60); do "$pkg/mysql/bin/mysql.exe" -h127.0.0.1 -P13306 -uroot -e "SELECT 1" >/dev/null 2>&1 && break; sleep 2; done
+          "$pkg/mysql/bin/mysql.exe" -h127.0.0.1 -P13306 -uroot -e "SELECT VERSION()"
+          # the installer's own settings file (its variable names, its default database names)
+          cd /c/s/db
+          cat > InstallFullDB.config <<EOF
+          MYSQL_HOST="127.0.0.1"
+          MYSQL_PORT="13306"
+          MYSQL_USERNAME="mangos"
+          MYSQL_PASSWORD="$pw"
+          MYSQL_USERIP="127.0.0.1"
+          WORLD_DB_NAME="classicmangos"
+          REALM_DB_NAME="classicrealmd"
+          CHAR_DB_NAME="classiccharacters"
+          LOGS_DB_NAME="classiclogs"
+          MYSQL_PATH="$pkg/mysql/bin/mysql.exe"
+          MYSQL_DUMP_PATH="$pkg/mysql/bin/mysqldump.exe"
+          CORE_PATH="/c/s/core"
+          LOCALES="NO"
+          FORCE_WAIT="NO"
+          DEV_UPDATES="NO"
+          AHBOT="NO"
+          PLAYERBOTS_DB="YES"
+          EOF
+          sed -i 's/^ *//' InstallFullDB.config
+          set +e
+          bash ./InstallFullDB.sh -InstallAll root "$pw" DeleteAll </dev/null > $t/logs/install.log 2>&1
+          rc=$?
+          set -e
+          grep -v "^ *- Applying" $t/logs/install.log | tail -60
+          echo "applied: $(grep -c "^ *- Applying" $t/logs/install.log) files"
+          if [ "$rc" -ne 0 ] || grep -q "FAILED" $t/logs/install.log; then
+            echo "InstallFullDB.sh exit $rc"
+            grep -n -B2 -A3 "FAILED\|ERROR" $t/logs/install.log | head -80
+            exit 1
+          fi
+          q() { "$pkg/mysql/bin/mysql.exe" -h127.0.0.1 -P13306 -uroot "$@"; }
+          n=$(q -N -B -e "SELECT COUNT(*) FROM classicmangos.creature_template")
+          echo "creature_template rows: $n"; [ "$n" -gt 1000 ] || { echo "the world database looks empty"; exit 1; }
+          n=$(q -N -B -e "SELECT COUNT(*) FROM classicmangos.ai_playerbot_texts")
+          echo "ai_playerbot_texts rows: $n"; [ "$n" -gt 10 ] || { echo "playerbots' world tables are missing"; exit 1; }
+          q -N -B -e "SELECT COUNT(*) FROM classiccharacters.ai_playerbot_random_bots" >/dev/null
+          # the core's sample accounts have public passwords: gone. One realm, this PC only, for this client build.
+          q classicrealmd -e "DELETE FROM account; DELETE FROM realmcharacters; DELETE FROM realmlist;
+            INSERT INTO realmlist (id, name, address, port, icon, realmflags, timezone, allowedSecurityLevel, population, realmbuilds)
+            VALUES (1, 'Leyline Solo', '127.0.0.1', 8085, 0, 0, 1, 0, 0, '5875')"
+          "$pkg/mysql/bin/mysqldump.exe" -h127.0.0.1 -P13306 -uroot --databases classicmangos classiccharacters classicrealmd classiclogs \
+            --default-character-set=utf8mb4 --hex-blob --routines --triggers --skip-comments --skip-dump-date > "$pkg/sql/solo-databases.sql"
+          ls -la "$pkg/sql"
+          "$pkg/mysql/bin/mysqladmin.exe" -h127.0.0.1 -P13306 -uroot shutdown
+          sleep 5
+          rm -f InstallFullDB.config
+
+      - name: Sources, NOTICE and solo-engine.json (the GPL's corresponding source, the versions)
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg=/c/pkg
+          ver="$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+          {
+            echo "Leyline Solo engine $ver, built by .github/workflows/solo-engine.yml from $GITHUB_REPOSITORY@$GITHUB_SHA."
+            echo "Every program here is built, unchanged, from these sources at these exact commits:"
+            echo "  server (mangosd, realmd, ad, vmap_extractor, vmap_assembler, MoveMapGen), GPL-2.0: $CORE_REPO @ $CORE_COMMIT"
+            echo "  companions (the playerbots module, built into mangosd), GPL-2.0: $PB_REPO @ $PB_COMMIT"
+            echo "  world database and its installer (InstallFullDB.sh), GPL-2.0: $DB_REPO @ $DB_COMMIT"
+            echo "  sql/solo-databases.sql: that installer's -InstallAll (with the playerbots SQL) at those commits, dumped; sample accounts removed, one realm (127.0.0.1)"
+            echo "  MySQL Community Server $MYSQL_VERSION, GPL-2.0: https://cdn.mysql.com/archives/mysql-8.4/mysql-$MYSQL_VERSION-winx64.zip (sha256 $MYSQL_ZIP_SHA256); source at https://github.com/mysql/mysql-server/tree/mysql-$MYSQL_VERSION"
+            echo "  Boost $BOOST_VERSION (linked statically); libmysql and OpenSSL as the core ships them in dep/lib."
+            echo "Left out: the core's Warden module binaries (src/game/Anticheat/module/warden_modules); Warden is off (conf/solo-anticheat.conf)."
+            echo "No game data: the maps are made on the player's own PC from their own game folder by the tools in tools/."
+          } > "$pkg/SOURCES.txt"
+          {
+            echo "Leyline Solo engine. Not affiliated with or endorsed by Blizzard Entertainment."
+            echo
+            echo "The programs and the SQL in this package are free software by their authors (see LICENSES/), under the"
+            echo "GNU General Public License version 2 (GPL-2.0). Leyline built them unchanged from the exact sources in"
+            echo "SOURCES.txt; anyone can get that source at those commits. The settings in conf/ are Leyline's (MIT)."
+            echo "This package holds no game data."
+          } > "$pkg/NOTICE.txt"
+          python - "$pkg/solo-engine.json" "$ver" <<'EOF'
+          import json, os, sys
+          e = os.environ
+          doc = {"name": "leyline-solo-engine", "version": sys.argv[2], "layout": int(e["PKG_LAYOUT"]), "build": 5875,
+                 "core": e["CORE_COMMIT"], "playerbots": e["PB_COMMIT"], "db": e["DB_COMMIT"],
+                 "mysql": e["MYSQL_VERSION"], "boost": e["BOOST_VERSION"], "built_from": e["GITHUB_SHA"],
+                 "databases": ["classicmangos", "classiccharacters", "classicrealmd", "classiclogs"],
+                 "ready_line": "World initialized"}
+          json.dump(doc, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
+          EOF
+          cat "$pkg/solo-engine.json"
+
+      - name: Smoke (every program starts; solo_proof.py sets up a fresh database from the package; the login server signs SOLO in)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = 'C:\pkg'
+          # a missing DLL shows as exit code -1073741515 (0xC0000135)
+          foreach ($p in "$pkg\bin\mangosd.exe", "$pkg\bin\realmd.exe", "$pkg\mysql\bin\mysqld.exe") {
+            & $p --version 2>&1 | Select-Object -First 3
+            if ($LASTEXITCODE -eq -1073741515) { throw "$p is missing a DLL" }
+          }
+          foreach ($p in Get-ChildItem "$pkg\tools" -Filter *.exe) {
+            $o = & $p.FullName -? 2>&1 | Select-Object -First 2
+            if ($LASTEXITCODE -eq -1073741515) { throw "$($p.Name) is missing a DLL" }
+          }
+          python -I tools\solo\solo_proof.py ci-smoke --pkg $pkg --work C:\smoke
+          if ($LASTEXITCODE -ne 0) { throw "ci-smoke failed" }
+          Remove-Item -Recurse -Force C:\smoke -ErrorAction SilentlyContinue
+
+      - name: No game data in the package
+        shell: bash
+        run: |
+          set -euo pipefail
+          bad=$(find /c/pkg -type f \( -iname '*.dbc' -o -iname '*.db2' -o -iname '*.mpq' -o -iname '*.m2' -o -iname '*.wmo' \
+                -o -iname '*.adt' -o -iname '*.blp' -o -iname '*.vmtree' -o -iname '*.vmtile' -o -iname '*.mmap' -o -iname '*.mmtile' \
+                -o -iname '*.map' -o -ipath '*warden_modules*' \) -print | head -20)
+          if [ -n "$bad" ]; then echo "game data in the package, stopping:"; echo "$bad"; exit 1; fi
+          du -sh /c/pkg /c/pkg/*
+
+      - name: Zip with its checksum (deflate only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /c/pkg
+          7z a -tzip -mm=Deflate -mx=7 "$GITHUB_WORKSPACE/leyline-solo-engine-win64.zip" . > /dev/null
+          cd "$GITHUB_WORKSPACE"
+          sha256sum leyline-solo-engine-win64.zip | awk '{print $1"  leyline-solo-engine-win64.zip"}' > leyline-solo-engine-win64.zip.sha256
+          cp /c/pkg/solo-engine.json leyline-solo-engine-win64.json
+          cat leyline-solo-engine-win64.zip.sha256
+          ls -la leyline-solo-engine-win64.zip
+
+      - name: Put it on solo-engine-latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="$(python -c 'import json; print(json.load(open("leyline-solo-engine-win64.json"))["version"])')"
+          size="$(( $(stat -c %s leyline-solo-engine-win64.zip) / 1048576 )) MB"
+          notes="Leyline Solo engine, Phase 0 ($ver, $size), built from $GITHUB_SHA: a first-era world server with companions for your own PC. tools/solo/solo_proof.py downloads it and checks it against its .sha256. It holds no game data: the maps are made from your own game folder on your PC. GPL software; SOURCES.txt inside lists every source at its exact commit. Not code-signed yet."
+          if gh release view solo-engine-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit solo-engine-latest -R "$GITHUB_REPOSITORY" --title "Solo engine (latest, $ver)" --notes "$notes" --prerelease
+          else
+            gh release create solo-engine-latest -R "$GITHUB_REPOSITORY" --title "Solo engine (latest, $ver)" --notes "$notes" --target "$GITHUB_SHA" --prerelease --latest=false
+          fi
+          gh release upload solo-engine-latest leyline-solo-engine-win64.zip leyline-solo-engine-win64.zip.sha256 leyline-solo-engine-win64.json -R "$GITHUB_REPOSITORY" --clobber

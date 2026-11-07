@@ -33,7 +33,7 @@ class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
         self.assertEqual(names, ["bots-canary.yml", "den-lite-web.yml", "den-lite.yml", "engine-windows.yml", "forge.yml", "hub-index.yml", "leyline-android.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
-                                 "survivors.yml", "wu-hosting.yml", "wu-images.yml"])
+                                 "solo-engine.yml", "survivors.yml", "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
             self.assertTrue(doc["name"] and doc["on"] and doc["jobs"], n)
@@ -43,7 +43,7 @@ class Workflows(unittest.TestCase):
                     self.assertTrue("uses" in s or "run" in s, f"{n}:{job}: {s}")
                     if "uses" in s and not s["uses"].startswith("./"):
                         # pinned by commit (a moved tag can't change what runs); the line's comment names the tag
-                        self.assertRegex(s["uses"], r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$", f"{n}: pin actions to a commit SHA")
+                        self.assertRegex(s["uses"], r"^[\w.-]+/[\w.-]+(/[\w.-]+)?@[0-9a-f]{40}$", f"{n}: pin actions to a commit SHA")
                         self.assertRegex(text, re.escape(s["uses"]) + r" # (v\d+|stable)\n", f"{n}: name the tag in a comment")
             self.assertNotIn("\t", text, n)
 

@@ -27,8 +27,10 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// The rolling release the workflow publishes; [`URL_ENV`] overrides it (testing a build).
-pub const RELEASE: &str = "https://github.com/orionopenwow/leyline-workspace/releases/download/solo-engine-latest/";
+/// The rolling release of the public Leyline Solo repo; [`URL_ENV`] overrides it (testing a build).
+pub const RELEASE: &str = "https://github.com/orionopenwow/leyline-solo/releases/download/solo-engine-latest/";
+/// Where the workflow publishes it today (`.github/workflows/solo-engine.yml`): tried when [`RELEASE`] fails.
+pub const RELEASE_FALLBACK: &str = "https://github.com/orionopenwow/leyline-workspace/releases/download/solo-engine-latest/";
 pub const ASSET: &str = "leyline-solo-engine-win64.zip";
 pub const URL_ENV: &str = "LEYLINE_SOLO_ENGINE_URL";
 /// About 90 MB today; anything over 1 GB isn't it.
@@ -66,8 +68,36 @@ pub fn release_from(over: Option<&str>) -> String {
     }
 }
 
-fn release() -> String {
-    release_from(std::env::var(URL_ENV).ok().as_deref())
+/// The release folders to try, in order: the override alone when it is set, else [`RELEASE`] then
+/// [`RELEASE_FALLBACK`].
+pub fn releases_from(over: Option<&str>) -> Vec<String> {
+    let r = release_from(over);
+    if r != RELEASE {
+        vec![r]
+    } else {
+        vec![RELEASE.to_string(), RELEASE_FALLBACK.to_string()]
+    }
+}
+
+fn releases() -> Vec<String> {
+    releases_from(std::env::var(URL_ENV).ok().as_deref())
+}
+
+/// The release's `.sha256` text from the first folder that has it, and that folder.
+fn get_sha(p: &Paths) -> Result<(String, String), String> {
+    let shaf = p.tmp.join(format!("{ASSET}.sha256"));
+    let mut last = String::new();
+    for base in releases() {
+        match crate::upstream::download(&format!("{base}{ASSET}.sha256"), &shaf, 4096) {
+            Ok(_) => {
+                let t = fs::read_to_string(&shaf).unwrap_or_default();
+                let _ = fs::remove_file(&shaf);
+                return Ok((t, base));
+            }
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
 }
 
 fn now() -> u64 {
@@ -222,6 +252,8 @@ pub struct State {
     pub friends: Vec<Friend>,
     /// Friends' logins still to delete (their time ran out while the world was stopped).
     pub gone: Vec<String>,
+    /// Other adventurers roam the world (random bots); off: just the player and their companions.
+    pub roaming: bool,
 }
 
 impl std::fmt::Debug for State {
@@ -234,6 +266,7 @@ impl std::fmt::Debug for State {
             .field("accounts_made", &self.accounts_made)
             .field("signin", &self.signin)
             .field("friends", &self.friends)
+            .field("roaming", &self.roaming)
             .finish()
     }
 }
@@ -404,20 +437,43 @@ pub fn realmd_env(s: &State) -> Vec<(String, String)> {
     vec![("Realmd_LoginDatabaseInfo".to_string(), db_info(s, "classicrealmd"))]
 }
 
+/// Roaming bots on (the setting "Other adventurers roam the world"): the module's own random bots, logged in at
+/// start. TODO(owner): how many.
+pub fn roaming_layer(on: bool) -> Vec<(String, String)> {
+    if !on {
+        return Vec::new();
+    }
+    [("AiPlayerbot.RandomBotAutologin", "1"), ("AiPlayerbot.RandomBotLoginAtStartup", "1"), ("AiPlayerbot.RandomBotAutoCreate", "1"),
+        ("AiPlayerbot.MinRandomBots", "20"), ("AiPlayerbot.MaxRandomBots", "40"), ("AiPlayerbot.RandomBotAccountCount", "8")]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+/// The world's experience rate as the profile sets it ("2x"), for the page.
+pub fn xp_rate(p: &Paths) -> String {
+    let t = fs::read_to_string(p.profile("solo.conf")).unwrap_or_default();
+    overrides(&t).into_iter().find(|(k, _)| k == "Rate.XP.Kill").map(|(_, v)| format!("{}x", v.trim_matches('"'))).unwrap_or_default()
+}
+
 /// The four `.conf` files for `run/`: (name, text). None of them holds a password.
 pub fn confs(p: &Paths, mmaps: bool) -> Result<Vec<(&'static str, String)>, String> {
+    confs_with(p, mmaps, false)
+}
+
+pub fn confs_with(p: &Paths, mmaps: bool, roaming: bool) -> Result<Vec<(&'static str, String)>, String> {
     let rd = |f: PathBuf| fs::read(&f).map(|b| String::from_utf8_lossy(&b).to_string()).map_err(|_| format!("The engine is missing {}: get it again.", f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
     Ok(vec![
         ("mangosd.conf", apply_conf(&rd(p.conf_dist("mangosd"))?, &[overrides(&rd(p.profile("solo.conf"))?), mangosd_layer(p, mmaps)])),
         ("realmd.conf", apply_conf(&rd(p.conf_dist("realmd"))?, &[overrides(&rd(p.profile("solo-realmd.conf"))?), realmd_layer(p)])),
-        ("aiplayerbot.conf", apply_conf(&rd(p.conf_dist("aiplayerbot"))?, &[overrides(&rd(p.profile("solo-aiplayerbot.conf"))?)])),
+        ("aiplayerbot.conf", apply_conf(&rd(p.conf_dist("aiplayerbot"))?, &[overrides(&rd(p.profile("solo-aiplayerbot.conf"))?), roaming_layer(roaming)])),
         ("anticheat.conf", apply_conf(&rd(p.conf_dist("anticheat"))?, &[overrides(&rd(p.profile("solo-anticheat.conf"))?)])),
     ])
 }
 
-fn write_confs(p: &Paths, mmaps: bool) -> Result<(), String> {
+fn write_confs(p: &Paths, mmaps: bool, roaming: bool) -> Result<(), String> {
     fs::create_dir_all(&p.run).map_err(|e| e.to_string())?;
-    for (name, text) in confs(p, mmaps)? {
+    for (name, text) in confs_with(p, mmaps, roaming)? {
         fs::write(p.run.join(name), text).map_err(|e| format!("Couldn't write {name}: {e}"))?;
     }
     // the servers load OpenSSL's legacy provider from their working folder (Phase 0: the core's Main.cpp on Windows)
@@ -808,7 +864,7 @@ pub fn begin(app_dir: &Path, game: Option<PathBuf>, mmaps: bool, update: bool) -
     }
     let p = Paths::new(app_dir);
     if let Some(o) = other_running(&p) {
-        return Err(format!("{o} is running on this PC and uses the same ports. Stop it first, then press Start again."));
+        return Err(format!("{o} is running on this PC and uses the same ports (ports busy). Stop it first, then press Start again."));
     }
     let s = load_state(&p);
     let steps = plan(&have(&p, &s, update, mmaps));
@@ -930,11 +986,7 @@ fn get_error(e: &str) -> String {
 }
 
 fn download(p: &Paths) -> Result<String, String> {
-    let base = release();
-    let shaf = p.tmp.join(format!("{ASSET}.sha256"));
-    crate::upstream::download(&format!("{base}{ASSET}.sha256"), &shaf, 4096).map_err(|e| get_error(&e))?;
-    let want = fs::read_to_string(&shaf).unwrap_or_default();
-    let _ = fs::remove_file(&shaf);
+    let (want, base) = get_sha(p).map_err(|e| get_error(&e))?;
     if crate::host::forge::sha_in(&want).is_none() {
         return Err("The engine's checksum file doesn't look right, so nothing was downloaded. Try again later.".into());
     }
@@ -1031,10 +1083,7 @@ pub fn place(p: &Paths, zip: &Path, want_text: &str, s: &mut State) -> Result<()
 /// The release's checksum now; true when it isn't the installed one.
 pub fn check_update(p: &Paths) -> Result<bool, String> {
     fs::create_dir_all(&p.tmp).map_err(|e| e.to_string())?;
-    let shaf = p.tmp.join(format!("{ASSET}.sha256"));
-    crate::upstream::download(&format!("{}{ASSET}.sha256", release()), &shaf, 4096).map_err(|e| format!("Couldn't look for an engine update: {e}"))?;
-    let t = fs::read_to_string(&shaf).unwrap_or_default();
-    let _ = fs::remove_file(&shaf);
+    let (t, _) = get_sha(p).map_err(|e| format!("Couldn't look for an engine update: {e}"))?;
     let latest = crate::host::forge::sha_in(&t).ok_or("The engine's checksum file doesn't look right.")?;
     let mut s = load_state(p);
     s.latest_sha256 = latest;
@@ -1369,18 +1418,18 @@ pub fn ready_seen(p: &Paths) -> bool {
 /// answer. Then friends' logins whose time ran out are removed.
 pub fn start(p: &Paths) -> Result<(), String> {
     if let Some(o) = other_running(p) {
-        return Err(format!("{o} is running on this PC and uses the same ports. Stop it first, then press Start again."));
+        return Err(format!("{o} is running on this PC and uses the same ports (ports busy). Stop it first, then press Start again."));
     }
     let mut s = load_state(p);
-    write_confs(p, p.mmaps_marker().is_file())?;
+    write_confs(p, p.mmaps_marker().is_file(), s.roaming)?;
     fs::write(p.my_ini(), my_ini(p)).map_err(|e| e.to_string())?;
     start_db(p)?;
     let (_, our_login, our_world) = ours_up(p);
     if !our_login && engine::port_answers(LOGIN_PORT) {
-        return Err(format!("Another server on this PC is using the login port ({LOGIN_PORT}), so {TITLE} can't start. Stop that server, then press Start again."));
+        return Err(format!("Another server on this PC is using the login port ({LOGIN_PORT}), so {TITLE} can't start (ports busy). Stop that server, then press Start again."));
     }
     if !our_world && engine::port_answers(WORLD_PORT) {
-        return Err(format!("Another server on this PC is using the world port ({WORLD_PORT}), so {TITLE} can't start. Stop that server, then press Start again."));
+        return Err(format!("Another server on this PC is using the world port ({WORLD_PORT}), so {TITLE} can't start (ports busy). Stop that server, then press Start again."));
     }
     if !engine::port_answers(LOGIN_PORT) {
         job(|j| j.detail = "The login server".into());
@@ -1535,6 +1584,12 @@ pub struct ClassicStatus {
     pub signin: SigninStatus,
     pub sharing: bool,
     pub friends: usize,
+    /// The setup/start job's progress line while one runs (the same as classic_progress).
+    pub progress: Option<Job>,
+    /// "2x" (the profile's experience rate; TODO(owner)).
+    pub xp_rate: String,
+    pub logs_dir: String,
+    pub roaming: bool,
 }
 
 pub fn status(p: &Paths) -> ClassicStatus {
@@ -1575,6 +1630,10 @@ pub fn status(p: &Paths) -> ClassicStatus {
         },
         sharing: sharing(p),
         friends: s.friends.iter().filter(|f| f.expires > t).count(),
+        progress: busy().then(progress),
+        xp_rate: xp_rate(p),
+        logs_dir: p.logs.display().to_string(),
+        roaming: s.roaming,
     }
 }
 
@@ -1602,6 +1661,16 @@ pub fn sign_in(p: &Paths, game: &Path, mode: Mode, pick: Option<String>, make: O
     save_state(p, &s)?;
     let r = r?;
     Ok(Signed { mode, auto: r.addon, why: r.why, lines: r.lines })
+}
+
+/// The roaming-bots setting (taken at the next start).
+pub fn set_roaming(p: &Paths, on: bool) -> Result<(), String> {
+    let mut s = load_state(p);
+    if s.roaming != on {
+        s.roaming = on;
+        save_state(p, &s)?;
+    }
+    Ok(())
 }
 
 /// SOLO's password, for the page to show once and copy (never logged, never in another answer).
@@ -1639,6 +1708,25 @@ pub struct ClassicChar {
     pub base: LocalChar,
     pub companion: bool,
     pub online: bool,
+    /// Where it is, in words ("" when not one of the named zones), and the zone's id.
+    pub zone: String,
+    pub zone_id: u32,
+}
+
+/// The first era's zones and cities by their area id (the characters table's `zone`), for the Characters page.
+pub const ZONES: &[(u32, &str)] = &[
+    (1, "Dun Morogh"), (3, "Badlands"), (4, "Blasted Lands"), (8, "Swamp of Sorrows"), (10, "Duskwood"), (11, "Wetlands"),
+    (12, "Elwynn Forest"), (14, "Durotar"), (15, "Dustwallow Marsh"), (16, "Azshara"), (17, "The Barrens"), (28, "Western Plaguelands"),
+    (33, "Stranglethorn Vale"), (36, "Alterac Mountains"), (38, "Loch Modan"), (40, "Westfall"), (41, "Deadwind Pass"), (44, "Redridge Mountains"),
+    (45, "Arathi Highlands"), (46, "Burning Steppes"), (47, "The Hinterlands"), (51, "Searing Gorge"), (85, "Tirisfal Glades"),
+    (130, "Silverpine Forest"), (139, "Eastern Plaguelands"), (141, "Teldrassil"), (148, "Darkshore"), (215, "Mulgore"),
+    (267, "Hillsbrad Foothills"), (331, "Ashenvale"), (357, "Feralas"), (361, "Felwood"), (400, "Thousand Needles"), (405, "Desolace"),
+    (406, "Stonetalon Mountains"), (440, "Tanaris"), (490, "Un'Goro Crater"), (493, "Moonglade"), (618, "Winterspring"), (1377, "Silithus"),
+    (1497, "Undercity"), (1519, "Stormwind City"), (1537, "Ironforge"), (1637, "Orgrimmar"), (1638, "Thunder Bluff"), (1657, "Darnassus"),
+];
+
+pub fn zone_label(id: u32) -> &'static str {
+    ZONES.iter().find(|z| z.0 == id).map(|z| z.1).unwrap_or("")
 }
 
 /// A row of [`chars_sql`] before the companion rule.
@@ -1651,6 +1739,7 @@ pub struct Row {
     pub store: u64,
     /// Its group's leader (0: none).
     pub leader: u64,
+    pub zone: u32,
 }
 
 /// SOLO's characters (never the stop account's, a friend's or a bot account's), with the two companion marks:
@@ -1660,7 +1749,7 @@ pub fn chars_sql() -> String {
         "SELECT c.guid, c.name, c.race, c.class, c.gender, c.level, c.totaltime, c.logout_time, c.online, \
          (SELECT COUNT(*) FROM classiccharacters.ai_playerbot_db_store d WHERE d.guid = c.guid), \
          COALESCE((SELECT g.leaderGuid FROM classiccharacters.group_member m JOIN classiccharacters.`groups` g ON g.groupId = m.groupId \
-         WHERE m.memberGuid = c.guid LIMIT 1), 0) \
+         WHERE m.memberGuid = c.guid LIMIT 1), 0), c.zone \
          FROM classiccharacters.characters c JOIN classicrealmd.account a ON a.id = c.account WHERE a.username = '{ACCOUNT}' ORDER BY c.guid;"
     )
 }
@@ -1669,7 +1758,7 @@ pub fn parse_rows(rows: &str) -> Vec<Row> {
     let mut v = Vec::new();
     for line in rows.lines() {
         let f: Vec<&str> = line.trim_end_matches('\r').split('\t').collect();
-        if f.len() < 11 || !crate::hybrid::char_name_ok(f[1]) {
+        if f.len() < 12 || !crate::hybrid::char_name_ok(f[1]) {
             continue;
         }
         let n = |i: usize| f[i].trim().parse::<u64>().ok();
@@ -1692,6 +1781,7 @@ pub fn parse_rows(rows: &str) -> Vec<Row> {
             online: n(8).unwrap_or(0) == 1,
             store: n(9).unwrap_or(0),
             leader: n(10).unwrap_or(0),
+            zone: n(11).unwrap_or(0) as u32,
         });
     }
     v
@@ -1715,7 +1805,7 @@ pub fn mark_companions(rows: &[Row]) -> Vec<ClassicChar> {
             } else {
                 r.store > 0
             };
-            ClassicChar { base: r.ch.clone(), companion, online: r.online }
+            ClassicChar { base: r.ch.clone(), companion, online: r.online, zone: zone_label(r.zone).into(), zone_id: r.zone }
         })
         .collect()
 }
@@ -1918,6 +2008,9 @@ mod tests {
         assert_eq!(release_from(Some("https://example.org/b/")), "https://example.org/b/");
         assert_eq!(release_from(Some("http://example.org/b/")), RELEASE, "https only");
         assert_eq!(release_from(Some("https://example.org/b")), RELEASE, "a folder");
+        assert_eq!(releases_from(None), [RELEASE, RELEASE_FALLBACK], "the public repo's release, then the workspace's");
+        assert_eq!(releases_from(Some("https://example.org/b/")), ["https://example.org/b/"], "an override alone");
+        assert!(RELEASE.contains("/leyline-solo/") && RELEASE_FALLBACK.contains("/leyline-workspace/"));
         assert_ne!(DB_PORT, engine::DB_PORT, "its own database port");
         assert_eq!((LOGIN_PORT, WORLD_PORT), (engine::LOGIN_PORT, engine::WORLD_PORT), "one world at a time");
     }
@@ -1977,13 +2070,16 @@ mod tests {
         fs::write(p.profile("solo-aiplayerbot.conf"), "AiPlayerbot.RandomBotAutologin = 0\n").unwrap();
         fs::write(p.profile("solo-anticheat.conf"), "Warden.Enabled = 0\n").unwrap();
         let s = st();
-        write_confs(&p, false).unwrap();
+        write_confs(&p, false, false).unwrap();
         let m = fs::read_to_string(p.run.join("mangosd.conf")).unwrap();
         assert!(m.contains("# the core's\nLoginDatabaseInfo = \"127.0.0.1;13336;solo;(set by Leyline);classicrealmd\"\n"), "{m}");
         assert!(m.contains("Rate.XP.Kill = 2") && m.contains("MaxPlayerLevel = 60") && m.contains("SOAP.Port = 7878") && m.contains("mmap.enabled = 0"));
         assert!(m.contains(&format!("DataDir = \"{}\"", fwd(&p.data))));
         assert!(fs::read_to_string(p.run.join("aiplayerbot.conf")).unwrap().contains("AiPlayerbot.RandomBotAutologin = 0"), "no random bots");
         assert!(fs::read_to_string(p.run.join("anticheat.conf")).unwrap().contains("Warden.Enabled = 0"));
+        let roam = confs_with(&p, false, true).unwrap().into_iter().find(|c| c.0 == "aiplayerbot.conf").unwrap().1;
+        assert!(roam.contains("AiPlayerbot.RandomBotAutologin = 1") && roam.contains("AiPlayerbot.MaxRandomBots = 40"), "roaming bots when asked");
+        assert_eq!(xp_rate(&p), "2x");
         for f in fs::read_dir(&p.run).unwrap().flatten() {
             let t = fs::read_to_string(f.path()).unwrap();
             for x in s.secrets() {
@@ -2070,12 +2166,12 @@ mod tests {
         let q = chars_sql();
         assert!(q.contains("WHERE a.username = 'SOLO'") && q.contains("ai_playerbot_db_store") && q.contains("`groups`") && q.ends_with("ORDER BY c.guid;"));
         // guid name race class gender level played last online store leader
-        let rows = "1\tWren\t1\t1\t0\t12\t3600\t1762400000\t1\t0\t1\n\
-                    2\tBrakka\t2\t1\t0\t12\t10\t0\t1\t4\t1\n\
-                    3\tIsra\t5\t5\t1\t12\t10\t0\t1\t0\t1\n\
-                    4\tOdo\t3\t2\t0\t9\t0\t0\t0\t6\t0\n\
-                    5\tMirel\t4\t11\t1\t20\t50\t0\t0\t0\t0\n\
-                    bad\trow\n6\tlower\t1\t1\t0\t1\t0\t0\t0\t0\t0\n";
+        let rows = "1\tWren\t1\t1\t0\t12\t3600\t1762400000\t1\t0\t1\t12\n\
+                    2\tBrakka\t2\t1\t0\t12\t10\t0\t1\t4\t1\t12\n\
+                    3\tIsra\t5\t5\t1\t12\t10\t0\t1\t0\t1\t12\n\
+                    4\tOdo\t3\t2\t0\t9\t0\t0\t0\t6\t0\t1\n\
+                    5\tMirel\t4\t11\t1\t20\t50\t0\t0\t0\t0\t99999\n\
+                    bad\trow\n6\tlower\t1\t1\t0\t1\t0\t0\t0\t0\t0\t1\n";
         let r = parse_rows(rows);
         assert_eq!(r.len(), 5);
         let c = mark_companions(&r);
@@ -2083,13 +2179,15 @@ mod tests {
         assert_eq!(comp, [("Wren", false), ("Brakka", true), ("Isra", true), ("Odo", true), ("Mirel", false)],
             "Wren leads the online party (the player); Brakka and Isra are led by her; Odo has the module's saved strategies; Mirel neither");
         assert_eq!(c[0].base.race_label, "Human");
+        assert_eq!((c[0].zone.as_str(), c[3].zone.as_str(), c[4].zone.as_str(), c[4].zone_id), ("Elwynn Forest", "Dun Morogh", "", 99999));
         assert!(c[2].base.female && c[0].online && !c[3].online);
         // the player playing a former companion alone: the player, whatever the store says
-        let alone = parse_rows("4\tOdo\t3\t2\t0\t9\t0\t0\t1\t6\t0\n");
+        let alone = parse_rows("4\tOdo\t3\t2\t0\t9\t0\t0\t1\t6\t0\t1\n");
         assert!(!mark_companions(&alone)[0].companion);
         // stored and read back as the page gets them (flattened)
         let j = serde_json::to_value(&c[1]).unwrap();
-        assert_eq!((j["name"].as_str(), j["companion"].as_bool(), j["class_label"].as_str()), (Some("Brakka"), Some(true), Some("Warrior")));
+        assert_eq!((j["name"].as_str(), j["companion"].as_bool(), j["class_label"].as_str(), j["zone"].as_str(), j["level"].as_u64()),
+            (Some("Brakka"), Some(true), Some("Warrior"), Some("Elwynn Forest"), Some(12)), "the page's shape: name, level, race_label, class_label, zone");
         let ch = ClassicChoices { races: lw::choices(true), first_era: true, name: "Wren".into() };
         assert_eq!(ch.races.len(), 8, "the first era's races only");
     }

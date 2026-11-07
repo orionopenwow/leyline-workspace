@@ -1818,9 +1818,17 @@ fn engine_start() -> Result<String, String> {
     crate::host::engine::begin(&settings::app_dir(), None, false)
 }
 
+/// The progress line of whichever world is setting up or starting: Single player's engine, or Leyline Solo's
+/// (`kind: "classic"`, the same as classic_progress) while its job runs or when it was the last one.
 #[tauri::command]
 fn engine_progress() -> crate::host::engine::Job {
-    crate::host::engine::progress()
+    let e = crate::host::engine::progress();
+    let c = crate::host::classic::progress();
+    if c.running || (!e.running && e.idle && !c.idle) {
+        c
+    } else {
+        e
+    }
 }
 
 /// Everyone saved, everything stopped.
@@ -2248,9 +2256,40 @@ fn classic_setup(core: State<Core>, client: String, mmaps: Option<bool>, update:
     crate::host::classic::begin(&settings::app_dir(), Some(profile.path), mmaps.unwrap_or(false), update.unwrap_or(false))
 }
 
+/// Start it (set up already). `roaming`: other adventurers roam the world (taken now and kept). `stopOther`: another
+/// world on these ports is stopped first (else the answer says "ports busy").
 #[tauri::command]
-fn classic_start() -> Result<String, String> {
-    crate::host::classic::begin(&settings::app_dir(), None, false, false)
+async fn classic_start(roaming: Option<bool>, stop_other: Option<bool>) -> Result<String, String> {
+    blocking(move || {
+        if let Some(r) = roaming {
+            crate::host::classic::set_roaming(&classic_paths(), r)?;
+        }
+        if stop_other.unwrap_or(false) {
+            stop_other_worlds();
+        }
+        crate::host::classic::begin(&settings::app_dir(), None, false, false)
+    })
+    .await
+}
+
+/// Whatever else is on Leyline Solo's ports, stopped: the Built-in engine's worlds and Your Den on Den Lite.
+fn stop_other_worlds() {
+    use crate::host::lite::DenLite;
+    let p = classic_paths();
+    if crate::host::classic::other_running(&p).is_none() {
+        return;
+    }
+    for k in crate::host::engine::KINDS {
+        let wp = world_paths(k);
+        if crate::host::engine::active() == Some(k) || crate::host::engine::status(&wp).running {
+            world_share_off(k);
+            let _ = crate::host::engine::stop(&wp);
+        }
+    }
+    let app = settings::app_dir();
+    if crate::host::lite::beat_fresh(&crate::host::dens::dir(&crate::host::lite::root(&app))) {
+        let _ = crate::host::lite::Binary::find(&app).stop();
+    }
 }
 
 #[tauri::command]
@@ -2283,39 +2322,33 @@ async fn classic_update_check() -> Result<crate::host::classic::ClassicStatus, S
     .await
 }
 
-#[derive(Serialize)]
-struct SigninMode {
-    mode: String,
-    /// TODO(owner): copying the login screen's file list into our archive isn't approved yet (addon stays opt-in).
-    addon_approved: bool,
-}
-
+/// Settings: `signin` ("simple": the account name filled in, the password typed once; "quick": the sign-in add-on,
+/// opt-in, TODO(owner) approval) saved as settings.json `solo_signin`; `roaming` (other adventurers in the world)
+/// kept in the world's state for its next start. Back to simple takes our archive out of the game folder.
 #[tauri::command]
-fn classic_signin_mode(core: State<Core>) -> SigninMode {
-    SigninMode { mode: crate::host::classicsign::Mode::from_word(&core.snapshot().solo_signin).word().into(), addon_approved: false }
-}
-
-/// Settings' `solo_signin`: "prefill" or "addon". Back to prefill takes our archive out of the folder it is in.
-#[tauri::command]
-async fn classic_set_signin_mode(core: State<'_, Core>, mode: String) -> Result<String, String> {
+async fn classic_settings(core: State<'_, Core>, signin: Option<String>, roaming: Option<bool>) -> Result<String, String> {
     use crate::host::classicsign::Mode;
-    let m = Mode::parse(&mode)?;
-    core.update(|s| {
-        s.solo_signin = m.word().into();
-        Ok(())
-    })?;
-    if m == Mode::Addon {
-        return Ok("Leyline Solo signs in by itself from your next Play (the login screen add-on, in your game folder).".into());
+    let m = signin.as_deref().map(Mode::parse).transpose()?;
+    if let Some(m) = m {
+        core.update(|s| {
+            s.solo_signin = m.word().into();
+            Ok(())
+        })?;
     }
-    blocking(|| {
+    blocking(move || {
         let p = classic_paths();
-        let mut s = crate::host::classic::load_state(&p);
-        if s.signin.on && !s.signin.added.is_empty() {
-            let game = PathBuf::from(&s.signin.game);
-            crate::host::classicsign::install(&game, &p.backup, &mut s.signin, Mode::Prefill, None)?;
-            crate::host::classic::save_state(&p, &s)?;
+        if let Some(r) = roaming {
+            crate::host::classic::set_roaming(&p, r)?;
         }
-        Ok("Leyline Solo fills in your account name; you type the password once.".to_string())
+        if m == Some(Mode::Prefill) {
+            let mut s = crate::host::classic::load_state(&p);
+            if s.signin.on && !s.signin.added.is_empty() {
+                let game = PathBuf::from(&s.signin.game);
+                crate::host::classicsign::install(&game, &p.backup, &mut s.signin, Mode::Prefill, None)?;
+                crate::host::classic::save_state(&p, &s)?;
+            }
+        }
+        Ok("Saved.".to_string())
     })
     .await
 }
@@ -2333,13 +2366,25 @@ struct ClassicPlay {
     made: String,
 }
 
-/// Play Leyline Solo: the sign-in written (backups first), then the game started from its own folder. `pick` enters
-/// that character, `quick` makes a new one first (both: the add-on only).
+/// Play Leyline Solo: the sign-in written (backups first), then the game started from its own folder. `signin`:
+/// "simple" or "quick" (else the saved setting). `pick` enters that character, `quick` makes a new one first (both:
+/// the quick sign-in only). `stopOther`: another world on these ports is stopped first; without it that is an error
+/// saying "ports busy".
 #[tauri::command]
-async fn classic_play(core: State<'_, Core>, client: String, pick: Option<String>, quick: Option<QuickPick>) -> Result<ClassicPlay, String> {
+async fn classic_play(core: State<'_, Core>, client: String, signin: Option<String>, pick: Option<String>, quick: Option<QuickPick>, stop_other: Option<bool>) -> Result<ClassicPlay, String> {
     use crate::host::{classic, classicsign::Mode, localworld as lw};
     let profile = classic_client(&core, &client)?;
     let p = classic_paths();
+    if let Some(o) = classic::other_running(&p) {
+        if !stop_other.unwrap_or(false) {
+            return Err(format!("{o} is running on this PC and uses the same ports (ports busy)."));
+        }
+        blocking(|| {
+            stop_other_worlds();
+            Ok(())
+        })
+        .await?;
+    }
     let st = classic::status(&p);
     if !st.set_up {
         return Err("Set Leyline Solo up first: press Start on its page.".into());
@@ -2352,7 +2397,10 @@ async fn classic_play(core: State<'_, Core>, client: String, pick: Option<String
             return Err("That character's name doesn't look right.".into());
         }
     }
-    let mode = Mode::from_word(&core.snapshot().solo_signin);
+    let mode = match &signin {
+        Some(w) => Mode::parse(w)?,
+        None => Mode::from_word(&core.snapshot().solo_signin),
+    };
     let make = match &quick {
         Some(q) => {
             let (race, class) = lw::quick_ok(q.race, q.class, true)?;
@@ -2387,7 +2435,7 @@ async fn classic_play(core: State<'_, Core>, client: String, pick: Option<String
     } else {
         format!("Started {}: the account {} is filled in; type its password once (Show password). The sign-in add-on wasn't used: {}.", profile.name, classic::ACCOUNT, signed.why)
     };
-    Ok(ClassicPlay { message, mode: signed.mode.word().into(), auto: signed.auto, account: classic::ACCOUNT.into(), password_needed: !signed.auto, made: if signed.auto { made } else { String::new() } })
+    Ok(ClassicPlay { message, mode: signed.mode.ui_word().into(), auto: signed.auto, account: classic::ACCOUNT.into(), password_needed: !signed.auto, made: if signed.auto { made } else { String::new() } })
 }
 
 /// The password out of the add-on's archive once the game lets go of it (the add-on read it at the start): first
@@ -2404,21 +2452,46 @@ fn classic_scrub_when_closed() {
     });
 }
 
-/// SOLO's password for the page to show once and copy: returned only here, never logged.
+#[derive(Serialize)]
+struct ClassicPassword {
+    account: String,
+    password: String,
+}
+
+/// SOLO's account and password for the page to show once and copy: returned only here, never logged.
 #[tauri::command]
-fn classic_password() -> Result<String, String> {
-    crate::host::classic::password(&classic_paths())
+fn classic_password() -> Result<ClassicPassword, String> {
+    let password = crate::host::classic::password(&classic_paths())?;
+    Ok(ClassicPassword { account: crate::host::classic::ACCOUNT.into(), password })
 }
 
 /// Sign-in off: every file of the game folder put back as it was, our archive removed (close the game first).
+/// `client`, when given, must be the folder the sign-in is in.
 #[tauri::command]
-async fn classic_signin_off() -> Result<String, String> {
+async fn classic_signin_off(core: State<'_, Core>, client: Option<String>) -> Result<String, String> {
+    if let Some(c) = client.as_deref().filter(|c| !c.is_empty()) {
+        let path = classic_client(&core, c)?.path;
+        let st = crate::host::classic::load_state(&classic_paths());
+        if st.signin.on && PathBuf::from(&st.signin.game) != path {
+            return Err("The Solo sign-in is in another game folder: pick that folder, then try again.".into());
+        }
+    }
     blocking(|| crate::host::classic::signin_off(&classic_paths())).await
 }
 
+/// The characters: `[{name, level, race_label, class_label, zone, companion, online, ...}]`.
 #[tauri::command]
-async fn classic_characters() -> Result<crate::host::classic::ClassicChars, String> {
-    blocking(|| Ok(crate::host::classic::characters(&classic_paths()))).await
+async fn classic_characters() -> Result<Vec<crate::host::classic::ClassicChar>, String> {
+    blocking(|| Ok(crate::host::classic::characters(&classic_paths()).chars)).await
+}
+
+/// The logs folder opened in the PC's file manager.
+#[tauri::command]
+fn classic_open_logs(app: AppHandle) -> Result<String, String> {
+    let p = classic_paths();
+    std::fs::create_dir_all(&p.logs).map_err(|e| e.to_string())?;
+    app.opener().open_path(p.logs.display().to_string(), None::<&str>).map_err(|e| e.to_string())?;
+    Ok(p.logs.display().to_string())
 }
 
 #[tauri::command]
@@ -3652,8 +3725,8 @@ pub fn run() {
             classic_stop,
             classic_logs,
             classic_update_check,
-            classic_signin_mode,
-            classic_set_signin_mode,
+            classic_settings,
+            classic_open_logs,
             classic_play,
             classic_password,
             classic_signin_off,

@@ -55,9 +55,16 @@ impl Mode {
             Mode::Addon => "addon",
         }
     }
-    /// The setting's word; anything else is the default (prefill).
+    /// The page's word: "simple" (prefill) or "quick" (the add-on).
+    pub fn ui_word(self) -> &'static str {
+        match self {
+            Mode::Prefill => "simple",
+            Mode::Addon => "quick",
+        }
+    }
+    /// The setting's word ("addon" or the page's "quick"); anything else is the default (prefill).
     pub fn from_word(w: &str) -> Mode {
-        if w.trim().eq_ignore_ascii_case("addon") {
+        if w.trim().eq_ignore_ascii_case("addon") || w.trim().eq_ignore_ascii_case("quick") {
             Mode::Addon
         } else {
             Mode::Prefill
@@ -65,9 +72,9 @@ impl Mode {
     }
     pub fn parse(w: &str) -> Result<Mode, String> {
         match w.trim().to_ascii_lowercase().as_str() {
-            "prefill" => Ok(Mode::Prefill),
-            "addon" => Ok(Mode::Addon),
-            _ => Err("The sign-in is either \"prefill\" or \"addon\".".into()),
+            "prefill" | "simple" => Ok(Mode::Prefill),
+            "addon" | "quick" => Ok(Mode::Addon),
+            _ => Err("The sign-in is either \"simple\" or \"quick\".".into()),
         }
     }
 }
@@ -602,6 +609,8 @@ mod tests {
         assert_eq!(Mode::from_word("other"), Mode::Prefill);
         assert!(Mode::parse("other").is_err());
         assert_eq!(Mode::parse(" ADDON ").unwrap().word(), "addon");
+        assert_eq!((Mode::parse("simple").unwrap(), Mode::parse("quick").unwrap()), (Mode::Prefill, Mode::Addon), "the page's words");
+        assert_eq!((Mode::Prefill.ui_word(), Mode::from_word("quick").ui_word()), ("simple", "quick"));
     }
 
     #[test]

@@ -663,6 +663,11 @@ def write_confs(st, eng=None):
         p.write_text(text, encoding="utf-8")
         if os.name != "nt":
             os.chmod(p, 0o600)
+    # the servers load OpenSSL's legacy provider from their working folder (the core's Main.cpp on Windows: the
+    # default provider search path is the current directory), and they run in run\ beside these files
+    leg = eng / "bin" / "legacy.dll"
+    if leg.is_file():
+        shutil.copy2(leg, run / "legacy.dll")
 
 
 # ------------------------------------------------------------------------------------------------ setup

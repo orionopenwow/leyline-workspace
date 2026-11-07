@@ -343,8 +343,10 @@ class Engine(Base):
         for n in ("mangosd", "realmd", "aiplayerbot", "anticheat"):
             (eng / "bin" / "conf-dist" / ("%s.conf.dist" % n)).write_text("[Conf]\nBindIP = \"0.0.0.0\"\nDataDir = \".\"\n")
         shutil.copytree(HERE / "conf", eng / "conf")
+        (eng / "bin" / "legacy.dll").write_bytes(b"MZ provider")
         st = self.set_up_state()
         sp.write_confs(st, eng=eng)
+        self.assertEqual((self.home / "run" / "legacy.dll").read_bytes(), b"MZ provider")   # beside the servers
         m = (self.home / "run" / "mangosd.conf").read_text()
         self.assertIn('BindIP = "127.0.0.1"', m)
         self.assertIn('DataDir = "%s"' % sp.fwd(self.home / "data"), m)

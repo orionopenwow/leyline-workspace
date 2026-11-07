@@ -63,6 +63,10 @@ pub struct Settings {
     /// the game's login screen (the official realm on a stock game, Your Den), Leyline's "Logging you in…" screen
     /// covers the game until character select (or the Den's loading screen). On by default; a file without it: on.
     pub signin_cover: bool,
+    /// Leyline Solo's sign-in (host/classicsign.rs, docs/LEYLINE-SOLO.md): "prefill" (the default: the account name
+    /// filled in, the password typed once) or "addon" (our sign-in add-on in the game folder: opt-in,
+    /// TODO(owner) approval of copying the login screen's file list).
+    pub solo_signin: String,
 }
 
 impl Default for Settings {
@@ -80,6 +84,7 @@ impl Default for Settings {
             hybrid_login: true,
             seen: Vec::new(),
             signin_cover: true,
+            solo_signin: "prefill".into(),
         }
     }
 }

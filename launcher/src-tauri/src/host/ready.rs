@@ -94,14 +94,16 @@ pub const SLOW_PATH_MS: u32 = 400;
 /// The checklist from what was found. The order is the path a friend's game takes.
 pub fn judge(f: &Facts) -> Ready {
     let lite = f.kind != "docker";
-    // a single player world on the Built-in engine (app.rs world_invite: "single" / "vanilla") has the Den's tunnel
-    let engine = f.kind == "single" || f.kind == "vanilla";
+    // a single player world on the Built-in engine (app.rs world_invite: "single" / "vanilla"), or Leyline Solo's
+    // first-era world (app.rs classic_invite: "classic"), has the Den's tunnel
+    let engine = f.kind == "single" || f.kind == "vanilla" || f.kind == "classic";
     let world = if engine { "Your world" } else if lite { "Your Den" } else { "Your realm" };
     let mut out = Vec::new();
     // 1. the world on this PC
     out.push(match (&f.login, f.running) {
         (Some(Ok(ms)), _) => check("server", "ok", "Your world is running", format!("{world} is running on this PC and its login answers ({ms} ms)."), "", ""),
-        (_, false) if engine => check("server", "bad", "Your world is running", "Your world isn't running on this PC.", "Press Start on its Single player card, then Invite a friend again.", "start"),
+        (_, false) if engine => check("server", "bad", "Your world is running", "Your world isn't running on this PC.",
+            if f.kind == "classic" { "Press Start on the Leyline Solo page, then Invite a friend again." } else { "Press Start on its Single player card, then Invite a friend again." }, "start"),
         (_, false) if lite => check("server", "bad", "Your world is running", "Your Den isn't running on this PC.", "Press Start again: Leyline starts your Den (no game window needed).", "start"),
         (_, false) => check("server", "bad", "Your world is running", "Your realm isn't running on this PC.", "Open the Host page and press Start (Docker Desktop must be running).", "start"),
         (Some(Err(e)), true) => check("server", "bad", "Your world is running", format!("{world} runs but its login doesn't answer: {e}"), "Restart it: press Start again. If it still doesn't answer, restart your PC.", "start"),
@@ -343,6 +345,12 @@ mod tests {
         assert_eq!(state(&r, "server"), "bad");
         assert!(r.checks[0].fix.contains("Single player card"));
         assert!(!r.checks.iter().any(|c| c.line.contains("Your Den")), "never called a Den");
+        // Leyline Solo's first-era world: the same checks, its own page in the fix
+        let r = judge(&Facts { kind: "classic".into(), ..green() });
+        assert!(r.ok && r.kind == "classic");
+        let r = judge(&Facts { kind: "classic".into(), running: false, login: None, ..green() });
+        assert!(r.checks[0].fix.contains("Leyline Solo page"), "{}", r.checks[0].fix);
+        assert!(!r.checks.iter().any(|c| c.line.contains("Your Den")));
     }
 
     #[test]

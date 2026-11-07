@@ -1,0 +1,39 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+	<!-- Leyline Solo (docs/LEYLINE-SOLO.md, docs/LEYLINE-SOLO-PHASE0.md): signs in to the player's own local world by
+	     itself. Added to the login screen's file list by the Leyline launcher (host/classicsign.rs) or by
+	     tools/solo/solo_proof.py (signin); LeylineSoloSession.lua holds the sign-in it wrote (empty when there is
+	     none). Our own files only. -->
+	<Script file="LeylineSoloSession.lua"/>
+	<Script file="LeylineSolo.lua"/>
+	<Frame name="LeylineSoloDriver" toplevel="true" frameStrata="DIALOG">
+		<Size>
+			<AbsDimension x="640" y="40"/>
+		</Size>
+		<Anchors>
+			<Anchor point="TOP">
+				<Offset>
+					<AbsDimension x="0" y="-12"/>
+				</Offset>
+			</Anchor>
+		</Anchors>
+		<Layers>
+			<Layer level="OVERLAY">
+				<FontString name="LeylineSoloNote" font="Fonts\FRIZQT__.TTF" text="">
+					<FontHeight>
+						<AbsValue val="13"/>
+					</FontHeight>
+					<Color r="1.0" g="0.86" b="0.5"/>
+					<Anchors>
+						<Anchor point="TOP"/>
+					</Anchors>
+				</FontString>
+			</Layer>
+		</Layers>
+		<Scripts>
+			<OnUpdate>
+				LeylineSolo_OnUpdate(arg1);
+			</OnUpdate>
+		</Scripts>
+	</Frame>
+</Ui>

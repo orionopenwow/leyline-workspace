@@ -90,6 +90,12 @@ jobs:
           echo "playerbots $(git -C /c/s/core/src/modules/PlayerBots rev-parse HEAD)"
           echo "db $(git -C /c/s/db rev-parse HEAD)"
 
+      - name: Our patches to the core (tools/solo/patches, GPL-2.0 like the core; each one must apply cleanly)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for p in tools/solo/patches/*.patch; do echo "applying $p"; git -C /c/s/core apply --whitespace=nowarn "$GITHUB_WORKSPACE/$p"; done
+
       - name: No game data in the sources (the Warden module binaries stay out of the install and the package)
         shell: bash
         run: |
@@ -105,7 +111,7 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: C:\inst
-          key: solo-engine-inst-${{ env.CORE_COMMIT }}-${{ env.PB_COMMIT }}-${{ env.BUILD_REV }}
+          key: solo-engine-inst-${{ env.CORE_COMMIT }}-${{ env.PB_COMMIT }}-${{ env.BUILD_REV }}-${{ hashFiles('tools/solo/patches/**') }}
 
       - name: Boost (the core's own CI recipe)
         if: steps.cache.outputs.cache-hit != 'true'
@@ -148,7 +154,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: C:\inst
-          key: solo-engine-inst-${{ env.CORE_COMMIT }}-${{ env.PB_COMMIT }}-${{ env.BUILD_REV }}
+          key: solo-engine-inst-${{ env.CORE_COMMIT }}-${{ env.PB_COMMIT }}-${{ env.BUILD_REV }}-${{ hashFiles('tools/solo/patches/**') }}
 
       - name: MySQL 8.4 (the bundled database server, as the Built-in engine's)
         shell: pwsh

@@ -208,3 +208,73 @@ Open (in files other agents are changing, or the owner's call), most important f
 10. **Manage account** says the name "was made for you (a guest's or the default)": awkward for a new Hero Key.
     (account.js)
 11. The first-install toast sits over the card it is about (its Installed button) for 9 s at 1100x760.
+
+## 5. Leyline Solo: a fresh profile, through to character select
+
+Plan Phase 5. Leyline Solo is the standalone first-era app (its own repo `orionopenwow/leyline-solo`, the page
+`/wrath/solo`, the player guide `docs/leyline/solo.md`). Its fresh-machine test is
+`tools/first-run/solo_first_run.py`, run by `tools/first-run/Solo first run test.bat` and the Control step
+**`solo-first-run`** (not READ_ONLY: it starts the game and signs it in; up to 4 hours). Unit-tested with fakes in
+`tools/first-run/test_solo_first_run.py`.
+
+### 5.1 The fresh profile, and what it refuses
+
+The app keeps its data in `%APPDATA%\Leyline Solo` (the app sets `LEYLINE_APP_DIR` to it unless one is given); the
+Phase 0 engine tool keeps its world in `%LOCALAPPDATA%\Leyline\solo-proof` (`LEYLINE_SOLO_DIR` moves it). The test
+makes `%TEMP%\leyline-solo-first-run-<time>\app` and `...\solo`, both empty, and gives every step those two
+variables. It **refuses to run** (and touches nothing) when:
+
+- the test folder is, holds or sits inside one of the owner's own: `%APPDATA%\Leyline Solo`, `%APPDATA%\Leyline`,
+  `%LOCALAPPDATA%\Leyline` (and its `solo-proof`), `%LOCALAPPDATA%\Leyline Solo`; or it is not new and empty
+  (`--work`);
+- a Solo port is in use (3724, 8085, 13336, 7878): the owner's own world, or another server, is running;
+- the game folder already has `Data\patch-Z.MPQ` (the owner's own Solo sign-in: `solo-signin-off` first);
+- this is not Windows.
+
+Before and after, it fingerprints the owner's folders (their `state.json`, `settings.json`, `SOLO password.txt` and
+top-level names): any change is a FAIL. The game folder's files sign-in may change (`Config.wtf`, every
+`realmlist.wtf`, `patch-Z.MPQ`) are kept in memory and compared byte for byte at the end; put back by the test if
+sign-in off didn't.
+
+### 5.2 What runs by itself
+
+| # | Check | How |
+|---|---|---|
+| S1 | a fresh profile | above |
+| S2 | install (only with `--installer <setup.exe>`) | the NSIS setup program run silently into the test folder (`/S /D=<work>\install`), `Leyline Solo.exe` there; `uninstall.exe /S` at the end. Skipped when Leyline Solo is installed for real (it would take over its Start menu entry): test the installer in Windows Sandbox instead |
+| S3 | the folder is the first-era client | `solo_proof.py check <folder>` |
+| S4 | setup | `solo_proof.py setup <folder> [--zip]`: the engine (checked), the maps, the database, the account; `SETUP OK` |
+| S5 | start | `solo_proof.py start`: `START OK` once the world says World initialized |
+| S6 | sign-in (Quick) | `solo_proof.py signin <folder>`: `SIGNIN ON` |
+| S7 | the game, to character select | the game's program started from the folder; alive; character select = **either** the world server's log line for the account SOLO logging in (`Server.log`, `mangosd.out`) **or** the login database marking SOLO on the realm (`account.active_realm_id`); both reported |
+| S8 | clean up, always | the game the test started closed, the world stopped, `signin --off` (`SIGNIN OFF`), the game folder byte for byte, the owner's folders unchanged, no password in the Solo tool's lines or the world's logs, the test folder removed (`--keep` keeps it) |
+
+The steps S3 to S6 run the Phase 0 engine tool (`tools/solo/solo_proof.py`), which is the same engine, profile and
+sign-in the app is built on. When the app gets a headless test mode (a `solo-test` command, like the launcher's
+`play-test`), S3 to S7 should call it instead, so the app's own code is what is tested. TODO (solo-app): that mode.
+
+### 5.3 What it cannot do, and the owner's checklist
+
+The test never drives the game's own screens: it cannot press Quick start, type in chat or fight. After S7 it prints
+**OWNER now** and watches for `--hold` seconds (default 600), reading the test world's database and `Char.log`:
+
+| The owner does | The test sees | Line |
+|---|---|---|
+| Quick start (or makes a character on the creation screen) | a character on the SOLO account | `OWNER a character made` |
+| enters the world | a character online, or `Login Character:[Name]` in `Char.log` | `OWNER a character in the world` |
+| types `.bot group` | more characters of SOLO online (companions are characters on the same account) | `OWNER companions in the world (.bot group)` |
+
+Each is PASS when seen and INFO when not (never FAIL: it is the owner's part). The rest is by eye, with a screenshot
+each: the yellow "signing you in" line, character select by itself, the party following and fighting, Invite a friend
+(a second PC joins: same network, then through the relay), Characters (Play on a character goes straight in),
+Settings, Simple sign-in (the account name filled in, the password typed once), Remove sign-in (the folder as it was).
+
+### 5.4 To confirm on the first real run
+
+- **The log line for character select.** The test looks for the world socket accepting `SOLO`'s session
+  (`CHARSEL_RE`). Whether CMaNGOS writes it at the Solo profile's log level is not known yet. The login database is the
+  second signal, so a missing line alone doesn't fail S7; if only the database says yes, tighten the pattern to the
+  line the log does show (or raise the profile's log level in `tools/solo/conf/solo.conf`).
+- **`account.active_realm_id`** is the CMaNGOS login database's column for "on a realm" at this pin; if the column has
+  another name, S7 shows "the login database: not read".
+- **The installer's silent switches** (`/S`, `/D=`) are NSIS's standard ones; check once with the first release.

@@ -912,3 +912,7 @@
 1351b ship  Save to GitHub: the lighter AutoMod
 1352a signin  Website: the single player guide page on the docs list
 1352b ship  Save to GitHub: single player original world in one click (level 60, companions), Quick start, Characters (On this PC / Online), Invite a friend from single player worlds
+1354a solo-check  Leyline Solo test: is your first-era game folder ready (reads only; folder VanillaClassic)
+1354b solo-setup  Leyline Solo test: get the engine, read the maps from your folder, make the local login (long)
+1355a signin  Website: the Leyline Solo page (/wrath/solo, says Coming soon) and its guide
+1355b ship  Save to GitHub: Leyline Solo site page, guide, fresh-machine test, the Solo app shell, the engine fix

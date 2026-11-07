@@ -367,11 +367,18 @@ def single_body() -> str:
              'your world once, then takes you straight in.</p></li></ol>'
              f'<p class="lp-dim" style="margin-top:12px">New to the launcher? <a href="{GUIDES}/install-and-log-in">The '
              'first guide</a> walks through it.</p></section>')
+    # Leyline Solo (stream/solo_page.py, /wrath/solo): the standalone app for the first era. Linked from here and the
+    # docs only, not the main nav yet (TODO(owner): say when it goes in the nav)
+    solo = ('<section class="lp-sec" id="solo" aria-labelledby="sp-solo"><h2 id="sp-solo">The first era: Leyline Solo</h2>'
+            '<p>Want the game as it first was, on your own first-era game folder? Leyline Solo is a small app of its '
+            'own: a first-era world on your PC with companions, offline, logged in by itself, your characters in one '
+            'list, and a friend when you want one.</p>'
+            '<p class="lp-acts"><a class="lp-btn ghost" href="/wrath/solo">See Leyline Solo</a></p></section>')
     faq = ('<section class="lp-sec lp-faq" id="faq" aria-labelledby="sp-faq"><h2 id="sp-faq">Questions</h2>'
            + "".join(f"<details><summary>{_e(q)}</summary><p>{_e(a)}</p></details>" for q, a in single_faq())
            + f'<p class="lp-dim">Something else? Ask on the <a href="{_e(_discord())}" rel="noopener noreferrer">Discord</a>.'
            '</p></section>')
-    return f'<div class="lp lp-sp">{hero}{what}{gal}{start}{faq}</div>'
+    return f'<div class="lp lp-sp">{hero}{what}{gal}{start}{solo}{faq}</div>'
 
 
 def single_page() -> bytes:

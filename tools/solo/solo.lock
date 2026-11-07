@@ -1,0 +1,14 @@
+# Leyline Solo, Phase 0 (docs/LEYLINE-SOLO-PHASE0.md): the pins the solo engine adds to the host kit's cmangos-1.12.1
+# profile. The core and the world database come from hosting/kit/profiles/cmangos-1.12.1/profile.lock
+# (LL_CORE_COMMIT, LL_DB_COMMIT), so both builds always use the same server. KEY=VALUE lines only; nothing here runs.
+#
+# Bumping playerbots: pick a commit of cmangos/playerbots made on or before the core commit's date (the module
+# follows the core's master; a newer module can need core changes the pinned core does not have).
+
+# The companions (GPL-2.0): the cmangos playerbots module, built into mangosd with BUILD_PLAYERBOTS=ON.
+LL_PLAYERBOTS_REPO=https://github.com/cmangos/playerbots
+LL_PLAYERBOTS_COMMIT=6823423e07789c875f55a0fee9beeae0d3b69561
+
+# The bundled database server (GPL-2.0, trimmed like the Built-in engine's): MySQL Community Server.
+LL_MYSQL_VERSION=8.4.9
+LL_BOOST_VERSION=1.87.0

@@ -1,0 +1,199 @@
+# Leyline Solo (docs/LEYLINE-SOLO.md in Leyline's workspace): the Windows installer, made in the PUBLIC repo
+# orionopenwow/leyline-solo (source copy: tools/solo-repo/workflows/leyline-solo.yml in the workspace; the Control step
+# leyline-solo exports it to .github/workflows/).
+#
+# Every push to main that changes launcher/ is a ship (launcher/scripts/release_version.py with RELEASE_TAG=solo-v: one
+# patch above the last solo-v tag, or tauri.conf.json's version when higher): a normal release `solo-v<version>` with
+# the NSIS installer and, with the updater signing key in this repo's secrets, latest.json, the manifest installed
+# copies read (src-tauri/src/update.rs with the solo feature: this repo's releases, tags solo-v*). A hand-pushed
+# solo-v tag works too (its version must match tauri.conf.json; a "-" makes it a pre-release).
+# Beside it, the rolling release `solo-latest` always holds the newest installer at the same address:
+#   https://github.com/orionopenwow/leyline-solo/releases/download/solo-latest/Leyline-Solo-setup.exe
+#
+# Signing: the same mechanism and secret NAMES as the Leyline launcher's workflow (TAURI_SIGNING_PRIVATE_KEY and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD, set on this repo by the owner); the public key is tauri.conf.json's. Never printed.
+# Without them the release is made unsigned and installed copies only link to it. No code signing yet (SmartScreen
+# asks once). Pinned builds: npm ci from package-lock.json, cargo --locked.
+# The world server is built by solo-engine.yml (release solo-engine-latest); this workflow builds the app only.
+name: leyline solo
+on:
+  push:
+    tags: ["solo-v*"]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leyline-solo-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: solo-v
+
+jobs:
+  plan:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    outputs:
+      ship: ${{ steps.p.outputs.ship }}
+      version: ${{ steps.p.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Next Leyline Solo version
+        id: p
+        run: python3 launcher/scripts/release_version.py plan | tee -a "$GITHUB_OUTPUT"
+
+  create-release:
+    if: >-
+      !cancelled() && (startsWith(github.ref, 'refs/tags/solo-v') || needs.plan.outputs.ship == 'true')
+    needs: [plan]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      id: ${{ steps.r.outputs.id }}
+      signed: ${{ steps.r.outputs.signed }}
+      stamp: ${{ steps.r.outputs.stamp }}
+      skip: ${{ steps.r.outputs.skip }}
+      tag: ${{ steps.r.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Make the release (once per tag)
+        id: r
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHIP_VERSION: ${{ needs.plan.outputs.version }}
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          pre=""
+          target=()
+          if [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+            ver="${TAG#solo-v}"
+            conf=$(python3 -c "import json;print(json.load(open('launcher/src-tauri/tauri.conf.json'))['version'])")
+            if [ "$ver" != "$conf" ]; then
+              echo "::error::The tag says $ver but launcher/src-tauri/tauri.conf.json says $conf. Tag the version in the file."
+              exit 1
+            fi
+            case "$ver" in *-*) pre="--prerelease" ;; esac
+            echo "stamp=" >> "$GITHUB_OUTPUT"
+          else
+            ver="$SHIP_VERSION"
+            TAG="solo-v$ver"
+            target=(--target "$GITHUB_SHA")
+            echo "stamp=$ver" >> "$GITHUB_OUTPUT"
+          fi
+          skip=false
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -q -- '-setup\.exe$'; then skip=true; fi
+          else
+            {
+              echo "The newest Leyline Solo. Installed copies download it by themselves: press Restart to update when it says so."
+              echo
+              echo "SHA256SUMS.txt lists the SHA-256 of every file here (certutil -hashfile <file> SHA256)."
+              echo "Not code-signed yet: on Windows choose \"More info, Run anyway\"."
+              echo "Leyline Solo uses your own game folder. It never downloads, offers or shares the game."
+            } > notes.md
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Leyline Solo $ver" --notes-file notes.md $pre "${target[@]}"
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "id=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
+          pk=$(python3 -c "import json;print(json.load(open('launcher/src-tauri/tauri.conf.json'))['plugins']['updater']['pubkey'])")
+          if [ "$HAS_KEY" = "true" ] && [ "${pk#TODO}" = "$pk" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No updater signing (the secret TAURI_SIGNING_PRIVATE_KEY on this repo and the public key in tauri.conf.json are both needed). Installed copies will only link to this release."
+          fi
+
+  windows:
+    needs: create-release
+    if: needs.create-release.outputs.skip != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: This ship's version
+        if: needs.create-release.outputs.stamp != ''
+        shell: bash
+        run: python launcher/scripts/release_version.py stamp "${{ needs.create-release.outputs.stamp }}"
+      - name: Install the Tauri CLI
+        working-directory: launcher
+        run: npm ci --no-audit --no-fund
+      - name: Updater signing on or off
+        id: sign
+        shell: bash
+        run: |
+          if [ "${{ needs.create-release.outputs.signed }}" = "true" ]; then
+            echo '{"bundle":{"createUpdaterArtifacts":true}}' > launcher/updater.conf.json
+            echo "args=--config updater.conf.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: launcher
+          releaseId: ${{ needs.create-release.outputs.id }}
+          includeUpdaterJson: ${{ needs.create-release.outputs.signed == 'true' }}
+          updaterJsonPreferNsis: true
+          args: --features solo --config src-tauri/tauri.solo.conf.json --bundles nsis ${{ steps.sign.outputs.args }} -- --locked
+
+  # SHA256SUMS.txt on the release, then the same installer on the rolling solo-latest
+  publish:
+    needs: [create-release, windows]
+    if: >-
+      !cancelled() && needs.create-release.result == 'success' && needs.create-release.outputs.skip != 'true' &&
+      needs.windows.result == 'success'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checksums, and solo-latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir files && cd files
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY"
+          rm -f SHA256SUMS.txt
+          sha256sum -- * > ../SHA256SUMS.txt
+          cd .. && cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
+          setup=$(ls files/*-setup.exe | head -1)
+          [ -n "$setup" ] || { echo "::error::no installer on $TAG"; exit 1; }
+          mkdir latest
+          cp "$setup" latest/Leyline-Solo-setup.exe
+          (cd latest && sha256sum Leyline-Solo-setup.exe > SHA256SUMS.txt)
+          notes="The newest Leyline Solo for Windows ($TAG). Download Leyline-Solo-setup.exe and run it. Not code-signed yet: Windows may ask once (More info, Run anyway). It updates itself. Leyline Solo uses your own game folder; it never downloads, offers or shares the game."
+          if gh release view solo-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit solo-latest -R "$GITHUB_REPOSITORY" --title "Leyline Solo (latest, ${TAG#solo-v})" --notes "$notes" --prerelease=false
+          else
+            gh release create solo-latest -R "$GITHUB_REPOSITORY" --title "Leyline Solo (latest, ${TAG#solo-v})" --notes "$notes" --target "$GITHUB_SHA" --latest=false
+          fi
+          gh release upload solo-latest latest/Leyline-Solo-setup.exe latest/SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber

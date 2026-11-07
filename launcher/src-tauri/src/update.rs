@@ -21,11 +21,28 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+#[cfg(not(feature = "solo"))]
 pub const REPO: &str = "orionopenwow/Leyline";
+#[cfg(not(feature = "solo"))]
 pub const URL: &str = "https://api.github.com/repos/orionopenwow/Leyline/releases?per_page=30";
+#[cfg(not(feature = "solo"))]
 pub const RELEASES_PAGE: &str = "https://github.com/orionopenwow/Leyline/releases";
+#[cfg(not(feature = "solo"))]
 pub const DOWNLOAD_PREFIX: &str = "https://github.com/orionopenwow/Leyline/releases/download/";
+#[cfg(not(feature = "solo"))]
 pub const TAG_PREFIX: &str = "launcher-v";
+// Leyline Solo (feature `solo`) updates only from its own public repo's releases, tags `solo-v*` (made by the solo
+// repo's leyline-solo.yml): never from the launcher's releases, mirrors or release log, which carry the launcher.
+#[cfg(feature = "solo")]
+pub const REPO: &str = "orionopenwow/leyline-solo";
+#[cfg(feature = "solo")]
+pub const URL: &str = "https://api.github.com/repos/orionopenwow/leyline-solo/releases?per_page=30";
+#[cfg(feature = "solo")]
+pub const RELEASES_PAGE: &str = "https://github.com/orionopenwow/leyline-solo/releases";
+#[cfg(feature = "solo")]
+pub const DOWNLOAD_PREFIX: &str = "https://github.com/orionopenwow/leyline-solo/releases/download/";
+#[cfg(feature = "solo")]
+pub const TAG_PREFIX: &str = "solo-v";
 pub const MANIFEST_NAME: &str = "latest.json";
 /// How often the app looks for a new version while it runs (and once at start). 30 minutes (owner 3 Nov: a new release
 /// should reach every launcher soon): one GitHub API call per player per half hour, well under the unauthenticated
@@ -331,6 +348,9 @@ pub fn sources(info: &UpdateInfo, mirrors: &[String], log: Option<&crate::releas
     if let (true, Some(url)) = (info.newer, info.manifest_url.as_ref()) {
         out.push(Source { name: "GitHub".into(), manifest_url: url.clone(), download_prefix: DOWNLOAD_PREFIX.into(), manifest_sha256: None, expect_version: info.latest.clone() });
     }
+    if cfg!(feature = "solo") {
+        return out; // Leyline Solo: its own GitHub releases only (the mirrors and the release log carry the launcher)
+    }
     for m in mirrors.iter().filter(|m| net::plain_https(m) && m.ends_with('/')) {
         out.push(Source { name: format!("mirror {}", host_of(m)), manifest_url: format!("{m}{MANIFEST_NAME}"), download_prefix: m.clone(), manifest_sha256: None, expect_version: None });
     }
@@ -449,7 +469,8 @@ pub fn built_in_pubkey() -> String {
     conf["plugins"]["updater"]["pubkey"].as_str().unwrap_or("").to_string()
 }
 
-#[cfg(test)]
+// The tests use the launcher's own release addresses (Leyline Solo's differ only in those constants).
+#[cfg(all(test, not(feature = "solo")))]
 mod tests {
     use super::*;
     use crate::net::testserver::*;

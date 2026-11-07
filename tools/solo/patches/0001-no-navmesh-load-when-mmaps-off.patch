@@ -1,0 +1,13 @@
+diff --git a/src/game/Maps/GridMap.cpp b/src/game/Maps/GridMap.cpp
+index 6bc21db..fe1b459 100644
+--- a/src/game/Maps/GridMap.cpp
++++ b/src/game/Maps/GridMap.cpp
+@@ -1296,7 +1296,7 @@ GridMap* TerrainInfo::LoadMapAndVMap(const uint32 x, const uint32 y, bool mapOnl
+         }
+     }
+ 
+-    if (!MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(m_mapId, x, y))
++    if (MMAP::MMapFactory::createOrGetMMapManager()->IsEnabled() && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(m_mapId, x, y))
+     {
+         // load navmesh
+         MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), m_mapId, x, y);

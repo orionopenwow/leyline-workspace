@@ -134,6 +134,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "solo"))] // Leyline Solo updates from its own repo (update.rs), not branding.json's
     fn the_code_says_what_branding_json_says() {
         // The constants other modules use, and tauri.conf.json, must match the one file (rebrand.py keeps them so).
         let b = get();

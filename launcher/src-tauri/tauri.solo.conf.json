@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Leyline Solo",
+  "identifier": "app.leyline.solo",
+  "build": {
+    "frontendDist": "../ui-solo"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Leyline Solo",
+        "width": 980,
+        "height": 680,
+        "minWidth": 820,
+        "minHeight": 600,
+        "backgroundColor": "#12151b",
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "category": "Game",
+    "shortDescription": "Single player for the first-era game, on your own game folder",
+    "longDescription": "Leyline Solo runs a small world of your own on this PC for the first-era game: you, your companions and friends you invite. It uses your own game folder and reads its maps from it once; it never downloads, offers or shares the game. Open source; not affiliated with or endorsed by Blizzard Entertainment.",
+    "copyright": "MIT, Leyline contributors",
+    "license": "MIT"
+  }
+}

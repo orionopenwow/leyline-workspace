@@ -115,6 +115,10 @@ impl AuthRewriter {
                     } else {
                         out.extend(msg);
                     }
+                    if self.through {
+                        out.append(&mut self.buf);
+                        break;
+                    }
                 }
             }
         }

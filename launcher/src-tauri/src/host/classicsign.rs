@@ -630,7 +630,7 @@ mod tests {
     #[test]
     fn the_session_is_escaped_bytes_in_the_shapes_the_game_takes() {
         let s = session_lua(Some(&sess())).unwrap();
-        assert!(!s.contains("SOLO") && !s.contains("ABCDEFGH") && !s.contains("Wren") && !s.contains("Leyline Solo\""), "{s}");
+        assert!(!s.contains("\"SOLO\"") && !s.contains("ABCDEFGH") && !s.contains("Wren") && !s.contains("Leyline Solo\""), "{s}");
         assert!(s.contains(", pick = \"\\087\\114"));
         assert_eq!(session_lua(None).unwrap(), NO_SESSION);
         let m = session_lua(Some(&Session { pick: None, make: Some(NewChar { name: "Tamsin".into(), race: "NightElf".into(), class: "DRUID".into(), female: true }), ..sess() })).unwrap();

@@ -147,6 +147,16 @@ STEPS = {
     # of its own); den-test runs the real thing unattended (Leyline.exe den-play --test: Den Lite, the game, signed in,
     # the white island, then the Den's smoke test through Den Lite's command files, a screenshot, closed again) and
     # leaves tools\den-check\logs\den-test-latest.txt and .png.
+    # Leyline Solo, Phase 0 (docs/LEYLINE-SOLO-PHASE0.md, tools/solo/solo_proof.py): the first-era world with companions
+    # on this PC from the owner's own first-era game folder (tools/solo/folder.txt, else the launcher's game folders).
+    # solo-check and solo-status look only (READ_ONLY); setup, start, stop and the sign-in change this PC.
+    "solo-check": ("tools/solo/Solo check.bat", "Leyline Solo check (read-only): your first-era game folder, the sign-in slot, the login screen's file list, disk and ports", False),
+    "solo-setup": ("tools/solo/Solo setup.bat", "Leyline Solo setup: the engine from solo-engine-latest (checked), the maps from your own game folder, the database and the local account SOLO (20-60 minutes)", False),
+    "solo-start": ("tools/solo/Solo start.bat", "Leyline Solo start: the local first-era world on 127.0.0.1, until it says World initialized (the servers keep running)", False),
+    "solo-stop": ("tools/solo/Solo stop.bat", "Leyline Solo stop: the world saves and stops, the database too; the password is taken out of the sign-in archive", False),
+    "solo-status": ("tools/solo/Solo status.bat", "Leyline Solo status (read-only): the ports, World initialized, SOLO signing in on the login server", False),
+    "solo-signin": ("tools/solo/Solo sign-in.bat", "Leyline Solo sign-in: your game signs in by itself (realmlist.wtf, the account name in Config.wtf, our login-screen add-on), backups first", False),
+    "solo-signin-off": ("tools/solo/Solo sign-in off.bat", "Leyline Solo sign-in off: your game folder put back exactly as it was, our archive removed", False),
     "den-check": ("tools/den-check/Den check.bat", "My Den check (read-only): game folder, login archive, Config.wtf, Den Lite and a test sign-in", False),
     "client-smoke": ("tools/client-smoke/Client smoke test.bat", "Client smoke test: your game started as PLAY starts it on Wrath Unleashed (the launcher's sign-in skips the login screen), a screenshot every few seconds, then closed and the sign-in taken out (logs\\client-smoke)", False),
     "client-smoke-world": ("tools/client-smoke/Client smoke test - world.bat", "Client smoke test, on into the world with your last character (logs\\client-smoke)", False),
@@ -379,7 +389,9 @@ STEP_TIMEOUT_MIN = {"client-build": 360, "slice": 360, "slice-sampler": 360, "sa
                     "sv-export": 240, "client": 120, "ship": 120, "ship-again": 120, "leyline": 120,
                     "leyline-launcher": 120, "leyline-mobile": 120, "release-mirror": 180, "audit": 60, "den-test-variants": 120,
                     "fresh-test": 180, "fresh-sandbox": 180, "first-run-test": 180, "mods-daily": 180, "thumbs": 120,
-                    "addons-curate": 120, "ov112-data-remove": 120, "foreverui": 120}
+                    "addons-curate": 120, "ov112-data-remove": 120, "foreverui": 120,
+                    # the maps from the game folder and the database import; with --mmaps up to three hours more
+                    "solo-setup": 300, "solo-start": 20}
 
 
 def step_timeout_s(step: str) -> int:
@@ -426,7 +438,8 @@ def watch_step(p, step: str, why: dict) -> threading.Event:
 READ_ONLY = {"check", "boss-rush", "combos-check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "phonelab", "audit", "den-check", "domain-check",
-             "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make", "announce-check"}
+             "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make", "announce-check",
+             "solo-check", "solo-status"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
 OWNER_ONLY = {"discord-apply", "discord-announce"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}

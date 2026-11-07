@@ -1097,7 +1097,7 @@ def cmd_signin(a):
     cfg = find_ci(wtf, "Config.wtf") if wtf else None
     rel_cfg = "%s/%s" % (wtf.name if wtf else "WTF", cfg.name if cfg else "Config.wtf")
     keep_original(rel_cfg)
-    text = (game / rel_cfg).read_text(encoding="latin-1") if (game / rel_cfg).is_file() else ""
+    text = (game / rel_cfg).read_bytes().decode("latin-1") if (game / rel_cfg).is_file() else ""
     text = set_wtf_line(text, "accountName", ACCOUNT)
     text = set_wtf_line(text, "realmName", REALM)
     if re.search(r"^\s*SET\s+realmList\s", text, re.I | re.M):

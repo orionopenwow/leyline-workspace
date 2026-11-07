@@ -47,6 +47,43 @@ class Workflows(unittest.TestCase):
                         self.assertRegex(text, re.escape(s["uses"]) + r" # (v\d+|stable)\n", f"{n}: name the tag in a comment")
             self.assertNotIn("\t", text, n)
 
+    def test_solo_engine(self):
+        """Leyline Solo, Phase 0 (docs/LEYLINE-SOLO-PHASE0.md): Windows; the core and database pins from the host kit's
+        profile.lock, playerbots from tools/solo/solo.lock; playerbots and the extractors on; no game data (and no Warden
+        binaries) in the sources or the package; the zip, its sha256 and its json on the rolling release
+        solo-engine-latest; the built-in token only; the same file in .github/workflows."""
+        text, doc = load("solo-engine.yml")
+        self.assertEqual(text, (REPO / ".github" / "workflows" / "solo-engine.yml").read_text(encoding="utf-8"))
+        self.assertEqual(doc["on"]["push"]["branches"], ["main", "feat-solo-engine"])
+        self.assertIn("tools/solo/**", doc["on"]["push"]["paths"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"\$\{\{\s*secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        job = doc["jobs"]["windows"]
+        self.assertEqual(job["runs-on"], "windows-2022")
+        self.assertGreaterEqual(job["timeout-minutes"], 180)
+        self.assertEqual(job["permissions"], {"contents": "write"})
+        self.assertIn("hosting/kit/profiles/cmangos-1.12.1/profile.lock", text)
+        lock = (REPO / "tools" / "solo" / "solo.lock").read_text()
+        self.assertRegex(lock, r"(?m)^LL_PLAYERBOTS_COMMIT=[0-9a-f]{40}$")
+        self.assertRegex(lock, r"(?m)^LL_PLAYERBOTS_REPO=https://github.com/cmangos/playerbots$")
+        for flag in ("-DBUILD_PLAYERBOTS=ON", "-DBUILD_EXTRACTORS=ON", "-DBUILD_AHBOT=OFF", "--config Release",
+                     "-DFETCHCONTENT_SOURCE_DIR_PLAYERBOTS="):
+            self.assertIn(flag, text)
+        names = [st.get("name", "") for st in job["steps"]]
+        self.assertLess(names.index(next(n for n in names if n.startswith("No game data in the sources"))),
+                        names.index(next(n for n in names if n.startswith("Build"))))
+        self.assertLess(names.index("No game data in the package"), names.index(next(n for n in names if n.startswith("Zip"))))
+        for ext in ("mpq", "dbc", "m2", "blp", "wmo", "adt", "map", "vmtree", "mmap"):
+            self.assertIn("-iname '*.%s'" % ext, text)
+        self.assertIn("warden_modules", text)
+        self.assertIn("InstallFullDB.sh -InstallAll", text)
+        self.assertIn('PLAYERBOTS_DB="YES"', text)
+        self.assertIn("solo_proof.py ci-smoke", text)
+        self.assertIn("gh release upload solo-engine-latest leyline-solo-engine-win64.zip leyline-solo-engine-win64.zip.sha256 "
+                      "leyline-solo-engine-win64.json", text)
+        self.assertNotIn("echo \"$pw\"", text)
+
     def test_forge(self):
         """Forge (GPL-3.0, forge/): only when forge/ changes or by hand; Windows; pinned tools; the built-in token only;
         the zip, its sha256 and the source tarball on the rolling release forge-latest; the UI word check runs first."""

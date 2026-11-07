@@ -24,8 +24,8 @@ character, calls a party of companions, walks and fights a little, and sends a s
   (`InstallFullDB.sh -InstallAll`, which includes playerbots' SQL), then dumped into one file the PC imports in one go.
   The job fails if any game-data file is in the sources or in the package. The core's Warden module binaries
   (`warden_modules`) are not ours to ship, so they are left out and Warden is off.
-  * Release `solo-engine-latest` holds `leyline-solo-engine-win64.zip`, its `.zip.sha256` and
-    `leyline-solo-engine-win64.json`.
+  * Release `solo-engine-latest` holds `leyline-solo-engine-win64.zip` (about 90 MB to download, about 360 MB
+    unpacked), its `.zip.sha256` and `leyline-solo-engine-win64.json`.
   * The zip holds:
     * `bin/`: mangosd, realmd and their DLLs, with `conf-dist/` holding the core's, playerbots' and anticheat's `.conf.dist`;
     * `tools/`: ad, vmap_extractor, vmap_assembler, MoveMapGen, `config.json` and `offmesh.txt`;

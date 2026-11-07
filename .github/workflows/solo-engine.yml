@@ -90,11 +90,10 @@ jobs:
           echo "playerbots $(git -C /c/s/core/src/modules/PlayerBots rev-parse HEAD)"
           echo "db $(git -C /c/s/db rev-parse HEAD)"
 
-      - name: No game data in the sources (the Warden module binaries are removed, never shipped)
+      - name: No game data in the sources (the Warden module binaries stay out of the install and the package)
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /c/s/core/src/game/Anticheat/module/warden_modules
           bad=$(find /c/s -path '*/.git' -prune -o -type f \( -iname '*.dbc' -o -iname '*.db2' -o -iname '*.mpq' \
                 -o -iname '*.m2' -o -iname '*.wmo' -o -iname '*.adt' -o -iname '*.blp' -o -iname '*.vmtree' -o -iname '*.vmtile' \
                 -o -iname '*.mmap' -o -iname '*.mmtile' \) -print | head -20)
@@ -139,7 +138,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "install failed" }
           # the module's config template, wherever the install put it
           Get-ChildItem -Recurse C:\b -Filter aiplayerbot.conf.dist | Select-Object -First 1 | ForEach-Object { Copy-Item $_.FullName C:\inst\ -Force }
-          Remove-Item -Recurse -Force C:\inst\warden_modules -ErrorAction SilentlyContinue
+          # the core's build copies its Warden module binaries beside mangosd: not ours to ship, never kept
+          Get-ChildItem -Recurse -Directory C:\inst -Filter warden_modules | Remove-Item -Recurse -Force
+          if (Get-ChildItem -Recurse -Directory C:\inst -Filter warden_modules) { throw 'warden_modules still in the install' }
           Get-ChildItem -Recurse C:\inst | ForEach-Object { "{0,10:N0} KB  {1}" -f ($_.Length / 1KB), $_.FullName }
 
       - name: Keep the programs for the next run (a later step failing doesn't cost the build)

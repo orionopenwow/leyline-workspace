@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leyline Solo</title>
+  <link rel="stylesheet" href="solo.css">
+</head>
+<body class="so">
+  <a class="so-skip" href="#so-main">Skip to the page</a>
+  <header class="so-top">
+    <div class="so-brand"><img src="art/leyline-crystal-128.png" alt="" width="26" height="26"><span>Leyline Solo</span></div>
+    <nav class="so-nav" id="so-nav" aria-label="Pages" hidden>
+      <button type="button" data-page="home" id="so-nav-home">Home</button>
+      <button type="button" data-page="characters" id="so-nav-characters">Characters</button>
+      <button type="button" data-page="invite" id="so-nav-invite">Invite a friend</button>
+      <button type="button" data-page="settings" id="so-nav-settings">Settings</button>
+    </nav>
+    <span class="so-run" id="so-run" role="status" hidden></span>
+  </header>
+  <div class="so-update" id="so-update" hidden></div>
+  <main id="so-main" class="so-main" tabindex="-1"></main>
+  <p class="so-status" id="so-status" role="status" aria-live="polite"></p>
+  <script src="solo.js"></script>
+</body>
+</html>

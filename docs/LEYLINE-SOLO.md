@@ -29,74 +29,74 @@ the login and world ports (3724, 8085) are the same as the other worlds' and Den
 
 ## Commands
 
+Matched to the Solo app's UI (`launcher/ui-solo/solo.js` on `feat-solo-app`). Tauri maps the JS camelCase names
+(`stopOther`) to the Rust snake_case ones (`stop_other`).
+
 | Command | Args | Returns | Notes |
 |---|---|---|---|
-| `classic_status` | none | `ClassicStatus` | Cheap; poll it on the page |
-| `classic_setup` | `client: String` (a game folder id of the first era), `mmaps?: bool`, `update?: bool` | `String` (what started) | Background job: whatever isn't done yet, then start. Follow `classic_progress` |
-| `classic_start` | none | `String` | The same job, set up already (no game folder needed) |
-| `classic_progress` | none | `Job` (`kind: "classic"`) | Same shape as `engine_progress`: `idle, kind, running, code, step, n, of, secs, problem, pct, detail` |
+| `classic_status` | none | `ClassicStatus` | Cheap; poll it. Has `set_up, running, busy, progress, xp_rate, logs_dir` (and more, below) |
+| `classic_setup` | `client` (a first-era game folder id), `mmaps?: bool` (default **off**), `update?: bool` | `String` | Background job: whatever isn't done yet, then start |
+| `classic_start` | `roaming?: bool`, `stopOther?: bool` | `String` | The same job, set up already. `roaming` is kept for this and later starts. `stopOther`: the other world on these ports is stopped first |
+| `classic_progress` | none | `Job` | `kind: "classic"`. **`engine_progress` returns the same line** while Solo's job runs (or when it was the last one), so the UI's `engine_progress` poll works |
 | `classic_stop` | none | `String` | Friends' logins removed first, the world saved over SOAP, then down; the sign-in session scrubbed |
 | `classic_logs` | `lines?: usize` (20 to 2000, default 200) | `String` | Last lines of each log, labelled, passwords replaced by `[hidden]` |
+| `classic_open_logs` | none | `String` (the folder) | Opens the logs folder in the PC's file manager |
 | `classic_update_check` | none | `ClassicStatus` | Looks at the release's `.sha256`; `update: true` when newer |
-| `classic_signin_mode` | none | `SigninMode` | `{ mode: "prefill" \| "addon", addon_approved: false }` |
-| `classic_set_signin_mode` | `mode: "prefill" \| "addon"` | `String` | Saved as `solo_signin` in settings.json. Switching to prefill takes our archive out |
-| `classic_play` | `client: String`, `pick?: String` (a character's name), `quick?: { name?: String, race: u8, class: u8, female?: bool }` | `ClassicPlay` | Writes the sign-in (backups first), then starts the game program from its folder |
-| `classic_password` | none | `String` | SOLO's password, **for the UI only**: shown once on request and copied by the UI. Never logged, never in another answer |
-| `classic_signin_off` | none | `String` | Every file put back as it was (byte for byte), our archive removed. Close the game first |
-| `classic_characters` | none | `ClassicChars` | Read now while running (and kept), else the kept list |
-| `classic_choices` | none | `ClassicChoices` | Quick start: the first era's races, their classes, a free name |
-| `classic_invite` | none | `ClassicInvite` | Starts sharing: one friend's login (7 days), LAN forwarder, relay tunnel; the link |
-| `classic_friends` | none | `Vec<Friend>` | The friends' logins now (`user`, `expires` unix seconds); never their passwords |
+| `classic_settings` | `signin?: "simple" \| "quick"`, `roaming?: bool` | `String` | `signin` saved as settings.json `solo_signin` ("simple" = prefill, "quick" = the add-on; `TODO(owner)`: quick is opt-in until approved). Back to simple takes our archive out. `roaming` kept for the next start |
+| `classic_play` | `client`, `signin?: "simple" \| "quick"` (else the saved setting), `pick?: String`, `quick?: { name, race, class, female }`, `stopOther?: bool` | `ClassicPlay` `{ auto, account, made, message, mode, password_needed }` | Writes the sign-in (backups first), starts the game from its folder. Another world on the ports and no `stopOther`: an error containing **"ports busy"** |
+| `classic_password` | none | `{ account, password }` | **For the UI only**: shown once on request and copied by the UI. Never logged, never in another answer |
+| `classic_signin_off` | `client?` | `String` | Every file put back as it was (byte for byte), our archive removed. Close the game first. A `client` that isn't the folder with the sign-in is refused |
+| `classic_characters` | none | `Vec<ClassicChar>`: `[{ name, level, race_label, class_label, zone, companion, online, ... }]` | Read now while running (and kept), else the kept list |
+| `classic_choices` | none | `{ races: [{ id, label, side, classes: [[id, label]] }], first_era: true, name }` | Quick start: the first era's races and classes, a free name |
+| `classic_invite` | none | `{ link, code, name, expires, tunnel, ways: [{ id, ok, line }] }` | One friend's login (7 days), LAN forwarder, relay tunnel |
+| `classic_friends` | none | `[{ user, made, expires }]` | Never their passwords |
 | `classic_share_stop` | none | `String` | Sharing off and every friend's login removed |
 | `host_ready` | `kind: "classic"` | `HostReady` | The existing checklist, with the first-era world as a kind |
 
-There are **no push events**: the page polls `classic_progress` while `running` (as it does `engine_progress`) and
+There are **no push events**: the page polls `engine_progress` / `classic_progress` while `running`, and
 `classic_status` otherwise.
 
 ### Shapes
 
 ```text
 ClassicStatus {
-  supported: bool        // Windows x64 (the only engine built)
-  installed, can_get: bool
+  supported, installed, can_get: bool
   version: String        // solo-engine.json's version
   update: bool
   maps, vmaps, mmaps: bool
   db: bool               // made and imported
   accounts: bool         // SOLO and the stop account made
-  set_up: bool           // all of the above (mmaps optional)
+  set_up: bool           // all of the above (mmaps optional, off by default)
   running, db_up, login_up, world_up: bool
   busy: bool             // a setup/start job is going
+  progress: Option<Job>  // that job's line while busy
+  xp_rate: String        // "2x" from the profile (TODO(owner): the rate)
+  logs_dir: String
+  roaming: bool
   account: String        // "SOLO" once made
   realm_name: String     // "Leyline Solo" (TODO(owner))
   root: String           // <app>/engine-classic
   game: String           // the folder the maps were read from
-  other_running: Option<String>   // the title of another world on these ports ("Single player", "Your Den"...)
-  signin: SigninStatus
-  sharing: bool          // the LAN forwarder or the tunnel is this world's
+  other_running: Option<String>   // the other world on these ports ("Single player", "Your Den", "Another server")
+  signin: { on, mode, game, addon, why }   // addon: our archive is in now; why: why the add-on isn't used
+  sharing: bool
   friends: usize         // friends' logins alive now
 }
-SigninStatus { on: bool, mode: String, game: String, addon: bool, why: String }
-   // addon: our archive is in the folder now; why: why the add-on isn't used (empty when it is or wasn't asked)
-SigninMode { mode: String, addon_approved: bool }
-ClassicPlay {
-  message: String
-  mode: String           // the mode used for this start
-  auto: bool             // the add-on signs in by itself this time (addon mode and it could be written)
-  account: String        // "SOLO" (prefilled on the login screen)
-  password_needed: bool  // prefill: the UI offers "Show password" (classic_password)
-  made: String           // Quick start's character's name (addon mode only; empty otherwise)
-}
-ClassicChar {           // LocalChar (host/localworld.rs) plus:
-  name, race, class, female, level, played, last, race_label, class_label, side
-  companion: bool        // made or brought in by `.bot` (see "Companions" below)
-  online: bool
-}
-ClassicChars { running: bool, live: bool, at: u64, chars: Vec<ClassicChar> }
-ClassicChoices { races: Vec<RaceChoice>, first_era: true, name: String }
-ClassicInvite { link, code, name, expires: u64, tunnel: TunnelState, ways: Vec<InviteWay> }   // as DenInvite
-Friend { user: String, expires: u64 }
+ClassicChar { name, race, class, female, level, played, last, race_label, class_label, side,
+              companion: bool, online: bool, zone: String /* "Elwynn Forest", "" when unnamed */, zone_id: u32 }
 ```
+
+### The engine release
+
+`RELEASE` = `https://github.com/orionopenwow/leyline-solo/releases/download/solo-engine-latest/` (the public Leyline
+Solo repo), tried first; `RELEASE_FALLBACK` = the workspace's `solo-engine-latest` (where `solo-engine.yml`
+publishes today) when the first fails. `LEYLINE_SOLO_ENGINE_URL` (an https folder ending in `/`) replaces both.
+
+### Roaming
+
+`roaming: true` adds the playerbots module's own random bots at the next start (`AiPlayerbot.RandomBotAutologin`,
+`RandomBotLoginAtStartup`, `RandomBotAutoCreate` = 1, 20 to 40 bots on 8 accounts; `TODO(owner)`: how many). Off
+(the default) is Phase 0's quiet world: just the player and their companions.
 
 ## Phase 1: the engine kit
 
@@ -106,11 +106,11 @@ files), `tmp/`, `share/` (the invite's relay key and secret), `signin-backup/`.
 
 | Step (`Job.step`) | What it does |
 |---|---|
-| Getting the engine | `leyline-solo-engine-win64.zip.sha256`, then the zip, from the rolling release `solo-engine-latest` of `orionopenwow/leyline-workspace`. `LEYLINE_SOLO_ENGINE_URL` (an https folder ending in `/`) overrides it for testing a build |
+| Getting the engine | `leyline-solo-engine-win64.zip.sha256`, then the zip, from the rolling release `solo-engine-latest` (the Leyline Solo repo's, else the workspace's; see "The engine release") |
 | Checking and unpacking it | sha256 checked, unpacked into `dist.new`, refused if it holds any game file or lacks a program, then swapped in |
 | Reading the maps | `tools/ad -i <game> -o data` (dbc and maps) from the selected first-era folder, read only |
 | Reading the line of sight | `vmap_extractor -d <game>/Data -o data`, then `vmap_assembler data/Buildings data/vmaps` |
-| Building the monster paths | `MoveMapGen` (only with `mmaps: true`; 1 to 3 hours) |
+| Building the monster paths | `MoveMapGen` (only with `mmaps: true`, off by default; 1 to 3 hours). Without them `mmap.enabled = 0`; the engine carries `tools/solo/patches/0001-*.patch` so it doesn't assert at the first grid |
 | Setting up the database | `mysqld --initialize-insecure` with a one-time init file that sets the generated root password |
 | Filling the world | `sql/solo-databases.sql` imported (5 to 15 minutes), the servers' own login `solo`, the realm list row |
 | Making your accounts | `SOLO` (to play, level 0) and `SOLOSTOP` (level 3, only for the clean stop over SOAP on 127.0.0.1), SRP6 verifiers as the core makes them |
@@ -143,10 +143,10 @@ files), `tmp/`, `share/` (the invite's relay key and secret), `signin-backup/`.
 
 then starts the game program from the folder (`launch::plan`, Wine elsewhere).
 
-* **`prefill`** (the default for now): steps 1 and 2. The login screen shows SOLO; the player types the password once
+* **`prefill`** (the UI's "simple"; the default for now): steps 1 and 2. The login screen shows SOLO; the player types the password once
   (the UI shows it on request with `classic_password` and copies it). No archive.
-* **`addon`** (opt-in): steps 1 to 3. `TODO(owner)`: copying the player's own login-screen file list into our archive
-  isn't approved yet, so it stays opt-in and `addon_approved` is false. If the list can't be read (no archive has it,
+* **`addon`** (the UI's "quick"; opt-in): steps 1 to 3. `TODO(owner)`: copying the player's own login-screen file list into our archive
+  isn't approved yet, so it stays opt-in. If the list can't be read (no archive has it,
   or it is packed in a way not read here), the start falls back to prefill and `SigninStatus.why` says so.
 * The session carries `user`, `pass`, `realm`, and optionally `pick` (a character's name: enter that one) or `make`
   (`{ name, race, class, sex }`: make it on the create screen, then enter it), as the later-era hybrid login does.
@@ -161,7 +161,7 @@ then starts the game program from the folder (`launch::plan`, Wine elsewhere).
 `classic_characters` reads, while the world runs, SOLO's characters only:
 
 ```sql
-SELECT c.guid, c.name, c.race, c.class, c.gender, c.level, c.totaltime, c.logout_time, c.online,
+SELECT c.guid, c.name, c.race, c.class, c.gender, c.level, c.totaltime, c.logout_time, c.online,  -- then c.zone
        (SELECT COUNT(*) FROM ai_playerbot_db_store d WHERE d.guid = c.guid),
        COALESCE((SELECT g.leaderGuid FROM group_member m JOIN `groups` g ON g.groupId = m.groupId
                  WHERE m.memberGuid = c.guid LIMIT 1), 0)

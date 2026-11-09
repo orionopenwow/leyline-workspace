@@ -1,0 +1,26 @@
+{
+ "format": 1,
+ "playerbots": "405f81196161017eebae3ee7a612d786a3ed2a9d",
+ "core": "e7e2e288e7d9ec30e2dfe6f417178a95986fcbb2",
+ "changes": 43,
+ "images": "canary-405f811",
+ "tested": "2026-11-09",
+ "smoke": "pending",
+ "checks": [],
+ "compat": {
+  "ok": true,
+  "missing": [
+   {
+    "kind": "methods",
+    "name": "IsBattleArena",
+    "fatal": false
+   },
+   {
+    "kind": "methods",
+    "name": "IsBattlegroundOrArena",
+    "fatal": false
+   }
+  ]
+ },
+ "run": "https://github.com/orionopenwow/leyline-workspace/actions/runs/42599410890"
+}

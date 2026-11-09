@@ -74,7 +74,7 @@ class Cmd:
     def setup(self, line):
         """`docker run ... <tools image> python -m wuhost.setup ARGS >nul || (...)` -> python3 -m wuhost.setup ARGS."""
         cmd = self.expand(line.split(" >nul")[0].split(" || ")[0])
-        m = re.search(r"-v \"([^\"]+):/kit\" -e WU_KIT=/kit \S+ python -m wuhost\.setup (.*)$", cmd)
+        m = re.search(r"-v \"([^\"]+):/kit\" -e \"?WU_KIT=/kit\"? \S+ python -m wuhost\.setup (.*)$", cmd)
         assert m and m.group(1) == self.kit, cmd
         args = shlex.split(m.group(2))
         env = dict(os.environ, PYTHONPATH=os.path.join(self.kit, "tools"), WU_KIT=self.kit)

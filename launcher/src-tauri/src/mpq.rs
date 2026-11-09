@@ -365,9 +365,6 @@ impl GameArchive {
         if size > GAME_FILE_MAX || csize > GAME_FILE_MAX.saturating_mul(2) {
             return Err(format!("{name} is too big to read here."));
         }
-        if flags & FLAG_IMPLODE != 0 {
-            return Err(format!("{name} is packed in an old way Leyline doesn't read."));
-        }
         let (size, csize) = (size as usize, csize as usize);
         let mut key = 0;
         if flags & FLAG_ENCRYPTED != 0 {
@@ -378,6 +375,7 @@ impl GameArchive {
             }
         }
         let raw = read_at(&mut self.f, self.base + pos, csize)?;
+        let imploded = flags & FLAG_IMPLODE != 0 && flags & FLAG_COMPRESS == 0;
         let unpack = |mut s: Vec<u8>, want: usize, k: Option<u32>| -> Result<Vec<u8>, String> {
             if let Some(k) = k {
                 let mut w = words_of(&s);
@@ -389,25 +387,37 @@ impl GameArchive {
             if s.len() >= want {
                 return Ok(s[..want].to_vec());
             }
-            match s.first() {
-                Some(0x02) => {
-                    let mut d = flate2::read::ZlibDecoder::new(&s[1..]);
-                    let mut out = Vec::with_capacity(want);
-                    std::io::Read::read_to_end(&mut d, &mut out).map_err(|_| format!("{name} is damaged in the archive."))?;
-                    if out.len() != want {
-                        return Err(format!("{name} is damaged in the archive."));
-                    }
-                    Ok(out)
-                }
-                Some(m) => Err(format!("{name} is packed in a way Leyline doesn't read (0x{m:02x}).")),
-                None => Err(format!("{name} is damaged in the archive.")),
+            let damaged = || format!("{name} is damaged in the archive.");
+            // the first-era archives' old way: the whole sector imploded (PKWARE), no method byte
+            if imploded {
+                let out = explode(&s).map_err(|_| damaged())?;
+                return if out.len() == want { Ok(out) } else { Err(damaged()) };
             }
+            let Some(&mask) = s.first() else { return Err(damaged()) };
+            if mask & !(0x02 | 0x08) != 0 {
+                return Err(format!("{name} is packed in a way Leyline doesn't read (0x{mask:02x})."));
+            }
+            // the methods are undone in this order: PKWARE implode, then zlib
+            let mut body = s[1..].to_vec();
+            if mask & 0x08 != 0 {
+                body = explode(&body).map_err(|_| damaged())?;
+            }
+            if mask & 0x02 != 0 {
+                let mut d = flate2::read::ZlibDecoder::new(&body[..]);
+                let mut out = Vec::with_capacity(want);
+                std::io::Read::read_to_end(&mut d, &mut out).map_err(|_| damaged())?;
+                body = out;
+            }
+            if body.len() != want {
+                return Err(damaged());
+            }
+            Ok(body)
         };
         let enc = |k: u32| (flags & FLAG_ENCRYPTED != 0).then_some(k);
         if size == 0 {
             return Ok(Some(Vec::new()));
         }
-        if flags & FLAG_COMPRESS == 0 && flags & FLAG_SINGLE == 0 && flags & FLAG_ENCRYPTED == 0 {
+        if flags & (FLAG_COMPRESS | FLAG_IMPLODE) == 0 && flags & FLAG_SINGLE == 0 && flags & FLAG_ENCRYPTED == 0 {
             return raw.get(..size).map(|s| Some(s.to_vec())).ok_or_else(|| format!("{name} is damaged in the archive."));
         }
         if flags & FLAG_SINGLE != 0 {
@@ -415,7 +425,7 @@ impl GameArchive {
         }
         let n = size.div_ceil(self.sector);
         let entries = n + 1 + usize::from(flags & FLAG_CRC != 0);
-        let offs: Vec<usize> = if flags & FLAG_COMPRESS != 0 {
+        let offs: Vec<usize> = if flags & (FLAG_COMPRESS | FLAG_IMPLODE) != 0 {
             let mut t = words_of(raw.get(..entries * 4).ok_or_else(|| format!("{name} is damaged in the archive."))?);
             if flags & FLAG_ENCRYPTED != 0 {
                 decrypt(&mut t, key.wrapping_sub(1));
@@ -431,6 +441,132 @@ impl GameArchive {
             out.extend(unpack(s, want, enc(key.wrapping_add(i as u32)))?);
         }
         Ok(Some(out))
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ PKWARE explode
+// The PKWARE Data Compression Library's "implode" format, as zlib's contrib/blast/blast.c (Mark Adler) describes it: a
+// literal/length/distance code with fixed Huffman tables, codes stored bit-inverted. Ported from tools/solo/mpq112.py
+// (our own code). The first-era archives pack their login screen files this way.
+
+const LITLEN: [u8; 98] = [11, 124, 8, 7, 28, 7, 188, 13, 76, 4, 10, 8, 12, 10, 12, 10, 8, 23, 8, 9, 7, 6, 7, 8, 7, 6, 55, 8, 23, 24,
+    12, 11, 7, 9, 11, 12, 6, 7, 22, 5, 7, 24, 6, 11, 9, 6, 7, 22, 7, 11, 38, 7, 9, 8, 25, 11, 8, 11, 9, 12, 8,
+    12, 5, 38, 5, 38, 5, 11, 7, 5, 6, 21, 6, 10, 53, 8, 7, 24, 10, 27, 44, 253, 253, 253, 252, 252, 252, 13, 12,
+    45, 12, 45, 12, 61, 12, 45, 44, 173];
+const LENLEN: [u8; 6] = [2, 35, 36, 53, 38, 23];
+const DISTLEN: [u8; 7] = [2, 20, 53, 230, 247, 151, 248];
+const LBASE: [usize; 16] = [3, 2, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 40, 72, 136, 264];
+const LEXTRA: [u32; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8];
+const MAXBITS: usize = 13;
+
+struct Huff {
+    count: [u16; MAXBITS + 1],
+    symbol: Vec<u16>,
+}
+
+fn huffman(rep: &[u8]) -> Huff {
+    let mut lengths: Vec<u8> = Vec::new();
+    for b in rep {
+        for _ in 0..((b >> 4) + 1) {
+            lengths.push(b & 15);
+        }
+    }
+    let mut count = [0u16; MAXBITS + 1];
+    for n in &lengths {
+        count[*n as usize] += 1;
+    }
+    let mut offs = [0usize; MAXBITS + 2];
+    for n in 1..=MAXBITS {
+        offs[n + 1] = offs[n] + count[n] as usize;
+    }
+    let mut symbol = vec![0u16; lengths.len()];
+    for (s, n) in lengths.iter().enumerate() {
+        if *n != 0 {
+            symbol[offs[*n as usize]] = s as u16;
+            offs[*n as usize] += 1;
+        }
+    }
+    Huff { count, symbol }
+}
+
+struct Bits<'a> {
+    data: &'a [u8],
+    pos: usize,
+    buf: u32,
+    cnt: u32,
+}
+
+impl Bits<'_> {
+    fn bit(&mut self) -> Result<u32, String> {
+        if self.cnt == 0 {
+            let b = *self.data.get(self.pos).ok_or("implode stream ended early")?;
+            self.pos += 1;
+            self.buf = b as u32;
+            self.cnt = 8;
+        }
+        let b = self.buf & 1;
+        self.buf >>= 1;
+        self.cnt -= 1;
+        Ok(b)
+    }
+    fn bits(&mut self, n: u32) -> Result<u32, String> {
+        let mut v = 0;
+        for i in 0..n {
+            v |= self.bit()? << i;
+        }
+        Ok(v)
+    }
+    fn decode(&mut self, h: &Huff) -> Result<usize, String> {
+        let (mut code, mut first, mut index) = (0i32, 0i32, 0i32);
+        for len in 1..=MAXBITS {
+            code |= (self.bit()? ^ 1) as i32;
+            let c = h.count[len] as i32;
+            if code < first + c {
+                return Ok(h.symbol[(index + code - first) as usize] as usize);
+            }
+            index += c;
+            first = (first + c) << 1;
+            code <<= 1;
+        }
+        Err("bad implode code".into())
+    }
+}
+
+/// One PKWARE-imploded block undone (at most [`GAME_FILE_MAX`] bytes out).
+pub fn explode(data: &[u8]) -> Result<Vec<u8>, String> {
+    static TABLES: std::sync::OnceLock<(Huff, Huff, Huff)> = std::sync::OnceLock::new();
+    let (lit_h, len_h, dist_h) = TABLES.get_or_init(|| (huffman(&LITLEN), huffman(&LENLEN), huffman(&DISTLEN)));
+    let mut s = Bits { data, pos: 0, buf: 0, cnt: 0 };
+    let lit = s.bits(8)?;
+    if lit > 1 {
+        return Err("bad implode header".into());
+    }
+    let dict = s.bits(8)?;
+    if !(4..=6).contains(&dict) {
+        return Err("bad implode dictionary size".into());
+    }
+    let mut out: Vec<u8> = Vec::new();
+    loop {
+        if s.bit()? == 1 {
+            let sym = s.decode(len_h)?;
+            let len = LBASE[sym] + s.bits(LEXTRA[sym])? as usize;
+            if len == 519 {
+                return Ok(out);
+            }
+            let shift = if len == 2 { 2 } else { dict };
+            let dist = ((s.decode(dist_h)? as usize) << shift) + s.bits(shift)? as usize + 1;
+            if dist > out.len() {
+                return Err("implode distance too far back".into());
+            }
+            for _ in 0..len {
+                out.push(out[out.len() - dist]);
+            }
+        } else {
+            out.push(if lit == 1 { s.decode(lit_h)? as u8 } else { s.bits(8)? as u8 });
+        }
+        if out.len() > GAME_FILE_MAX as usize {
+            return Err("implode stream too long".into());
+        }
     }
 }
 
@@ -538,6 +674,65 @@ mod tests {
         assert_eq!(read_own(&[r, p.clone()], "x\\y.txt").unwrap().unwrap(), b"hi");
         assert!(read_own(&[d.path().join("missing.MPQ"), p], "nope").unwrap().is_none());
         assert!(GameArchive::open(&d.path().join("missing.MPQ")).is_err());
+    }
+
+    #[test]
+    fn imploded_files_of_the_first_eras_archives_are_read() {
+        // zlib's contrib/blast example stream (the same vector as tools/solo/test_solo_proof.py)
+        let imp = [0x00u8, 0x04, 0x82, 0x24, 0x25, 0x8F, 0x80, 0x7F];
+        assert_eq!(explode(&imp).unwrap(), b"AIAIAIAIAIAIA");
+        assert!(explode(&[0x02, 0x04]).is_err(), "a bad header");
+        assert!(explode(&imp[..5]).is_err(), "cut off");
+        let d = TempDir::new("implode");
+        // sectors imploded the old way (FLAG_IMPLODE, no method byte)
+        let mut body: Vec<u8> = [8u32, 8 + imp.len() as u32].iter().flat_map(|v| v.to_le_bytes()).collect();
+        body.extend_from_slice(&imp);
+        let p = d.path().join("interface.MPQ");
+        fs_write(&p, &one_file("Interface\\GlueXML\\GlueXML.toc", &body, FLAG_EXISTS | FLAG_IMPLODE, 13));
+        assert_eq!(GameArchive::open(&p).unwrap().read("Interface\\GlueXML\\GlueXML.toc").unwrap().unwrap(), b"AIAIAIAIAIAIA");
+        // a compressed sector whose method byte says implode (0x08)
+        let mut sec = vec![0x08u8];
+        sec.extend_from_slice(&imp);
+        let mut body: Vec<u8> = [8u32, 8 + sec.len() as u32].iter().flat_map(|v| v.to_le_bytes()).collect();
+        body.extend_from_slice(&sec);
+        let q = d.path().join("patch.MPQ");
+        fs_write(&q, &one_file("A.txt", &body, FLAG_EXISTS | FLAG_COMPRESS, 13));
+        assert_eq!(GameArchive::open(&q).unwrap().read("A.txt").unwrap().unwrap(), b"AIAIAIAIAIAIA");
+        // bzip2 (0x10) is still refused in words
+        let mut body: Vec<u8> = [8u32, 8 + 4].iter().flat_map(|v| v.to_le_bytes()).collect();
+        body.extend_from_slice(&[0x10, 1, 2, 3]);
+        let r = d.path().join("patch-2.MPQ");
+        fs_write(&r, &one_file("A.txt", &body, FLAG_EXISTS | FLAG_COMPRESS, 13));
+        assert!(GameArchive::open(&r).unwrap().read("A.txt").unwrap_err().contains("0x10"));
+    }
+
+    /// An archive holding one file, its stored bytes and block flags as given (sector shift 3).
+    fn one_file(name: &str, body: &[u8], flags: u32, size: u32) -> Vec<u8> {
+        let mut out = vec![0u8; 32];
+        out.extend_from_slice(body);
+        let n = 16usize;
+        let mut table = vec![[0xFFFF_FFFFu32; 4]; n];
+        table[(hash(name, 0) as usize) & (n - 1)] = [hash(name, 1), hash(name, 2), 0, 0];
+        let mut hw: Vec<u32> = table.iter().flat_map(|e| e.iter().copied()).collect();
+        encrypt(&mut hw, hash("(hash table)", 3));
+        let mut bw = vec![32u32, body.len() as u32, size, flags];
+        encrypt(&mut bw, hash("(block table)", 3));
+        let hpos = out.len() as u32;
+        out.extend(hw.iter().flat_map(|v| v.to_le_bytes()));
+        let bpos = out.len() as u32;
+        out.extend(bw.iter().flat_map(|v| v.to_le_bytes()));
+        let total = out.len() as u32;
+        let mut h = b"MPQ\x1a".to_vec();
+        for v in [32u32, total] {
+            h.extend_from_slice(&v.to_le_bytes());
+        }
+        h.extend_from_slice(&0u16.to_le_bytes());
+        h.extend_from_slice(&3u16.to_le_bytes());
+        for v in [hpos, bpos, n as u32, 1] {
+            h.extend_from_slice(&v.to_le_bytes());
+        }
+        out[..32].copy_from_slice(&h);
+        out
     }
 
     struct TempDir(std::path::PathBuf);

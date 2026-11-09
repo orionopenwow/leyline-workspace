@@ -35,9 +35,32 @@ const CMD_REALM_LIST: u8 = 0x10;
 /// A realm list larger than this isn't one of ours: passed through.
 const LIST_MAX: usize = 16 * 1024;
 
+/// Which game's login protocol a world speaks: the later era's (build 12340, the AzerothCore worlds) or the first
+/// era's (build 5875, Leyline Solo's CMaNGOS world: host/classic.rs). The messages are the same; their lengths and
+/// the realm list's layout differ (read from CMaNGOS realmd `AuthSocket.cpp` at the Solo pin: `SendProof` and
+/// `LoadRealmlist`, case 5875).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Layout {
+    #[default]
+    Wrath,
+    Classic,
+}
+
+/// `<share>/den-lite.layout`: "classic" for the first-era world (the relay tunnel reads it, host/litenet.rs).
+pub const LAYOUT_FILE: &str = "den-lite.layout";
+
+/// The layout a share folder's world speaks (no file: the later era's).
+pub fn layout_in(share: &Path) -> Layout {
+    match std::fs::read_to_string(share.join(LAYOUT_FILE)).map(|t| t.trim().to_ascii_lowercase()) {
+        Ok(t) if t == "classic" => Layout::Classic,
+        _ => Layout::Wrath,
+    }
+}
+
 /// Follows the login server's side of one connection and rewrites the realm list's loopback addresses.
 #[derive(Debug, Clone)]
 pub struct AuthRewriter {
+    layout: Layout,
     target: String,
     buf: Vec<u8>,
     /// Lost the thread (an unknown message): everything passes through from here on.
@@ -48,7 +71,12 @@ pub struct AuthRewriter {
 impl AuthRewriter {
     /// `target`: "ip:port" the friend's game should go to for the world.
     pub fn new(target: &str) -> AuthRewriter {
-        AuthRewriter { target: target.to_string(), buf: Vec::new(), through: false, rewrote: 0 }
+        AuthRewriter::with_layout(target, Layout::Wrath)
+    }
+
+    /// The same for a world of this layout (the first era's realm list for Leyline Solo).
+    pub fn with_layout(target: &str, layout: Layout) -> AuthRewriter {
+        AuthRewriter { layout, target: target.to_string(), buf: Vec::new(), through: false, rewrote: 0 }
     }
 
     /// The bytes to send on for these (whole messages only; a part waits for the rest).
@@ -59,7 +87,7 @@ impl AuthRewriter {
         self.buf.extend_from_slice(data);
         let mut out = Vec::new();
         loop {
-            match message_len(&self.buf) {
+            match message_len(&self.buf, self.layout) {
                 Len::Need => break,
                 Len::Unknown => {
                     self.through = true;
@@ -68,8 +96,16 @@ impl AuthRewriter {
                 }
                 Len::Whole(n) => {
                     let msg: Vec<u8> = self.buf.drain(..n).collect();
+                    // a refused proof ends the login: whatever follows is passed through as it is
+                    if msg[0] == CMD_PROOF && msg.get(1).is_some_and(|e| *e != 0) {
+                        self.through = true;
+                    }
                     if msg[0] == CMD_REALM_LIST {
-                        match rewrite_list(&msg, &self.target) {
+                        let r = match self.layout {
+                            Layout::Wrath => rewrite_list(&msg, &self.target),
+                            Layout::Classic => rewrite_list_classic(&msg, &self.target),
+                        };
+                        match r {
                             Some((m, k)) => {
                                 self.rewrote += k;
                                 out.extend(m);
@@ -78,6 +114,10 @@ impl AuthRewriter {
                         }
                     } else {
                         out.extend(msg);
+                    }
+                    if self.through {
+                        out.append(&mut self.buf);
+                        break;
                     }
                 }
             }
@@ -92,8 +132,8 @@ enum Len {
     Whole(usize),
 }
 
-/// How long the login server's message at the start of `b` is (its own formats, the client of this build).
-fn message_len(b: &[u8]) -> Len {
+/// How long the login server's message at the start of `b` is (its own formats, for the client of this layout).
+fn message_len(b: &[u8], layout: Layout) -> Len {
     let Some(&cmd) = b.first() else { return Len::Need };
     let need = |n: usize| if b.len() >= n { Len::Whole(n) } else { Len::Need };
     match cmd {
@@ -134,7 +174,11 @@ fn message_len(b: &[u8]) -> Len {
             if b.len() < 2 {
                 return Len::Need;
             }
-            need(if b[1] == 0 { 32 } else { 4 })
+            // the first era: cmd, error, M2[20], u32 flags (26); refused: cmd, error (2). Later: 32 or 4
+            match layout {
+                Layout::Wrath => need(if b[1] == 0 { 32 } else { 4 }),
+                Layout::Classic => need(if b[1] == 0 { 26 } else { 2 }),
+            }
         }
         CMD_RECONNECT_CHALLENGE => {
             if b.len() < 2 {
@@ -142,7 +186,16 @@ fn message_len(b: &[u8]) -> Len {
             }
             need(if b[1] == 0 { 34 } else { 2 })
         }
-        CMD_RECONNECT_PROOF => need(4),
+        CMD_RECONNECT_PROOF => match layout {
+            Layout::Wrath => need(4),
+            // cmd, ok, u16 0 (4); refused: cmd, error (2)
+            Layout::Classic => {
+                if b.len() < 2 {
+                    return Len::Need;
+                }
+                need(if b[1] == 0 { 4 } else { 2 })
+            }
+        },
         CMD_REALM_LIST => {
             if b.len() < 3 {
                 return Len::Need;
@@ -202,6 +255,52 @@ pub fn rewrite_list(msg: &[u8], target: &str) -> Option<(Vec<u8>, usize)> {
         out.extend_from_slice(body.get(at..at + tail)?);
         at += tail;
     }
+    out.extend_from_slice(body.get(at..)?);
+    let mut m = vec![CMD_REALM_LIST];
+    m.extend_from_slice(&u16::try_from(out.len()).ok()?.to_le_bytes());
+    m.extend(out);
+    Some((m, changed))
+}
+
+/// The first era's realm list (CMaNGOS realmd `LoadRealmlist`, case 5875): `u32 unused, u8 count`, per realm `u32
+/// type, u8 flags, cstring name, cstring address, f32 population, u8 characters, u8 category, u8 unknown`, then `u16
+/// 0x0002`. Each loopback address is replaced by `target` and the size written again; None when it doesn't read as
+/// one (it is then passed on as it is).
+pub fn rewrite_list_classic(msg: &[u8], target: &str) -> Option<(Vec<u8>, usize)> {
+    let body = msg.get(3..)?;
+    if body.len() < 5 || u16::from_le_bytes([msg[1], msg[2]]) as usize != body.len() {
+        return None;
+    }
+    let count = body[4] as usize;
+    let mut out = body[..5].to_vec();
+    let mut at = 5;
+    let mut changed = 0;
+    let cstr = |at: usize| -> Option<(Vec<u8>, usize)> {
+        let end = body.get(at..)?.iter().position(|c| *c == 0)?;
+        Some((body[at..at + end].to_vec(), at + end + 1))
+    };
+    for _ in 0..count {
+        out.extend_from_slice(body.get(at..at + 5)?);
+        at += 5;
+        let (name, next) = cstr(at)?;
+        out.extend(&name);
+        out.push(0);
+        at = next;
+        let (addr, next) = cstr(at)?;
+        let addr_s = String::from_utf8(addr.clone()).ok()?;
+        if loopback(&addr_s) {
+            out.extend(target.as_bytes());
+            changed += 1;
+        } else {
+            out.extend(&addr);
+        }
+        out.push(0);
+        at = next;
+        // population (f32), characters, category, unknown
+        out.extend_from_slice(body.get(at..at + 7)?);
+        at += 7;
+    }
+    // the closing u16 (and anything after it, untouched)
     out.extend_from_slice(body.get(at..)?);
     let mut m = vec![CMD_REALM_LIST];
     m.extend_from_slice(&u16::try_from(out.len()).ok()?.to_le_bytes());
@@ -270,6 +369,7 @@ pub fn invite_secret(share: &Path) -> Result<String, String> {
 /// stream's realm list rewritten to `<ip>:<world>`.
 pub struct Lan {
     stop: Arc<AtomicBool>,
+    layout: Layout,
     pub ip: IpAddr,
     pub login: u16,
     pub world: u16,
@@ -284,9 +384,15 @@ fn bind(ip: IpAddr, ports: &[u16]) -> Option<TcpListener> {
 /// Starts it on this PC's network address (again while it runs: the same). The game's own ports first (a friend's
 /// game then needs no port in its realm list), others beside them when those are taken.
 pub fn lan_start(ip: IpAddr, to_login: u16, to_world: u16) -> Result<(IpAddr, u16, u16), String> {
+    lan_start_layout(ip, to_login, to_world, Layout::Wrath)
+}
+
+/// [`lan_start`] for a world of this layout (the first-era world: [`Layout::Classic`]). One forwarder on this PC: a
+/// running one for another layout is stopped and started again.
+pub fn lan_start_layout(ip: IpAddr, to_login: u16, to_world: u16, layout: Layout) -> Result<(IpAddr, u16, u16), String> {
     let mut g = LAN.lock().map_err(|_| "busy")?;
     if let Some(l) = g.as_ref() {
-        if l.ip == ip && !l.stop.load(Ordering::Relaxed) {
+        if l.ip == ip && l.layout == layout && !l.stop.load(Ordering::Relaxed) {
             return Ok((l.ip, l.login, l.world));
         }
         l.stop.store(true, Ordering::Relaxed);
@@ -299,9 +405,9 @@ pub fn lan_start(ip: IpAddr, to_login: u16, to_world: u16) -> Result<(IpAddr, u1
     for (l, to, rewrite) in [(login, to_login, true), (world, to_world, false)] {
         let (stop, target) = (stop.clone(), target.clone());
         let _ = l.set_nonblocking(true);
-        std::thread::spawn(move || accept_loop(l, to, rewrite.then_some(target), stop));
+        std::thread::spawn(move || accept_loop(l, to, rewrite.then_some(target), layout, stop));
     }
-    *g = Some(Lan { stop, ip, login: lp, world: wp });
+    *g = Some(Lan { stop, layout, ip, login: lp, world: wp });
     Ok((ip, lp, wp))
 }
 
@@ -318,7 +424,12 @@ pub fn lan_state() -> Option<(IpAddr, u16)> {
     LAN.lock().ok().and_then(|g| g.as_ref().filter(|l| !l.stop.load(Ordering::Relaxed)).map(|l| (l.ip, l.login)))
 }
 
-fn accept_loop(l: TcpListener, to: u16, rewrite: Option<String>, stop: Arc<AtomicBool>) {
+/// The layout of the world the same-network forwarder serves now, while it runs.
+pub fn lan_layout() -> Option<Layout> {
+    LAN.lock().ok().and_then(|g| g.as_ref().filter(|l| !l.stop.load(Ordering::Relaxed)).map(|l| l.layout))
+}
+
+fn accept_loop(l: TcpListener, to: u16, rewrite: Option<String>, layout: Layout, stop: Arc<AtomicBool>) {
     while !stop.load(Ordering::Relaxed) {
         match l.accept() {
             Ok((c, from)) => {
@@ -330,7 +441,7 @@ fn accept_loop(l: TcpListener, to: u16, rewrite: Option<String>, stop: Arc<Atomi
                 std::thread::spawn(move || {
                     let _ = c.set_nonblocking(false);
                     if let Ok(up) = TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], to)), Duration::from_secs(3)) {
-                        relay_pair(c, up, rw.map(|t| AuthRewriter::new(&t)), stop);
+                        relay_pair(c, up, rw.map(|t| AuthRewriter::with_layout(&t, layout)), stop);
                     }
                 });
             }
@@ -507,5 +618,91 @@ mod tests {
         let mut got = vec![0u8; want.len()];
         client.read_exact(&mut got).unwrap();
         assert_eq!(got, want);
+    }
+
+    /// The first era's realm list exactly as CMaNGOS realmd writes it for build 5875 (LoadRealmlist): one realm per
+    /// address given.
+    fn classic_list(addrs: &[&str]) -> Vec<u8> {
+        let mut body = vec![0, 0, 0, 0, addrs.len() as u8];
+        for (i, a) in addrs.iter().enumerate() {
+            body.extend(1u32.to_le_bytes()); // type: normal
+            body.push(if i == 0 { 0x00 } else { 0x02 }); // flags
+            body.extend(b"Leyline Solo\0");
+            body.extend(a.as_bytes());
+            body.push(0);
+            body.extend(0.5f32.to_le_bytes());
+            body.extend([3, 1, 0]); // characters, category, unknown
+        }
+        body.extend(2u16.to_le_bytes());
+        let mut m = vec![0x10];
+        m.extend((body.len() as u16).to_le_bytes());
+        m.extend(body);
+        m
+    }
+
+    #[test]
+    fn the_first_eras_realm_list_is_rewritten_in_its_own_layout() {
+        let (m, n) = rewrite_list_classic(&classic_list(&["127.0.0.1:8085"]), "203.0.113.9:40123").unwrap();
+        assert_eq!((m, n), (classic_list(&["203.0.113.9:40123"]), 1));
+        let (m, n) = rewrite_list_classic(&classic_list(&["127.0.0.1:8085", "198.51.100.4:8085"]), "10.0.0.5:8085").unwrap();
+        assert_eq!((m, n), (classic_list(&["10.0.0.5:8085", "198.51.100.4:8085"]), 1), "only this PC's address");
+        assert!(rewrite_list_classic(&[0x10, 3, 0, 1, 2, 3], "x:1").is_none(), "not a list");
+        let mut short = classic_list(&["127.0.0.1:8085"]);
+        short.truncate(short.len() - 3);
+        assert!(rewrite_list_classic(&short, "x:1").is_none(), "cut off");
+    }
+
+    #[test]
+    fn the_first_eras_login_stream_is_followed_message_by_message() {
+        // challenge (security flags 0), the good proof (26 bytes at build 5875), the realm list
+        let mut stream = challenge_ok(0);
+        let mut proof = vec![0x01, 0x00];
+        proof.extend([3u8; 20]);
+        proof.extend(0u32.to_le_bytes());
+        assert_eq!(proof.len(), 26);
+        stream.extend(&proof);
+        stream.extend(classic_list(&["127.0.0.1:8085"]));
+        let mut want = challenge_ok(0);
+        want.extend(&proof);
+        want.extend(classic_list(&["192.168.1.20:8085"]));
+        let mut r = AuthRewriter::with_layout("192.168.1.20:8085", Layout::Classic);
+        assert_eq!(r.feed(&stream), want);
+        assert_eq!(r.rewrote, 1);
+        let mut r = AuthRewriter::with_layout("192.168.1.20:8085", Layout::Classic);
+        let mut got = Vec::new();
+        for b in &stream {
+            got.extend(r.feed(&[*b]));
+        }
+        assert_eq!(got, want, "a byte at a time");
+        assert_eq!(r.feed(&classic_list(&["127.0.0.1:8085"])), classic_list(&["192.168.1.20:8085"]), "asked again later");
+        // the later era's reader would wait for 32 bytes of proof and read the list as part of it: the layouts differ
+        let mut w = AuthRewriter::new("192.168.1.20:8085");
+        assert_ne!(w.feed(&stream), want);
+        // a refused proof (2 bytes at this build): through from there, nothing rewritten
+        let mut r = AuthRewriter::with_layout("x:1", Layout::Classic);
+        let mut s2 = challenge_ok(0);
+        s2.extend([0x01, 0x04]);
+        s2.extend(classic_list(&["127.0.0.1:8085"]));
+        assert_eq!(r.feed(&s2), s2);
+        assert_eq!(r.rewrote, 0);
+        // a reconnect: challenge 34, proof 4, then the list
+        let mut rc = vec![0x02, 0x00];
+        rc.extend([1u8; 32]);
+        rc.extend([0x03, 0x00, 0x00, 0x00]);
+        rc.extend(classic_list(&["127.0.0.1:8085"]));
+        let mut r = AuthRewriter::with_layout("10.1.1.1:8085", Layout::Classic);
+        let out = r.feed(&rc);
+        assert_eq!(r.rewrote, 1);
+        assert!(out.ends_with(&classic_list(&["10.1.1.1:8085"])));
+    }
+
+    #[test]
+    fn a_share_folder_says_its_layout() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(layout_in(d.path()), Layout::Wrath, "no file: the later era's");
+        std::fs::write(d.path().join(LAYOUT_FILE), "classic\r\n").unwrap();
+        assert_eq!(layout_in(d.path()), Layout::Classic);
+        std::fs::write(d.path().join(LAYOUT_FILE), "something").unwrap();
+        assert_eq!(layout_in(d.path()), Layout::Wrath);
     }
 }

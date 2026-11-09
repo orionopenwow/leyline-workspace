@@ -38,7 +38,7 @@ docker image inspect "%WU_TOOLS_IMAGE%" >nul 2>&1 || (
 echo.
 echo == Your realm
 rem Earlier answers (running this again keeps them as the defaults)
-for /f "usebackq delims=" %%L in (`docker run --rm -v "%~dp0.:/kit" -e WU_KIT=/kit %WU_TOOLS_IMAGE% python -m wuhost.setup get`) do set "%%L"
+for /f "usebackq delims=" %%L in (`docker run --rm -v "%~dp0.:/kit" -e "WU_KIT=/kit" %WU_TOOLS_IMAGE% python -m wuhost.setup get`) do set "%%L"
 if not defined WU_NAME (
   set "D=My Wrath Realm"
   if defined WU_OLD_NAME set "D=!WU_OLD_NAME!"

@@ -916,3 +916,7 @@
 1354b solo-setup  Leyline Solo test: get the engine, read the maps from your folder, make the local login (long)
 1355a signin  Website: the Leyline Solo page (/wrath/solo, says Coming soon) and its guide
 1355b ship  Save to GitHub: Leyline Solo site page, guide, fresh-machine test, the Solo app shell, the engine fix
+1357a solo-stop  Leyline Solo test: stop what is left of the first try
+1357b solo-setup  Leyline Solo test: get the fixed engine, then the same setup
+1357c solo-start  Leyline Solo test: start the local first-era world
+1358a ship  Save as Orion: the Host pack's 'docker: invalid reference format' after 'Your realm' fixed (WU_KIT quoted in the FOR /F setup line); CI rebuilds the Host pack

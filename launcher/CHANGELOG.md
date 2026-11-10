@@ -5,6 +5,12 @@ copies it.
 
 ## Unreleased
 
+- **Single player and the original world in the server list.** Both of this PC's own worlds have their own row
+  next to PLAY now. Click one to pick it (it stays selected, and the bar says what PLAY will do), then PLAY: set up
+  the first time, started if it's stopped, and you're in. If the other world is running, PLAY says so and a second
+  PLAY stops it (its characters are saved) and plays the one you picked.
+- **Simple mode.** Turn on Simple mode at the bottom of the side menu for four big buttons: Play, Host, Visit and
+  Back up. Your worlds back up by themselves once a day (turn it off on the Back up card).
 - **Character portraits instead of letters.** Every player has a round character portrait on a grey slate
   medallion now: a knight, a ranger, a witch, a fox and twenty more, drawn for Leyline. Without a pick you get one from
   your name (the same one on the website); choose another under Manage account › Picture.

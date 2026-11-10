@@ -276,6 +276,8 @@ async function refresh() {
   renderSettings();
   renderClientPickers();
   document.dispatchEvent(new CustomEvent("leyline:state"));   // single.js: the game folders may have changed
+  // this PC's worlds (Single player, the original world): their rows and the bar's line follow what they are now
+  readWorlds().then((changed) => { if (changed) renderPlayBar(); }).catch(() => {});
 }
 
 // ------------------------------------------------------------------ realm: the chosen realm, the rows, live status
@@ -325,6 +327,7 @@ function hiddenRealm(r) {
 function realmLabel() {
   if (isOfficial()) return officialName();
   const a = chosenRealm();
+  if (worldChosen()) return WORLD_TITLE[worldChosen()];   // Single player or the original world, Built-in engine
   if (localAt(a)) return localAt(a).name;   // My Den or Single player
   if (a === DEN_LITE) return DEN.name;      // Your Den on Den Lite (host/lite.rs ADDRESS)
   const r = realmsCache.find((x) => x.address === a);
@@ -528,6 +531,7 @@ function renderClientCard() {
 // The build the chosen realm needs, when the list says ("3.3.5a" for the official realm).
 function chosenRealmBuild() {
   if (isOfficial()) return "3.3.5a";
+  if (worldChosen()) return WORLD_BUILD;
   const r = realmAt(chosenRealm());
   return r && r.build ? r.build : null;
 }
@@ -1115,6 +1119,105 @@ function localAddress(L) {
   try { return localStorage.getItem(L.key) || ""; } catch (_) { return ""; }
 }
 function denAddress() { return localAddress(DEN); }
+// ---- this PC's own worlds on the Built-in engine (vanilla.js window.LeylineWorlds; host/engine.rs; owner 10 Nov:
+// "robust single player in launcher"; Discord, Squishy: "why I can't select my solo server on the server list").
+// Before, the realm picker had no row for the original world, and Single player's row started the game on the click
+// without ever being picked, so it never looked selected. Now both are rows like any realm: a click picks it (the bar
+// says what PLAY will do), and PLAY plays it the one way every local world plays (LeylineWorlds.run: set up once,
+// started when stopped, then signed in by itself). Picked = the realm field at the engine's address with the world's
+// kind kept in localStorage (leyline.world.chosen). Another world running on these ports: PLAY says so, and a second
+// PLAY stops it (its characters are saved) and plays the picked one; nothing is stopped unasked.
+var WORLD_ADDR = "127.0.0.1:3724";      // where the Built-in engine's worlds play (host/engine.rs)
+var WORLD_BUILD = "3.3.5a";
+var WORLD_KEY = "leyline.world.chosen";
+var WORLD_KINDS = ["single", "vanilla"];
+var WORLD_TITLE = { single: "Single player", vanilla: "Original world" };
+var WORLD_LINE = { single: "Just you and your companions, on this PC", vanilla: "The original world at level 60, with companions, on this PC" };
+var worldSt = {};                         // kind -> world_status (null: this core has no such world)
+var worldStopOk = "";                     // the kind a second PLAY may stop the other world for
+// (var and a function declaration, so the realm label and build can ask before this part of the file has run)
+function worldChosen() {
+  if (!WORLD_ADDR) return null;
+  try { if (mode === "browser") return null; } catch (_) { return null; }
+  if (isOfficial() || chosenRealm() !== WORLD_ADDR) return null;
+  let k = "";
+  try { k = localStorage.getItem(WORLD_KEY) || ""; } catch (_) { /* fine */ }
+  return WORLD_KINDS.includes(k) ? k : "single";
+}
+async function readWorlds() {
+  const got = await Promise.all(WORLD_KINDS.map((k) => invoke("world_status", { kind: k }).catch(() => null)));
+  let changed = false;
+  WORLD_KINDS.forEach((k, i) => {
+    const v = got[i] && typeof got[i] === "object" ? got[i] : null;
+    if (JSON.stringify(v) !== JSON.stringify(worldSt[k])) changed = true;
+    worldSt[k] = v;
+  });
+  return changed;
+}
+// the Built-in engine is made for this PC (Windows for now): the worlds get their own rows
+function worldsHere() { return !!(worldSt && worldSt.single && worldSt.single.supported); }
+function worldSub(k) {
+  const w = worldSt[k];
+  if (!w) return "On this PC";
+  if (w.running) return "Running on this PC";
+  if (w.set_up) return "On this PC";
+  if (!haveBuild(WORLD_BUILD)) return "Needs your game folder";
+  return "Set it up once";
+}
+function pickWorld(k) {
+  rememberClient(realmKey(), currentClient());
+  if (mode !== "browser" && !isOfficial() && chosenRealm() !== WORLD_ADDR) rememberJoined(chosenRealm());
+  try { localStorage.setItem(WORLD_KEY, k); } catch (_) { /* fine */ }
+  $("play-realm").value = "custom";
+  $("play-custom").value = WORLD_ADDR;
+  if (mode === "browser") setMode("online");
+  worldStopOk = "";
+  useClientFor(realmKey(), WORLD_BUILD);
+  realmChanged();
+  saveSelection();
+  renderPlayBar();
+}
+// the bar's line for a picked world (localHint)
+function worldHint(k) {
+  const w = worldSt[k];
+  const title = WORLD_TITLE[k];
+  if (!haveBuild(WORLD_BUILD)) return { head: "ADD YOUR GAME FOLDER", detail: `${title} plays with your own game folder`, warn: true };
+  if (w && !w.supported) return { head: `${title.toUpperCase()} NEEDS ONE MORE STEP`, detail: "PLAY opens Single player to set it up", warn: true };
+  if (w && w.running) return { head: "READY TO PLAY", detail: `${title}, running on this PC`, warn: false };
+  if (w && w.set_up) return { head: "READY TO PLAY", detail: `${title}, on this PC: starts in a minute or two`, warn: false };
+  return { head: "PLAY SETS IT UP", detail: `${title}, on this PC: the first time takes a while`, warn: false };
+}
+// PLAY on a picked world
+async function playWorld(k) {
+  const W = window.LeylineWorlds;
+  const title = WORLD_TITLE[k];
+  if (!W) { show("single"); return; }
+  if (!haveBuild(WORLD_BUILD)) { addGameFolder(`${title} plays with your own game folder. Add it, and PLAY goes on from there.`, WORLD_BUILD); return; }
+  const stopOther = worldStopOk === k;
+  worldStopOk = "";
+  $("play-go").disabled = true;
+  let played = false;
+  try {
+    const r = await W.run(k, {
+      stopOther,
+      say: (t) => say("play-status", t),
+      job: (p) => { if (p && p.step) say("play-status", `${p.step}${p.pct != null ? ` (${Math.round(p.pct)}%)` : ""}…`); },
+    });
+    const [t, kind] = W.played(r, title);
+    say("play-status", t, kind === "warn" ? "" : "ok");
+    statusFor = playKey();
+    played = true;
+  } catch (e) {
+    if (e && e.folder) addGameFolder(`${title} plays with your own game folder. Add it, and PLAY goes on from there.`, WORLD_BUILD);
+    else if (e && e.docker) { show("single"); say("play-status", `${title} needs one more step on this PC: Single player walks you through it.`, "bad"); }
+    else if (e && e.other) { worldStopOk = k; say("play-status", `${e.other.title} is running on this PC. Press PLAY again to stop it (its characters are saved) and play ${title}.`, "bad"); }
+    else sayErr("play-status", e);
+  } finally {
+    holdPlay($("play-go"), played);
+    if (await readWorlds()) renderPlayBar();
+  }
+}
+
 // the local realm the address its invite gave belongs to (the two share one realm, so the last one played keeps it)
 const localAt = (addr) => (addr ? Object.values(LOCAL).find((L) => localAddress(L) === addr) || null : null);
 // the kit as it is now (the realm picker asks each time it opens: a Den or Single player may have been made since)
@@ -1317,6 +1420,7 @@ async function localBeforePlay() {
 // the bar's status line for a local realm (renderPlayBar)
 function localHint() {
   continuePending();
+  if (worldChosen()) return worldHint(worldChosen());
   if (chosenRealm() === DEN_LITE) return { head: "READY TO PLAY", detail: "Your Den, on this PC", warn: false };
   const L = localChosen();
   if (!L) return null;
@@ -1393,8 +1497,18 @@ function renderRealmMenu() {
   // Wrath Unleashed (HANGOUT) labelled, the lineup when its record is on the list, then Your Den
   const off = (realmsCache || []).find((x) => x.official) || { official: true, name: officialName(), state: "live", players: null };
   const lineup = (realmsCache || []).filter((r) => inLineup(r) && r.address && !hiddenBuild(r.build));
-  // Single player (owner 4 Nov: the flagship) has its own row right under Your Den, hosted here or not
-  const top = [realmRow(off), ...lineup.map(realmRow), localRow(DEN), localRow(LOCAL.solo)];
+  // Single player (owner 4 Nov: the flagship) has its own row right under Your Den, hosted here or not; on the Built-in
+  // engine, Single player and the original world are picked like any realm (worldRow), unless Single player runs on
+  // Docker here (then its Docker row, as before)
+  const worldRow = (k) => {
+    const w = worldSt[k];
+    const on = !!(w && (w.set_up || w.running));
+    return row("pb-local pb-world pb-world-" + k, WORLD_TITLE[k], { icon: markIcon("solo"), ver: on ? WORLD_BUILD : "", sub: worldSub(k),
+      subCls: w && w.running ? "live" : "", selected: worldChosen() === k, title: WORLD_LINE[k], run: () => pickWorld(k) });
+  };
+  const builtinSolo = worldsHere() && !localHosted(LOCAL.solo);
+  const solo = builtinSolo ? [worldRow("single"), worldRow("vanilla")] : [localRow(LOCAL.solo)];
+  const top = [realmRow(off), ...lineup.map(realmRow), localRow(DEN), ...solo];
   // Your realms: the one this PC hosts (not the Den or Single player: they have their rows) and the community realm you picked
   const mine = [];
   const hosted = kit && kit.realm && kit.realm.profile !== DEN.profile && kit.realm.profile !== LOCAL.solo.profile ? kit.realm : null;
@@ -1485,10 +1599,10 @@ function openRealmMenu() {
   focusPicked();
   // Your Den and Single player: hosted on this PC or not, as the kit says now, and where Your Den runs (den.js, read
   // once): the rows change only when that changed
-  const hosted = () => (kit && kit.realm ? kit.realm.profile : "") + "|" + denSub();
+  const hosted = () => (kit && kit.realm ? kit.realm.profile : "") + "|" + denSub() + "|" + JSON.stringify(worldSt);
   const had = hosted();
   const den = window.LeylineDen && !window.LeylineDen.state() ? window.LeylineDen.load() : null;
-  Promise.all([readKit(), den]).then(() => {
+  Promise.all([readKit(), den, readWorlds()]).then(() => {
     if (!rmenuOpen || hosted() === had) return;
     const i = realmRowsOf($("pb-rmenu")).indexOf(document.activeElement);
     renderRealmMenu();
@@ -1564,13 +1678,14 @@ function renderPlayBar() {
   $("pb-realm-btn").title = mode === "browser" ? "Plays in your browser: choose a realm instead" : `${realmLabel()}: choose another realm`;
   // the realm's icon and client version beside its name (none in the browser)
   const official = isOfficial();
-  const rv = mode === "browser" ? null : official ? "3.3.5a" : localChosen() ? localChosen().build : realmVersion(realmAt(chosenRealm()));
+  const rv = mode === "browser" ? null : official ? "3.3.5a" : worldChosen() ? WORLD_BUILD : localChosen() ? localChosen().build : realmVersion(realmAt(chosenRealm()));
   $("pb-realm-ver").hidden = !rv;
   $("pb-realm-ver").textContent = rv || "";
   $("pb-realm-ic").hidden = mode === "browser";
   if (mode !== "browser") fillRealmIcon($("pb-realm-ic"), realmLabel(), official);
-  $("pb-realm-ic").classList.toggle("pb-mark-ic", !!localChosen());
+  $("pb-realm-ic").classList.toggle("pb-mark-ic", !!localChosen() || !!worldChosen());
   if (localChosen()) $("pb-realm-ic").innerHTML = MARKS[localChosen().mark];
+  else if (worldChosen()) $("pb-realm-ic").innerHTML = MARKS.solo;
   if (rmenuOpen) renderRealmMenu();
   renderClientMenu();
   $("play-caption").textContent = mode === "browser" ? "IN YOUR BROWSER" : (c ? `ONLINE  ·  ${c.name.toUpperCase()}` : "NO GAME FOLDER YET");
@@ -1594,6 +1709,7 @@ $("play-form").addEventListener("submit", async (ev) => {
     catch (e) { sayErr("play-status", e); }
     return;
   }
+  if (worldChosen()) { await playWorld(worldChosen()); return; }   // Single player / the original world, Built-in engine
   if (await localBeforePlay()) return;   // My Den / Single player: knocked again first, or its next step
   const c = currentClient();
   if (!c) { openFindFiles(); return; }   // no game folder yet: where to find one (and browser play)

@@ -1,4 +1,6 @@
-/* Simple mode (simplehome.js): four big choices, and the rest of the launcher tucked away while it is on. */
+/* Simple mode (simplehome.js): four big choices, and the rest of the launcher tucked away while it is on.
+   Built from the launcher's own pieces (.panel with its header strip, .card with its header strip, .btn, label.check),
+   so every theme dresses it the same way as the other pages. */
 
 /* While Simple mode is on: only the Simple page's item, the switch, Settings and Help in the side menu; no play bar. */
 html.ll-simple .side nav .nav[data-page]:not([data-page="simple"]),
@@ -12,33 +14,36 @@ html:not(.ll-simple) .side nav .nav[data-page="simple"] { display: none; }
 
 #nav-simple-toggle[aria-pressed="true"] { color: var(--t-accent-strong); }
 
-#sh { display: flex; flex-direction: column; gap: 18px; max-width: 980px; }
-.sh-head { font-family: var(--t-font-display); font-size: 26px; font-weight: 600; margin: 4px 0 2px; color: var(--t-text); }
+.sh-panel { max-width: 1040px; }
+.sh-status { margin: -4px 0 16px; min-height: 0; }
 .sh-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-@media (max-width: 760px) { .sh-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 820px) { .sh-grid { grid-template-columns: minmax(0, 1fr); } }
 
-.sh-card {
-  display: flex; flex-direction: column; gap: 10px; min-width: 0;
-  padding: 20px 22px; border-radius: var(--t-radius);
-  background: var(--t-panel); box-shadow: var(--t-panel-shadow);
-  backdrop-filter: blur(var(--t-panel-blur));
+.panel .sh-grid > .card.sh-card { display: flex; flex-direction: column; min-width: 0; margin: 0; padding-bottom: 16px; }
+.sh-card > .card-head:first-child { min-height: 42px; }
+.sh-name { display: inline-flex; align-items: center; gap: 9px; }
+.sh-ic {
+  width: 18px; height: 18px; flex: none;
+  fill: none; stroke: var(--t-accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
 }
-.sh-play { border-top: 3px solid var(--t-accent); }
-.sh-host { border-top: 3px solid var(--t-accent-2); }
-.sh-visit { border-top: 3px solid var(--t-gold); }
-.sh-backup { border-top: 3px solid var(--t-ok); }
-.sh-title { font-family: var(--t-font-display); font-size: 22px; font-weight: 600; margin: 0; color: var(--t-text); }
-.sh-line { margin: 0; color: var(--t-text-2); }
-.sh-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.sh-card .btn.big { font-size: 16px; padding: 11px 22px; align-self: flex-start; }
-.sh-pick {
-  font: inherit; color: var(--t-text); background: var(--t-surface-2);
-  border: var(--t-border-w) solid var(--t-border-strong); border-radius: var(--t-radius-xs); padding: 9px 10px;
+.sh-play .sh-ic { fill: var(--t-accent); }
+.sh-title { font-size: 13px; letter-spacing: 0.1em; color: var(--t-text); }
+.sh-chip {
+  font: 600 10.5px var(--t-font); letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 2px 8px; line-height: 1.4; border-radius: 999px; color: var(--t-muted);
+  border: var(--t-border-w) solid var(--t-border-strong);
 }
-.sh-state, .sh-soon { margin: 0; font-size: 13px; color: var(--t-muted); }
-.sh-soon { font-style: italic; }
-.sh-check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--t-text-2); cursor: pointer; }
-.sh-status { min-height: 1.4em; margin: 0; }
-.sh-foot { margin: 0; }
-.sh-foot .linkish { background: none; border: 0; padding: 0; color: var(--t-muted); text-decoration: underline; cursor: pointer; font: inherit; }
-.sh-foot .linkish:hover { color: var(--t-text); }
+.sh-chip.ok { color: var(--t-ok); border-color: color-mix(in srgb, var(--t-ok) 45%, transparent); }
+.sh-chip.idle { color: var(--t-muted); }
+
+.sh-line { margin: 2px 0 16px; font-size: 15px; line-height: 1.45; color: var(--t-text); }
+.sh-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: auto; }
+/* every action the same height, whatever the theme makes a primary button */
+.sh-actions .btn { height: 38px; padding-left: 18px; padding-right: 18px; font-size: 13px; }
+.sh-actions .btn.primary { min-width: 132px; font-size: 16px; }
+.sh-actions .link { font-size: 13px; padding: 0 4px; }
+.sh-pick { height: 38px; min-width: 150px; max-width: 220px; flex: 1 1 150px; padding: 0 10px; font: inherit; font-size: 13px; }
+.sh-meta { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--t-muted); }
+.sh-meta.soon { font-style: italic; }
+.sh-meta.tight { margin-top: 2px; }
+.sh-check { margin-top: 10px; font-size: 13px; cursor: pointer; }

@@ -155,14 +155,40 @@
   }
 
   // ------------------------------------------------------------------------------------------ painting
-  function card(key, id, extra) {
+  // One panel like every other page (its title on the header strip), four cards like Home's (the label on the card's
+  // header strip with its line icon, the same as the side menu's), one line for what is happening under the title.
+  const ICONS = {
+    play: '<path d="M8 5.5v13l10.5-6.5z"/>',
+    host: '<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 6.5a3 3 0 0 1 0 5.6M18 19a5.5 5.5 0 0 0-2.5-4.6"/>',
+    visit: '<path d="M4 20V5a1 1 0 0 1 1-1h9v16"/><path d="M14 6h4a1 1 0 0 1 1 1v13"/><path d="M10.5 12.5h.01"/><path d="M2.5 20h19"/>',
+    backup: '<path d="M12 3 5 6v5c0 4.5 3 8.4 7 10 4-1.6 7-5.5 7-10V6z"/><path d="M9 12l2 2 4-4"/>',
+  };
+  function icon(key) {
+    const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("aria-hidden", "true");
+    s.setAttribute("class", "sh-ic");
+    s.innerHTML = ICONS[key];
+    return s;
+  }
+  // a card: the header strip (icon, title, a short state on the right), the line, then the actions at the bottom and
+  // one quiet line under them, so the four line up whatever their text
+  function card(key, chipText, chipKind, actions, meta) {
     const [title, line] = WORDS[key];
-    const c = mk("section", "sh-card sh-" + key);
+    const c = mk("section", "card sh-card sh-" + key);
     c.id = "sh-" + key;
-    c.setAttribute("aria-labelledby", id + "-title");
-    const h = mk("h2", "sh-title", title);
-    h.id = id + "-title";
-    c.append(h, mk("p", "sh-line", line), ...extra);
+    c.setAttribute("aria-labelledby", `sh-${key}-title`);
+    const head = mk("div", "card-head sh-ch");
+    const name = mk("span", "sh-name");
+    const t = mk("span", "sh-title", title);
+    t.id = `sh-${key}-title`;
+    name.append(icon(key), t);
+    head.append(name);
+    if (chipText) head.append(mk("span", "sh-chip" + (chipKind ? " " + chipKind : ""), chipText));
+    const act = mk("div", "sh-actions");
+    act.append(...actions);
+    c.append(head, mk("p", "sh-line", line), act);
+    for (const m of meta) if (m) c.append(m);
     return c;
   }
   function lastText() {
@@ -171,13 +197,17 @@
     const hours = Math.floor((Date.now() - last) / 3600000);
     return hours < 1 ? "Last back-up: just now." : hours < 48 ? `Last back-up: ${hours} hour${hours === 1 ? "" : "s"} ago.` : `Last back-up: ${Math.floor(hours / 24)} days ago.`;
   }
+  const metaLine = (text, id, cls) => { const p = mk("p", "sh-meta" + (cls ? " " + cls : ""), text); if (id) p.id = id; return p; };
 
   function paint() {
     const k = world();
     const w = W() && W().WORLDS[k];
     const st = S.st[k];
+    const running = !!(st && st.running);
+    const ready = !!(st && st.set_up);
+
     // Play
-    const go = btn(S.busy === "play" ? "Starting…" : st && st.running ? "Play" : st && st.set_up ? "Play" : "Set up and play", "btn primary big", () => play(false), "sh-play-go");
+    const go = btn(S.busy === "play" ? "Starting…" : ready ? "Play" : "Set up and play", "btn primary", () => play(false), "sh-play-go");
     go.disabled = !!S.busy;
     const pick = mk("select", "sh-pick");
     pick.id = "sh-world";
@@ -188,54 +218,58 @@
       if (key === k) o.selected = true;
       pick.append(o);
     }
+    pick.disabled = !!S.busy;
     pick.addEventListener("change", () => { store.set(KEY_WORLD, pick.value); paint(); });
-    const state = mk("p", "sh-state", st ? (st.running ? "Running now." : st.set_up ? "Ready. Starts in a minute or two." : "Not set up yet. The first time takes a while.") : (w ? "" : "Update Leyline to play your own world."));
-    state.id = "sh-play-state";
-    const playExtra = [mk("div", "sh-row"), state];
-    playExtra[0].append(go, pick);
-    if (S.other) {
-      const stop = btn(`Stop ${S.other.title} and play`, "btn", () => play(true), "sh-stop-other");
-      playExtra.push(stop);
-    }
+    const playActs = [go, pick];
+    if (S.other) playActs.push(btn(`Stop ${S.other.title} and play`, "btn", () => play(true), "sh-stop-other"));
+    const playState = metaLine(st ? (running ? "Running now. Play takes you straight in." : ready ? "Ready. Starts in a minute or two." : "Not set up yet. The first time takes a while; you can leave it running.")
+      : (w ? "Checking…" : "Update Leyline to play your own world."), "sh-play-state");
 
     // Host
-    const hostGo = btn("Invite a friend", "btn big", host, "sh-host-go");
+    const hostGo = btn("Invite a friend", "btn", host, "sh-host-go");
     hostGo.disabled = !!S.busy;
+    const hostMore = btn("Host settings", "link", () => nav("host"), "sh-host-more");
+    const hostState = metaLine(running ? `${w ? w.title : "Your world"} is running: friends can join as soon as you invite them.`
+      : "Friends join with your invite. No ports to open: they come in through the relay.", "sh-host-state");
 
     // Visit
-    const code = btn("I have a link or code", "btn big", visitCode, "sh-visit-code");
+    const code = btn("I have a link or code", "btn", visitCode, "sh-visit-code");
     const find = btn("Find a world", "btn", () => nav("realms"), "sh-visit-find");
-    const vrow = mk("div", "sh-row");
-    vrow.append(code, find);
-    const soon = mk("p", "sh-soon", WORDS.soon);
+    const soon = metaLine(WORDS.soon, "sh-visit-soon", "soon");
 
     // Back up
     const n = backups();
-    const bgo = btn(S.busy === "backup" ? "Backing up…" : "Back up now", "btn big", () => backUp(false), "sh-backup-go");
-    bgo.disabled = !!S.busy;
-    const count = mk("p", "sh-state", setUp().length ? `${n} back-up${n === 1 ? "" : "s"} kept on this PC (the newest 10 per world). ${lastText()}` : "Nothing to back up yet.");
-    count.id = "sh-backup-state";
-    const lab = mk("label", "sh-check");
+    const any = setUp().length > 0;
+    const bgo = btn(S.busy === "backup" ? "Backing up…" : "Back up now", "btn", () => backUp(false), "sh-backup-go");
+    bgo.disabled = !!S.busy || !any;
+    const count = metaLine(any ? `${n} back-up${n === 1 ? "" : "s"} on this PC (the newest 10 kept per world).` : "Nothing to back up yet: play once first.", "sh-backup-state");
+    const last = any ? metaLine(lastText(), "sh-backup-last", "tight") : null;
+    const lab = mk("label", "check sh-check");
     const box = mk("input");
     box.type = "checkbox";
     box.id = "sh-daily";
     box.checked = daily();
     box.addEventListener("change", () => { store.set(KEY_DAILY, box.checked ? "1" : "0"); if (box.checked) maybeDaily(); });
-    lab.append(box, document.createTextNode(" Back up every day, by itself"));
+    lab.append(box, document.createTextNode("Back up every day, by itself"));
 
-    const head = mk("h1", "sh-head", WORDS.title);
-    head.id = "sh-head";
-    const grid = mk("div", "sh-grid");
-    grid.append(card("play", "sh-play", playExtra), card("host", "sh-host", [hostGo]),
-      card("visit", "sh-visit", [vrow, soon]), card("backup", "sh-backup", [bgo, count, lab]));
+    // the panel
+    const panel = mk("div", "panel wide sh-panel");
+    const head = mk("div", "panel-head");
+    const h = mk("h2", "", WORDS.title);
+    h.id = "sh-head";
+    head.append(h);
     const line = mk("p", "status sh-status");
     line.id = "sh-status";
     line.setAttribute("role", "status");
     line.setAttribute("aria-live", "polite");
-    const more = btn("Show everything", "linkish", () => setOn(false), "sh-more");
-    const foot = mk("p", "sh-foot");
-    foot.append(more);
-    root.replaceChildren(head, grid, line, foot);
+    const grid = mk("div", "sh-grid");
+    grid.append(
+      card("play", st ? (running ? "Running" : ready ? "Ready" : "Not set up") : "", running ? "ok" : ready ? "" : "idle", playActs, [playState]),
+      card("host", running ? "Open" : "", "ok", [hostGo, hostMore], [hostState]),
+      card("visit", "", "", [code, find], [soon]),
+      card("backup", any ? (daily() ? "Daily" : "By hand") : "", daily() ? "ok" : "", [bgo], [count, last, lab]));
+    panel.append(head, line, grid);
+    root.replaceChildren(panel);
     paintLine();
   }
   function paintLine() {
@@ -245,6 +279,7 @@
     if (S.job && S.job.step) t = `${S.job.step}${S.job.pct != null ? ` (${Math.round(S.job.pct)}%)` : ""}`;
     l.textContent = t;
     l.className = "status sh-status" + (S.line[1] && !S.job ? " " + S.line[1] : "");
+    l.hidden = !t;
   }
 
   async function load() {
@@ -254,7 +289,13 @@
     maybeDaily();
   }
 
-  document.addEventListener("leyline:page", (e) => { if (e.detail && e.detail.page === "simple") load(); });
+  document.addEventListener("leyline:page", (e) => {
+    const pg = e.detail && e.detail.page;
+    if (pg === "simple") load();
+    // In Simple mode the four buttons are Home: the full Home page (the launcher opening on it, or anything sending
+    // the player "home") lands here instead.
+    else if (pg === "play" && isOn()) setTimeout(() => nav("simple"), 0);
+  });
   apply();
   // Simple mode opens on its own page; the daily back-up is checked once the launcher has opened, either way.
   if (isOn()) setTimeout(() => nav("simple"), 0);

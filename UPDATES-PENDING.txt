@@ -921,3 +921,4 @@
 1357c solo-start  Leyline Solo test: start the local first-era world
 1358a ship  Save as Orion: the Host pack's 'docker: invalid reference format' after 'Your realm' fixed (WU_KIT quoted in the FOR /F setup line); CI rebuilds the Host pack
 1359a ship  Save as Orion: Simple mode in the launcher, the four-button home (Play, Host, Visit, Back up) with a daily back-up by itself; CI builds the launcher
+1359b ship  Save as Orion: Simple mode polish (matches the launcher's panels and cards, line icons, Ready/Running chips, buttons lined up, Back up off when there is nothing yet); CI builds the launcher

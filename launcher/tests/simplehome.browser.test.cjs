@@ -109,7 +109,7 @@ test('the switch turns Simple mode on and off, and it is remembered', async () =
   await page.reload();
   await page.waitForFunction(() => window.LeylineSimpleHome && document.querySelector('#page-simple.on #sh-play-go'));
   assert.equal(await page.evaluate(() => document.documentElement.classList.contains('ll-simple')), true);
-  await page.click('#sh-more');
+  await page.click('#nav-simple-toggle');
   assert.equal(await page.evaluate(() => document.documentElement.classList.contains('ll-simple')), false);
   assert.equal(await visible(page, '.nav[data-page="realms"]'), true);
   assert.deepEqual(errors, []);
@@ -172,7 +172,7 @@ test('Back up backs up every world that is set up, and the daily back-up runs on
   await page.waitForFunction(() => window.__calls.filter(([c]) => c === 'world_backup').length === 2);
   assert.deepEqual((await callsOf(page, 'world_backup')).map((a) => a.kind).sort(), ['single', 'vanilla']);
   await page.waitForFunction(() => /daily back-up is done/.test(document.getElementById('sh-status').textContent));
-  assert.match(await page.textContent('#sh-backup-state'), /4 back-ups kept/);
+  assert.match(await page.textContent('#sh-backup-state'), /4 back-ups on this PC/);
   // not again on the next visit
   await page.evaluate(() => window.LeylineNav.show('play'));
   await page.evaluate(() => window.LeylineNav.show('simple'));
@@ -182,7 +182,7 @@ test('Back up backs up every world that is set up, and the daily back-up runs on
   await page.click('#sh-backup-go');
   await page.waitForFunction(() => /Backed up 2 worlds/.test(document.getElementById('sh-status').textContent));
   assert.equal((await callsOf(page, 'world_backup')).length, 4);
-  assert.match(await page.textContent('#sh-backup-state'), /Last back-up: just now/);
+  assert.match(await page.textContent('#sh-backup-last'), /Last back-up: just now/);
   await shot(page, 'simple-backup');
   // turning the daily back-up off is remembered
   await page.uncheck('#sh-daily');
@@ -191,10 +191,12 @@ test('Back up backs up every world that is set up, and the daily back-up runs on
   await ctx.close();
 });
 
-test('nothing set up: Back up says so and backs nothing up', async () => {
+test('nothing set up: Back up is off, says so, and backs nothing up', async () => {
   const { page, ctx } = await open({ storage: { 'leyline.simple': '1' } });
   await page.waitForSelector('#page-simple.on #sh-backup-go');
-  await page.click('#sh-backup-go');
+  assert.equal(await page.isDisabled('#sh-backup-go'), true);
+  assert.match(await page.textContent('#sh-backup-state'), /Nothing to back up yet/);
+  await page.evaluate(() => window.LeylineSimpleHome.backUp(false));
   await page.waitForFunction(() => /nothing to back up yet/i.test(document.getElementById('sh-status').textContent));
   assert.equal((await callsOf(page, 'world_backup')).length, 0);
   await ctx.close();

@@ -137,7 +137,7 @@ const noBrands = async (page) => assert.doesNotMatch(await page.evaluate(() => d
 
 test('the entries: Your Den in the realm list next to PLAY (not the side menu), and first on Home', async () => {
   const { page, ctx, errors } = await open({ lite: 'stopped' });
-  const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.map((x) => x.dataset.page));
+  const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.dataset.page));
   assert.ok(!nav.includes('den'), 'no side menu item (owner 2026-11-02)');
   await page.click('#pb-realm-btn');
   assert.ok(await page.locator('#pb-rmenu', { hasText: 'Your Den' }).count(), 'the realm list has it');

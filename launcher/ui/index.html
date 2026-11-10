@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leyline Launcher</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="simplehome.css"><!-- Simple mode: the four-button home (simplehome.js) -->
 <link rel="stylesheet" href="spin.css"><!-- the spinning mark: the header logo and every loading state (spin.js) -->
 <!-- themes (themes agent): Dark (style.css) or Light; the Themes section; themes.js applies the theme before paint -->
 <script src="addresses.js"></script><!-- the site, the game and the relay on their new and old names (window.LeylineAddresses; first) -->
@@ -96,6 +97,7 @@
          Boss Rush (bossrush.js, owner 5 Nov: "its own launched mini game mode") has its item under Single player, a shield.
          Characters (characters.js, docs/SINGLE-PLAYER-ONE-CLICK.md) has no item (the menu matches the website's): the
          Single player page's Characters button and Home's Single player row lead there. -->
+    <button class="nav" data-page="simple"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>Home</button>
     <button class="nav" data-page="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
     <button class="nav" data-page="single"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/></svg>Single player</button>
     <button class="nav" data-page="bossrush"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.4 7 10 4-1.6 7-5.5 7-10V6z"/><path d="M9.5 12.5 11 14l3.5-3.5"/></svg>Boss Rush</button>
@@ -114,6 +116,7 @@
   <button type="button" class="realm-add" data-page-go="realms"><span class="plus">+</span>Add a realm</button>
 
   <div class="side-foot">
+    <button type="button" class="nav plain" id="nav-simple-toggle" aria-pressed="false" title="Four big buttons: Play, Host, Visit, Back up"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><span>Simple mode</span></button>
     <button class="nav plain" data-page="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</button>
     <button class="nav plain" data-page="agents"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01M9.5 16.5h5M3 13v2M21 13v2"/></svg>Agents<span class="badge" id="nav-agents-count" hidden></span></button>
     <button class="nav plain" data-page="help"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg>Help</button>
@@ -167,6 +170,9 @@
   </section>
 
   <!-- HOME -->
+  <section class="page" id="page-simple" aria-labelledby="sh-head">
+    <div id="sh"></div>
+  </section>
   <section class="page" id="page-play">
     <div class="home">
       <!-- the hero gallery (home.js): the featured mode, what's new, browser play, hosting, a Workshop mod -->
@@ -957,6 +963,7 @@
 <script src="hostnetwork.js"></script><!-- Host: the Network tab (host/network.rs) -->
 <script src="node.js"></script><!-- Host: Be a node, the card at the top, and its part in Settings (p2p/node.rs; after host.js and hostnetwork.js) -->
 <script src="home.js"></script>
+<script src="simplehome.js"></script><!-- Simple mode: Play, Host, Visit, Back up (window.LeylineSimpleHome; after vanilla.js, hostfriends.js and app.js) -->
 <script src="agents.js"></script><!-- Agents: the page and the approval card on every page (window.LeylineAgents) -->
 <script src="guide.js"></script><!-- the first-run tour, Help › Show me again, the one-time encouragement lines (window.LeylineGuide; last) -->
 <script src="phone.js"></script><!-- the phone app: its tab bar, PLAY in the app, what needs a computer (window.LeylinePhone; after everything) -->

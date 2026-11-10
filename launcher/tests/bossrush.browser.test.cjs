@@ -123,7 +123,7 @@ async function toPage(page) {
 
 test('the entries: the side menu under Single player and Home lead to the page; nothing asked before', async () => {
   const { page, ctx, errors } = await open({});
-  const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.map((x) => x.dataset.page));
+  const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.dataset.page));
   assert.deepEqual(nav.slice(0, 3), ['play', 'single', 'bossrush']);
   assert.equal((await page.textContent('.nav[data-page="bossrush"]')).trim(), 'Boss Rush');
   assert.equal((await callsOf(page, 'bossrush_catalog')).length, 0, 'nothing asked until it is opened');

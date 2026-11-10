@@ -1,0 +1,44 @@
+/* Simple mode (simplehome.js): four big choices, and the rest of the launcher tucked away while it is on. */
+
+/* While Simple mode is on: only the Simple page's item, the switch, Settings and Help in the side menu; no play bar. */
+html.ll-simple .side nav .nav[data-page]:not([data-page="simple"]),
+html.ll-simple .side nav .nav-discord,
+html.ll-simple .side .side-label,
+html.ll-simple .side .realm-rows,
+html.ll-simple .side .realm-add,
+html.ll-simple .side-foot .nav[data-page="agents"],
+html.ll-simple .playbar { display: none !important; }
+html:not(.ll-simple) .side nav .nav[data-page="simple"] { display: none; }
+
+#nav-simple-toggle[aria-pressed="true"] { color: var(--t-accent-strong); }
+
+#sh { display: flex; flex-direction: column; gap: 18px; max-width: 980px; }
+.sh-head { font-family: var(--t-font-display); font-size: 26px; font-weight: 600; margin: 4px 0 2px; color: var(--t-text); }
+.sh-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .sh-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.sh-card {
+  display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  padding: 20px 22px; border-radius: var(--t-radius);
+  background: var(--t-panel); box-shadow: var(--t-panel-shadow);
+  backdrop-filter: blur(var(--t-panel-blur));
+}
+.sh-play { border-top: 3px solid var(--t-accent); }
+.sh-host { border-top: 3px solid var(--t-accent-2); }
+.sh-visit { border-top: 3px solid var(--t-gold); }
+.sh-backup { border-top: 3px solid var(--t-ok); }
+.sh-title { font-family: var(--t-font-display); font-size: 22px; font-weight: 600; margin: 0; color: var(--t-text); }
+.sh-line { margin: 0; color: var(--t-text-2); }
+.sh-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.sh-card .btn.big { font-size: 16px; padding: 11px 22px; align-self: flex-start; }
+.sh-pick {
+  font: inherit; color: var(--t-text); background: var(--t-surface-2);
+  border: var(--t-border-w) solid var(--t-border-strong); border-radius: var(--t-radius-xs); padding: 9px 10px;
+}
+.sh-state, .sh-soon { margin: 0; font-size: 13px; color: var(--t-muted); }
+.sh-soon { font-style: italic; }
+.sh-check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--t-text-2); cursor: pointer; }
+.sh-status { min-height: 1.4em; margin: 0; }
+.sh-foot { margin: 0; }
+.sh-foot .linkish { background: none; border: 0; padding: 0; color: var(--t-muted); text-decoration: underline; cursor: pointer; font: inherit; }
+.sh-foot .linkish:hover { color: var(--t-text); }

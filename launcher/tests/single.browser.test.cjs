@@ -161,7 +161,7 @@ async function wording(page) {
 
 test('Single player is a top-level choice: the side menu (sword mark), Home and the realm picker all lead to its page', async () => {
   const { page, ctx, errors } = await open({});
-  const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.map((x) => x.dataset.page));
+  const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.dataset.page));
   assert.deepEqual(nav.slice(0, 2), ['play', 'single'], 'right under Home');
   assert.equal((await page.textContent('.nav[data-page="single"]')).trim(), 'Single player');
   assert.ok(await page.$('.nav[data-page="single"] svg path'), 'the sword mark');

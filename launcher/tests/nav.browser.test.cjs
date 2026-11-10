@@ -73,15 +73,16 @@ const where = (page) => page.evaluate(() => ({
 
 test('the side menu matches the website, with the same line icons', async () => {
   const { page, ctx, errors } = await open();
-  const items = await page.$$eval('aside nav .nav[data-page]', (b) => b.map((x) => [x.dataset.page, x.textContent.trim().replace(/\d+$/, '')]));
+  // Simple mode's Home item (simplehome.js) is only shown while Simple mode is on
+  const items = await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => [x.dataset.page, x.textContent.trim().replace(/\d+$/, '')]));
   // no Your Den item (owner 2026-11-02): it is in the play bar's realm list next to PLAY; Single player under Home
   // (owner 4 Nov: the flagship, a top-level choice; single.js)
   assert.deepEqual(items, [['play', 'Home'], ['single', 'Single player'], ['bossrush', 'Boss Rush'], ['realms', 'Realms'], ['modes', 'Modes'], ['mods', 'Mods & Addons'], ['host', 'Host'], ['forum', 'Forum'], ['news', 'News']]);
-  assert.equal(await page.locator('aside nav .nav[data-page] svg').count(), 9, 'each with its line icon');
+  assert.equal(await page.locator('aside nav .nav[data-page]:visible svg').count(), 9, 'each with its line icon');
   // owner 31 Oct 21:59: Join the Discord under News (a link, not a page)
   assert.equal(await page.$eval('aside nav .nav:last-child', (b) => b.id + '|' + b.dataset.link + '|' + b.textContent.trim()), 'tb-discord|discord|Join the Discord');
-  const foot = await page.$$eval('.side-foot .nav:not([hidden])', (b) => b.map((x) => x.dataset.page));
-  assert.deepEqual(foot, ['settings', 'agents', 'help']);
+  const foot = await page.$$eval('.side-foot .nav:not([hidden])', (b) => b.map((x) => x.dataset.page || x.id));
+  assert.deepEqual(foot, ['nav-simple-toggle', 'settings', 'agents', 'help']);
   assert.equal(await page.textContent('.side-label'), 'YOUR REALMS');
   assert.equal(await page.locator('[data-link="support"]:visible').count(), 0, 'support buttons stay hidden');
   // Your realms: the crystal for the official realm and the gold client version

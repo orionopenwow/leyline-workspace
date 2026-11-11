@@ -2748,6 +2748,10 @@
    "reason": "a launcher and patcher that hands out a server's client patches: check it can't carry game files"
   },
   {
+   "repo": "https://github.com/Ildourol/mod-warband-camp",
+   "reason": "its TOC says 1.12 but it was found under 3.3.5a"
+  },
+  {
    "repo": "https://github.com/LleguitoWoW/NPCBotGMPanel",
    "reason": "the author's name carries a brand word (credit can't be shown cleanly)"
   },
@@ -4755,14 +4759,6 @@
     "3.3.5a"
    ],
    "category": "tools"
-  },
-  {
-   "repo": "https://github.com/Ildourol/mod-warband-camp",
-   "name": "Warband Camp",
-   "builds": [
-    "3.3.5a"
-   ],
-   "category": "addons"
   },
   {
    "repo": "https://github.com/Iliana-sc/enemyframes",

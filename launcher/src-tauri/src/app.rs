@@ -2233,6 +2233,7 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
             }
         }
     }
+    let quick_ids = quick.as_ref().map(|q| (q.race, q.class, q.female.unwrap_or(false)));
     let make = match &quick {
         Some(q) if k != eng::Kind::BossRush => {
             let (race, class) = lw::quick_ok(q.race, q.class, k == eng::Kind::Vanilla).map_err(|e| tag("other", e))?;
@@ -2261,7 +2262,15 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     if !auto && k != eng::Kind::BossRush && crate::host::localclick::can_type() {
         let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
         if pid != 0 {
-            let (wp, wu, wpass, wname) = (p.clone(), user.clone(), pass.clone(), (!made.is_empty()).then(|| made.clone()));
+            // first entry: the world makes the character now (the game's character select can't open its create
+            // screen by a key); typed into the create screen only if that fails
+            let mut name_to_type = (!made.is_empty()).then(|| made.clone());
+            if let (Some(n), Some((race, class, female))) = (name_to_type.clone(), quick_ids) {
+                if crate::host::localclick::quick_copy(&p, &user, &n, race, class, female).is_ok() {
+                    name_to_type = None;
+                }
+            }
+            let (wp, wu, wpass, wname) = (p.clone(), user.clone(), pass.clone(), name_to_type);
             std::thread::spawn(move || {
                 let _ = crate::host::localclick::drive(&wp, &wu, &wpass, wname.as_deref(), pid);
             });

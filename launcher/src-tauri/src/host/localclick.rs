@@ -183,6 +183,41 @@ pub fn drive(p: &eng::Paths, account: &str, password: &str, name: Option<&str>, 
     outcome
 }
 
+/// Quick start on a stock game: the game's character select has no key that opens the create screen, so the new
+/// character is made by the world itself. A fresh level-1 character of that race and class (the bots' own ready-made
+/// characters, never one that is playing) is copied onto the player's login under the chosen name with the engine's
+/// own `.pdump copy` (a new character; the bot's is left as it was). Then character select lists it and Enter World
+/// goes in.
+pub fn source_sql(race: u8, class: u8, female: bool, any_body: bool) -> String {
+    let body = if any_body { String::new() } else { format!(" AND c.gender = {}", u8::from(female)) };
+    format!(
+        "SELECT c.name FROM acore_characters.characters c \
+         WHERE c.race = {race} AND c.class = {class}{body} AND c.level = 1 AND c.online = 0 AND c.deleteDate IS NULL \
+         AND c.account IN (SELECT account_id FROM acore_playerbots.playerbots_account_type) ORDER BY c.guid LIMIT 1"
+    )
+}
+
+pub fn copy_command(from: &str, account: &str, name: &str) -> Result<String, String> {
+    let plain = |s: &str| !s.is_empty() && s.len() <= 16 && s.chars().all(|c| c.is_ascii_alphanumeric());
+    if !plain(from) || !plain(account) || !crate::hybrid::char_name_ok(name) {
+        return Err("That character can't be copied.".into());
+    }
+    Ok(format!("pdump copy {from} {account} {name}"))
+}
+
+pub fn quick_copy(p: &eng::Paths, account: &str, name: &str, race: u8, class: u8, female: bool) -> Result<(), String> {
+    let first = |sql: &str| eng::query(p, "acore_characters", sql).ok().and_then(|o| o.lines().map(str::trim).find(|l| !l.is_empty()).map(str::to_string));
+    let from = first(&source_sql(race, class, female, false))
+        .or_else(|| first(&source_sql(race, class, female, true)))
+        .ok_or("No ready-made character of that race and class to start from.")?;
+    let said = eng::console(p, &copy_command(&from, account, name)?)?;
+    let have = eng::chars_of(p, account).map(|c| c.iter().any(|x| x.name.eq_ignore_ascii_case(name))).unwrap_or(false);
+    if !have {
+        return Err(format!("The world didn't make {name}: {}", said.lines().next().unwrap_or("").chars().take(120).collect::<String>()));
+    }
+    Ok(())
+}
+
 /// Whether the launcher can type into the game here (Windows).
 pub fn can_type() -> bool {
     cfg!(windows)
@@ -242,6 +277,18 @@ mod tests {
         assert_eq!(d.step(start + 12_000, true, &s.events()), Act::Send(Key::Enter));
         s.take(&Row { last_login: 1_000_008, online: true, chars: 1, chars_online: true }, start, start + 20_000);
         assert_eq!(d.step(start + 20_500, true, &s.events()), Act::Done);
+    }
+
+    #[test]
+    fn quick_start_copies_a_fresh_ready_made_character_and_nothing_else() {
+        let q = source_sql(1, 8, true, false);
+        assert!(q.contains("c.race = 1 AND c.class = 8 AND c.gender = 1 AND c.level = 1 AND c.online = 0"));
+        assert!(q.contains("playerbots_account_type") && q.contains("LIMIT 1"));
+        assert!(!source_sql(1, 8, true, true).contains("gender"));
+        assert_eq!(copy_command("Abelard", "HKABC", "Wren").unwrap(), "pdump copy Abelard HKABC Wren");
+        for (f, a, n) in [("Ab;x", "HKABC", "Wren"), ("Abelard", "HK ABC", "Wren"), ("Abelard", "HKABC", "W'ren"), ("", "A", "Wren")] {
+            assert!(copy_command(f, a, n).is_err(), "{f} {a} {n}");
+        }
     }
 
     #[test]

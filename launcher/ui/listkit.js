@@ -251,7 +251,7 @@
         if (t.long && t.long !== t.label) b.title = t.long;
         b.addEventListener("click", () => setTab(t.id));
         b.addEventListener("keydown", (e) => {
-          const ids = tabsOpt.items.map((x) => x.id);
+          const ids = tabsOpt.items.map((x) => x.id).filter((x) => x === t.id || shown(tabBtns[x]));   // a tab a page hides is skipped
           const i = ids.indexOf(t.id);
           const j = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? ids.length - 1 : null;
           if (j === null) return;

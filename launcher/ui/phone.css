@@ -202,3 +202,10 @@ html.phone #page-mods .dc-thumb { aspect-ratio: 21 / 8; }
 @media (orientation: landscape) {
   html.phone #page-mods .dc-grid, html.phone #page-mods .mod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
+/* the Realms list kit's tabs (app.js rlList): no Single player & Den tab on a phone (its own Play page has Play solo),
+   and the tabs scroll sideways in one line */
+html.phone #rl-tab-mine { display: none; }
+html.phone #page-realms .rl-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+html.phone .rl-kbar .lk-sort-l { display: none; }
+html.phone #page-realms .rl-tabs .page-tab { flex: none; }
+html.phone .rl-kbar .lk-sort-s { height: 34px; font-size: 13px; }

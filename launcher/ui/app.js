@@ -3051,7 +3051,9 @@ const realmKeyOf = (r) => "r:" + (r.official && (r.slug === "official" || !r.rea
 function realmListRows() {
   const order = realmsCache.filter((r) => r.official).concat(realmsCache.filter(inLineup), realmsCache.filter((r) => !r.official && !inLineup(r)));
   const out = order.filter((r) => !(hiddenBuild(r.build) && !r.official)).map((r) => ({ k: realmKeyOf(r), type: "realm", r }));
-  // this PC's own worlds (the play bar's realm picker has the same rows: Your Den, Single player, the original world)
+  // this PC's own worlds (the play bar's realm picker has the same rows: Your Den, Single player, the original world);
+  // a phone has Play solo on its own Play page instead (phone.js), and no Den
+  if (onPhone()) return out;
   out.push({ k: "l:den", type: "local", L: DEN, name: DEN.name });
   if (worldsHere() && !localHosted(LOCAL.solo)) for (const k of WORLD_KINDS) out.push({ k: "w:" + k, type: "world", world: k, name: WORLD_TITLE[k] });
   else out.push({ k: "l:solo", type: "local", L: LOCAL.solo, name: LOCAL.solo.name });
@@ -3059,6 +3061,7 @@ function realmListRows() {
   for (const w of rlFriends.worlds) out.push({ k: "f:" + w.realm_id, type: "fw", w, name: w.name || "Your friend's world" });
   return out;
 }
+function onPhone() { return !!(window.LeylinePlatform && window.LeylinePlatform.mobile); }
 const hostedRealmId = () => (kit && kit.realm && kit.realm.realm_id) || "";
 function rowInTab(row, tab) {
   if (tab === "all") return true;

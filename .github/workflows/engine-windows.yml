@@ -315,11 +315,43 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # engine.json's `files` (each file's size and sha256; engine.json itself left out) and `unpacked_bytes`: the
+          # launcher's Repair checks every file against it, and its disk check reads the sizes (host/oneclick.rs)
+          python - /c/pkg <<'EOF'
+          import hashlib, json, os, sys
+          root = sys.argv[1]
+          files, total = {}, 0
+          for d, _, names in os.walk(root):
+              for n in names:
+                  f = os.path.join(d, n)
+                  rel = os.path.relpath(f, root).replace(os.sep, "/")
+                  if rel == "engine.json":
+                      continue
+                  h = hashlib.sha256()
+                  with open(f, "rb") as fh:
+                      for chunk in iter(lambda: fh.read(1 << 20), b""):
+                          h.update(chunk)
+                  size = os.path.getsize(f)
+                  files[rel] = [size, h.hexdigest()]
+                  total += size
+          path = os.path.join(root, "engine.json")
+          doc = json.load(open(path, encoding="utf-8"))
+          doc["unpacked_bytes"] = total
+          doc["files"] = dict(sorted(files.items()))
+          json.dump(doc, open(path, "w", encoding="utf-8"), indent=1)
+          print(f"{len(files)} files, {total} bytes unpacked")
+          EOF
           cd /c/pkg
           7z a -tzip -mm=Deflate -mx=7 "$GITHUB_WORKSPACE/leyline-engine-win64.zip" . > /dev/null
           cd "$GITHUB_WORKSPACE"
           sha256sum leyline-engine-win64.zip | awk '{print $1"  leyline-engine-win64.zip"}' > leyline-engine-win64.zip.sha256
-          cp /c/pkg/engine.json leyline-engine-win64.json
+          # the release's .json: engine.json plus the zip's size (the disk check before a first setup)
+          python - /c/pkg/engine.json leyline-engine-win64.zip leyline-engine-win64.json <<'EOF'
+          import json, os, sys
+          doc = json.load(open(sys.argv[1], encoding="utf-8"))
+          doc["zip_bytes"] = os.path.getsize(sys.argv[2])
+          json.dump(doc, open(sys.argv[3], "w", encoding="utf-8"), indent=1)
+          EOF
           cat leyline-engine-win64.zip.sha256
           ls -la leyline-engine-win64.zip
 

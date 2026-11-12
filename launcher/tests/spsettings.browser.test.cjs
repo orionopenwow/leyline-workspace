@@ -82,7 +82,7 @@ const FAKE = (o) => {
       case 'world_find_folder': return { picked: 'c335a-1', found: [Object.assign({ added: true }, { id: 'c335a-1', name: 'My Wrath', path: 'C:\\Games\\Wrath', build: '3.3.5a' })] };
       case 'world_preflight': return { ok: true, free_gb: 80, need_gb: 6, message: '', download_mb: 380, download_known: true };
       case 'world_resume_pending': return null;
-      case 'world_settings_get': return copy(Object.assign({}, window.__set[args.kind], { kind: args.kind, running: !!window.__ws[args.kind].running, set_up: !!window.__ws[args.kind].set_up }));
+      case 'world_settings_get': if (window.__o.getErr) throw window.__o.getErr; return copy(Object.assign({}, window.__set[args.kind], { kind: args.kind, running: !!window.__ws[args.kind].running, set_up: !!window.__ws[args.kind].set_up }));
       case 'world_settings_set': {
         if (window.__o.setErr) { const e = window.__o.setErr; window.__o.setErr = null; throw e; }
         const s = window.__set[args.kind];
@@ -403,4 +403,21 @@ test('one Friends area on the Single player page: invite, friends on your world,
   assert.equal(await page.textContent('#ll-info-t'), 'Single player');
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test("settings that wouldn't apply aren't offered; a refusal is said once, not read again in a loop", async () => {
+  const a = await open({ worlds: { single: WS({ supported: false }), vanilla: WS({ supported: false }), bossrush: WS({}) } });
+  await a.page.evaluate(() => window.LeylineNav.show('single'));
+  await a.page.waitForFunction(() => /for the Built-in engine, on Windows PCs/.test(document.getElementById('oc-set').textContent));
+  assert.equal(await a.page.$$eval('#wss', (l) => l.length), 0);
+  await noBrand(a.page);
+  await a.ctx.close();
+  const b = await open({ getErr: '[other] Single player has no world settings.' });
+  await b.page.evaluate(() => window.LeylineNav.show('single'));
+  await b.page.waitForFunction(() => /has no world settings/.test((document.getElementById('wss-status') || {}).textContent || ''));
+  const n = (await callsOf(b.page, 'world_settings_get')).length;
+  await b.page.waitForTimeout(800);
+  assert.ok((await callsOf(b.page, 'world_settings_get')).length - n <= 1, 'no loop');
+  assert.deepEqual(b.errors, []);
+  await b.ctx.close();
 });

@@ -741,9 +741,14 @@
     if (PS.loading) return;
     PS.loading = true;
     const g = await maybe("world_settings_get", { kind: PS.kind }).catch((e) => ({ ok: true, v: null, e }));
+    // the Built-in engine reads these; where it doesn't run (Docker plays Single player there) they'd change nothing
+    try { const st = W() ? await W().status(PS.kind) : null; PS.unsupported = !!st && st.supported === false; } catch (_) { PS.unsupported = false; }
     PS.loading = false;
     PS.missing = !g.ok;
     PS.v = g.ok && g.v && typeof g.v === "object" ? g.v : null;
+    // a refusal is said once (no reading again in a loop); picking the world again or the page again retries
+    PS.failed = !!g.e;
+    if (g.e) PS.line = [coded(g.e) ? coded(g.e).text : oops(g.e, "Your world's settings didn't load."), "bad"];
     paintSetting();
   }
   async function changeWorld(ch) {
@@ -807,7 +812,8 @@
     lab.append(box, document.createTextNode("Stop the world when the game closes"));
     const nodes = [h, lab, mk("p", "oc-fine", "On: everyone is saved and the world stops when you close the game. Off: it keeps running, so friends can stay."), line];
     // the world's own settings (host/spsettings.rs), for later changes
-    if (!PS.missing) {
+    if (!PS.missing && PS.unsupported) nodes.push(mk("p", "oc-fine", "Your world's companion and population settings are for the Built-in engine, on Windows PCs."));
+    if (!PS.missing && !PS.unsupported) {
       const ws = mk("section", "ws-page");
       ws.id = "wss";
       ws.setAttribute("aria-label", "Your world's settings");
@@ -816,11 +822,11 @@
       sel.id = "wss-kind";
       sel.setAttribute("aria-label", "Which world");
       for (const k of SETTINGS_KINDS) { const o = mk("option", "", titleOf(k)); o.value = k; o.selected = k === PS.kind; sel.append(o); }
-      sel.addEventListener("change", () => { PS.kind = sel.value; PS.v = null; PS.restart = false; PS.line = ["", ""]; paintSetting(); loadWorldSettings(); });
+      sel.addEventListener("change", () => { PS.kind = sel.value; PS.v = null; PS.failed = false; PS.restart = false; PS.line = ["", ""]; paintSetting(); loadWorldSettings(); });
       top.append(mk("b", "ws-h", "Your world"), sel);
       ws.append(top);
-      if (!PS.v) ws.append(mk("p", "oc-fine", "Reading your world's settings…"));
-      else {
+      if (!PS.v && !PS.failed) ws.append(mk("p", "oc-fine", "Reading your world's settings…"));
+      else if (PS.v) {
         const f = settingsForm(PS.v, "wss", changeWorld);
         if (PS.busy) f.querySelectorAll("button, input").forEach((x) => { x.disabled = true; });
         ws.append(f);
@@ -838,7 +844,7 @@
       nodes.push(ws);
     }
     setRoot.replaceChildren(...nodes);
-    if (!PS.v && !PS.missing && !PS.loading) loadWorldSettings();
+    if (!PS.v && !PS.missing && !PS.loading && !PS.failed) loadWorldSettings();
   }
 
   // ---------------------------------------------------------------- 9. Play with a friend (the Single player page)
@@ -944,7 +950,7 @@
   document.addEventListener("leyline:page", (e) => {
     const pg = e.detail && e.detail.page;
     if (pg === "play") paintHome();
-    if (pg === "single") { PS.v = null; paintSetting(); readFriends().then(watchFriends); }
+    if (pg === "single") { PS.v = null; PS.failed = false; paintSetting(); readFriends().then(watchFriends); }
   });
   document.addEventListener("visibilitychange", watchFriends);
   document.addEventListener("leyline:state", () => { if (setRoot && !setRoot.contains(document.activeElement)) paintSetting(); });

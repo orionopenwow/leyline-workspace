@@ -122,7 +122,7 @@ test('PLAY plays the picked world through the one local path, never the plain pl
   assert.equal((await callsOf(page, 'world_play'))[0].kind, 'single');
   assert.deepEqual((await callsOf(page, 'world_start'))[0], { kind: 'single' });
   assert.equal((await callsOf(page, 'play')).length, 0);
-  await page.waitForFunction(() => /Started/.test(document.getElementById('play-status').textContent));
+  await page.waitForFunction(() => /Taking you in/.test(document.getElementById('play-status').textContent));
   assert.deepEqual(errors, []);
   await ctx.close();
 });

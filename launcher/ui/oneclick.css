@@ -1,0 +1,83 @@
+/* Single player in one click (oneclick.js): the setup card, the chip in the play bar, Home's button and the Single
+   player setting, in the theme's tokens (themes/themes.css). */
+
+/* the card: over the page, above the play bar, never blocking the rest of the launcher */
+.oc {
+  position: fixed; right: 22px; bottom: 104px; z-index: 90; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 150px); overflow: auto;
+  padding: 16px 18px 14px; border-radius: var(--t-radius, 10px);
+  background: linear-gradient(var(--t-panel, var(--t-surface)), var(--t-panel, var(--t-surface))), var(--t-bg, #14161b); color: var(--t-text);
+  border: var(--t-border-w, 1px) solid var(--t-accent); box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
+}
+.oc[hidden] { display: none; }
+html.ll-simple .oc { bottom: 22px; }
+.oc-x { position: absolute; top: 8px; right: 10px; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--t-muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.oc-x:hover, .oc-x:focus-visible { color: var(--t-text); background: color-mix(in srgb, var(--t-muted) 18%, transparent); }
+.oc-head { padding-right: 28px; }
+.oc-title { margin: 0; font: 700 17px var(--t-font); color: var(--t-text); }
+.oc-sub { margin: 3px 0 0; font-size: 12.5px; color: var(--t-muted); }
+.oc-body { display: grid; gap: 10px; margin-top: 12px; }
+.oc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.oc-line { margin: 0; font-size: 13.5px; color: var(--t-text); }
+.oc-fine { margin: 0; font-size: 12px; color: var(--t-muted); }
+.oc-err { margin: 0; font-size: 13.5px; color: var(--t-bad); }
+.oc-done.ok { color: var(--t-good, var(--t-accent)); }
+.oc-pw { padding: 1px 6px; border-radius: 4px; background: color-mix(in srgb, var(--t-muted) 18%, transparent); font-size: 13px; }
+
+/* the steps in plain words, the bar, the time left */
+.oc-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.oc-step { position: relative; padding-left: 24px; font-size: 13.5px; color: var(--t-muted); }
+.oc-step::before { content: ""; position: absolute; left: 3px; top: 4px; width: 10px; height: 10px; border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--t-muted) 60%, transparent); }
+.oc-step.done { color: var(--t-text); }
+.oc-step.done::before { background: var(--t-accent); border-color: var(--t-accent); }
+.oc-step.now { color: var(--t-text); font-weight: 700; }
+.oc-step.now::before { border-color: var(--t-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-accent) 25%, transparent); }
+.oc-bar { height: 8px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--t-muted) 22%, transparent); }
+.oc-bar i { display: block; height: 100%; background: var(--t-accent); border-radius: inherit; transition: width .4s ease; }
+.oc-left { margin: 0; font-size: 12.5px; color: var(--t-text); font-variant-numeric: tabular-nums; }
+
+/* the folder chooser */
+.oc-folders { display: grid; gap: 6px; }
+.oc-folder { display: grid; gap: 2px; text-align: left; padding: 9px 12px; cursor: pointer; border-radius: var(--t-radius, 10px);
+  background: var(--t-surface); color: var(--t-text); border: var(--t-border-w, 1px) solid var(--t-border); }
+.oc-folder:hover, .oc-folder:focus-visible { border-color: var(--t-accent); }
+.oc-folder b { font-size: 13.5px; }
+.oc-path { font-size: 12px; color: var(--t-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-new { font-size: 11.5px; color: var(--t-accent); }
+
+/* Quick start */
+.oc-who { margin: 0; font-size: 14px; color: var(--t-text); }
+.oc-sel, .oc-name { min-width: 0; padding: 5px 8px; border-radius: 6px; background: var(--t-surface); color: var(--t-text);
+  border: var(--t-border-w, 1px) solid var(--t-border); font: inherit; font-size: 13px; }
+.oc-name { width: 110px; }
+
+/* the log */
+.oc-log { margin: 0; max-height: 180px; overflow: auto; padding: 8px 10px; border-radius: 6px; font-size: 11.5px; white-space: pre-wrap;
+  background: color-mix(in srgb, var(--t-bg, #000) 70%, transparent); color: var(--t-text); border: 1px solid var(--t-border); }
+
+/* the chip in the play bar while the card is hidden */
+.oc-chip { align-self: center; padding: 4px 10px; border-radius: 999px; cursor: pointer; font-size: 12px; white-space: nowrap;
+  background: color-mix(in srgb, var(--t-accent) 16%, transparent); color: var(--t-text); border: 1px solid var(--t-accent); }
+.oc-chip[hidden] { display: none; }
+body > .oc-chip, html.ll-simple .oc-chip { position: fixed; right: 22px; bottom: 22px; z-index: 90; }
+
+/* Home: Play single player, first under the hero */
+.hm-sec.hm-oneclick {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 16px 18px; border-radius: var(--t-radius);
+  background:
+    radial-gradient(80% 160% at 100% 0%, color-mix(in srgb, var(--t-accent) 28%, transparent), transparent 65%),
+    var(--t-panel, var(--t-surface));
+  border: var(--t-border-w) solid var(--t-accent); box-shadow: var(--t-panel-shadow, none);
+}
+.hm-oc-txt { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.hm-oc-txt b { font: 700 17px var(--t-font); color: var(--t-text); }
+.hm-oc-txt span { font-size: 13px; color: var(--t-muted); }
+.hm-oc-go { font-size: 15px; padding: 10px 22px; }
+.hm-oc-status { flex-basis: 100%; margin: 0; }
+.hm-oc-status:empty { display: none; }
+
+/* the Single player page's settings */
+.oc-set { display: grid; gap: 6px; }
+.oc-set-h { margin: 0; font: 700 15px var(--t-font); color: var(--t-text); }
+.oc-set-status:empty { display: none; }

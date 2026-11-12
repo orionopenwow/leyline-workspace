@@ -60,7 +60,8 @@
     const say = o.say || (() => {});
     const w = WORLDS[kind];
     if (!w) throw "That isn't one of this PC's worlds.";
-    const c = folder();
+    // o.client: the folder the one-click flow found (oneclick.js, world_find_folder), else the page's own pick
+    const c = o.client ? { id: o.client } : folder();
     if (!c) throw { folder: true };
     let st = await status(kind);
     if (!st) throw "This Leyline is from before the original world: update Leyline, then try again.";
@@ -72,9 +73,14 @@
       await stopWorld(other.word);
       st = await status(kind);
     }
-    if (!(st && st.running)) {
-      say(st && st.set_up ? `Starting ${w.title}…` : `Setting up ${w.title} (once)…`);
-      await call(st && st.set_up ? "world_start" : "world_setup", st && st.set_up ? { kind } : { client: c.id, kind });
+    if (o.repair || !(st && st.running)) {
+      // o.repair: world_repair (oneclick.js's Repair) mends what the setup made, its progress on the same line
+      if (o.repair) { say(`Repairing ${w.title}…`); await call("world_repair", { kind, client: c.id }); }
+      else {
+        say(st && st.set_up ? `Starting ${w.title}…` : `Setting up ${w.title} (once)…`);
+        // o.resume: an interrupted setup goes on with the folder it started with (world_setup client "")
+        await call(st && st.set_up ? "world_start" : "world_setup", st && st.set_up ? { kind } : { client: o.resume ? "" : c.id, kind });
+      }
       // follow its progress line until it is done
       for (;;) {
         await sleep(o.pollMs || 2000);
@@ -98,15 +104,19 @@
     const args = { client: c.id, kind };
     if (o.pick) args.pick = o.pick;
     if (o.quick) args.quick = o.quick;
+    if (o.first) args.first = true;   // the world's first entry: no characters yet, the Quick start one made and entered
     return call("world_play", args);
   }
-  // The line after a play: signed in by itself, or the login to type once.
+  // The line after a play: signed in by itself (with the Hero Key, or the world's own login), or the login to type
+  // once (login() gives it to a Copy button; the password is shown to the player, never logged).
   function played(r, title) {
-    if (!r) return ["Started.", "ok"];
-    if (r.auto === false && r.password) return [`Started. At the login screen: ${r.account}, password ${r.password} (made for you; kept on this PC).`, "warn"];
-    return [r.made ? `Started: making ${r.made} and taking you into ${title}.` : (r.message || "Started."), "ok"];
+    if (!r) return ["Taking you in…", "ok"];
+    if (r.auto === false && r.password) return [`Log in once with ${r.account}, password ${r.password}. Leyline made it for you and keeps it on this PC.`, "warn"];
+    const into = r.made ? `Making ${r.made} and taking you into ${title}…` : "Taking you in…";
+    return [r.hero ? `Logged in with your Hero Key. ${into}` : into, "ok"];
   }
-  window.LeylineWorlds = { WORLDS, folder, status, run, played, stopWorld, otherOf, bySerde };
+  const login = (r) => (r && r.auto === false && r.password ? { account: r.account || "", password: r.password } : null);
+  window.LeylineWorlds = { WORLDS, folder, status, run, played, login, stopWorld, otherOf, bySerde };
 
   // ---------------------------------------------------------------- the original world's card (#sv)
   const page = byId("page-single");

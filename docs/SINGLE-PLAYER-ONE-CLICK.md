@@ -138,11 +138,130 @@ TODO: an expiry or a "remove friends' logins" button, once the owner says which.
 | `world_setup {client, kind}`, `world_start {kind}` | set up (once) and start / start; progress: `engine_progress` |
 | `world_stop {kind}`, `world_logs`, `world_backup` | as Single player's |
 | `world_choices {kind}` | Quick start's races (with their classes) and a free name |
-| `world_play {client, kind, pick?, quick?}` | the game, signed in by itself; `pick` a character, `quick` {name, race, class, female} |
+| `world_play {client, kind, pick?, quick?, first?}` | the game, signed in by itself; `pick` a character, `quick` {name, race, class, female}, `first` the first entry (§contract) |
+| `world_find_folder`, `world_preflight`, `world_resume_pending`, `world_repair`, `set_world_stop_on_exit` | one click's holes (§contract) |
 | `local_characters`, `online_characters` | the Characters page |
 | `world_invite {kind}`, `world_share_stop {kind}` | Invite a friend from a world |
 
 `engine_play` (Single player's Play) now goes through `world_play`: it signs in by itself too.
+
+## Contract: one click, the core's side (12 Nov 2026)
+
+The holes behind "single player in one click" closed in the Rust core (`host/oneclick.rs`, `host/engine.rs`,
+`hybrid.rs`, app.rs). The page (`vanilla.js` `LeylineWorlds.run`) uses these; `kind` is a world's word (`single`,
+`vanilla`, `bossrush`).
+
+| Command | Args | Returns |
+|---|---|---|
+| `world_find_folder` | `kind` | `{picked: id \| null, found: [{id, name, path, build, added}]}`: the game folders already added that fit the world (the Wrath folder for every local world); none: the PC's usual places are looked through (each drive's root, Games, Program Files; the player's Desktop, Downloads, Documents, Games; three folders down, at most 20,000 folders) and each fitting, complete folder is added as a game folder exactly as adding one by hand (`added: true`). Exactly one fitting: `picked` |
+| `world_preflight` | `kind, client` | `{ok, free_gb, need_gb, message}`: the disk check (below). `message` is the `[disk]` error, empty when it fits |
+| `world_setup` | `client, kind` | as before, plus: `client` `""` takes the folder the world's setup started with, else the only fitting one; refused with the `[disk]` message when short (the check runs only while the world isn't set up) |
+| `world_resume_pending` | | the word of a world whose setup was started and didn't finish (the launcher closed midway, or a step stopped), else `null`. `world_setup {client: "", kind}` goes on from where it was |
+| `world_repair` | `kind, client` | a line to show; the job is on `engine_progress` like setup (its steps below) |
+| `world_play` | `client, kind, pick?, quick?, first?` | as before, plus `hero: bool`. `first: true`: no characters on this login yet: Quick start with `quick` (a random race, class and body when none is sent) and straight into the world; with characters: the last one played. Neither `pick`, `quick` nor `first`: the last character played when it's known and still there, else character select |
+| `set_world_stop_on_exit` | `on` | Settings › Stop my world when the game closes (`get_state`'s `settings.world_stop_on_exit`, on by default) |
+
+### Error codes
+
+Every error these commands give (and every `engine_progress` `problem` of a setup or a repair) starts with a code in
+brackets, then one plain sentence. The page maps the code to a button:
+
+| Code | When | Button |
+|---|---|---|
+| `[folder]` | no game folder, more than one and none picked, or not of the world's version | Pick your game folder |
+| `[disk]` | not enough free space (the disk check), or a folder couldn't be written | Free some space |
+| `[download]` | the engine couldn't be fetched, or didn't match its checksum | Try again |
+| `[maps]` | the maps couldn't be read from the game folder | Pick another game folder / Repair |
+| `[db]` | the world's database didn't start, fill or answer; the back-up before moving characters failed | Repair |
+| `[ports]` | another world or program holds the login, world or database port | Stop it and play |
+| `[antivirus]` | a program of the engine went missing right after unpacking (or putting back), or isn't there when started | How to allow Leyline / Repair |
+| `[login]` | the world's login, or the Hero Key's, couldn't be written | Repair |
+| `[other]` | anything else | Show the log |
+
+### Finding the game folder
+
+`oneclick::scan_games`: a folder is a candidate when it has a `Data` folder and a program; it's then checked as adding
+it by hand does (`clients::detect`), and kept only when it's of the world's version and complete. System and tool
+folders (Windows, AppData, node_modules, dot folders…) are never looked in, and a game folder's own folders aren't
+looked through for another one. Nothing is read beyond folder names and the file checks `detect` does.
+
+### The disk check
+
+Need = what's left to do + a 2 GB margin (`oneclick::need_bytes`): the engine download and its unpacked files (when
+not installed, or for an update), the maps (when not read), the filled database (when not filled). Sizes come from
+the release's `.json` (`zip_bytes`, `unpacked_bytes`, which the engine-windows workflow now writes) when the engine
+is still to be downloaded; else these estimates (`oneclick::SIZES`, to confirm on a real PC): download 400 MB,
+unpacked 2 GB, maps 2 GB, database 3 GB. The free space is that of the drive Leyline keeps its worlds on (Windows:
+`GetDiskFreeSpaceExW`). Free space that can't be told never stops a setup. The original world shares Single
+player's engine and maps, so after Single player its need is the database and the margin only.
+
+### A setup cut short
+
+`state.json` now has `setup_pending` (set when a setup step is planned, cleared when it finishes) and `setup_client`.
+Before any setup or repair runs, `engine::heal_partial` clears what can't be trusted: a part-downloaded zip and a
+part-unpacked `dist.new` go (the download is checked against its sha256 again anyway); an engine moved aside for an
+update and not replaced (`dist.old` with no `dist`) comes back; a map reader or database filler of ours still running
+from before is ended (their new pid files, `state/extract.pid`, `state/dbimport.pid`). Maps without their marker are
+read again from nothing (the half-read `maps/`, `dbc/`, `Cameras/` are removed first). A fill that stopped midway
+(`fill_started` without `filled`) starts again from empty databases, and only before the login is made (nothing of
+the player's is in them). A database folder that's gone takes its `filled` and login with it (`have`), so Play sets
+them up again instead of starting a broken world.
+
+### Repair
+
+`engine::begin_repair` (steps: Checking the engine's files, then only what's missing of Maps / Database / Fill /
+Account, Starting the realm, Setting up your login again, Checking the world answers):
+
+1. The world is stopped first (everyone saved) when it runs; the sign-in in that game folder gets another chance.
+2. The engine's files: against engine.json's `files` (size and sha256 of each; written by the engine-windows
+   workflow from now on). All fine: nothing is downloaded. Else (or an engine without the list, as today's): the
+   release is downloaded and checked against its sha256, unpacked aside, and only the files that are missing or
+   different are put back (`oneclick::mend_from`); the `.conf` files and anything else stay. A release newer than
+   the installed engine is installed whole (an update).
+3. The maps are read again only when their marker or folders are gone. A database that is there is never filled
+   again; the saves (`db/`) and back-ups are never touched.
+4. Start, the login written again (`resync_login`), the three ports checked.
+
+### The refused auto sign-in gets another chance
+
+`<game>/Leyline/glue-refused` is now a small JSON (`at`, the launcher's `version`, `why`). It holds for 7 days and
+only for the launcher that wrote it: after a launcher update, a week, or Repair (`hybrid::clear_refused`), the next
+start tries the sign-in again (a game that refuses it again writes a fresh marker). An old text marker is from an
+older launcher, so it is taken away on the first look.
+
+### Stop the world when the game closes
+
+After a world's Play starts the game, a watcher waits for that game to close, then 60 s, then saves and stops the
+world (and its sharing) when: the setting is on, no Play came since, no other game Leyline started is running, the
+world is still up (and no setup or repair is going), and no friend is in it: online characters on friends' logins
+(`G` + 9, `engine::FRIENDS_SQL`). A world that can't be asked stays up.
+
+### The Hero Key's login in a local world
+
+Signed in on Home (the social session), each Play of Single player or the original world (Boss Rush keeps its hero
+login) uses a login of the Hero Key's own in that world, the same on every Play on this PC:
+
+`HK` + the first 14 characters of base32( HMAC-SHA256( local secret, "leyline-local-world:" + the website's address
++ ":" + the account's id ) ): 16 characters, A-Z and 2-7.
+
+* The account's id is `me.pid` from the website (asked once per Play, 8 s at most; kept in `<app data>/local-hero.json`
+  so an offline Play keeps the same login; a revoked session forgets it). `engine_play` (a command that can't wait)
+  uses the kept id only.
+* The local secret is 32 random bytes in `<app data>/local-hero.key`, made once, never sent anywhere: another PC
+  makes other names for the same account, and the name doesn't give the account away.
+* The login is made or updated with a fresh password for this Play only (`engine::hero_login`: never stored, never
+  logged), with the same rights as the world's own login.
+* The first time any Hero Key plays a world, the world's own login's characters (and its key bindings and tutorial
+  flags) move to it (`engine::move_sql`: updates only, nothing deleted), inside a back-up taken first; if the back-up
+  fails, nothing moves and Play says `[db]`. `state.json` keeps `hero_moved_to` and `hero_accounts` (the Characters
+  page lists the characters of the world's own login and every Hero Key login that played here).
+* Signed out: the world's own login, as before.
+
+### First entry and the last character
+
+`state.json` keeps `last_character`: the character of a Play with a pick or Quick start, or the one that logged out
+last whenever the characters are read (`engine::last_of`). `world_play` with nothing picked goes to it while it's
+still one of this login's characters.
 
 ## Files
 
@@ -150,6 +269,7 @@ TODO: an expiry or a "remove friends' logins" button, once the owner says which.
 |---|---|
 | `realm/profiles/solovanilla.env` | the original world's ruleset |
 | `launcher/src-tauri/src/host/engine.rs` | `Kind::Vanilla`, `KINDS`, `word`, shared maps, `refresh_chars` |
+| `launcher/src-tauri/src/host/oneclick.rs` | one click's holes: error codes, finding the game folder, the disk check, the Hero Key's login name, stop on exit, Repair's file check, resume |
 | `launcher/src-tauri/src/host/localworld.rs` | races, classes, combos, Quick start checks, characters SQL and parsing, online names |
 | `launcher/src-tauri/src/host/worldshare.rs` | the realm list rewriter, the same-network forwarder, friends' logins |
 | `launcher/src-tauri/src/host/litenet.rs` | `Setup.realm_list`: the rewriter on login streams |
@@ -164,7 +284,10 @@ TODO: an expiry or a "remove friends' logins" button, once the owner says which.
 
 ## Tests
 
-* Rust (CI, `launcher check`): engine.rs (the original world's own install and shared maps, the profile over
+* Rust (CI, `launcher check`): oneclick.rs (codes, the folder scan on stand-in folders, the disk sums, the Hero Key's
+  login name, stop on exit, Repair's file list and mending, resume), engine.rs (Repair's plan, a database folder gone,
+  a setup cut short healed, the characters' move SQL, the last character), hybrid.rs (the refusal's expiry),
+  settings.rs (stop on exit on by default); engine.rs (the original world's own install and shared maps, the profile over
   modules.env), localworld.rs (the era's picks, names, the characters' SQL and rows, the online names), worldshare.rs
   (the realm list rewrite, the login stream message by message and a byte at a time, friends' logins, the forwarder
   end to end with a stand-in login server), hybrid.rs (`pick` / `make` handed over only in the game's shapes),

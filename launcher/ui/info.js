@@ -24,8 +24,8 @@
     ] },
     single: { title: "Single player", link: "docsingle", lines: [
       "Single player runs a small game server on your PC, made only for you, with bot companions if you want them.",
-      "The first setup takes 5–20 minutes; after that your world starts in seconds.",
-      "Choose companions, dungeon buddies and how busy the world is in the settings below.",
+      "The first setup takes 5–20 minutes; after that your world starts in seconds. Companions, dungeon buddies and how busy the world is are in its settings.",
+      "Your Den is here too: your own private room on this PC to build in. Open my Den takes you in; Invite a friend shares it.",
       "Friends: invite one to your world, and they keep their character there for next time.",
     ], also: { label: "Playing with friends", link: "hostfriends" } },
     realms: { title: "Realms", link: "docsplay", lines: [

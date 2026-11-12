@@ -2,8 +2,9 @@
 // entries (the side menu right under Home, the Home banner), the one click (Den Lite straight in; without Den Lite the
 // Docker Den's three steps here; a Docker Den: start it if stopped, its account filled in, then play), Share with
 // friends (the Lite Den moved to the Docker Den, then opened there unchanged), Invite a friend, Saved Dens (open, save a
-// copy, add a file, add from a Workshop link), Packs, Share on the Workshop (List your mod in its Den shape), and no
-// game or publisher names anywhere.
+// copy, add a file, add from a Workshop link), Packs, Share on the Workshop (List your mod in its Den shape), Your Den
+// on Single player's page too (#spd: the same Open my Den, Invite a friend and state), and no game or publisher names
+// anywhere.
 //
 //   node launcher/tests/den.browser.test.cjs
 'use strict';
@@ -593,4 +594,61 @@ test('Sky Island in one click, and a Den code a friend sent (docs/DEN-NEXT.md)',
   await noBrands(page);
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('Your Den on the Single player page: what it is, Open my Den, Invite a friend, its state and Stop sharing, all the Den page\'s own', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', auto: true });
+  await page.evaluate(() => window.LeylineNav.show('single'));
+  await page.waitForSelector('#spd-play');
+  // after the Start card, before the world's settings and the Friends area
+  const order = await page.evaluate(() => [...document.querySelectorAll('#page-single > .panel')].map((p) => p.id));
+  assert.ok(order.indexOf('spd') > order.indexOf('sp') && order.indexOf('spd') < order.indexOf('oc-set') && order.indexOf('spd') < order.indexOf('spf'), order.join());
+  assert.equal(await page.textContent('#spd h2'), 'Your Den');
+  assert.match(await page.textContent('#spd .spd-lede'), /private room on this PC to build in/);
+  assert.match(await page.textContent('#spd-state'), /Ready on this PC: no setup needed/);
+  // one click in, the same as the Den page's (den_play_lite: the game signed in behind Leyline's cover)
+  await page.click('#spd-play');
+  await page.waitForFunction(() => /Your Den is opening/.test(document.getElementById('spd-status').textContent));
+  assert.deepEqual(await calls(page, 'den_play_lite'), [{ client: 'c335a-1' }]);
+  assert.equal(await page.evaluate(() => document.querySelector('.page.on').id), 'page-single', 'stays on Single player');
+  assert.equal(await page.textContent('#spd-status'), await statusText(page), 'the Den page says the same');
+  await page.waitForFunction(() => /Open on this PC/.test(document.getElementById('spd-state').textContent));
+  // Invite a friend: the Den page's own invite (the link copied), then Stop sharing here
+  await page.click('#spd-invite');
+  await page.waitForFunction(() => /Invite link copied/.test(document.getElementById('spd-status').textContent));
+  assert.equal((await calls(page, 'den_invite')).length, 1);
+  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^https:\/\/relay\.openvanilla\.app\/join\//);
+  await page.waitForSelector('#spd-net');
+  assert.match(await page.textContent('#spd-net'), /On the Leyline network, private/);
+  await page.click('#spd-net-stop');
+  await page.waitForFunction(() => !document.getElementById('spd-net'));
+  assert.equal((await calls(page, 'den_net_stop')).length, 1);
+  // More on Your Den: its page
+  await page.click('#spd-more');
+  assert.equal(await page.evaluate(() => document.querySelector('.page.on').id), 'page-den');
+  await noBrands(page);
+  assert.doesNotMatch(await page.evaluate(() => document.getElementById('spd').innerText), /sign in|sign-in|signin/i);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Your Den on the Single player page: no game folder says so; a Den not set up yet opens its steps on the Den page', async () => {
+  const a = await open({ clients: false });
+  await a.page.evaluate(() => window.LeylineNav.show('single'));
+  await a.page.waitForSelector('#spd-play');
+  await a.page.click('#spd-play');
+  await a.page.waitForFunction(() => /Add it on the Game folders page/.test(document.getElementById('spd-status').textContent));
+  assert.deepEqual(await calls(a.page, 'den_play_lite'), []);
+  assert.deepEqual(a.errors, []);
+  await a.ctx.close();
+  // no Den Lite and no Docker Den: Invite a friend opens the one-time steps where they are
+  const b = await open({});
+  await b.page.evaluate(() => window.LeylineNav.show('single'));
+  await b.page.waitForSelector('#spd-invite');
+  assert.match(await b.page.textContent('#spd-state'), /Not set up yet/);
+  await b.page.click('#spd-invite');
+  await b.page.waitForSelector('#yd .yd-steps');
+  assert.equal(await b.page.evaluate(() => document.querySelector('.page.on').id), 'page-den');
+  assert.deepEqual(b.errors, []);
+  await b.ctx.close();
 });

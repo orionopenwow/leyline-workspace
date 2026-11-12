@@ -177,7 +177,10 @@ let n = 0;
 const SMALL = { width: 1100, height: 760 };
 const LARGE = { width: 1400, height: 860 };
 const pageOn = (page) => page.evaluate(() => document.querySelector('.page.on').id);
-const go = async (page, name) => { await page.click(`.side .nav[data-page="${name}"]`); await page.waitForFunction((n) => document.querySelector('#page-' + n + '.on'), name); };
+// a page in a side menu fold (Play, Launcher): its fold opened first, as a player would
+const go = async (page, name) => {
+  await page.evaluate((n) => { const f = document.querySelector(`.side .nav[data-page="${n}"]`).closest('.nav-fold'); if (f) window.LeylineNav.fold(f.dataset.fold, true); }, name);
+  await page.click(`.side .nav[data-page="${name}"]`); await page.waitForFunction((n) => document.querySelector('#page-' + n + '.on'), name); };
 const text = (page, sel) => page.evaluate((s) => [...document.querySelectorAll(s)].filter((e) => e.offsetParent || e === document.body).map((e) => e.innerText).join('\n'), sel);
 
 // The words a player sees on this step: the open page, the title bar, the play bar and anything open on top.

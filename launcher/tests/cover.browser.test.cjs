@@ -23,6 +23,7 @@ const COVER_FAKE = (view) => {
     switch (cmd) {
       case 'cover_state': return window.__view;
       case 'cover_hide': return null;
+      case 'cover_link': return null;
       default: throw 'unknown ' + cmd;
     }
   } } };
@@ -108,6 +109,34 @@ test('"Show the game" and Esc ask the core to hide this start\'s cover', async (
   await ctx.close();
 });
 
+test('single player: its three steps, the link box told to the core for click-through, and a short line when it did not get through', async () => {
+  const single = ['Starting your world', 'Signing in', 'Entering the world'];
+  const { page, ctx, errors } = await openCover({ id: 5, title: 'Logging you in…', steps: single, step: 1, shown: true, error: '' }, { width: 1024, height: 768 });
+  assert.deepEqual((await steps(page)).map((s) => s[0]), single);
+  assert.equal(await page.isHidden('#cv-error'), true);
+  // the core is told where "Show the game" is, in CSS pixels with the scale, for this start
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'cover_link'));
+  const link = await page.evaluate(() => window.__calls.filter((c) => c[0] === 'cover_link').pop()[1]);
+  const box = await page.$eval('#cv-show', (b) => { const r = b.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+  assert.deepEqual(link, Object.assign({ id: 5, scale: 1 }, box));
+  assert.ok(link.x > 512 && link.y > 600, 'bottom right');
+  // told once, not on every look
+  await page.waitForTimeout(700);
+  assert.equal(await page.evaluate(() => window.__calls.filter((c) => c[0] === 'cover_link').length), 1);
+  // a smaller window: told again
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.waitForFunction(() => window.__calls.filter((c) => c[0] === 'cover_link').length === 2);
+  // the sign-in didn't get through: the line, as text, instead of the note
+  await page.evaluate(() => { window.__view = Object.assign({}, window.__view, { error: 'Leyline couldn\'t log you in by itself this time. <b>x</b>' }); });
+  await page.waitForFunction(() => !document.getElementById('cv-error').hidden);
+  assert.equal(await page.textContent('#cv-error'), "Leyline couldn't log you in by itself this time. <b>x</b>");
+  assert.equal(await page.$('#cv-error b'), null);
+  assert.equal(await page.isHidden('#cv-note'), true);
+  assert.doesNotMatch(await page.textContent('body'), BRAND);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 // the launcher's Settings: the switch, on unless turned off
 const LAUNCHER_FAKE = (saved) => {
   const calls = (window.__calls = []);
@@ -136,7 +165,7 @@ const LAUNCHER_FAKE = (saved) => {
   } } };
 };
 
-test("Settings: Hide the sign-in behind Leyline's screen, on by default, turned off and on", async () => {
+test("Settings: Hide the login behind Leyline's screen, on by default, turned off and on", async () => {
   for (const [saved, on] of [[{}, true], [{ signin_cover: false }, false]]) {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
@@ -145,7 +174,8 @@ test("Settings: Hide the sign-in behind Leyline's screen, on by default, turned 
     await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'get_state'));
     await page.waitForFunction((want) => document.getElementById('set-cover').checked === want, on);
     const label = await page.$eval('#set-cover', (i) => i.closest('label').textContent);
-    assert.match(label, /Hide the sign-in behind Leyline's screen/);
+    assert.match(label, /Hide the login behind Leyline's screen/);
+    assert.match(label, /Single player and Your Den/);
     assert.doesNotMatch(label, BRAND);
     if (on) {
       await page.evaluate(() => { location.hash = ''; });

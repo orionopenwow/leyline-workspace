@@ -58,7 +58,9 @@
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px var(--stone-edge);
 }
 .side-foot { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.05); }
-.side .nav, .side .realm-row, .side .side-label { text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6); }
+.side .nav, .side .realm-row, .side .side-label, .side .nav-fold-head { text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6); }
+.side .nav-fold-head:hover { background: rgba(0, 0, 0, 0.32); }
+.side .nav-fold-inner { border-left-color: rgba(0, 0, 0, 0.55); box-shadow: 1px 0 0 rgba(255, 255, 255, 0.05); }
 /* owner 2026-10-31 21:51: "give whole client this grey color border bordering our play button", then 21:57 "the border
    needs to be outer and the window buttons top right need to be seamless with it": the PLAY button's own grey metal
    frame is the window's border (now art/window-edge.png, below), outside everything, so nothing sits

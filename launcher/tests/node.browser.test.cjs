@@ -201,6 +201,7 @@ test('Advanced: the full relay, players carried, the network check never shows a
 
 test('Settings: a Network part opens the card; Advanced leaves be_a_node to it', async () => {
   const { page, errors } = await open({});
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.nav[data-page="settings"]');
   await page.waitForSelector('#set-node');
   assert.match(await text(page, '#set-node'), /Be a node: let this PC help the Leyline network while you're not playing/);

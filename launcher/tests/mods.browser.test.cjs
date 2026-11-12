@@ -237,6 +237,7 @@ test('offline rankings: the catalog order, the tabs and chips still work; Count 
   assert.deepEqual(await names(page), ['Golf Cart', '<img src=x onerror="window.__pwned=1">']);
   await page.click('#dc-smart .chip-btn:has-text("Game modes")');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 1);
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.nav[data-page="settings"]');
   assert.equal(await page.isChecked('#set-count'), true);
   await page.click('#set-count');

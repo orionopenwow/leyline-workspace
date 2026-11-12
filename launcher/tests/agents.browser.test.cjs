@@ -79,7 +79,8 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
 
 test('the Agents item, off by default, the tiers in plain words, Connect and the audit', async () => {
   const { page, errors } = await open();
-  assert.deepEqual(await page.$$eval('.side-foot .nav', (b) => b.map((x) => x.dataset.page)), ['settings', 'agents', 'help']);
+  assert.deepEqual(await page.$$eval('#fold-launcher .nav', (b) => b.map((x) => x.dataset.page || x.id)), ['nav-simple-toggle', 'settings', 'agents', 'help'], 'in the Launcher fold');
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.nav[data-page="agents"]');
   assert.ok(await page.isVisible('#page-agents'));
   assert.equal(await page.isChecked('#ag-allow'), false, 'off by default');

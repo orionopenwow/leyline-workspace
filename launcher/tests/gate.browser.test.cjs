@@ -482,6 +482,7 @@ test('new machine click counts: browser 2, guest 2, key file in Downloads 0, log
 
 test('Settings › Your account: signed out it opens Log in; a guest is told to save the login and lands on it; the P2P part is last', async () => {
   const { page, errors } = await open();
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.nav[data-page="settings"]');
   await page.waitForSelector('#page-settings.on');
   assert.match(await page.textContent('#set-acct-line'), /Not logged in/);
@@ -491,6 +492,7 @@ test('Settings › Your account: signed out it opens Log in; a guest is told to 
   await page.waitForSelector('#gate-new');
   await page.click('#gate-new');
   await page.waitForSelector('#hf-me-btn');
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.nav[data-page="settings"]');
   await page.waitForFunction(() => /isn't saved yet/.test(document.getElementById('set-acct-line').textContent));
   assert.equal(await page.textContent('#set-acct'), 'Save your login');
@@ -499,6 +501,7 @@ test('Settings › Your account: signed out it opens Log in; a guest is told to 
   await page.waitForSelector('#ac-guest-save');
   await page.click('#ac-guest-save');
   await page.waitForFunction(() => !!window.__savedText);
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.nav[data-page="settings"]');
   await page.waitForFunction(() => /Logged in as Brightfeather42#1234/.test(document.getElementById('set-acct-line').textContent));
   assert.equal(await page.textContent('#set-acct'), 'Your login and Hero Key');

@@ -162,7 +162,9 @@ impl Kind {
     }
     pub fn bots(self) -> u32 {
         match self {
-            Kind::Single => BOTS,
+            // a quiet world until the player asks for more (owner 12 Nov; host/spsettings.rs): BOTS is what worlds set
+            // up before then had, kept for them in their realm.env
+            Kind::Single => 0,
             // no roaming population: companions and dungeon buddies only (the profile's WU_BOTS says the same)
             Kind::BossRush | Kind::Vanilla => 0,
         }
@@ -406,6 +408,12 @@ pub struct State {
     pub hero_accounts: Vec<String>,
     /// The Hero Key login the world's own login's characters moved to, once (empty: not yet).
     pub hero_moved_to: String,
+    /// The player chose this world's settings (companions, dungeon buddies, roaming bots, XP: host/spsettings.rs), in
+    /// the "Your world" panel or the Single player page: the panel isn't shown again.
+    pub settings_chosen: bool,
+    /// The world's settings are in its realm.env (written once: a new world's quiet defaults, or what a world set up
+    /// before the settings existed already had).
+    pub settings_settled: bool,
 }
 
 pub fn load_state(p: &Paths) -> State {
@@ -1097,6 +1105,10 @@ pub fn begin_setup(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: bo
         return Err(tag("ports", format!("{} is running on this PC and uses the same ports. Stop it first, then press Start again.", o.title())));
     }
     let mut s = load_state(&p);
+    // the world's settings in its realm.env before its server first reads it (host/spsettings.rs)
+    if crate::host::spsettings::settle(&p, &mut s) {
+        let _ = save_state(&p, &s);
+    }
     let h = have(&p, &s, update);
     let steps = plan(&h);
     if steps.is_empty() {
@@ -1637,8 +1649,14 @@ pub fn preflight(p: &Paths) -> crate::host::oneclick::Preflight {
     let s = load_state(p);
     let h = have(p, &s, false);
     let meta = if !h.installed { release_meta(p) } else { None };
-    let need = oc::need_bytes(&h, &oc::Sizes::from_json(meta.as_ref()));
-    oc::preflight(oc::free_bytes(&p.app), need, p.kind.title())
+    let sizes = oc::Sizes::from_json(meta.as_ref());
+    let need = oc::need_bytes(&h, &sizes);
+    let mut r = oc::preflight(oc::free_bytes(&p.app), need, p.kind.title());
+    if !h.installed {
+        r.download_mb = sizes.zip.div_ceil(1024 * 1024);
+        r.download_known = meta.as_ref().and_then(|m| m.get("zip_bytes")).and_then(|x| x.as_u64()).is_some_and(|z| z > 0);
+    }
+    r
 }
 
 /// The release's checksum now; true when it isn't the installed one.
@@ -2615,8 +2633,8 @@ mod tests {
         assert!(!v.iter().any(|(_, x)| x.contains("ac-database") || x.contains("ov-local-test")), "no container names or test passwords");
         // the compose block, for this PC
         assert_eq!(g("AC_LOGIN_DATABASE_INFO"), Some(format!("127.0.0.1;13306;root;{};acore_auth", s.db_password)));
-        assert_eq!(g("AC_PLAYERBOTS_MIN_RANDOM_BOTS").as_deref(), Some("20"), "the kit's solo bot count, not modules.env's 30");
-        assert_eq!(g("AC_PLAYERBOTS_MAX_RANDOM_BOTS").as_deref(), Some("20"));
+        assert_eq!(g("AC_PLAYERBOTS_MIN_RANDOM_BOTS").as_deref(), Some("0"), "a quiet world until the player asks (host/spsettings.rs), not modules.env's 30");
+        assert_eq!(g("AC_PLAYERBOTS_MAX_RANDOM_BOTS").as_deref(), Some("0"));
         assert_eq!(g("AC_PLAYER_LIMIT").as_deref(), Some("5"));
         assert_eq!(g("AC_WARDEN_ENABLED").as_deref(), Some("0"));
         assert_eq!(g("AC_MOVE_MAPS_ENABLE").as_deref(), Some("0"));
@@ -2654,7 +2672,7 @@ mod tests {
         assert_eq!(get(&v, "AC_BIND_IP"), Some("127.0.0.1"));
         assert!(get(&v, "AC_LOGIN_DATABASE_INFO").unwrap().starts_with("127.0.0.1;13306;root;"));
         assert_eq!(get(&v, "AC_CONSOLE_ENABLE"), Some("0"));
-        assert_eq!(get(&v, "AC_PLAYERBOTS_MIN_RANDOM_BOTS"), Some("20"));
+        assert_eq!(get(&v, "AC_PLAYERBOTS_MIN_RANDOM_BOTS"), Some("0"), "not a number: the quiet default");
     }
 
     #[test]

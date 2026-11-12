@@ -1935,6 +1935,56 @@ fn world_setup_with(k: crate::host::engine::Kind, profile: &ClientProfile) -> Re
     eng::begin_setup(&settings::app_dir(), k, Some(profile.path.clone()), false, Some(&profile.id)).map_err(|e| tag("other", e))
 }
 
+/// A world's settings (host/spsettings.rs): companions, dungeon buddies, roaming bots, XP rate; realm.env over the
+/// defaults, `chosen` once the player picked them, and whether it is set up / running.
+#[tauri::command]
+async fn world_settings_get(kind: String) -> Result<crate::host::spsettings::WorldSettings, String> {
+    use crate::host::{engine as eng, spsettings as sps};
+    let k = world_kind(&kind)?;
+    if !sps::supports(k) {
+        return Err(tag_other(format!("{} has no world settings.", k.title())));
+    }
+    blocking(move || {
+        let p = world_paths(k);
+        let st = eng::status(&p);
+        let mut w = sps::current(&p, &eng::load_state(&p));
+        w.set_up = st.set_up;
+        w.running = st.running;
+        Ok(w)
+    })
+    .await
+}
+
+/// Change a world's settings (only the ones given), written into its realm.env; the world needn't be set up yet. A
+/// running world takes them at its next start (`restart`: the page offers Restart).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn world_settings_set(
+    kind: String,
+    companions_auto: Option<bool>,
+    companions_follow: Option<u8>,
+    dungeon_auto: Option<bool>,
+    roaming_bots: Option<u32>,
+    xp_rate: Option<f64>,
+) -> Result<crate::host::spsettings::Saved, String> {
+    use crate::host::{engine as eng, spsettings as sps};
+    let k = world_kind(&kind)?;
+    let c = sps::Change { companions_auto, companions_follow, dungeon_auto, roaming_bots, xp_rate };
+    blocking(move || {
+        let p = world_paths(k);
+        let running = eng::status(&p).running;
+        let mut r = sps::set(&p, &c, running).map_err(tag_other)?;
+        r.settings.set_up = eng::status(&p).set_up;
+        Ok(r)
+    })
+    .await
+}
+
+fn tag_other(e: impl Into<String>) -> String {
+    let e: String = e.into();
+    if e.starts_with('[') { e } else { crate::host::oneclick::tag("other", e) }
+}
+
 #[tauri::command]
 fn world_start(kind: String) -> Result<String, String> {
     crate::host::engine::begin_kind(&settings::app_dir(), world_kind(&kind)?, None, false)
@@ -3991,6 +4041,8 @@ pub fn run() {
             world_logs,
             world_backup,
             world_choices,
+            world_settings_get, // Single player's world settings before the first load and later (host/spsettings.rs)
+            world_settings_set,
             world_play,
             world_find_folder, // one click (docs/SINGLE-PLAYER-ONE-CLICK.md §contract): the folder, the disk, resume, Repair
             world_preflight,

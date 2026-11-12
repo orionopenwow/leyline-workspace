@@ -439,11 +439,14 @@ mod tests {
     }
 
     #[test]
-    fn the_solo_profiles_ask_for_companions() {
+    fn the_solo_profiles_start_quiet() {
+        // owner 12 Nov: a new world has no party until the player picks companions (host/spsettings.rs)
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../realm/profiles");
         for p in ["solo.env", "solovanilla.env"] {
             let Ok(text) = std::fs::read_to_string(root.join(p)) else { continue };
-            assert!(expected_companions(&crate::host::engine::parse_env(&text)) >= 1, "{p}");
+            assert_eq!(expected_companions(&crate::host::engine::parse_env(&text)), 0, "{p}");
+            let chosen = format!("{text}\nOV_COMPANIONS_AUTO=1\nOV_COMPANIONS_FOLLOW=2\n");
+            assert_eq!(expected_companions(&crate::host::engine::parse_env(&chosen)), 2, "{p} with companions chosen");
         }
     }
 

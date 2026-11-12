@@ -139,6 +139,25 @@ world) and Leyline Solo; Your Den (Den Lite) and the Docker host kit keep their 
 
 ### For the player
 
+**On the Single player page** everything about friends is one area, **Friends** (`index.html` `#spf`), under the
+world's settings, in this order:
+
+1. *Invite a friend to your world* (`#pf`, oneclick.js): the link, Copy, the ways in, whether they're in.
+2. *Friends with a character on your world* (`#wf`, ui/worldfriends.js; `world_friends`, `world_friend`): pick the
+   world; each friend with their name (from your friends list when they're on it), their characters (while the world
+   runs), *Invited* / *Can come back any time* (trusted) / *Needs a new invite*; **Trust** / **Stop trusting**,
+   **Remove** (asks on the row: their login stops working, their characters stay; invite them again and they get them
+   back) and **Remove and delete characters…** (asks on the row, naming how many characters go "for good", focus on
+   *Keep them*). Remove needs the world running (the world makes the change); Trust doesn't.
+3. *Your friends' worlds* (`#fw`, the friend's side; `friend_worlds`, `join_friend_again`, `friend_world_forget`):
+   the worlds this PC joined, newest first (at most 20 kept), with **Join again** (no new link) and **Forget**. Hidden
+   when there are none.
+4. *Your friends list* (`#lf`, ui/friends.js; docs/LEYLINE-FRIENDS.md): friend codes, requests, people near, friends
+   with Invite (the world that runs is picked) and Join, your profile.
+
+The "i" button explains the area while it is on screen (`info.js` `SECTIONS.spf`: Learn more opens *Playing with
+friends*, a second button the Single player docs).
+
 * **Invite with a link:** the world's card, *Invite a friend* (as before). The friend opens the link in Leyline (or
   pastes it): same network first, then the relay.
 * **Invite from inside the game:** the Friends window has a **Leyline** tab (also `/together`): this world's invite
@@ -158,9 +177,11 @@ world) and Leyline Solo; Your Den (Den Lite) and the Docker host kit keep their 
 
 ### The friend's identity (`host/worldfriends.rs`)
 
-* Each launcher has its own Ed25519 key pair: `<app data>/peer.key` (the 32-byte seed as hex, made once, never sent; a
-  stand-in for `identity.rs`, same file and shapes). Its **peer id** is base32(sha256(public key))[:16], lower case,
-  as the mesh's realm ids. A Hero Key isn't needed.
+* Each launcher has one Ed25519 key pair: `identity.rs` (`<app data>/peer.key`, the 32-byte seed as hex, made once,
+  never sent, a broken file refused rather than replaced). The Friends list and a world's lasting logins use the same
+  key, so a friend on your list and a friend with a character on your world are the same person (the world's friends
+  list shows their name). Its **peer id** is base32(sha256(public key))[:16], lower case, as the mesh's realm ids. A
+  Hero Key isn't needed.
 * The friend's **lasting login** on a world: `G` + the first 15 of base32(sha256("leyline-world-friend-v1\n" + the
   world's realm id + "\n" + peer id)). The same on every join from that identity, different on every world, and never
   the shape of a one-time ticket (`G` + 9) or the host's own (`SOLO`, `ORIGINAL`, `HK…`). The world's SQL matches
@@ -209,7 +230,9 @@ host -> friend   LLC1 OK <login>          or   LLC1 NO <why, plain words>
 | A claim | the lasting login made or given a fresh password; the identity invited (enabled) |
 | Stop sharing | lasting logins disabled (a random password nobody holds), not invited unless trusted; tickets with no characters deleted |
 | A ticket out of time | deleted, unless it has characters: then it is kept as an earlier friend's login (legacy), never deleted (Leyline Solo used to delete friends' logins with their characters after 7 days or on stop: no longer) |
-| Remove | disabled and forgotten, characters kept; Remove and delete: `account delete` (with its characters) |
+| Remove | disabled and forgotten, characters kept; its login remembered in the book's `removed` (at most 200) so an earlier friend's login with characters isn't listed again, and the same friend invited again gets it back (a new password on the login that is there; an earlier one-time login through `old`) |
+| Remove and delete | `account delete` (with its characters); not remembered |
+| A login already there | (a world restored from a back-up, a lost book) a claim that would make it sets its password instead |
 
 ### Invite from inside the game (game -> launcher)
 

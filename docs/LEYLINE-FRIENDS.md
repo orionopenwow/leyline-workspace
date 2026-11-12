@@ -120,7 +120,12 @@ keeps boxes in memory only, for 24 h at most.
   plus the same-network way). The link, which holds the friend's guest login, goes to that one friend, signed and
   sealed. The relay can't read it.
 * **Join:** the friend's page shows Join on that friend while the invite is under 24 hours old. It opens the usual
-  Join card (`LeylineSolo.offerJoin`, then `join_invite`).
+  Join card (`LeylineSolo.offerJoin`, then `join_invite`). The link is a world's lasting-login invite (`~~lf1`), so
+  `join_invite` claims with this PC's key and the friend keeps their character there; next time *Join again*
+  (Single player page, *Your friends' worlds*) needs no new link.
+* **Invite's world** is the one running on this PC (else Single player); Stop sharing (or stopping the world) takes it
+  off the presence friends see at once. Closing Leyline sends "offline" (at most a second's wait), so friends don't see
+  you online for the 10-minute window.
 
 ### Lasting world logins (the host side: the social-ui work)
 
@@ -134,8 +139,30 @@ A host recognises a returning friend by peer id, not by a password:
    `identity::verify_join(join_bytes(&challenge), pubkey, sig)`.
 4. The host then checks `Book::is_friend(&me, &peer_id)`.
 
-**Not yet wired:** a channel that carries the challenge between the two launchers. It can be one more message kind
-on the transport above.
+**Between two launchers this is the world claim, not a new message kind.** When a friend joins a world on the host's PC
+(a link from Invite, the Friends list's Invite, or *Join again*), the friend's launcher runs the claim handshake of
+`host/worldfriends.rs` on the world's own login address, before the game logs in (docs/SINGLE-PLAYER-ONE-CLICK.md,
+"The handshake"): `LLC1 HELLO`, the host's fresh 16-byte challenge, then the friend's claim signed with this same
+`peer.key` (worldfriends.rs uses `identity::PeerIdentity`; one key, one code path). That already is the join
+challenge above, and more:
+
+| What the join challenge needs | The claim |
+|---|---|
+| a fresh challenge from the host | `LLC1 CHAL`, 16 random bytes per connection |
+| the friend signs it with their peer key | Ed25519 over `leyline-world-claim-v1`, the realm id, the challenge, the ticket, sha256 of the new password |
+| bound to this host and this world | the realm id is signed, and the claim is sealed with a key from the invite secret and the realm id |
+| short-lived | one connection (8 s timeouts); a claim can't be replayed to another challenge |
+| the host learns the friend's peer id | `open_claim` returns it; the lasting login is derived from it |
+| rate limits | 30 claims a minute |
+
+So no sealed `join` message is sent over the friends transport: it would carry the same proof over a second path
+that may not even reach the host (the friend might not be on the host's friends list, and the world's own address
+is the one that must work for the game anyway). `join_challenge` / `join_answer` / `check_join` stay in identity.rs,
+tested, for a future use that has no login port (a Den or a mode run in the browser).
+
+**What the claim does not check:** that the joiner is on the host's Friends list (`Book::is_friend`). On purpose: an
+invite link is how anyone is let in the first time, list or not. The world's friends list shows who is also on your
+Friends list.
 
 ## 6. Privacy: who sees what
 
@@ -169,3 +196,11 @@ on the transport above.
 4. Two launchers on one PC: only one can hear beacons (UDP 41190 is taken). The second still sends.
 5. Broadcast to 255.255.255.255 on networks that filter it (some Wi-Fi guest networks): use the code and mailbox
    instead.
+6. Friends list to a world and back: Ari invites Bo from the Friends list (the running world picked); Bo presses Join
+   on Ari, makes a character, logs out. Ari's *Friends with a character on your world* shows Bo by name with the
+   character. Bo's *Your friends' worlds* shows Ari's world; *Join again* goes straight in to the same character
+   (while Ari shares it). Ari stops sharing: Bo's *Join again* says to ask for a new invite; Ari trusts Bo: it works
+   again. Ari removes Bo (characters kept), invites again: Bo gets the same character back. *Remove and delete
+   characters*: gone.
+7. Ari closes Leyline: Bo's list shows Ari offline within a few seconds (same network or the mailbox), not after ten
+   minutes.

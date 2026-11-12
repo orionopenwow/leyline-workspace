@@ -370,6 +370,8 @@ pub fn invite_secret(share: &Path) -> Result<String, String> {
 pub struct Lan {
     stop: Arc<AtomicBool>,
     layout: Layout,
+    /// Where its login connections go (the world's login port, or the claim answerer in front of it).
+    to: u16,
     pub ip: IpAddr,
     pub login: u16,
     pub world: u16,
@@ -390,14 +392,22 @@ pub fn lan_start(ip: IpAddr, to_login: u16, to_world: u16) -> Result<(IpAddr, u1
 /// [`lan_start`] for a world of this layout (the first-era world: [`Layout::Classic`]). One forwarder on this PC: a
 /// running one for another layout is stopped and started again.
 pub fn lan_start_layout(ip: IpAddr, to_login: u16, to_world: u16, layout: Layout) -> Result<(IpAddr, u16, u16), String> {
+    lan_start_via(ip, to_login, to_login, to_world, layout)
+}
+
+/// [`lan_start_layout`], its login port passed to `to_login` (the claim answerer in front of the world's login
+/// server: host/worldfriends.rs) while friends still see `prefer_login` (the game's own port) first.
+pub fn lan_start_via(ip: IpAddr, prefer_login: u16, to_login: u16, to_world: u16, layout: Layout) -> Result<(IpAddr, u16, u16), String> {
     let mut g = LAN.lock().map_err(|_| "busy")?;
     if let Some(l) = g.as_ref() {
-        if l.ip == ip && l.layout == layout && !l.stop.load(Ordering::Relaxed) {
+        if l.ip == ip && l.layout == layout && l.to == to_login && !l.stop.load(Ordering::Relaxed) {
             return Ok((l.ip, l.login, l.world));
         }
         l.stop.store(true, Ordering::Relaxed);
+        // the old listeners close within their next 100 ms nap
+        std::thread::sleep(Duration::from_millis(250));
     }
-    let login = bind(ip, &[to_login, 13724, 23724]).ok_or("this PC's network address didn't take the login port (a firewall or another program)")?;
+    let login = bind(ip, &[prefer_login, 13724, 23724]).ok_or("this PC's network address didn't take the login port (a firewall or another program)")?;
     let world = bind(ip, &[to_world, 18085, 28085]).ok_or("this PC's network address didn't take the world port")?;
     let (lp, wp) = (login.local_addr().map_err(|e| e.to_string())?.port(), world.local_addr().map_err(|e| e.to_string())?.port());
     let stop = Arc::new(AtomicBool::new(false));
@@ -407,7 +417,7 @@ pub fn lan_start_layout(ip: IpAddr, to_login: u16, to_world: u16, layout: Layout
         let _ = l.set_nonblocking(true);
         std::thread::spawn(move || accept_loop(l, to, rewrite.then_some(target), layout, stop));
     }
-    *g = Some(Lan { stop, layout, ip, login: lp, world: wp });
+    *g = Some(Lan { stop, layout, to: to_login, ip, login: lp, world: wp });
     Ok((ip, lp, wp))
 }
 
@@ -451,7 +461,7 @@ fn accept_loop(l: TcpListener, to: u16, rewrite: Option<String>, layout: Layout,
 }
 
 /// Bytes both ways until either side closes; the server's side through the rewriter when there is one.
-fn relay_pair(client: TcpStream, server: TcpStream, mut rw: Option<AuthRewriter>, stop: Arc<AtomicBool>) {
+pub(crate) fn relay_pair(client: TcpStream, server: TcpStream, mut rw: Option<AuthRewriter>, stop: Arc<AtomicBool>) {
     let _ = client.set_nodelay(true);
     let _ = server.set_nodelay(true);
     let (Ok(mut c2), Ok(mut s2)) = (client.try_clone(), server.try_clone()) else { return };

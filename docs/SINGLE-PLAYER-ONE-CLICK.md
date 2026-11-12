@@ -127,8 +127,106 @@ the friend's launcher takes it exactly as a Den invite (`join_invite`: same netw
 for friends checklist (`host_ready` kind `single` / `vanilla`) checks the world's login, the tunnel, the relay and a
 test login through it. Stopping the world (or Stop sharing) closes the forwarder and the world's tunnel.
 
-Friends' logins don't expire (Den Lite's guests do after 24 hours): a link keeps working while its world shares.
-TODO: an expiry or a "remove friends' logins" button, once the owner says which.
+The link's `G` + 9 login is now a one-time **ticket**: a friend's launcher trades it for their lasting login
+(below). An older launcher on the friend's side still plays with the ticket itself, as before.
+
+## Playing with friends (12 Nov 2026)
+
+The owner: "allow the user to instantly invite a friend with a link or within the game through a social panel", and
+"some way for the person's friend to maintain a consistent character on their realm so that they do not lose
+progress", peer to peer, nothing in the cloud. Built for the Built-in engine's worlds (Single player, the original
+world) and Leyline Solo; Your Den (Den Lite) and the Docker host kit keep their own guest logins for now.
+
+### For the player
+
+* **Invite with a link:** the world's card, *Invite a friend* (as before). The friend opens the link in Leyline (or
+  pastes it): same network first, then the relay.
+* **Invite from inside the game:** the Friends window has a **Leyline** tab (also `/together`): this world's invite
+  link in a box, selected for Ctrl-C (the game can't write the clipboard), *Invite a friend* for a new link (the
+  launcher makes it within a few seconds while the world runs), and the friends who have a character here: their
+  characters, online or not, trusted or not. *Leyline friends* opens the Leyline Friends panel from the same tab.
+* **Friends keep their character:** a friend's login on your world is theirs for good, tied to their Leyline identity
+  (not to the link): every time they come back, the same characters are there. Their characters are saved with your
+  world (the world's back-ups dump `acore_auth` and `acore_characters` whole, so friends' logins and characters are in
+  every back-up) and listed under *Friends* on the Characters page (`local_characters` `friends`, `world_friends`).
+* **Coming back:** a friend opens the same link again, or presses *Join again* on your world in their launcher
+  (`friend_worlds`, `join_friend_again`: no new link needed). While you share the world and they are invited (since
+  you last stopped sharing) or **trusted**, they're straight in.
+* **Stop sharing:** friends' logins are disabled (a password nobody holds) until you invite them again; trusted friends
+  come back any time you share. **Remove a friend:** their login is disabled and forgotten, their characters kept (if
+  you invite them again they get them back), or **Remove and delete** to delete them with their characters.
+
+### The friend's identity (`host/worldfriends.rs`)
+
+* Each launcher has its own Ed25519 key pair: `<app data>/peer.key` (the 32-byte seed as hex, made once, never sent; a
+  stand-in for `identity.rs`, same file and shapes). Its **peer id** is base32(sha256(public key))[:16], lower case,
+  as the mesh's realm ids. A Hero Key isn't needed.
+* The friend's **lasting login** on a world: `G` + the first 15 of base32(sha256("leyline-world-friend-v1\n" + the
+  world's realm id + "\n" + peer id)). The same on every join from that identity, different on every world, and never
+  the shape of a one-time ticket (`G` + 9) or the host's own (`SOLO`, `ORIGINAL`, `HK…`). The world's SQL matches
+  friends as `^G[A-Z0-9]{9}$|^G[A-Z2-7]{15}$`.
+* The host never sees anything secret of the friend: only the public key, the signature and the friend's new one-time
+  password for this world.
+
+### The handshake (the claim), for both sides to meet
+
+The friend's launcher, after the relay's knock and before it starts the game, connects to the world's login address
+the way its game will (the same-network forwarder or the relay). The host's launcher answers in front of the login
+server (`front_start`: a small listener on 127.0.0.1 that the tunnel's `den-lite.remote` and the forwarder point at;
+a game's first byte is 0x00 or 0x02, a claim's is `L`, so the game's bytes pass through untouched). Lines end with `\n`:
+
+```
+friend -> host   LLC1 HELLO
+host -> friend   LLC1 CHAL <32 hex: 16 random bytes>
+friend -> host   LLC1 CLAIM <hex: 12-byte nonce || ChaCha20-Poly1305(claim JSON) with its tag; aad "LLC1">
+host -> friend   LLC1 OK <login>          or   LLC1 NO <why, plain words>
+```
+
+* **Key:** HMAC-SHA256(key = the invite secret (the link's `#<secret>`), "leyline-world-claim-v1\n" + realm id). Only
+  someone with the link can read or make a claim; the relay keeps only a hash of the secret.
+* **Claim JSON:** `{"v":1,"pk":"<hex Ed25519 public key>","sig":"<hex signature>","pass":"<new password>","ticket":
+  "<G+9 or empty>","tpass":"<its password or empty>","old":["<G+9 logins this PC used on this world before>"]}`.
+  Passwords: 8-16 capitals and digits.
+* **Signature** (Ed25519, checked with ring's `ED25519`) over: `leyline-world-claim-v1\n<realm id>\n<challenge>\n
+  <ticket>\n<sha256 hex of pass>`. A claim can't be replayed to another challenge or moved to another world.
+* **Let in** (`admit`): a known identity while invited or trusted (a fresh ticket invites it again); a new identity
+  with a fresh ticket (7 days, one identity; its password kept only as a hash). An identity whose `old` names an
+  earlier one-time login that has characters takes that login over (today's friends keep their characters: the friend's
+  launcher also reads the account name an older launcher wrote into the game folder's `WTF/Config.wtf`).
+* **Then:** the host makes the login if new (`account create`, `account set addon … 2` on the engine) and sets the
+  claim's password on it (`account set password`), and answers OK. The friend's game signs in with it (the hybrid
+  login, one start). Each join sets a fresh password. Limits: 30 claims a minute, lines up to 4 KB.
+* **The link** says the world answers claims: `~~lf1` after its other parts (`#<secret>~~<ticket>~~lan=…~~lf1`).
+  *Join again*'s link has no ticket: `#<secret>~~~~lan=…~~lf1`. A world that doesn't answer (an older Leyline): the
+  friend's launcher plays with the ticket as before.
+
+### Lifecycle
+
+| | |
+|---|---|
+| `<share>/friends.json` | the book: friends (login, peer id, public key, made, seen, trusted, enabled, legacy) and tickets (login, sha256 of its password, made, expires, used by) |
+| Invite | a ticket (`G` + 9 made over the console, as before) |
+| A claim | the lasting login made or given a fresh password; the identity invited (enabled) |
+| Stop sharing | lasting logins disabled (a random password nobody holds), not invited unless trusted; tickets with no characters deleted |
+| A ticket out of time | deleted, unless it has characters: then it is kept as an earlier friend's login (legacy), never deleted (Leyline Solo used to delete friends' logins with their characters after 7 days or on stop: no longer) |
+| Remove | disabled and forgotten, characters kept; Remove and delete: `account delete` (with its characters) |
+
+### Invite from inside the game (game -> launcher)
+
+The game can't reach the launcher, and the launcher already reads and writes the world's database, so they meet in
+three tables of the world's characters database (made by both sides when missing):
+
+| Table | Who writes | What |
+|---|---|---|
+| `ov_world_asks` | the realm script (the host's *Invite a friend*, one per 15 s) | the launcher (a thread while an engine world runs, every 4 s) runs it as the card's Invite and writes `ok:<text>` / `err:<text>` |
+| `ov_world_share` | the launcher | `sharing` 0/1, `link` (only ever sent to the host) |
+| `ov_world_friends` | the launcher, from the book | account, login, trusted, enabled: the script lists them with their characters and tells a friend from the host |
+
+The realm script `lua_scripts/ov_worldfriends.lua` runs only where the launcher sets `OV_WORLDFRIENDS=1` (its own
+worlds); the tab (`WrathUnleashedUI/WorldFriends.lua`) talks to it over OVMOD, mod `wufriends`: `info`, `invite`; it
+answers `info` (key=value lines), `ok`, `err`. The tab is made with the Friends window's own tab template and panel
+buttons (Forever UI's button skin when Forever UI is loaded) and replaces the older Leyline button on that window.
+Leyline Solo has no realm scripts: its friends keep their characters, invited from the launcher.
 
 ## Commands (app.rs)
 
@@ -142,6 +240,8 @@ TODO: an expiry or a "remove friends' logins" button, once the owner says which.
 | `world_find_folder`, `world_preflight`, `world_resume_pending`, `world_repair`, `set_world_stop_on_exit` | one click's holes (§contract) |
 | `local_characters`, `online_characters` | the Characters page |
 | `world_invite {kind}`, `world_share_stop {kind}` | Invite a friend from a world |
+| `world_friends {kind}` (`single`, `vanilla`, `solo`), `world_friend {kind, user, action}` | the friends with a lasting login and their characters; `trust`, `untrust`, `remove` (characters kept), `delete` |
+| `friend_worlds`, `join_friend_again {client, realmId}` | the friend's side: the worlds this PC joined, and joining one again with no new link |
 
 `engine_play` (Single player's Play) now goes through `world_play`: it signs in by itself too.
 
@@ -393,6 +493,11 @@ add-on checks before taking it); bots following the player out of an instance be
 * `cd launcher && node --test tests/vanilla.browser.test.cjs` (7): one click, Home, Quick start, another world running,
   not on Windows, Characters, Play with friends.
 * `python3 -I hosting/tests/test_solovanilla_profile.py` (6), `python3 stream/tests/test_docs.py stream/wrath_portal.py`.
+* Rust `host/worldfriends.rs` (9): the login's derivation and `peer.key`, the sealed and signed claim (another invite,
+  another world, a replay, tampering), who comes in and as whom, today's one-time logins with characters kept and
+  taken over, the console lines, the whole lifecycle over TCP against a stand-in console, the game's bytes through the
+  front, the friend's remembered worlds and *Join again*'s link, the in-game tables' SQL; engine.rs friends' characters.
+* `lua5.1 stream/tests/test_wuui_worldfriends.lua` (34): the tab and its realm script (fake mod-ale and database).
 
 ## The playtest on the owner's PC (Control: `sp-playtest`)
 
@@ -433,6 +538,9 @@ release"). Nobody clicks anything:
   them (security flags, the realm list's build field); tested against made-up streams, not a capture.
 * **The same-network forwarder** binding the PC's own address on ports the engine holds on 127.0.0.1 (allowed on
   Windows for distinct addresses; falls back to ports beside them), and the firewall prompt naming Leyline.
+* **Playing with friends** across two PCs: the claim through the real relay and the same-network forwarder, the
+  engine's and Solo's console answers to `account set password`, the friend's game signing in with the claimed login,
+  the Leyline tab inside the real Friends window (and with Forever UI loaded, which also restyles that window).
 * **Character select order:** `pick` selects by name, so the order doesn't matter; the Characters page lists them in
   the database's order (oldest first).
 

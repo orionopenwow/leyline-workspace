@@ -667,7 +667,7 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
         use crate::host::worldfriends as wf;
         let profile = core.client(&client)?;
         if profile.build != clients::Build::V335a {
-            return Err("Your friend's Den plays with a Wrath game folder: pick that one.".into());
+            return Err(if lasting { "Your friend's world plays with a Wrath game folder: pick that one." } else { "Your friend's Den plays with a Wrath game folder: pick that one." }.into());
         }
         let (lan, at) = crate::host::denways::ways_in(&link);
         let lan_kept = lan.clone().unwrap_or_default();

@@ -2254,13 +2254,28 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     let enter = pick.is_some() || make.is_some();
     let session = (!refused).then(|| crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: Some(realm.into()), enter, pick, make });
     let (message, hybrid) = point_and_play_with(core, client, eng::REALM, true, session, true).map_err(|e| tag("other", e))?;
-    let auto = hybrid.is_ok();
+    let mut auto = hybrid.is_ok();
+    let mut typed = false;
+    // A game without Leyline's login screen code (a stock game folder): the launcher types the login, Quick start's
+    // name on a first entry, and Enter World, as a player would (host/localclick.rs). Boss Rush has its own.
+    if !auto && k != eng::Kind::BossRush && crate::host::localclick::can_type() {
+        let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
+        if pid != 0 {
+            let (wp, wu, wpass, wname) = (p.clone(), user.clone(), pass.clone(), (!made.is_empty()).then(|| made.clone()));
+            std::thread::spawn(move || {
+                let _ = crate::host::localclick::drive(&wp, &wu, &wpass, wname.as_deref(), pid);
+            });
+            auto = true;
+            typed = true;
+        }
+    }
     if let Some(n) = &playing {
         eng::set_last_character(&p, n);
     }
     let plays = WORLD_PLAYS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     stop_world_when_closed(core.dir.clone(), k, LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed), plays);
-    Ok(WorldPlay { message, kind: k.word().into(), auto, account: user, password: if auto { String::new() } else { pass }, made, hero: is_hero })
+    // typed by the launcher: the login stays at hand in case the game window didn't take the keys
+    Ok(WorldPlay { message, kind: k.word().into(), auto, account: user, password: if auto && !typed { String::new() } else { pass }, made, hero: is_hero })
 }
 
 /// Quick start's pick for a first entry the page sent none for: a random race, one of its classes, a free name.

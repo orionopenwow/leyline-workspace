@@ -92,12 +92,13 @@ document.querySelectorAll("[data-link]").forEach((b) => b.addEventListener("clic
 $("tb-account").addEventListener("click", () => openLink("account"));
 
 // ------------------------------------------------------------------ navigation
-// The side menu matches the website's (stream/hub.py nav_items): Home (play), Realms, Mods & Addons (the website's Mods
-// and Addons), Host, Forum, News, then Settings and Help. Mods & Addons is one page with tabs, Installed and Discover,
+// The side menu matches the website's (stream/hub.py nav_items): Home (play), Realms, Mods (the page Mods & Addons, the
+// website's Mods and Addons), Host, Forum, News, Join the Discord; then the folds (below): Play (Single player, Modes) and
+// Launcher (Simple mode, Settings, Agents, Help; owner 12 Nov: "make them folds"). Mods & Addons is one page with tabs, Installed and Discover,
 // each split into Mods and Addons (shelf.js; Discover also has Themes). The page ids from before (mymods, discover, and community,
 // friends and hub, which became the Forum on 2026-10-30) still work everywhere: show() maps them to the page + tab, so a remembered page, a
-// data-page-go button or a leyline:// link lands where it used to; a page with tabs alone opens its last tab. Modes has its
-// menu item under Realms (4 Nov: the website's menu gets Single player, Modes and Guides; the launcher has pages for the first two).
+// data-page-go button or a leyline:// link lands where it used to; a page with tabs alone opens its last tab. Single player
+// and Modes have their items in the Play fold (4 Nov: the website's menu gets Single player, Modes and Guides).
 const TABS = { mods: ["discover", "installed", "gamemodes", "dens"] };   // Game modes (owner 3 Nov): gamemods.js showSection; Dens: denmarket.js
 // Mods & Addons opens on Discover every time it is clicked (owner 3 Nov: "make the discovery the main tab that opens when
 // its clicked"); a button or link that names a tab (Installed, Game modes) still lands there.
@@ -119,6 +120,62 @@ function resolvePage(page, tab) {
   if (!TABS[page].includes(tab)) tab = OPENS_ON[page] || (TABS[page].includes(lastTab[page]) ? lastTab[page] : TABS[page][0]);
   return [page, tab];
 }
+// The side menu's folds (index.html .nav-fold; style.css): a header button (aria-expanded, aria-controls) opens and closes
+// its items; what the player chose is remembered (leyline.navFolds), and a fold not yet chosen starts as its markup says
+// (Play open: Single player is the flagship; Launcher closed). show() opens the fold that holds the page it shows (a
+// menu click, a data-page-go button, a link, LeylineNav.show) without remembering that, and while a fold is closed its
+// header carries the page-is-here dot and the sum of the badges inside it (Agents' count, say).
+const FOLDS_KEY = "leyline.navFolds";
+const foldChoice = {};
+try { Object.assign(foldChoice, JSON.parse(localStorage.getItem(FOLDS_KEY) || "{}")); } catch (_) { /* storage may be off */ }
+const folds = [...document.querySelectorAll(".side .nav-fold[data-fold]")];
+function foldCount(f) {
+  const out = f.querySelector(".nf-count");
+  if (!out) return;
+  let n = 0;
+  f.querySelectorAll(".nav-fold-inner .badge").forEach((b) => { if (!b.hidden) n += parseInt(b.textContent, 10) || 0; });
+  const show = n > 0 && !f.classList.contains("open");
+  out.hidden = !show;
+  out.textContent = show ? String(n) : "";
+  const head = f.querySelector(".nav-fold-head");
+  const name = f.querySelector(".nf-name");
+  if (head && name) head.setAttribute("aria-label", name.textContent + (show ? ", " + n + " new inside" : ""));
+}
+function setFold(f, open, remember) {
+  if (typeof f === "string") f = folds.find((x) => x.dataset.fold === f);
+  if (!f) return;
+  f.classList.toggle("open", !!open);
+  const head = f.querySelector(".nav-fold-head");
+  if (head) head.setAttribute("aria-expanded", String(!!open));
+  if (remember) {
+    foldChoice[f.dataset.fold] = !!open;
+    try { localStorage.setItem(FOLDS_KEY, JSON.stringify(foldChoice)); } catch (_) { /* storage may be off */ }
+  }
+  foldCount(f);
+}
+for (const f of folds) {
+  const head = f.querySelector(".nav-fold-head");
+  const name = f.dataset.fold;
+  setFold(f, name in foldChoice ? foldChoice[name] : head && head.getAttribute("aria-expanded") === "true", false);
+  if (head) head.addEventListener("click", () => {
+    const open = !f.classList.contains("open");
+    setFold(f, open, true);
+    // opened at the foot of a short window: bring its items into view once it has slid open
+    if (open) setTimeout(() => { if (f.scrollIntoView) f.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, 240);
+  });
+  // a badge inside changing (agents.js, the mods count) updates the closed header's count
+  const inner = f.querySelector(".nav-fold-inner");
+  if (inner && window.MutationObserver) {
+    new MutationObserver(() => foldCount(f)).observe(inner, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
+  }
+}
+function revealFold(page) {
+  for (const f of folds) {
+    const has = !!f.querySelector(`.nav[data-page="${page}"]`);
+    f.classList.toggle("has-on", has);
+    if (has && !f.classList.contains("open")) setFold(f, true, false);
+  }
+}
 function show(want, noLoad, wantTab) {
   const [page, tab] = resolvePage(want, wantTab);
   // another page starts at its top (smoke O9: Your Den from Home's banner opened scrolled, its title cut off)
@@ -127,6 +184,7 @@ function show(want, noLoad, wantTab) {
   currentPage = page;
   currentTab = tab;
   document.querySelectorAll(".nav[data-page]").forEach((b) => b.classList.toggle("on", b.dataset.page === page));
+  revealFold(page);
   document.querySelectorAll(".page").forEach((p) => p.classList.toggle("on", p.id === "page-" + page));
   if (tab) {
     lastTab[page] = tab;
@@ -159,7 +217,9 @@ document.querySelectorAll(".page-tab[data-group]").forEach((b) => {
     if (next) next.focus();
   });
 });
-window.LeylineNav = { show, current: () => ({ page: currentPage, tab: currentTab }), TABS, ALIASES };
+window.LeylineNav = { show, current: () => ({ page: currentPage, tab: currentTab }), TABS, ALIASES,
+  // fold(name): is it open; fold(name, open): open or close it, remembered like a click on its header
+  fold: (name, open) => { if (open !== undefined) setFold(name, open, true); const f = folds.find((x) => x.dataset.fold === name); return !!(f && f.classList.contains("open")); } };
 
 // Settings › the parts of the page (review 4 Nov: one long page): a row of jumps built from the page's own headings when
 // it opens (themes.js and host.js add theirs after load), each to its heading. The page itself always opens at its top.

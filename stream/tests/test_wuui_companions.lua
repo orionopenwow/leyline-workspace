@@ -57,6 +57,7 @@ function Frame:GetPoint() if self.point then return unpack(self.point) end end
 function Frame:SetTexture(t) self.tex = t; return 1 end
 function Frame:GetTexture() return self.tex end
 function Frame:SetAlpha(a) self.alpha = a end
+function Frame:SetFrameStrata(s) self.strata = s end
 function Frame:SetBackdrop(t) self.backdrop = t end
 function Frame:SetBackdropBorderColor(r, g, b) self.edgeColour = { r, g, b } end
 function Frame:SetStatusBarTexture(t) self.barTex = t end
@@ -84,7 +85,7 @@ local unitCombat = {}
 function UnitAffectingCombat(u) return unitCombat[u] or false end
 local portraits = {}
 function SetPortraitTexture(tex, unit) portraits[#portraits + 1] = unit; tex.portraitOf = unit end
-function GetLFGDungeonInfo(id)
+function LFGGetDungeonInfoByID(id)   -- the 3.3.5 client's call (GetLFGDungeonInfo is a later client's)
     if id == 5 then return "Utgarde Keep", 1, 70, 72, 70, 69, 80, 2, 0, "UtgardeKeepClient" end
     return nil
 end
@@ -409,6 +410,8 @@ check("bot bar: one secure slot per bot, the client's own target on left-click",
 check("bot bar: portrait, name in its class colour, role icon", s1.portrait.portraitOf == "party1"
     and s1.name:GetText():find("^|cff%x%x%x%x%x%x" .. s1.botName) and s1.role.coords ~= nil)
 check("bot bar: says how many", bf.count:GetText() == "4 bots")
+check("bot bar and orders bar: the unit frames' layer (LOW), under the game's windows", bf.strata == "LOW"
+    and Bar.Orders() and Bar.Orders().strata == "LOW")
 Bar.Update(false)
 check("bot bar: health and mana bars", s1.hp.value ~= nil and s1.mp.value ~= nil)
 local function slotOf(bot) for _, s in ipairs(bf.slots) do if s.botName == bot.name then return s end end end

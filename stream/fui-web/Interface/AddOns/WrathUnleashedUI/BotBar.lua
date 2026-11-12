@@ -177,7 +177,9 @@ end
 local function buildBar()
     bar = CreateFrame("Frame", "WrathUnleashedBotBar", UIParent)
     bar:SetWidth(SLOT_W); bar:SetHeight(HEAD_H + SLOT_H)
-    bar:SetFrameStrata("MEDIUM")
+    -- the unit frames' layer (the game's and Forever UI's party frames are LOW): the game's windows (Character,
+    -- Friends, the map, the Bots and realm windows) open over the bar, never under it
+    bar:SetFrameStrata("LOW")
     bar.secure = true
     -- the header: a small tooltip box with the title in gold, the count in grey and the game's plus button
     local head = CreateFrame("Frame", "WrathUnleashedBotBarHeader", bar)
@@ -293,7 +295,7 @@ end
 local function buildOrders()
     orders = CreateFrame("Frame", "WrathUnleashedBotOrders", UIParent)
     orders:SetWidth(14 + #ORDERS * (ORDER_SIZE + ORDER_GAP)); orders:SetHeight(ORDER_SIZE + 10)
-    orders:SetFrameStrata("MEDIUM")
+    orders:SetFrameStrata("LOW")   -- with the action bars and unit frames, under every window
     G.Tooltip(orders, 0.85)
     local grip = CreateFrame("Frame", nil, orders)   -- the box's left edge: drag here
     grip:SetWidth(12); grip:SetPoint("TOPLEFT", 2, -2); grip:SetPoint("BOTTOMLEFT", 2, 2)

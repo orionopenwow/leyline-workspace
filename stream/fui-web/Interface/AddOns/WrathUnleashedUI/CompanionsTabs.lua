@@ -374,15 +374,18 @@ local DUNGEON_ROWS, DUNGEON_ROW_H = 6, 46
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_GroupNeedMore"
 local function norm(s) return (tostring(s or ""):lower():gsub("^the ", ""):gsub("[^%a]", "")) end
 
--- The game's own Dungeon Finder art for a dungeon: the client's own name for it when GetLFGDungeonInfo knows the
--- dungeon by name, else CompanionsData.lua's name. Paths only; the art is the client's.
+-- The game's own Dungeon Finder art for a dungeon: the client's own name for it when the client knows the dungeon by
+-- name, else CompanionsData.lua's name. Paths only; the art is the client's. The 3.3.5 client's call is
+-- LFGGetDungeonInfoByID (name, type, levels..., expansion, group, textureFilename tenth); GetLFGDungeonInfo only
+-- exists on later clients, with another order, so it is not used.
 local lfgNames
 function C.DungeonIcon(d)
     if not lfgNames then
         lfgNames = {}
-        if GetLFGDungeonInfo then
+        local info = rawget(_G, "LFGGetDungeonInfoByID")
+        if type(info) == "function" then
             for id = 1, 300 do
-                local ok, name, _, _, _, _, _, _, _, _, tex = pcall(GetLFGDungeonInfo, id)
+                local ok, name, _, _, _, _, _, _, _, _, tex = pcall(info, id)
                 if ok and type(name) == "string" and type(tex) == "string" and tex ~= "" then
                     lfgNames[norm(name)] = lfgNames[norm(name)] or tex
                 end

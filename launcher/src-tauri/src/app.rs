@@ -142,6 +142,11 @@ struct Added {
 fn add_client(core: State<Core>, path: String) -> Result<Added, String> {
     let path = PathBuf::from(path.trim());
     let detection = clients::detect(&path).map_err(|e| e.to_string())?;
+    add_profile(&core, path, detection)
+}
+
+/// A game folder added to the settings (by hand, or found by `world_find_folder`): the same profile either way.
+fn add_profile(core: &Core, path: PathBuf, detection: Detection) -> Result<Added, String> {
     core.update(|s| {
         if s.clients.iter().any(|c| c.path == path) {
             return Err("That folder is already in your clients.".into());
@@ -1879,7 +1884,9 @@ fn engine_play(core: State<Core>, client: String) -> Result<EnginePlay, String> 
         return Err("Single player plays with a different game folder: pick one of its version.".into());
     }
     let _ = profile;
-    let r = world_play_now(&core, &client, engine::Kind::Single, None, None)?;
+    // a sync command: the Hero Key's login from the id kept last time (no network here)
+    let hero = crate::host::oneclick::hero_identity_cached(&core.dir);
+    let r = world_play_now(&core, &client, engine::Kind::Single, None, None, false, hero)?;
     Ok(EnginePlay { message: r.message, account: r.account, password: r.password })
 }
 
@@ -1888,7 +1895,7 @@ fn engine_play(core: State<Core>, client: String) -> Result<EnginePlay, String> 
 // (single.js, characters.js) names a world by its word: "single", "vanilla", "bossrush".
 
 fn world_kind(kind: &str) -> Result<crate::host::engine::Kind, String> {
-    crate::host::engine::Kind::from_word(kind).ok_or_else(|| "That isn't one of this PC's worlds.".to_string())
+    crate::host::engine::Kind::from_word(kind).ok_or_else(|| "[other] That isn't one of this PC's worlds.".to_string())
 }
 
 fn world_paths(k: crate::host::engine::Kind) -> crate::host::engine::Paths {
@@ -1903,19 +1910,141 @@ async fn world_status(kind: String) -> Result<crate::host::engine::EngineStatus,
 
 /// Set a world up (whatever isn't done: the engine, the maps from this game folder, the database, the login) and
 /// start it; its progress is engine_progress (the line's `kind` says whose).
+/// Set a world up (see above). `client` "" : the game folder this world's setup was started with (a setup that goes
+/// on after a restart), else the one `world_find_folder` would pick. Refused with the disk check's `[disk]` message
+/// when the drive is short of space. Errors start with their code (docs/SINGLE-PLAYER-ONE-CLICK.md §contract).
 #[tauri::command]
-fn world_setup(core: State<Core>, client: String, kind: String) -> Result<String, String> {
+async fn world_setup(core: State<'_, Core>, client: String, kind: String) -> Result<String, String> {
+    use crate::host::{engine as eng, oneclick::tag};
     let k = world_kind(&kind)?;
-    let profile = core.client(&client)?;
-    if profile.build != clients::Build::V335a {
-        return Err(format!("{} plays with a different game folder: pick one of its version.", k.title()));
+    let profile = world_client(&core, k, &client)?;
+    let p = world_paths(k);
+    let set_up = eng::set_up(&eng::have(&p, &eng::load_state(&p), false));
+    if !set_up {
+        let pf = blocking(move || Ok(eng::preflight(&world_paths(k)))).await?;
+        if !pf.ok {
+            return Err(pf.message);
+        }
     }
-    crate::host::engine::begin_kind(&settings::app_dir(), k, Some(profile.path), false)
+    eng::begin_setup(&settings::app_dir(), k, Some(profile.path.clone()), false, Some(&profile.id)).map_err(|e| tag("other", e))
 }
 
 #[tauri::command]
 fn world_start(kind: String) -> Result<String, String> {
     crate::host::engine::begin_kind(&settings::app_dir(), world_kind(&kind)?, None, false)
+}
+
+/// The game folder a world plays with: `client` when given (it must be of the world's version), else the one its
+/// setup was started with, else the only fitting one. `[folder]` when there's none.
+fn world_client(core: &Core, k: crate::host::engine::Kind, client: &str) -> Result<ClientProfile, String> {
+    use crate::host::oneclick::tag;
+    let snap = core.snapshot();
+    let fits = |c: &&ClientProfile| c.build == world_build(k);
+    if !client.is_empty() {
+        let c = snap.client(client).ok_or_else(|| tag("folder", "Pick your game folder first."))?;
+        if !fits(&c) {
+            return Err(tag("folder", format!("{} plays with a different game folder: pick one of its version.", k.title())));
+        }
+        return Ok(c.clone());
+    }
+    let saved = crate::host::engine::load_state(&world_paths(k)).setup_client;
+    if let Some(c) = snap.client(&saved).filter(fits) {
+        return Ok(c.clone());
+    }
+    let all: Vec<&ClientProfile> = snap.clients.iter().filter(fits).collect();
+    match all.as_slice() {
+        [one] => Ok((*one).clone()),
+        [] => Err(tag("folder", format!("Add your game folder first: {} reads its maps from it once.", k.title()))),
+        _ => Err(tag("folder", "Pick which game folder to play with.")),
+    }
+}
+
+/// The game folder's version every local world plays with (the Wrath client; docs/SINGLE-PLAYER-ONE-CLICK.md).
+fn world_build(_k: crate::host::engine::Kind) -> clients::Build {
+    clients::Build::V335a
+}
+
+#[derive(Serialize)]
+struct FoundFolder {
+    id: String,
+    name: String,
+    path: String,
+    build: clients::Build,
+    /// Added to the game folders just now (found on this PC).
+    added: bool,
+}
+
+#[derive(Serialize)]
+struct FolderFind {
+    /// The game folder to use: exactly one fits.
+    picked: Option<String>,
+    found: Vec<FoundFolder>,
+}
+
+/// Find the game folder by itself: the game folders already added that fit the world; none: the PC's usual places
+/// are looked through (oneclick::scan_games) and each fitting, complete folder found is added as a game folder (the
+/// same as adding it by hand). Exactly one fitting: `picked`.
+#[tauri::command]
+async fn world_find_folder(core: State<'_, Core>, kind: String) -> Result<FolderFind, String> {
+    use crate::host::oneclick as oc;
+    let k = world_kind(&kind)?;
+    let want = world_build(k);
+    let snap = core.snapshot();
+    let row = |c: &ClientProfile, added: bool| FoundFolder { id: c.id.clone(), name: c.name.clone(), path: c.path.display().to_string(), build: c.build, added };
+    let mut found: Vec<FoundFolder> = snap.clients.iter().filter(|c| c.build == want && c.path.is_dir()).map(|c| row(c, false)).collect();
+    if found.is_empty() {
+        let known: Vec<PathBuf> = snap.clients.iter().map(|c| c.path.clone()).collect();
+        let hits = blocking(move || {
+            Ok(oc::scan_games(&oc::usual_roots(), 3, 20_000)
+                .into_iter()
+                .filter(|p| !known.contains(p))
+                .filter_map(|p| clients::detect(&p).ok().filter(|d| d.build == want && d.complete).map(|d| (p, d)))
+                .collect::<Vec<_>>())
+        })
+        .await?;
+        for (path, det) in hits {
+            if let Ok(a) = add_profile(&core, path, det) {
+                found.push(row(&a.profile, true));
+            }
+        }
+    }
+    let picked = (found.len() == 1).then(|| found[0].id.clone());
+    Ok(FolderFind { picked, found })
+}
+
+/// The disk check before setup: `{ok, free_gb, need_gb, message}` (message: the `[disk]` error, empty when it fits).
+#[tauri::command]
+async fn world_preflight(core: State<'_, Core>, kind: String, client: String) -> Result<crate::host::oneclick::Preflight, String> {
+    let k = world_kind(&kind)?;
+    world_client(&core, k, &client)?;
+    blocking(move || Ok(crate::host::engine::preflight(&world_paths(k)))).await
+}
+
+/// A world whose setup stopped midway (the launcher closed): its word, for the page to offer or go on
+/// (`world_setup` with client "" goes on with the same game folder).
+#[tauri::command]
+fn world_resume_pending() -> Option<String> {
+    crate::host::oneclick::resume_pending(&settings::app_dir()).map(|k| k.word().to_string())
+}
+
+/// Repair a world (a background job on engine_progress, as setup): every engine file checked and only the broken
+/// ones fetched again, the maps read again only if they're gone, the login set up again, the ports checked; the
+/// sign-in in this game folder gets another chance. The saves are never touched.
+#[tauri::command]
+fn world_repair(core: State<Core>, kind: String, client: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    let profile = world_client(&core, k, &client)?;
+    crate::hybrid::clear_refused(&profile.path);
+    crate::host::engine::begin_repair(&settings::app_dir(), k, Some(profile.path))
+}
+
+/// Settings › Stop my world when the game closes.
+#[tauri::command]
+fn set_world_stop_on_exit(core: State<Core>, on: bool) -> Result<(), String> {
+    core.update(|s| {
+        s.world_stop_on_exit = on;
+        Ok(())
+    })
 }
 
 /// Everyone saved, everything stopped; sharing it with friends ends with it.
@@ -1982,74 +2111,167 @@ struct WorldPlay {
     password: String,
     /// Quick start's character's name.
     made: String,
+    /// Played on the Hero Key's own login in this world (signed in); false: the world's own login.
+    hero: bool,
 }
 
 /// Play a world that is running: the game signed in by itself (the hybrid login, as Your Den and Boss Rush do: the
 /// world's own login, made by the launcher with a generated password, never one the player typed), the world's
 /// realm picked; `pick` enters that character, `quick` makes a new one first and enters it; neither: character select.
+/// `first`: the first entry from one click: no characters on this login yet, Quick start with `quick` (or a random
+/// pick when none is given) and straight into the world; with characters, the last one played. With neither `pick`,
+/// `quick` nor `first`: the last character played when it's known, else character select.
 #[tauri::command]
-async fn world_play(core: State<'_, Core>, client: String, kind: String, pick: Option<String>, quick: Option<QuickPick>) -> Result<WorldPlay, String> {
+async fn world_play(core: State<'_, Core>, client: String, kind: String, pick: Option<String>, quick: Option<QuickPick>, first: Option<bool>) -> Result<WorldPlay, String> {
     let k = world_kind(&kind)?;
-    world_play_now(&core, &client, k, pick, quick)
+    // signed in: the Hero Key's own login in this world (asks the website who; the id kept last time when offline)
+    let hero = if k == crate::host::engine::Kind::BossRush {
+        None
+    } else {
+        let dir = core.dir.clone();
+        blocking(move || Ok(crate::host::oneclick::hero_identity(&dir))).await?
+    };
+    world_play_now(&core, &client, k, pick, quick, first.unwrap_or(false), hero)
 }
 
-fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick: Option<String>, quick: Option<QuickPick>) -> Result<WorldPlay, String> {
-    use crate::host::{bossrush as br, engine as eng, localworld as lw};
-    let profile = core.client(client)?;
-    if profile.build != clients::Build::V335a {
-        return Err(format!("{} plays with a different game folder: pick one of its version.", k.title()));
-    }
+/// Each Play of a world counts one up: a game closing stops its world only when no Play came after it.
+static WORLD_PLAYS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[allow(clippy::too_many_arguments)]
+fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick: Option<String>, quick: Option<QuickPick>, first: bool, hero: Option<String>) -> Result<WorldPlay, String> {
+    use crate::host::{bossrush as br, engine as eng, localworld as lw, oneclick::tag};
+    let profile = world_client(core, k, client)?;
+    let client = profile.id.as_str();
     let p = world_paths(k);
     let st = eng::status(&p);
     if !st.set_up {
-        return Err(format!("Set {} up first: press Start on its card.", k.title()));
+        return Err(tag("other", format!("Set {} up first: press Play on its card.", k.title())));
     }
     if !st.running {
-        return Err(format!("{} isn't running: press Start first.", k.title()));
+        return Err(tag("other", format!("{} isn't running: press Play on its card.", k.title())));
     }
+    let (mut pick, mut quick) = (pick, quick);
     if let Some(n) = &pick {
         if !crate::hybrid::char_name_ok(n) {
-            return Err("That character's name doesn't look right.".into());
+            return Err(tag("other", "That character's name doesn't look right."));
         }
     }
     let s = eng::load_state(&p);
+    let mut is_hero = false;
     let (user, pass) = if k == eng::Kind::BossRush {
         // the heroes' account (bossrush_play makes it with the first fight); its password set again, as there
         if s.hero_password.len() < 8 {
-            return Err("Pick a fight on the Boss Rush page first: it makes your hero.".into());
+            return Err(tag("other", "Pick a fight on the Boss Rush page first: it makes your hero."));
         }
         let hero = br::hero_account(&s.account);
-        let [create, set] = br::account_lines(&hero, &s.hero_password)?;
+        let [create, set] = br::account_lines(&hero, &s.hero_password).map_err(|e| tag("login", e))?;
         let _ = eng::console(&p, &create);
-        eng::console(&p, &set).map_err(|e| format!("Boss Rush's realm didn't take the hero's login ({e}). Try again in a minute."))?;
+        eng::console(&p, &set).map_err(|e| tag("login", format!("Boss Rush's realm didn't take the hero's login ({e}), so try again in a minute.")))?;
         (hero, s.hero_password.clone())
     } else {
         // the login healed first: whatever happened to the world's database, the stored login works again
-        eng::resync_login(&p).map_err(|e| format!("{}'s login couldn't be set up again ({e}). Press Repair on its card, then Play.", k.title()))?;
-        (s.account.clone(), s.password.clone())
+        eng::resync_login(&p).map_err(|e| tag("login", format!("{}'s login couldn't be set up again ({e}), so press Repair on its card, then Play.", k.title())))?;
+        match &hero {
+            // the Hero Key's own login, with a password for this Play only (its characters moved to it the first time)
+            Some(h) => {
+                let pass = eng::hero_login(&p, h)?;
+                is_hero = true;
+                (h.clone(), pass)
+            }
+            None => (s.account.clone(), s.password.clone()),
+        }
     };
+    if k != eng::Kind::BossRush {
+        let mine = || eng::chars_of(&p, &user);
+        if first && pick.is_none() {
+            match mine() {
+                Ok(c) if c.is_empty() => {
+                    if quick.is_none() {
+                        quick = Some(random_pick(k == eng::Kind::Vanilla)?);
+                    }
+                }
+                // characters here already: the last one played, not a new one
+                Ok(_) => quick = None,
+                Err(e) => return Err(tag("db", e)),
+            }
+        }
+        if pick.is_none() && quick.is_none() {
+            let last = eng::load_state(&p).last_character;
+            if !last.is_empty() && mine().map(|c| c.iter().any(|x| x.name.eq_ignore_ascii_case(&last))).unwrap_or(false) {
+                pick = Some(last);
+            }
+        }
+    }
     let make = match &quick {
         Some(q) if k != eng::Kind::BossRush => {
-            let (race, class) = lw::quick_ok(q.race, q.class, k == eng::Kind::Vanilla)?;
+            let (race, class) = lw::quick_ok(q.race, q.class, k == eng::Kind::Vanilla).map_err(|e| tag("other", e))?;
             let taken: Vec<String> = eng::refresh_chars(&p).unwrap_or_else(|_| lw::read_kept(&eng::chars_file(&p)).chars).into_iter().map(|c| c.name).collect();
-            let name = lw::name_for(q.name.as_deref().unwrap_or(""), &taken)?;
+            let name = lw::name_for(q.name.as_deref().unwrap_or(""), &taken).map_err(|e| tag("other", e))?;
             if taken.iter().any(|t| t.eq_ignore_ascii_case(&name)) {
-                return Err(format!("You already have a character named {name} here: pick another name."));
+                return Err(tag("other", format!("You already have a character named {name} here, so pick another name.")));
             }
             Some(crate::hybrid::NewChar { name, race: race.into(), class: class.into(), female: q.female.unwrap_or(false) })
         }
-        Some(_) => return Err("Boss Rush's heroes are made on its own page.".into()),
+        Some(_) => return Err(tag("other", "Boss Rush's heroes are made on its own page.")),
         None => None,
     };
     let made = make.as_ref().map(|m| m.name.clone()).unwrap_or_default();
+    let playing = make.as_ref().map(|m| m.name.clone()).or_else(|| pick.clone());
     let realm = k.realm_name();
     let _ = crate::herokey::set_login(&profile.path, &user, Some(realm));
     let refused = crate::hybrid::refused(&profile.path);
     let enter = pick.is_some() || make.is_some();
     let session = (!refused).then(|| crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: Some(realm.into()), enter, pick, make });
-    let (message, hybrid) = point_and_play_with(core, client, eng::REALM, true, session, true)?;
+    let (message, hybrid) = point_and_play_with(core, client, eng::REALM, true, session, true).map_err(|e| tag("other", e))?;
     let auto = hybrid.is_ok();
-    Ok(WorldPlay { message, kind: k.word().into(), auto, account: user, password: if auto { String::new() } else { pass }, made })
+    if let Some(n) = &playing {
+        eng::set_last_character(&p, n);
+    }
+    let plays = WORLD_PLAYS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    stop_world_when_closed(core.dir.clone(), k, LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed), plays);
+    Ok(WorldPlay { message, kind: k.word().into(), auto, account: user, password: if auto { String::new() } else { pass }, made, hero: is_hero })
+}
+
+/// Quick start's pick for a first entry the page sent none for: a random race, one of its classes, a free name.
+fn random_pick(first_era: bool) -> Result<QuickPick, String> {
+    use crate::host::localworld as lw;
+    let roll = |n: usize| -> usize {
+        use ring::rand::SecureRandom;
+        let mut b = [0u8; 4];
+        let _ = ring::rand::SystemRandom::new().fill(&mut b);
+        (u32::from_le_bytes(b) as usize) % n.max(1)
+    };
+    let races = lw::choices(first_era);
+    let r = races.get(roll(races.len())).ok_or_else(|| crate::host::oneclick::tag("other", "No race to pick from."))?;
+    let (class, _) = *r.classes.get(roll(r.classes.len())).ok_or_else(|| crate::host::oneclick::tag("other", "No class to pick from."))?;
+    Ok(QuickPick { name: None, race: r.id, class, female: Some(roll(2) == 1) })
+}
+
+/// Stop a world a minute after the game the launcher started for it closes (Settings › world_stop_on_exit), unless
+/// friends are in it, a Play came since, or another game of ours is running (oneclick::stop_after_exit).
+fn stop_world_when_closed(dir: PathBuf, k: crate::host::engine::Kind, pid: u32, plays: u64) {
+    use crate::denclick::{Game, Process};
+    use crate::host::{engine as eng, oneclick as oc};
+    if pid == 0 {
+        return;
+    }
+    std::thread::spawn(move || {
+        while Process(pid).alive() {
+            std::thread::sleep(Duration::from_secs(2));
+        }
+        std::thread::sleep(Duration::from_secs(oc::STOP_AFTER_SECS));
+        let setting = settings::load(&dir).world_stop_on_exit;
+        let last = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
+        let other = last != 0 && last != pid && Process(last).alive();
+        let p = world_paths(k);
+        let up = eng::status(&p).running && !eng::progress().running;
+        let friends = if up { eng::friends_online(&p).ok() } else { None };
+        if oc::stop_after_exit(setting, plays, WORLD_PLAYS.load(std::sync::atomic::Ordering::SeqCst), other, up, friends) {
+            eng::setup_log(&p, "the game closed a minute ago: saving and stopping the world");
+            world_share_off(k);
+            let _ = eng::stop(&p);
+        }
+    });
 }
 
 #[derive(Serialize)]
@@ -3715,6 +3937,11 @@ pub fn run() {
             world_backup,
             world_choices,
             world_play,
+            world_find_folder, // one click (docs/SINGLE-PLAYER-ONE-CLICK.md §contract): the folder, the disk, resume, Repair
+            world_preflight,
+            world_resume_pending,
+            world_repair,
+            set_world_stop_on_exit,
             local_characters,
             online_characters,
             world_invite,

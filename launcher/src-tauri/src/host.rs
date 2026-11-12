@@ -42,6 +42,7 @@ pub mod network;
 pub mod pack;
 pub mod profiles;
 pub mod scan;
+pub mod oneclick; // Single player in one click: error codes, finding the game folder, the disk check, the Hero Key's login, Repair's files (host/oneclick.rs)
 
 use crate::realms;
 use serde::{Deserialize, Serialize};

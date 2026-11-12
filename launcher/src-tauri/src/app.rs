@@ -659,23 +659,62 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
     // a Den code (DEN-...: host/denhost.rs) is the same as its link, the relay way
     let link = crate::host::denhost::link_from_code(&link, realms::RELAY).unwrap_or(link);
     let (relay, rid, secret) = realms::parse_invite(&link).ok_or("That is not an invite link (https://<relay>/join/<realm>#<code>) or a Den code (DEN-...).")?;
-    // a friend's Den (Den Lite): the same network first, then the friend's own address, then the relay (denways.rs)
-    if let Some((user, pass)) = crate::host::litenet::guest_in(&link) {
+    // a friend's Den (Den Lite) or single player world: the same network first, then the friend's own address, then
+    // the relay (denways.rs)
+    let guest = crate::host::litenet::guest_in(&link);
+    let lasting = crate::host::worldfriends::marked(&link);
+    if guest.is_some() || lasting {
+        use crate::host::worldfriends as wf;
         let profile = core.client(&client)?;
         if profile.build != clients::Build::V335a {
             return Err("Your friend's Den plays with a Wrath game folder: pick that one.".into());
         }
         let (lan, at) = crate::host::denways::ways_in(&link);
+        let lan_kept = lan.clone().unwrap_or_default();
         let (way, list, tried) = blocking(move || Ok(crate::host::denways::pick(lan.as_deref(), at.as_deref(), crate::host::denways::connects))).await?;
+        let (relay2, rid2, secret2) = (relay.clone(), rid.clone(), secret.clone());
         let (address, name) = if way == "relay" {
             let tried_now = tried.clone();
-            blocking(move || realms::knock(&format!("https://{relay}"), &rid, &secret)).await.map_err(|e| {
+            blocking(move || realms::knock(&format!("https://{relay2}"), &rid2, &secret2)).await.map_err(|e| {
                 let before = if tried_now.is_empty() { String::new() } else { format!("{} ", tried_now.join(" ")) };
                 format!("{before}The Leyline relay: {e}")
             })?
         } else {
-            (list, "Your friend's Den".to_string())
+            (list, if lasting { "Your friend's world".to_string() } else { "Your friend's Den".to_string() })
         };
+        // a single player world (host/worldfriends.rs): this launcher's identity claims its lasting login there before
+        // the game logs in, so the same characters are there every time; a world that doesn't answer claims (an older
+        // Leyline) takes the invite's one-time login as before
+        let (user, pass) = if lasting {
+            let app = settings::app_dir();
+            let (addr, rid3, secret3, game, ticket) = (address.clone(), rid.clone(), secret.clone(), profile.path.clone(), guest.clone());
+            let claimed = blocking(move || {
+                let peer = wf::peer_identity(&app)?;
+                let mut old: Vec<String> = Vec::new();
+                if let Some(j) = wf::worlds(&app).get(&rid3) {
+                    old.extend(j.old.iter().cloned());
+                    old.push(j.user.clone());
+                }
+                if let Some(t) = wf::config_ticket(&game) {
+                    old.push(t);
+                }
+                old.retain(|u| wf::ticket_ok(u));
+                old.dedup();
+                wf::claim_at(&addr, &peer, &rid3, &secret3, ticket.as_ref().map(|(u, p)| (u.as_str(), p.as_str())), &old)
+            })
+            .await;
+            match (claimed, guest) {
+                (Ok(up), _) => up,
+                (Err(_), Some(g)) => g,
+                (Err(e), None) => return Err(format!("Your friend's world: {e}")),
+            }
+        } else {
+            guest.ok_or("That invite has no login in it.")?
+        };
+        if lasting {
+            let j = wf::Joined { relay: relay.clone(), secret: secret.clone(), lan: lan_kept, user: user.clone(), old: Vec::new(), name: name.clone(), at: now_secs() };
+            let _ = wf::remember(&settings::app_dir(), &rid, j);
+        }
         let _ = crate::herokey::set_login(&profile.path, &user, None);
         let s = crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: None, enter: false, pick: None, make: None };
         let (message, hybrid) = point_and_play_with(&core, &client, &address, true, Some(s), true)?;
@@ -1905,7 +1944,14 @@ fn world_paths(k: crate::host::engine::Kind) -> crate::host::engine::Paths {
 #[tauri::command]
 async fn world_status(kind: String) -> Result<crate::host::engine::EngineStatus, String> {
     let k = world_kind(&kind)?;
-    blocking(move || Ok(crate::host::engine::status(&world_paths(k)))).await
+    blocking(move || {
+        let st = crate::host::engine::status(&world_paths(k));
+        if st.running {
+            ingame_sync_start();
+        }
+        Ok(st)
+    })
+    .await
 }
 
 /// Set a world up (whatever isn't done: the engine, the maps from this game folder, the database, the login) and
@@ -1987,7 +2033,9 @@ fn tag_other(e: impl Into<String>) -> String {
 
 #[tauri::command]
 fn world_start(kind: String) -> Result<String, String> {
-    crate::host::engine::begin_kind(&settings::app_dir(), world_kind(&kind)?, None, false)
+    let r = crate::host::engine::begin_kind(&settings::app_dir(), world_kind(&kind)?, None, false);
+    ingame_sync_start();
+    r
 }
 
 /// The game folder a world plays with: `client` when given (it must be of the world's version), else the one its
@@ -2393,6 +2441,8 @@ struct WorldChars {
     live: bool,
     at: u64,
     chars: Vec<crate::host::localworld::LocalChar>,
+    /// Friends' characters on this world ("Friends": their lasting logins, host/worldfriends.rs), while it runs.
+    friends: Vec<crate::host::engine::FriendChar>,
 }
 
 /// The Characters page's "On this PC": each local world and its characters (read now from the one running, the
@@ -2408,6 +2458,7 @@ async fn local_characters() -> Result<Vec<WorldChars>, String> {
                 let st = eng::status(&p);
                 let fresh = if st.running { eng::refresh_chars(&p).ok() } else { None };
                 let live = fresh.is_some();
+                let friends = if st.running { eng::friend_chars(&p).unwrap_or_default() } else { Vec::new() };
                 let kept = lw::read_kept(&eng::chars_file(&p));
                 WorldChars {
                     kind: k.word(),
@@ -2420,6 +2471,7 @@ async fn local_characters() -> Result<Vec<WorldChars>, String> {
                     live,
                     at: kept.at,
                     chars: fresh.unwrap_or(kept.chars),
+                    friends,
                 }
             })
             .collect())
@@ -2459,7 +2511,7 @@ async fn world_invite(kind: String) -> Result<DenInvite, String> {
 }
 
 fn world_invite_now(k: crate::host::engine::Kind) -> Result<DenInvite, String> {
-    use crate::host::{denhost, denways, engine as eng, litenet, worldshare as ws};
+    use crate::host::{denhost, denways, engine as eng, litenet, worldfriends as wf, worldshare as ws};
     if k == eng::Kind::BossRush {
         return Err("Boss Rush is for one hero for now: invite a friend from Single player or the original world.".into());
     }
@@ -2469,10 +2521,16 @@ fn world_invite_now(k: crate::host::engine::Kind) -> Result<DenInvite, String> {
     }
     let share = ws::dir(&p.root);
     std::fs::create_dir_all(&share).map_err(|e| e.to_string())?;
-    std::fs::write(share.join("den-lite.remote"), ws::remote_text()).map_err(|e| e.to_string())?;
     let seed = litenet::load_or_create_key(&litenet::key_path(&share))?;
     let secret = ws::invite_secret(&share)?;
     let mine = litenet::realm_id(&litenet::public_key(&seed)?);
+    // friends' launchers claim their lasting login in front of the login server (host/worldfriends.rs): the tunnel
+    // and the same-network way go through it; the game's own bytes pass through untouched
+    let fw = world_friends_of(k, &mine, &secret);
+    let _ = wf::sweep(&fw);
+    let front = wf::front_start(eng::LOGIN_PORT, fw)?;
+    std::fs::write(share.join("den-lite.remote"), format!("{front} {}\n", eng::WORLD_PORT)).map_err(|e| e.to_string())?;
+    ingame_sync_start();
     // one tunnel on this PC: another world's (or Your Den's, which can't run beside a world: the same login port)
     // gives way
     let now = litenet::state();
@@ -2501,10 +2559,12 @@ fn world_invite_now(k: crate::host::engine::Kind) -> Result<DenInvite, String> {
     let [create, addon] = ws::guest_lines(&user, &pass)?;
     ws::created(&eng::console(&p, &create)?).map_err(|e| format!("The world didn't make your friend's login: {e}"))?;
     eng::console(&p, &addon)?;
+    // the link's one-time login is the ticket a new friend claims their lasting login with
+    wf::add_ticket(&share, &user, &pass, now_secs())?;
     // the same network
     let (lan, lan_way) = match denways::lan_address() {
         None => (None, InviteWay { id: "lan", ok: false, line: "Same network: this PC isn't on a home or office network.".into() }),
-        Some(ip) => match ws::lan_start(ip, eng::LOGIN_PORT, eng::WORLD_PORT) {
+        Some(ip) => match ws::lan_start_via(ip, eng::LOGIN_PORT, front, eng::WORLD_PORT, ws::Layout::Wrath) {
             Ok((ip, lp, _)) => (Some(format!("{ip}:{lp}")), InviteWay { id: "lan", ok: true, line: format!("Same network: on, at {ip} (friends at your home or on your network come in here first).") }),
             Err(e) => (None, InviteWay { id: "lan", ok: false, line: format!("Same network: off ({e}). Allow Leyline on private networks in your firewall, then Invite again.") }),
         },
@@ -2515,21 +2575,205 @@ fn world_invite_now(k: crate::host::engine::Kind) -> Result<DenInvite, String> {
         InviteWay { id: "relay", ok: false, line: format!("Leyline relay: {}", tunnel.last_error) }
     };
     let own_way = InviteWay { id: "own", ok: false, line: "Your own address: not used for a single player world.".into() };
-    let link = litenet::invite_link(realms::RELAY, &tunnel.realm_id, &secret, Some((&user, &pass)));
+    let link = litenet::invite_link(realms::RELAY, &mine, &secret, Some((&user, &pass)));
     let code = denhost::code_from_link(&link).unwrap_or_default();
-    let link = denways::with_ways(&link, lan.as_deref(), None);
-    Ok(DenInvite { link, code, name: "your friend".into(), expires: 0, tunnel, ways: vec![lan_way, own_way, relay_way] })
+    let link = wf::with_mark(&denways::with_ways(&link, lan.as_deref(), None));
+    // the game's Leyline tab shows it to the host (ov_world_share)
+    let _ = eng::sql(&p, "acore_characters", &format!("{} {}", wf::INGAME_TABLES, wf::share_sql(true, &link, now_secs())));
+    Ok(DenInvite { link, code, name: "your friend".into(), expires: now_secs() + wf::TICKET_DAYS * 86_400, tunnel, ways: vec![lan_way, own_way, relay_way] })
 }
 
-/// Sharing a world ends: the same-network way, and its tunnel when the tunnel is this world's.
+/// Sharing a world ends: the same-network way, and its tunnel when the tunnel is this world's; friends' lasting
+/// logins disabled until they are invited again (or trusted), one-time logins with no characters removed
+/// (host/worldfriends.rs).
 fn world_share_off(k: crate::host::engine::Kind) {
-    use crate::host::{litenet, worldshare as ws};
+    use crate::host::{engine as eng, litenet, worldfriends as wf, worldshare as ws};
     let share = ws::dir(&world_paths(k).root);
     let mine = litenet::load_or_create_key(&litenet::key_path(&share)).and_then(|s| litenet::public_key(&s)).map(|p| litenet::realm_id(&p)).ok();
-    if mine.is_some_and(|m| litenet::state().realm_id == m) {
+    if mine.as_ref().is_some_and(|m| &litenet::state().realm_id == m) {
         litenet::stop();
     }
     ws::lan_stop();
+    wf::front_stop();
+    if let Some(w) = world_friends_here(k) {
+        wf::share_stopped(&w);
+    }
+    let _ = eng::sql(&world_paths(k), "acore_characters", &format!("{} {}", wf::INGAME_TABLES, wf::share_sql(false, "", now_secs())));
+}
+
+/// A Built-in engine world as its friends' claims need it (host/worldfriends.rs).
+fn world_friends_of(k: crate::host::engine::Kind, realm_id: &str, secret: &str) -> crate::host::worldfriends::World {
+    use crate::host::{engine as eng, worldfriends as wf, worldshare as ws};
+    wf::World {
+        realm_id: realm_id.into(),
+        secret: secret.into(),
+        share: ws::dir(&world_paths(k).root),
+        era: wf::Era::Wrath,
+        console: Arc::new(move |l: &str| eng::console(&world_paths(k), l)),
+        with_chars: Arc::new(move || eng::friend_chars(&world_paths(k)).map(|v| v.into_iter().map(|c| c.user).collect()).unwrap_or_default()),
+    }
+}
+
+/// [`world_friends_of`] for a world that has been shared before (its key and invite secret are there; never made here).
+fn world_friends_here(k: crate::host::engine::Kind) -> Option<crate::host::worldfriends::World> {
+    use crate::host::{litenet, worldshare as ws};
+    let share = ws::dir(&world_paths(k).root);
+    if !litenet::key_path(&share).is_file() || !share.join("invite.secret").is_file() {
+        return None;
+    }
+    let rid = litenet::realm_id(&litenet::public_key(&litenet::load_or_create_key(&litenet::key_path(&share)).ok()?).ok()?);
+    let secret = ws::invite_secret(&share).ok()?;
+    Some(world_friends_of(k, &rid, &secret))
+}
+
+/// Leyline Solo as its friends' claims need it.
+fn classic_friends_of(realm_id: &str, secret: &str) -> crate::host::worldfriends::World {
+    use crate::host::{classic, worldfriends as wf};
+    let p = classic_paths();
+    wf::World {
+        realm_id: realm_id.into(),
+        secret: secret.into(),
+        share: p.share.clone(),
+        era: wf::Era::Classic,
+        console: Arc::new(|l: &str| classic::soap(&classic::load_state(&classic_paths()), l)),
+        with_chars: Arc::new(|| classic::friend_logins_with_chars(&classic_paths())),
+    }
+}
+
+fn classic_friends_here() -> Option<crate::host::worldfriends::World> {
+    use crate::host::{litenet, worldshare as ws};
+    let share = classic_paths().share;
+    if !litenet::key_path(&share).is_file() || !share.join("invite.secret").is_file() {
+        return None;
+    }
+    let rid = litenet::realm_id(&litenet::public_key(&litenet::load_or_create_key(&litenet::key_path(&share)).ok()?).ok()?);
+    let secret = ws::invite_secret(&share).ok()?;
+    Some(classic_friends_of(&rid, &secret))
+}
+
+/// The game's Leyline tab (WrathUnleashedUI/WorldFriends.lua <-> lua_scripts/ov_worldfriends.lua): while a Built-in
+/// engine world runs, the launcher answers its asks (the host's "Invite a friend") and keeps its friends table and
+/// sharing state current, through the world's own database (host/worldfriends.rs, INGAME_TABLES). One thread; it
+/// ends a minute after no world runs, and the next world status or start begins it again.
+fn ingame_sync_start() {
+    use crate::host::{engine as eng, worldfriends as wf, worldshare as ws};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static ON: AtomicBool = AtomicBool::new(false);
+    if ON.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    std::thread::spawn(|| {
+        let (mut idle, mut made, mut last) = (0u32, None::<eng::Kind>, String::new());
+        loop {
+            std::thread::sleep(Duration::from_secs(4));
+            let k = eng::active().filter(|k| *k != eng::Kind::BossRush);
+            let Some(k) = k.filter(|k| eng::status(&world_paths(*k)).running) else {
+                idle += 1;
+                made = None;
+                if idle > 15 {
+                    break;
+                }
+                continue;
+            };
+            idle = 0;
+            let p = world_paths(k);
+            if made != Some(k) {
+                if eng::sql(&p, "acore_characters", wf::INGAME_TABLES).is_err() {
+                    continue;
+                }
+                made = Some(k);
+                last.clear();
+            }
+            if let Ok(rows) = eng::query(&p, "acore_characters", wf::ASKS_SQL) {
+                for (id, kind) in wf::parse_asks(&rows) {
+                    let (ok, text) = match kind.as_str() {
+                        "invite" => match world_invite_now(k) {
+                            Ok(_) => (true, "Your invite link is ready: copy it and send it to your friend.".to_string()),
+                            Err(e) => (false, e),
+                        },
+                        _ => (false, "The launcher doesn't know that ask.".to_string()),
+                    };
+                    let _ = eng::sql(&p, "acore_characters", &wf::done_sql(id, ok, &text));
+                }
+            }
+            let friends = wf::load(&ws::dir(&p.root)).friends;
+            let now = format!("{} {}", wf::friends_sql(&friends), wf::sharing_sql(wf::front_running(), 0));
+            if now != last && eng::sql(&p, "acore_characters", &now).is_ok() {
+                last = now;
+            }
+        }
+        ON.store(false, Ordering::SeqCst);
+    });
+}
+
+#[derive(Serialize)]
+struct WorldFriendView {
+    user: String,
+    trusted: bool,
+    /// Invited now (can come in while the world is shared).
+    enabled: bool,
+    /// An earlier one-time login kept for its characters (not yet taken over by its friend's launcher).
+    legacy: bool,
+    seen: u64,
+    chars: Vec<crate::host::engine::FriendChar>,
+}
+
+/// The friends with a lasting login on a world ("single", "vanilla" or "solo"), with their characters (read now
+/// while it runs, else as kept when it last ran).
+#[tauri::command]
+async fn world_friends(kind: String) -> Result<Vec<WorldFriendView>, String> {
+    use crate::host::{classic, engine as eng, worldfriends as wf, worldshare as ws};
+    blocking(move || {
+        let (share, chars) = if kind == "solo" {
+            let p = classic_paths();
+            (p.share.clone(), classic::friend_chars(&p))
+        } else {
+            let k = world_kind(&kind)?;
+            let p = world_paths(k);
+            (ws::dir(&p.root), if eng::status(&p).running { eng::friend_chars(&p).unwrap_or_default() } else { Vec::new() })
+        };
+        let mut b = wf::load(&share);
+        let users: Vec<String> = chars.iter().map(|c| c.user.clone()).collect();
+        wf::fold(&mut b, &users, now_secs());
+        Ok(b.friends
+            .into_iter()
+            .map(|f| WorldFriendView {
+                chars: chars.iter().filter(|c| c.user == f.user).cloned().collect(),
+                user: f.user,
+                trusted: f.trusted,
+                enabled: f.enabled,
+                legacy: f.legacy,
+                seen: f.seen,
+            })
+            .collect())
+    })
+    .await
+}
+
+/// The host's choice on one friend: "trust", "untrust", "remove" (their characters kept) or "delete" (with them).
+#[tauri::command]
+async fn world_friend(kind: String, user: String, action: String) -> Result<String, String> {
+    blocking(move || {
+        let w = if kind == "solo" { classic_friends_here() } else { world_friends_here(world_kind(&kind)?) };
+        let w = w.ok_or("Invite a friend first: this world has no friends yet.")?;
+        crate::host::worldfriends::set_friend(&w, &user, &action)
+    })
+    .await
+}
+
+/// The friend's side: the worlds this launcher joined (for "Join your friend again").
+#[tauri::command]
+fn friend_worlds() -> Vec<crate::host::worldfriends::JoinedView> {
+    crate::host::worldfriends::worlds_view(&settings::app_dir())
+}
+
+/// Join a remembered friend's world again, with no new link: this launcher's identity claims its lasting login
+/// there (while the friend shares the world and has invited or trusted it).
+#[tauri::command]
+async fn join_friend_again(core: State<'_, Core>, client: String, realm_id: String) -> Result<Joined, String> {
+    use crate::host::worldfriends as wf;
+    let j = wf::worlds(&settings::app_dir()).remove(&realm_id).ok_or("This PC hasn't joined that world.")?;
+    join_invite(core, client, wf::again_link(&realm_id, &j)).await
 }
 
 #[tauri::command]
@@ -2835,7 +3079,7 @@ async fn classic_invite() -> Result<DenInvite, String> {
 }
 
 fn classic_invite_now() -> Result<DenInvite, String> {
-    use crate::host::{classic, denhost, denways, litenet, worldshare as ws};
+    use crate::host::{classic, denhost, denways, litenet, worldfriends as wf, worldshare as ws};
     let p = classic_paths();
     if !classic::status(&p).running {
         return Err("Start Leyline Solo first: friends join it while it runs.".into());
@@ -2844,6 +3088,9 @@ fn classic_invite_now() -> Result<DenInvite, String> {
     let seed = litenet::load_or_create_key(&litenet::key_path(&p.share))?;
     let secret = ws::invite_secret(&p.share)?;
     let mine = litenet::realm_id(&litenet::public_key(&seed)?);
+    // friends' lasting logins are claimed in front of the login server (host/worldfriends.rs)
+    let front = wf::front_start(classic::LOGIN_PORT, classic_friends_of(&mine, &secret))?;
+    std::fs::write(p.share.join("den-lite.remote"), format!("{front} {}\n", classic::WORLD_PORT)).map_err(|e| e.to_string())?;
     let now = litenet::state();
     if now.running && now.realm_id != mine {
         litenet::stop();
@@ -2866,9 +3113,10 @@ fn classic_invite_now() -> Result<DenInvite, String> {
         tunnel = litenet::state();
     }
     let (user, pass, expires) = classic::add_friend(&p)?;
+    wf::add_ticket(&p.share, &user, &pass, now_secs())?;
     let (lan, lan_way) = match denways::lan_address() {
         None => (None, InviteWay { id: "lan", ok: false, line: "Same network: this PC isn't on a home or office network.".into() }),
-        Some(ip) => match ws::lan_start_layout(ip, classic::LOGIN_PORT, classic::WORLD_PORT, ws::Layout::Classic) {
+        Some(ip) => match ws::lan_start_via(ip, classic::LOGIN_PORT, front, classic::WORLD_PORT, ws::Layout::Classic) {
             Ok((ip, lp, _)) => (Some(format!("{ip}:{lp}")), InviteWay { id: "lan", ok: true, line: format!("Same network: on, at {ip} (friends at your home or on your network come in here first).") }),
             Err(e) => (None, InviteWay { id: "lan", ok: false, line: format!("Same network: off ({e}). Allow Leyline on private networks in your firewall, then Invite again.") }),
         },
@@ -2879,9 +3127,9 @@ fn classic_invite_now() -> Result<DenInvite, String> {
         InviteWay { id: "relay", ok: false, line: format!("Leyline relay: {}", tunnel.last_error) }
     };
     let own_way = InviteWay { id: "own", ok: false, line: "Your own address: not used for Leyline Solo.".into() };
-    let link = litenet::invite_link(realms::RELAY, &tunnel.realm_id, &secret, Some((&user, &pass)));
+    let link = litenet::invite_link(realms::RELAY, &mine, &secret, Some((&user, &pass)));
     let code = denhost::code_from_link(&link).unwrap_or_default();
-    let link = denways::with_ways(&link, lan.as_deref(), None);
+    let link = wf::with_mark(&denways::with_ways(&link, lan.as_deref(), None));
     Ok(DenInvite { link, code, name: "your friend".into(), expires, tunnel, ways: vec![lan_way, own_way, relay_way] })
 }
 
@@ -2897,6 +3145,10 @@ fn classic_share_off() {
     }
     if ws::lan_layout() == Some(ws::Layout::Classic) {
         ws::lan_stop();
+    }
+    crate::host::worldfriends::front_stop();
+    if let Some(w) = classic_friends_here() {
+        crate::host::worldfriends::share_stopped(&w);
     }
 }
 
@@ -4053,6 +4305,10 @@ pub fn run() {
             online_characters,
             world_invite,
             world_share_stop,
+            world_friends,
+            world_friend,
+            friend_worlds,
+            join_friend_again,
             classic_status, // Leyline Solo (host/classic.rs, host/classicsign.rs; docs/LEYLINE-SOLO.md)
             classic_setup,
             classic_start,

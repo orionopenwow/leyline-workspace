@@ -579,6 +579,8 @@ pub fn world_env(p: &Paths, s: &State, profile: &str, modules: &str, realm: Opti
     put(&mut v, &env_name("Warden.Enabled"), "0");
     put(&mut v, &env_name("PlayerLimit"), p.kind.player_limit().to_string());
     put(&mut v, "AC_ALE_SCRIPT_PATH", fwd(&p.lua()));
+    // the realm script for the in-game Leyline tab of the Friends window (lua_scripts/ov_worldfriends.lua): only here
+    put(&mut v, "OV_WORLDFRIENDS", "1");
     put(&mut v, &env_name("WorldServerPort"), WORLD_PORT.to_string());
     put(&mut v, &env_name("RealmID"), "1");
     put(&mut v, &env_name("Console.Enable"), "0");
@@ -2108,10 +2110,40 @@ pub fn hero_login(p: &Paths, hero: &str) -> Result<String, String> {
     Ok(pass)
 }
 
-/// Friends playing in this world now: online characters on friends' logins (`G` + 9, worldshare::new_guest), never
-/// the player's own or the bots'.
+/// Friends playing in this world now: online characters on friends' logins (one-time `G` + 9, worldshare::new_guest,
+/// and lasting `G` + 15, worldfriends::name_for), never the player's own or the bots'.
 pub const FRIENDS_SQL: &str = "SELECT COUNT(*) FROM characters c JOIN acore_auth.account a ON a.id = c.account \
-    WHERE c.online <> 0 AND a.username REGEXP '^G[A-Z0-9]{9}$'";
+    WHERE c.online <> 0 AND a.username REGEXP '^G[A-Z0-9]{9}$|^G[A-Z2-7]{15}$'";
+
+/// Friends' logins with characters here, each with its characters: `username, name, level, online` rows.
+pub const FRIEND_CHARS_SQL: &str = "SELECT a.username, c.name, c.level, c.online FROM characters c JOIN acore_auth.account a \
+    ON a.id = c.account WHERE a.username REGEXP '^G[A-Z0-9]{9}$|^G[A-Z2-7]{15}$' ORDER BY a.username, c.guid";
+
+/// A friend's character on this world (the Characters page's "Friends").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FriendChar {
+    pub user: String,
+    pub name: String,
+    pub level: u8,
+    pub online: bool,
+}
+
+pub fn parse_friend_chars(rows: &str) -> Vec<FriendChar> {
+    rows.lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.trim_end_matches('\r').split('\t').collect();
+            if f.len() < 4 || !crate::host::worldfriends::friend_login_ok(f[0]) || !crate::hybrid::char_name_ok(f[1]) {
+                return None;
+            }
+            Some(FriendChar { user: f[0].into(), name: f[1].into(), level: f[2].trim().parse::<u32>().unwrap_or(0).min(255) as u8, online: f[3].trim() != "0" })
+        })
+        .collect()
+}
+
+/// Friends' characters on this world now (it must be running).
+pub fn friend_chars(p: &Paths) -> Result<Vec<FriendChar>, String> {
+    Ok(parse_friend_chars(&query(p, "acore_characters", FRIEND_CHARS_SQL)?))
+}
 
 pub fn friends_online(p: &Paths) -> Result<u32, String> {
     query(p, "acore_characters", FRIENDS_SQL)?.trim().parse::<u32>().map_err(|_| "The world's answer didn't look right.".to_string())
@@ -2758,6 +2790,12 @@ mod tests {
         assert!(move_sql("SOLO", "solo").is_err(), "not onto itself");
         assert!(move_sql("SO'LO", "HKA").is_err() && move_sql("SOLO", "H K").is_err());
         assert!(FRIENDS_SQL.contains("^G[A-Z0-9]{9}$") && FRIENDS_SQL.contains("online"));
+        assert!(FRIENDS_SQL.contains("^G[A-Z2-7]{15}$"), "lasting friends' logins count too");
+        let rows = "GABCDE2345\tWren\t12\t1\nGABCDEFGHIJKLMNO\tAsh\t80\t0\nSOLO\tMine\t5\t1\nGABCDE2345\tBad;name\t1\t0\n";
+        let v = parse_friend_chars(rows);
+        assert_eq!(v.len(), 2, "only friends' logins and real names");
+        assert_eq!((v[0].user.as_str(), v[0].name.as_str(), v[0].level, v[0].online), ("GABCDE2345", "Wren", 12, true));
+        assert!(!v[1].online && v[1].level == 80);
         let s = State { account: "SOLO".into(), hero_accounts: vec!["HKA2345".into(), "SOLO".into()], ..st() };
         let p = Paths::for_kind(std::path::Path::new("x"), Kind::Single);
         assert_eq!(char_accounts(&p, &s), vec!["SOLO".to_string(), "HKA2345".to_string()], "the player's logins, each once");

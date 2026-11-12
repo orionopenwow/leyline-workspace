@@ -1900,6 +1900,17 @@ pub fn sweep_friends(p: &Paths, s: &mut State, t: u64, all: bool) -> usize {
     todo.extend(out.into_iter().map(|f| f.user));
     let mut n = 0;
     let up = engine::port_answers(SOAP_PORT) && ours_up(p).2;
+    // a one-time login that has characters is a friend's now: kept as their lasting login (host/worldfriends.rs),
+    // never deleted with its characters
+    if up && !todo.is_empty() {
+        let with = friend_logins_with_chars(p);
+        if !with.is_empty() {
+            let mut b = crate::host::worldfriends::load(&p.share);
+            crate::host::worldfriends::fold(&mut b, &with, t);
+            let _ = crate::host::worldfriends::save(&p.share, &b);
+            todo.retain(|u| !with.contains(u));
+        }
+    }
     for u in todo {
         let gone = up && friend_delete(&u).ok().is_some_and(|line| soap(s, &line).map(|a| deleted(&a)).unwrap_or(false));
         if gone {
@@ -1928,6 +1939,26 @@ pub fn add_friend(p: &Paths) -> Result<(String, String, u64), String> {
     s.friends.push(Friend { user: user.clone(), made: t, expires });
     save_state(p, &s)?;
     Ok((user, pass, expires))
+}
+
+/// Friends' logins (one-time and lasting) that have characters on this world (it must be running; else none).
+pub fn friend_logins_with_chars(p: &Paths) -> Vec<String> {
+    let mut v: Vec<String> = friend_chars(p).into_iter().map(|c| c.user).collect();
+    v.dedup();
+    v
+}
+
+/// Friends' characters on this world now (it must be running; else none).
+pub fn friend_chars(p: &Paths) -> Vec<engine::FriendChar> {
+    if !ours_up(p).2 {
+        return Vec::new();
+    }
+    let q = format!(
+        "SELECT a.username, c.name, c.level, c.online FROM classiccharacters.characters c JOIN classicrealmd.account a ON a.id = c.account \
+         WHERE a.username REGEXP '{}' ORDER BY a.username, c.guid;",
+        crate::host::worldfriends::FRIEND_REGEXP
+    );
+    sql(p, &load_state(p), None, &q).map(|r| engine::parse_friend_chars(&r)).unwrap_or_default()
 }
 
 /// Every friend's login removed (sharing off).

@@ -111,13 +111,20 @@ pub fn create_step(seen: &Seen, r: &Row, name: Option<&str>, typed_at: Option<u6
     let Some(_) = name else {
         return Create::GiveUp("no character yet and no name to make one: the game's create screen is left to the player".into());
     };
+    // the create screen loads its models first (slower the first time, and with the game in the background)
     match typed_at {
-        None if now.saturating_sub(ce) < 4_000 => Create::Wait,
+        None if now.saturating_sub(ce) < CREATE_FIRST => Create::Wait,
         None => Create::TypeName,
-        Some(t) if now.saturating_sub(t) > 20_000 => Create::GiveUp("the create screen didn't make the character".into()),
+        Some(_) if now.saturating_sub(ce) > CREATE_MAX => Create::GiveUp("the create screen didn't make the character".into()),
+        Some(t) if now.saturating_sub(t) >= CREATE_RETRY => Create::TypeName,
         Some(_) => Create::Wait,
     }
 }
+
+/// The name goes in this long after the empty character list, again every [`CREATE_RETRY`], until [`CREATE_MAX`].
+pub const CREATE_FIRST: u64 = 8_000;
+pub const CREATE_RETRY: u64 = 10_000;
+pub const CREATE_MAX: u64 = 60_000;
 
 /// Runs until the character is in the world, the game closes, or a step times out. `name` is Quick start's name
 /// for a first entry (None when the login has characters).
@@ -145,7 +152,7 @@ pub fn drive(p: &eng::Paths, account: &str, password: &str, name: Option<&str>, 
                 continue;
             }
             Create::TypeName => {
-                let ok = game.send(Key::Password, name.unwrap_or_default());
+                let ok = game.send(Key::Name, name.unwrap_or_default());
                 log.push((now - start, format!("create screen: the name {} + Enter{}", name.unwrap_or_default(), if ok { "" } else { " (didn't reach the window)" })));
                 typed_at = Some(now);
                 continue;
@@ -243,12 +250,14 @@ mod tests {
         let r0 = Row { last_login: 10, online: true, chars: 0, chars_online: false };
         s.auth_ok = Some(100);
         s.char_enum = Some(1_000);
-        assert_eq!(create_step(&s, &r0, Some("Wren"), None, 2_000), Create::Wait);
-        assert_eq!(create_step(&s, &r0, Some("Wren"), None, 5_500), Create::TypeName);
-        assert_eq!(create_step(&s, &r0, Some("Wren"), Some(5_500), 9_000), Create::Wait);
-        assert!(matches!(create_step(&s, &r0, Some("Wren"), Some(5_500), 30_000), Create::GiveUp(_)));
+        assert_eq!(create_step(&s, &r0, Some("Wren"), None, 5_000), Create::Wait);
+        assert_eq!(create_step(&s, &r0, Some("Wren"), None, 9_500), Create::TypeName);
+        assert_eq!(create_step(&s, &r0, Some("Wren"), Some(9_500), 15_000), Create::Wait);
+        // not made yet: the name again
+        assert_eq!(create_step(&s, &r0, Some("Wren"), Some(9_500), 19_600), Create::TypeName);
+        assert!(matches!(create_step(&s, &r0, Some("Wren"), Some(55_000), 62_000), Create::GiveUp(_)));
         // made: the driver goes on (Enter World)
-        assert_eq!(create_step(&s, &Row { chars: 1, ..r0 }, Some("Wren"), Some(5_500), 9_000), Create::No);
+        assert_eq!(create_step(&s, &Row { chars: 1, ..r0 }, Some("Wren"), Some(9_500), 12_000), Create::No);
         // no name: left to the player
         assert!(matches!(create_step(&s, &r0, None, None, 9_000), Create::GiveUp(_)));
         // not at character select yet

@@ -83,3 +83,22 @@ index 635f55b..809e103 100644
                  mpqFileName = Acore::StringFormat(R"(World\Maps\{}\{}_{}_{}.adt)", map_ids[z].name, map_ids[z].name, x, y);
                  outputFileName = Acore::StringFormat("{}/maps/{:03}{:02}{:02}.map", output_path, map_ids[z].id, y, x);
                  ConvertADT(mpqFileName, outputFileName, y, x, build);
+diff --git a/src/server/database/Database/MySQLConnection.cpp b/src/server/database/Database/MySQLConnection.cpp
+index e6ed20f..a95f2d2 100644
+--- a/src/server/database/Database/MySQLConnection.cpp
++++ b/src/server/database/Database/MySQLConnection.cpp
+@@ -635,10 +635,10 @@ bool MySQLConnection::_HandleMySQLErrno(uint32 errNo, char const* err, uint8 att
+         // Outdated table or database structure - terminate core
+         case ER_BAD_FIELD_ERROR:
+         case ER_NO_SUCH_TABLE:
+-            str = "Your database structure is not up to date. Please make sure you've executed all queries in the sql/updates folders.";
+-            LOG_FATAL("sql.sql", "{}", str);
+-            std::this_thread::sleep_for(10s);
+-            ABORT("{}\n\n[{}] {}", str, errNo, err);
++            // Leyline: logged, not fatal. A script that makes its own table in the background and reads it at load
++            // would otherwise stop a brand-new world at its first start (single player playtest, 11 Nov 2026).
++            str = "A table is missing (a script's own table not made yet, or the database structure is not up to date).";
++            LOG_ERROR("sql.sql", "{} [{}] {}", str, errNo, err);
+             return false;
+         case ER_PARSE_ERROR:
+             str = "Error while parsing SQL. Core fix required.";

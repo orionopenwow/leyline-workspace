@@ -719,8 +719,9 @@ pub fn claim_with<S: Read + Write>(mut c: S, peer: &Peer, realm_id: &str, secret
 /// [`claim_with`] over TCP to the world's login address ("host" or "host:port"; 3724 when none).
 pub fn claim_at(addr: &str, peer: &Peer, realm_id: &str, secret: &str, ticket: Option<(&str, &str)>, old: &[String]) -> Result<(String, String), String> {
     let a = if addr.rsplit_once(':').is_some_and(|(h, p)| !h.is_empty() && p.parse::<u16>().is_ok()) { addr.to_string() } else { format!("{addr}:3724") };
-    let sa = a.to_socket_addrs().map_err(|e| e.to_string())?.next().ok_or("no address")?;
-    let c = TcpStream::connect_timeout(&sa, Duration::from_secs(5)).map_err(|e| e.to_string())?;
+    let down = |e: String| format!("it didn't answer ({e}). Ask your friend to start their world and share it (Invite a friend).");
+    let sa = a.to_socket_addrs().map_err(|e| down(e.to_string()))?.next().ok_or_else(|| down("no address".into()))?;
+    let c = TcpStream::connect_timeout(&sa, Duration::from_secs(5)).map_err(|e| down(e.to_string()))?;
     let _ = c.set_read_timeout(Some(Duration::from_secs(8)));
     let _ = c.set_write_timeout(Some(Duration::from_secs(8)));
     claim_with(c, peer, realm_id, secret, ticket, old)
@@ -1066,6 +1067,10 @@ mod tests {
         // the wrong invite: refused, nothing made
         let n = log.lock().unwrap().len();
         assert!(claim_at(&format!("127.0.0.1:{port}"), &peer(10), RID, "ZZZZZZZZZZZZZZZZZZZZZZZZ", None, &[]).is_err());
+        // nobody there: said in plain words
+        let gone = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let e = claim_at(&format!("127.0.0.1:{gone}"), &a, RID, SECRET, None, &[]).unwrap_err();
+        assert!(e.contains("start their world and share it"), "{e}");
         assert_eq!(log.lock().unwrap().len(), n);
         // sharing stops: disabled (a password nobody holds), the used ticket's login deleted, not invited without a
         // new ticket

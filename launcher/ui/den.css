@@ -82,3 +82,12 @@
 .yd-friends .btn.on { border-color: var(--t-accent); color: var(--t-accent); }
 .yd-share-more { margin-top: 8px; }
 .yd-champ { display: block; color: var(--t-accent); }
+
+/* Single player's page: Your Den from there too (den.js paintCard, #spd) */
+.spd .spd-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.spd .spd-head h2 { margin: 0; }
+.spd .spd-lede { margin: 6px 0 8px; color: var(--t-muted); max-width: 70ch; }
+.spd .spd-acts { gap: 10px; }
+.spd .spd-acts .link-s { margin-left: 4px; }
+.spd .spd-status:empty { display: none; }
+.spd .spd-net { margin-top: 4px; }

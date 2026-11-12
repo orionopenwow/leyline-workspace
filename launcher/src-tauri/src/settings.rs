@@ -67,6 +67,10 @@ pub struct Settings {
     /// filled in, the password typed once) or "addon" (our sign-in add-on in the game folder: opt-in,
     /// TODO(owner) approval of copying the login screen's file list).
     pub solo_signin: String,
+    /// Settings › "Stop my world when the game closes" (docs/SINGLE-PLAYER-ONE-CLICK.md): a minute after the game
+    /// the launcher started for a world on this PC closes, the world is saved and stopped, unless friends are in it
+    /// or the game was started again. On by default; a file without it: on.
+    pub world_stop_on_exit: bool,
 }
 
 impl Default for Settings {
@@ -85,6 +89,7 @@ impl Default for Settings {
             seen: Vec::new(),
             signin_cover: true,
             solo_signin: "prefill".into(),
+            world_stop_on_exit: true,
         }
     }
 }
@@ -282,10 +287,12 @@ mod tests {
     #[test]
     fn the_sign_in_cover_is_on_by_default_and_stays_off_once_turned_off() {
         let d = tempfile::tempdir().unwrap();
+        assert!(Settings::default().world_stop_on_exit, "stop a world when its game closes: on by default");
         assert!(Settings::default().signin_cover);
         fs::write(d.path().join(FILE_NAME), br#"{"selected_realm":"x.example.org"}"#).unwrap();
         let s = load(d.path());
         assert!(s.signin_cover, "a file from before the switch: on");
+        assert!(s.world_stop_on_exit, "a file from before the setting: on");
         save(d.path(), &Settings { signin_cover: false, ..s }).unwrap();
         assert!(!load(d.path()).signin_cover);
     }

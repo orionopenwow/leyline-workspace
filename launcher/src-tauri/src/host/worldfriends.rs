@@ -60,6 +60,10 @@ pub const PEER_KEY_FILE: &str = crate::identity::KEY_FILE;
 /// The friend's side: the worlds it joined (`<app data>/friend-worlds.json`), for "Join your friend again".
 pub const WORLDS_FILE: &str = "friend-worlds.json";
 pub const TICKET_DAYS: u64 = 7;
+/// At most this many removed logins remembered (so a removed friend's kept characters aren't listed again).
+const REMOVED_MAX: usize = 200;
+/// At most this many friends' worlds remembered on the friend's side (the newest kept).
+pub const WORLDS_MAX: usize = 20;
 const LINE_MAX: usize = 4096;
 const CLAIMS_PER_MINUTE: u32 = 30;
 
@@ -275,6 +279,9 @@ pub struct Ticket {
 pub struct Book {
     pub friends: Vec<Friend>,
     pub tickets: Vec<Ticket>,
+    /// Logins of removed friends whose characters were kept (their login disabled): never folded back in as an
+    /// earlier friend's; the same friend invited again gets theirs back ([`admit`]).
+    pub removed: Vec<String>,
 }
 
 static BOOK_LOCK: Mutex<()> = Mutex::new(());
@@ -308,7 +315,7 @@ pub fn add_ticket(share: &Path, user: &str, pass: &str, t: u64) -> Result<(), St
 pub fn fold(b: &mut Book, with_chars: &[String], t: u64) -> usize {
     let mut n = 0;
     for u in with_chars.iter().filter(|u| ticket_ok(u)) {
-        if !b.friends.iter().any(|f| &f.user == u) {
+        if !b.friends.iter().any(|f| &f.user == u) && !b.removed.contains(u) {
             b.friends.push(Friend { user: u.clone(), made: t, seen: t, enabled: true, legacy: true, ..Default::default() });
             n += 1;
         }
@@ -356,13 +363,21 @@ pub fn admit(b: &mut Book, realm_id: &str, o: &Opened, t: u64) -> Result<Granted
             f.enabled = true;
             f.seen = t;
             Granted { user: f.user.clone(), create: false, adopted: true }
+        } else if let Some(u) = o.old.iter().find(|u| b.removed.contains(u)).cloned() {
+            // an earlier friend's login removed with its characters kept, and that friend invited again: theirs again
+            b.removed.retain(|x| *x != u);
+            b.friends.push(Friend { user: u.clone(), peer: o.peer.clone(), key: o.key.clone(), made: t, seen: t, enabled: true, legacy: true, ..Default::default() });
+            Granted { user: u, create: false, adopted: true }
         } else {
             let user = name_for(realm_id, &o.peer);
             if b.friends.iter().any(|f| f.user == user) {
                 return Err("That login is taken on this world.".into());
             }
+            // removed before with their characters kept: the login is still there (a new password only)
+            let back = b.removed.contains(&user);
+            b.removed.retain(|x| *x != user);
             b.friends.push(Friend { user: user.clone(), peer: o.peer.clone(), key: o.key.clone(), made: t, seen: t, enabled: true, ..Default::default() });
-            Granted { user, create: true, adopted: false }
+            Granted { user, create: !back, adopted: back }
         }
     };
     if let (Some(i), true) = (ti, good) {
@@ -451,8 +466,14 @@ pub fn handle(w: &World, chal: &str, sealed: &str) -> Result<String, String> {
     fold(&mut b, &(w.with_chars)(), now());
     let g = admit(&mut b, &w.realm_id, &o, now())?;
     let lines = if g.create { create_lines(w.era, &g.user, &o.pass)? } else { vec![password_line(&g.user, &o.pass)?] };
-    for l in &lines {
-        run(w, l).map_err(|e| format!("The world didn't take your login: {e}"))?;
+    for (i, l) in lines.iter().enumerate() {
+        if let Err(e) = run(w, l) {
+            // made before (a world restored from a backup, a book lost): the login is there, so a new password only
+            if i == 0 && g.create && run(w, &password_line(&g.user, &o.pass)?).is_ok() {
+                break;
+            }
+            return Err(format!("The world didn't take your login: {e}"));
+        }
     }
     save(&w.share, &b)?;
     Ok(g.user)
@@ -504,6 +525,11 @@ pub fn sweep(w: &World) -> usize {
     n
 }
 
+/// What the host sees when the world couldn't make a change (most often: it isn't running).
+fn world_down(e: String) -> String {
+    format!("Your world has to be running for that (start it, then try again). It said: {e}")
+}
+
 /// The host's choice on one friend: "trust", "untrust", "remove" (characters kept: the login disabled and
 /// forgotten; the same identity invited again gets it back) or "delete" (the login and its characters deleted).
 pub fn set_friend(w: &World, user: &str, action: &str) -> Result<String, String> {
@@ -521,14 +547,21 @@ pub fn set_friend(w: &World, user: &str, action: &str) -> Result<String, String>
             "Not trusted: they need an invite again after you stop sharing.".to_string()
         }
         "remove" => {
-            scramble(w, user)?;
+            scramble(w, user).map_err(world_down)?;
             b.friends.remove(i);
-            "Removed. Their characters stay in your world (invite them again and they get them back).".to_string()
+            b.removed.retain(|x| x != user);
+            b.removed.push(user.to_string());
+            let n = b.removed.len();
+            if n > REMOVED_MAX {
+                b.removed.drain(..n - REMOVED_MAX);
+            }
+            "Removed. Their characters stay in your world: invite them again and they get them back.".to_string()
         }
         "delete" => {
-            run(w, &delete_line(user)?)?;
+            run(w, &delete_line(user)?).map_err(world_down)?;
             b.friends.remove(i);
-            "Removed, with their characters.".to_string()
+            b.removed.retain(|x| x != user);
+            "Removed, and their characters on your world are deleted.".to_string()
         }
         _ => return Err("Trust, untrust, remove or delete.".into()),
     };
@@ -831,8 +864,26 @@ pub fn remember(app_dir: &Path, realm_id: &str, mut j: Joined) -> Result<(), Str
     j.old.retain(|u| ticket_ok(u));
     j.old.truncate(4);
     all.insert(realm_id.to_string(), j);
-    let t = serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?;
+    // the newest WORLDS_MAX kept
+    while all.len() > WORLDS_MAX {
+        let Some(oldest) = all.iter().min_by_key(|(_, w)| w.at).map(|(k, _)| k.clone()) else { break };
+        all.remove(&oldest);
+    }
+    write_worlds(app_dir, &all)
+}
+
+fn write_worlds(app_dir: &Path, all: &BTreeMap<String, Joined>) -> Result<(), String> {
+    let t = serde_json::to_string_pretty(all).map_err(|e| e.to_string())?;
     crate::settings::write_atomic(&app_dir.join(WORLDS_FILE), t.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// A remembered friend's world forgotten on this PC (the friend's own world keeps the character).
+pub fn forget(app_dir: &Path, realm_id: &str) -> Result<(), String> {
+    let mut all = worlds(app_dir);
+    if all.remove(realm_id).is_none() {
+        return Err("This PC hasn't joined that world.".into());
+    }
+    write_worlds(app_dir, &all)
 }
 
 /// The link to join a remembered world again (no ticket: the claim alone).
@@ -1081,6 +1132,90 @@ mod tests {
         std::fs::write(g.path().join("WTF").join("Config.wtf"), "SET accountName \"HKABCDEFGHIJKLMN\"\r\n").unwrap();
         assert_eq!(config_ticket(g.path()), None);
     }
+    #[test]
+    fn a_removed_friend_stays_removed_and_comes_back_to_their_characters() {
+        let d = tempfile::tempdir().unwrap();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut w = world(d.path(), log.clone());
+        // an earlier one-time friend with characters, and a lasting one
+        w.with_chars = Arc::new(|| vec!["GOLD234567".to_string()]);
+        let a = peer(11);
+        add_ticket(d.path(), "GTICKET234", "TPASS2345678", now()).unwrap();
+        let chal = "00ff";
+        let u = handle(&w, chal, &make_claim(&a, RID, SECRET, chal, Some(("GTICKET234", "TPASS2345678")), "PASSWORD2345", &[]).unwrap()).unwrap();
+        assert_eq!(load(d.path()).friends.len(), 2, "the kept earlier friend and the new one");
+        // removed with characters kept: not listed again, even though the earlier login still has characters
+        assert!(set_friend(&w, "GOLD234567", "remove").unwrap().contains("characters stay"));
+        assert!(set_friend(&w, &u, "remove").is_ok());
+        assert!(load(d.path()).friends.is_empty(), "{:?}", load(d.path()));
+        assert!(sweep(&w) <= 1 && load(d.path()).friends.is_empty(), "never folded back in");
+        // the same identity invited again: its login is still there, so only a new password (no second create)
+        add_ticket(d.path(), "GTICKET567", "TPASS2345678", now()).unwrap();
+        let n = log.lock().unwrap().len();
+        let u2 = handle(&w, chal, &make_claim(&a, RID, SECRET, chal, Some(("GTICKET567", "TPASS2345678")), "PASSWORD7777", &[]).unwrap()).unwrap();
+        assert_eq!(u2, u);
+        let after: Vec<String> = log.lock().unwrap()[n..].to_vec();
+        assert_eq!(after, vec![format!("account set password {u} PASSWORD7777 PASSWORD7777")]);
+        // the earlier friend's newer launcher brings its old login: theirs again
+        let b2 = peer(12);
+        add_ticket(d.path(), "GTICKET890", "TPASS2345678", now()).unwrap();
+        let u3 = handle(&w, chal, &make_claim(&b2, RID, SECRET, chal, Some(("GTICKET890", "TPASS2345678")), "PASSWORD8888", &["GOLD234567".into()]).unwrap()).unwrap();
+        assert_eq!(u3, "GOLD234567");
+        assert!(load(d.path()).removed.is_empty());
+        // delete: gone with the characters, and not remembered as removed
+        assert!(set_friend(&w, &u3, "delete").unwrap().contains("deleted"));
+        assert!(log.lock().unwrap().last().unwrap() == "account delete GOLD234567");
+        assert!(!load(d.path()).removed.contains(&"GOLD234567".to_string()));
+    }
+
+    #[test]
+    fn a_login_made_before_gets_a_new_password_instead_of_failing() {
+        let d = tempfile::tempdir().unwrap();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut w = world(d.path(), log.clone());
+        let l2 = log.clone();
+        w.console = Arc::new(move |l: &str| {
+            l2.lock().unwrap().push(l.to_string());
+            if l.starts_with("account create") { Ok("Account name is in use".into()) } else { Ok("The password was changed".into()) }
+        });
+        add_ticket(d.path(), "GTICKET234", "TPASS2345678", now()).unwrap();
+        let a = peer(13);
+        let u = handle(&w, "aa", &make_claim(&a, RID, SECRET, "aa", Some(("GTICKET234", "TPASS2345678")), "PASSWORD2345", &[]).unwrap()).unwrap();
+        assert_eq!(u, name_for(RID, &a.peer_id));
+        assert_eq!(log.lock().unwrap().last().unwrap(), &format!("account set password {u} PASSWORD2345 PASSWORD2345"));
+    }
+
+    #[test]
+    fn a_change_the_world_cant_make_says_to_start_it() {
+        let d = tempfile::tempdir().unwrap();
+        let mut w = world(d.path(), Arc::new(Mutex::new(Vec::new())));
+        let mut b = Book::default();
+        b.friends.push(Friend { user: name_for(RID, "x"), enabled: true, ..Default::default() });
+        save(d.path(), &b).unwrap();
+        w.console = Arc::new(|_: &str| Err("not running".to_string()));
+        let e = set_friend(&w, &name_for(RID, "x"), "remove").unwrap_err();
+        assert!(e.contains("has to be running"), "{e}");
+        assert_eq!(load(d.path()).friends.len(), 1, "nothing changed");
+        assert!(set_friend(&w, &name_for(RID, "x"), "trust").is_ok(), "trust needs no running world");
+        assert!(set_friend(&w, &name_for(RID, "x"), "nope").is_err());
+    }
+
+    #[test]
+    fn the_friends_side_keeps_the_newest_worlds_and_forgets_one() {
+        let d = tempfile::tempdir().unwrap();
+        for i in 0..(WORLDS_MAX + 5) {
+            let rid = format!("{:a>16}", i);
+            remember(d.path(), &rid, Joined { relay: "relay.x".into(), secret: SECRET.into(), user: name_for(&rid, "x"), name: "W".into(), at: 100 + i as u64, ..Default::default() }).unwrap();
+        }
+        let all = worlds(d.path());
+        assert_eq!(all.len(), WORLDS_MAX);
+        assert!(!all.contains_key(&format!("{:a>16}", 0)) && all.contains_key(&format!("{:a>16}", WORLDS_MAX + 4)), "the oldest went");
+        let one = format!("{:a>16}", WORLDS_MAX + 4);
+        forget(d.path(), &one).unwrap();
+        assert!(!worlds(d.path()).contains_key(&one));
+        assert!(forget(d.path(), &one).is_err());
+    }
+
     #[test]
     fn the_games_tab_and_the_launcher_meet_in_the_worlds_database() {
         assert_eq!(parse_asks("3\tinvite\n4\tx;drop\n5\tinvite\r\nbad\n"), vec![(3, "invite".to_string()), (5, "invite".to_string())]);

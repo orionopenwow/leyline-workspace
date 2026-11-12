@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -141,6 +141,9 @@ pub struct Hub {
     /// An address of this PC that friends may use straight from the internet (only if the player shares one).
     pub direct: Mutex<Option<String>>,
     stop: AtomicBool,
+    /// Which start the running threads belong to: a Stop then a quick Start never leaves the old threads running
+    /// beside the new ones (each thread ends once its generation isn't the current one).
+    gen: AtomicU64,
     conns: AtomicUsize,
 }
 
@@ -158,12 +161,29 @@ impl Hub {
             playing: Mutex::new((None, None)),
             direct: Mutex::new(None),
             stop: AtomicBool::new(false),
+            gen: AtomicU64::new(0),
             conns: AtomicUsize::new(0),
         })
     }
 
     pub fn save(&self) -> Result<(), String> {
         self.book.lock().unwrap().save(&self.app)
+    }
+
+    /// The threads of start number `gen` keep going.
+    fn live(&self, gen: u64) -> bool {
+        !self.stop.load(Ordering::Relaxed) && self.gen.load(Ordering::SeqCst) == gen
+    }
+
+    /// The world this player had open to friends closed (its sharing stopped): friends stop seeing it at once.
+    /// True when it was the one shown.
+    pub fn world_closed(&self, kind: &str) -> bool {
+        let mut p = self.playing.lock().unwrap();
+        if p.1.as_ref().and_then(|o| o["kind"].as_str()) != Some(kind) {
+            return false;
+        }
+        *p = (None, None);
+        true
     }
 
     fn notice(&self, t: String) {
@@ -401,6 +421,11 @@ fn mailbox_fetch(me: &PeerIdentity, relay: &str, now: u64) -> Result<Vec<Value>,
 
 static HUB: Mutex<Option<Arc<Hub>>> = Mutex::new(None);
 
+/// The hub if one was made (never makes one: for closing down and for other parts that only tell it things).
+pub fn current() -> Option<Arc<Hub>> {
+    HUB.lock().ok().and_then(|h| h.clone())
+}
+
 /// The running hub, or a new one (not started) for this PC's identity.
 pub fn hub(app: &Path) -> Result<Arc<Hub>, String> {
     let mut h = HUB.lock().unwrap();
@@ -418,6 +443,7 @@ pub fn start(hub: &Arc<Hub>) -> NetState {
     if hub.state.lock().unwrap().running {
         return hub.state.lock().unwrap().clone();
     }
+    let gen = hub.gen.fetch_add(1, Ordering::SeqCst) + 1;
     hub.stop.store(false, Ordering::Relaxed);
     let tcp = TcpListener::bind(("0.0.0.0", TCP_PORT)).or_else(|_| TcpListener::bind(("0.0.0.0", 0)));
     let udp = UdpSocket::bind(("0.0.0.0", LAN_PORT)).ok();
@@ -436,7 +462,7 @@ pub fn start(hub: &Arc<Hub>) -> NetState {
         let h = hub.clone();
         std::thread::spawn(move || {
             l.set_nonblocking(true).ok();
-            while !h.stop.load(Ordering::Relaxed) {
+            while h.live(gen) {
                 match l.accept() {
                     Ok((s, peer)) => {
                         s.set_nonblocking(false).ok();
@@ -460,7 +486,7 @@ pub fn start(hub: &Arc<Hub>) -> NetState {
         std::thread::spawn(move || {
             u.set_read_timeout(Some(Duration::from_secs(1))).ok();
             let mut buf = [0u8; 1024];
-            while !h.stop.load(Ordering::Relaxed) {
+            while h.live(gen) {
                 if let Ok((n, from)) = u.recv_from(&mut buf) {
                     if h.book.lock().unwrap().profile.lan != "off" {
                         h.hear(&buf[..n], from, now());
@@ -476,7 +502,7 @@ pub fn start(hub: &Arc<Hub>) -> NetState {
         }
         h.resend_requests();
         let mut tick: u64 = 0;
-        while !h.stop.load(Ordering::Relaxed) {
+        while h.live(gen) {
             let lan = h.book.lock().unwrap().profile.lan.clone();
             let port = h.state.lock().unwrap().tcp_port;
             if tick % BEACON_EVERY == 0 && lan != "off" {
@@ -511,6 +537,7 @@ pub fn stop(hub: &Arc<Hub>) {
     }
     hub.presence_all(false);
     hub.stop.store(true, Ordering::Relaxed);
+    hub.gen.fetch_add(1, Ordering::SeqCst);
     hub.state.lock().unwrap().running = false;
 }
 
@@ -524,6 +551,30 @@ mod tests {
         let h = Hub::new(d.path(), PeerIdentity::from_seed([seed; 32]).unwrap());
         h.book.lock().unwrap().profile = Profile { name: name.into(), mailbox: false, ..Default::default() };
         (d, h)
+    }
+
+    #[test]
+    fn a_quick_stop_and_start_leaves_one_set_of_threads() {
+        let (_d, a) = hub_at(1, "Ari");
+        let g1 = a.gen.fetch_add(1, Ordering::SeqCst) + 1;
+        assert!(a.live(g1));
+        a.stop.store(true, Ordering::Relaxed);
+        a.gen.fetch_add(1, Ordering::SeqCst);
+        assert!(!a.live(g1), "stopped");
+        // started again before the old threads woke: they still end, the new ones run
+        let g2 = a.gen.fetch_add(1, Ordering::SeqCst) + 1;
+        a.stop.store(false, Ordering::Relaxed);
+        assert!(!a.live(g1) && a.live(g2));
+    }
+
+    #[test]
+    fn a_closed_world_is_no_longer_shown_to_friends() {
+        let (_d, a) = hub_at(1, "Ari");
+        *a.playing.lock().unwrap() = (Some("Single player".into()), Some(json!({"kind": "single", "name": "Single player", "invite_hint": "friends"})));
+        assert!(!a.world_closed("vanilla"), "another world: kept");
+        assert!(a.playing.lock().unwrap().1.is_some());
+        assert!(a.world_closed("single"));
+        assert_eq!(*a.playing.lock().unwrap(), (None, None));
     }
 
     #[test]

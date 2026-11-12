@@ -2598,7 +2598,17 @@ fn world_share_off(k: crate::host::engine::Kind) {
     if let Some(w) = world_friends_here(k) {
         wf::share_stopped(&w);
     }
+    friends_world_closed(k.word());
     let _ = eng::sql(&world_paths(k), "acore_characters", &format!("{} {}", wf::INGAME_TABLES, wf::share_sql(false, "", now_secs())));
+}
+
+/// A world's sharing stopped: friends on the Leyline network stop seeing it open (their next presence, sent now).
+fn friends_world_closed(kind: &str) {
+    if let Some(h) = crate::p2p::friendnet::current() {
+        if h.world_closed(kind) && h.state.lock().map(|s| s.running).unwrap_or(false) {
+            std::thread::spawn(move || h.presence_all(true));
+        }
+    }
 }
 
 /// A Built-in engine world as its friends' claims need it (host/worldfriends.rs).
@@ -2709,6 +2719,13 @@ fn ingame_sync_start() {
 #[derive(Serialize)]
 struct WorldFriendView {
     user: String,
+    /// The friend's peer id on the Leyline network ("" for an earlier friend's login not yet taken over).
+    peer: String,
+    /// Their name when they are on this player's Friends list (p2p/friends.rs), else "".
+    name: String,
+    /// On this player's Friends list, and online there now.
+    on_list: bool,
+    online: bool,
     trusted: bool,
     /// Invited now (can come in while the world is shared).
     enabled: bool,
@@ -2735,16 +2752,31 @@ async fn world_friends(kind: String) -> Result<Vec<WorldFriendView>, String> {
         let mut b = wf::load(&share);
         let users: Vec<String> = chars.iter().map(|c| c.user.clone()).collect();
         wf::fold(&mut b, &users, now_secs());
+        // the same identity as the Friends list (identity.rs): its names, and who is online there
+        let known: Vec<(String, String, bool)> = crate::p2p::friendnet::current()
+            .map(|h| {
+                let v = h.book.lock().unwrap().view(&h.me, crate::p2p::friendnet::now(), &[], crate::p2p::friendnet::ONLINE_WINDOW);
+                v["friends"].as_array().into_iter().flatten()
+                    .map(|f| (f["peer_id"].as_str().unwrap_or("").to_string(), f["name"].as_str().unwrap_or("").to_string(), f["online"].as_bool().unwrap_or(false)))
+                    .collect()
+            })
+            .unwrap_or_default();
         Ok(b.friends
             .into_iter()
-            .map(|f| WorldFriendView {
+            .map(|f| {
+                let k = known.iter().find(|(p, _, _)| !f.peer.is_empty() && *p == f.peer);
+                WorldFriendView {
                 chars: chars.iter().filter(|c| c.user == f.user).cloned().collect(),
+                peer: f.peer.clone(),
+                name: k.map(|x| x.1.clone()).unwrap_or_default(),
+                on_list: k.is_some(),
+                online: k.is_some_and(|x| x.2),
                 user: f.user,
                 trusted: f.trusted,
                 enabled: f.enabled,
                 legacy: f.legacy,
                 seen: f.seen,
-            })
+            }})
             .collect())
     })
     .await
@@ -2765,6 +2797,12 @@ async fn world_friend(kind: String, user: String, action: String) -> Result<Stri
 #[tauri::command]
 fn friend_worlds() -> Vec<crate::host::worldfriends::JoinedView> {
     crate::host::worldfriends::worlds_view(&settings::app_dir())
+}
+
+/// The friend's side: forget a remembered world on this PC (the friend's world keeps the character).
+#[tauri::command]
+fn friend_world_forget(realm_id: String) -> Result<(), String> {
+    crate::host::worldfriends::forget(&settings::app_dir(), &realm_id)
 }
 
 /// Join a remembered friend's world again, with no new link: this launcher's identity claims its lasting login
@@ -4310,6 +4348,17 @@ pub fn run() {
                 if window.label() == "main" && crate::p2p::node::keep_running_on_close(&settings::app_dir()) {
                     api.prevent_close();
                     let _ = window.minimize();
+                } else if window.label() == "main" {
+                    // Leyline closes: friends see "offline" now instead of ten minutes later (at most a second's wait;
+                    // a slow relay mailbox is left to time out on its own)
+                    if let Some(h) = crate::p2p::friendnet::current() {
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            crate::p2p::friendnet::stop(&h);
+                            let _ = tx.send(());
+                        });
+                        let _ = rx.recv_timeout(Duration::from_millis(1200));
+                    }
                 }
             }
         })
@@ -4476,6 +4525,7 @@ pub fn run() {
             world_friends,
             world_friend,
             friend_worlds,
+            friend_world_forget,
             join_friend_again,
             friends_state,
             friends_start,

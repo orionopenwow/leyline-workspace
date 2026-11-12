@@ -232,7 +232,7 @@
     pick.addEventListener("change", () => { store.set(KEY_WORLD, pick.value); paint(); });
     const playActs = [go, pick];
     if (S.other) playActs.push(btn(`Stop ${S.other.title} and play`, "btn", () => play(true), "sh-stop-other"));
-    const playState = metaLine(st ? (running ? "Running now. Play takes you straight in." : ready ? "Ready. Starts in a minute or two." : "Not set up yet. Play sets it up once (10 to 30 minutes), then takes you in.")
+    const playState = metaLine(st ? (running ? "Running now. Play takes you straight in." : ready ? "Ready. Starts in a minute or two." : "Not set up yet. Play sets it up once (5–20 minutes, first time only), then takes you in.")
       : (w ? "Checking…" : "Update Leyline to play your own world."), "sh-play-state");
 
     // Host

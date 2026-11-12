@@ -663,7 +663,7 @@
     if (!w || w.saving) return;
     w.saving = true; w.line = ""; paint();
     try { await call("world_settings_set", payload(w.kind, w.v)); answer(true); }
-    catch (e) { w.saving = false; w.line = oops(e, "Your settings weren't saved. Try again."); paint(); }
+    catch (e) { w.saving = false; w.line = coded(e) ? coded(e).text : oops(e, "Your settings weren't saved. Try again."); paint(); }
   }
 
   function paint() {
@@ -758,7 +758,7 @@
       PS.line = [(r && r.message) || "Saved.", "ok"];
     } catch (e) {
       PS.v = before;
-      PS.line = [oops(e, "That setting wasn't saved. Try again."), "bad"];
+      PS.line = [coded(e) ? coded(e).text : oops(e, "That setting wasn't saved. Try again."), "bad"];
     }
     PS.busy = false;
     paintSetting();

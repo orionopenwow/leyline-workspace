@@ -203,7 +203,7 @@
     bar.setAttribute("aria-label", "Setting up the original world");
     box.append(head, bar);
     if (job.detail || typeof job.pct === "number") box.append(mk("p", "sp-fine", [typeof job.pct === "number" ? `${job.pct}%` : "", job.detail || ""].filter(Boolean).join(" · ")));
-    box.append(mk("p", "sp-fine", "The first time gets the engine (shared with Single player), reads the maps from your game folder and fills the world: 10 to 30 minutes. Then it takes you in by itself."));
+    box.append(mk("p", "sp-fine", "The first time gets the engine (shared with Single player), reads the maps from your game folder and fills the world. First time only: 5–20 minutes. After this, your world starts in seconds. Then it takes you in by itself."));
     return box;
   }
 
@@ -301,7 +301,7 @@
       d.append(btn("Open Vanilla+ on the Host page", "btn small", () => { nav("host"); document.dispatchEvent(new CustomEvent("leyline:host-ruleset", { detail: { profile: "vanillaplus" } })); }, "sv-docker-go"));
       card.append(d);
     } else if (!(st && st.set_up)) {
-      card.append(mk("p", "sp-fine", "Needs your own game folder, once (Leyline never downloads or ships the game). The first time takes 10 to 30 minutes; after that, a minute or two."));
+      card.append(mk("p", "sp-fine", "Needs your own game folder, once (Leyline never downloads or ships the game). First time only: 5–20 minutes; after that, your world starts in seconds."));
     }
     const s = mk("p", "status sv-status" + (line[1] ? " " + line[1] : ""), line[0]);
     s.id = "sv-status";

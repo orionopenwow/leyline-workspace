@@ -1184,7 +1184,7 @@ function worldHint(k) {
   if (!haveBuild(WORLD_BUILD)) return { head: "ADD YOUR GAME FOLDER", detail: `${title} plays with your own game folder`, warn: true };
   if (w && !w.supported) return { head: `${title.toUpperCase()} NEEDS ONE MORE STEP`, detail: "PLAY opens Single player to set it up", warn: true };
   if (w && w.running) return { head: "READY TO PLAY", detail: `${title}, running on this PC`, warn: false };
-  if (w && w.set_up) return { head: "READY TO PLAY", detail: `${title}, on this PC: starts in a minute or two`, warn: false };
+  if (w && w.set_up) return { head: "READY TO PLAY", detail: `${title}, on this PC: starts in seconds`, warn: false };
   return { head: "PLAY SETS IT UP", detail: `${title}, on this PC: the first time takes a while`, warn: false };
 }
 // PLAY on a picked world: the one-click flow (oneclick.js: the folder found or asked for, room on the disk, Quick start

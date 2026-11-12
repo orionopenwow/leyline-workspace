@@ -17,7 +17,11 @@
 --   client -> server   roster | order <what> <name|all> | formation <name> | prepare | fill <party|raid>[\t<picks>] |
 --                      usual | dismiss <name|all> | spec <name>\t<spec> | role <name> <tank|healer|dps> | gear <name> |
 --                      alts | alt <name> | save | buddy <class|any|off> | dungeon <id>[\t<picks>]
---   server -> client   roster (H/B/S lines, see ov_companions.lua) | alts (A/U lines) | msg <text>
+--   server -> client   roster (H/B/S lines, see ov_companions.lua) | alts (A/U lines) | msg <text> |
+--                      welcome <text> (single player: bots joined a new character by themselves; this file says it,
+--                      with how to change them: the window's key and the minimap button)
+-- The window's key (Esc > Key Bindings > Bots > Bots window) is set to Ctrl-B the first time the realm says it has
+-- bots, only if that key is free and the window has no key yet, and never again (a player who clears it keeps it so).
 -- Health and mana come from the game's own unit functions (party1-4, raid1-40), so they move live.
 --
 -- Bot chatter: the core tells everyone nearby when a bot earns an achievement, and bots answer orders in
@@ -43,7 +47,7 @@ local ROLE_COORDS = { tank = { 0, 19 / 64, 22 / 64, 41 / 64 }, healer = { 20 / 6
     dps = { 20 / 64, 39 / 64, 22 / 64, 41 / 64 } }
 local STATUS = { follow = { "Following", 0.45, 0.9, 0.45 }, stay = { "Staying", 1, 0.82, 0.2 },
     passive = { "Passive", 0.6, 0.72, 0.95 }, dead = { "Dead", 1, 0.32, 0.32 } }
-local KIND_TAG = { bot = "bot", alt = "alt bot", buddy = "buddy bot" }
+local KIND_TAG = { bot = "bot", alt = "alt bot", buddy = "buddy bot", dungeon = "dungeon bot" }
 local FORMATIONS = { { "chaos", "Loose" }, { "near", "Close" }, { "melee", "Melee" }, { "line", "Line" },
     { "circle", "Circle" }, { "arrow", "Arrow" }, { "shield", "Shield" }, { "queue", "Single file" } }
 local FORMATION_LABEL = {}
@@ -202,9 +206,60 @@ local function fireHooks()
     for _, fn in ipairs(C.hooks) do pcall(fn) end
 end
 
+-- ---------------------------------------------------------------- the window's key and the welcome
+
+C.DEFAULT_KEY = "CTRL-B"
+
+-- The window's key as the player reads it ("Ctrl-B"), or "" when it has none.
+function C.WindowKey()
+    if not GetBindingKey then return "" end
+    local ok, k = pcall(GetBindingKey, "WUBOTS_WINDOW")
+    if not ok or type(k) ~= "string" or k == "" then return "" end
+    return (k:gsub("CTRL%-", "Ctrl-"):gsub("SHIFT%-", "Shift-"):gsub("ALT%-", "Alt-"))
+end
+
+-- Once per account: the window gets Ctrl-B when that key is free and the window has no key (not in combat: the
+-- client refuses binding changes then; the next roster tries again).
+function C.OfferKey()
+    if type(WrathUnleashedUIDB) ~= "table" then WrathUnleashedUIDB = {} end
+    local d = WrathUnleashedUIDB
+    if d.botsKeyOffered or not (SetBinding and GetBindingAction) then return false end
+    if InCombatLockdown and InCombatLockdown() then return false end
+    d.botsKeyOffered = true
+    if C.WindowKey() ~= "" then return false end
+    local ok, action = pcall(GetBindingAction, C.DEFAULT_KEY)
+    if not ok or (action or "") ~= "" then return false end
+    if not pcall(SetBinding, C.DEFAULT_KEY, "WUBOTS_WINDOW") then return false end
+    if SaveBindings then pcall(SaveBindings, (GetCurrentBindingSet and GetCurrentBindingSet()) or 1) end
+    return true
+end
+
+-- How to change your bots, in plain words, with the key the player really has.
+function C.HowTo()
+    local key = C.WindowKey()
+    if key ~= "" then return "Change them in the Bots window: press " .. key .. " or click the Bots button by the minimap." end
+    return "Change them in the Bots window: click the Bots button by the minimap."
+end
+
+function C.Welcome(text)
+    C.OfferKey()
+    if C.ShowMinimapButton then C.ShowMinimapButton() end
+    local line = TAG .. tidy(text):sub(1, 220) .. " " .. C.HowTo()
+    if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage(line) end
+    local key = C.WindowKey()
+    if UIErrorsFrame and UIErrorsFrame.AddMessage then
+        UIErrorsFrame:AddMessage(key ~= "" and ("Your bots are here. Bots window: " .. key) or "Your bots are here.",
+            ACCENT[1], ACCENT[2], ACCENT[3], 1, 5)
+    end
+    C.lastWelcome = line
+    return line
+end
+
 function C.Dispatch(name, data)
+    if name == "welcome" then return C.Welcome(data) end
     if name == "roster" then
         if not C.ParseRoster(data) then return end
+        if C.state == "on" then C.OfferKey() end
         if C.state == "on" and C.ShowMinimapButton then C.ShowMinimapButton() end
         if menu and menu:IsShown() and not C.names[menu.botName or ""] then menu:Hide() end
         C.Refresh()

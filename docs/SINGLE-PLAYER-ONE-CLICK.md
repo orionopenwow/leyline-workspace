@@ -149,6 +149,8 @@ TODO: an expiry or a "remove friends' logins" button, once the owner says which.
 | File | What |
 |---|---|
 | `realm/profiles/solovanilla.env` | the original world's ruleset |
+| `realm/custom/lua_scripts/ov_companions.lua` | bots that join by themselves, dungeon bots, the choice per character ("Companions settings") |
+| `stream/fui-web/Interface/AddOns/WrathUnleashedUI/Companions.lua` | the welcome line with the Bots window's key |
 | `launcher/src-tauri/src/host/engine.rs` | `Kind::Vanilla`, `KINDS`, `word`, shared maps, `refresh_chars` |
 | `launcher/src-tauri/src/host/localworld.rs` | races, classes, combos, Quick start checks, characters SQL and parsing, online names |
 | `launcher/src-tauri/src/host/worldshare.rs` | the realm list rewriter, the same-network forwarder, friends' logins |
@@ -161,6 +163,78 @@ TODO: an expiry or a "remove friends' logins" button, once the owner says which.
 | `launcher/ui/hostfriends.js` | Play with friends: the single player worlds' tiles |
 | `launcher/ui/index.html`, `single.css` | the card's place, the page, Home's buttons |
 | `docs/leyline/single-player.md` | the player guide (site docs, `stream/docs.py`) |
+
+## Companions settings
+
+Built 11 Nov 2026 (agent `sp-companions`). A new player never lands alone and never needs a chat command. All of it
+is `realm/custom/lua_scripts/ov_companions.lua`, section "single player", and only runs where the profile turns it on:
+`solo.env` and `solovanilla.env` do; `main.env` (the official realm) and every other profile never name the keys, and
+the script's defaults are **off**, so the official realm never does any of it (also: `OV_COMPANIONS=0` there turns
+every bot feature off whatever else is set). In game, players always read **bots** (the owner's rule for the realm
+scripts); "companions" is the launcher's word for the settings.
+
+### What the player sees
+
+* **First entry.** About 6 s after a character first enters the world, bots join it by themselves (default 2). One
+  welcome line names them and their roles and says how to change them. With the Bots window add-on (WrathUnleashedUI,
+  always there in Leyline's game folders) the add-on prints the line, with the window's key and the minimap button:
+  *"Your bots are here: Anna the Priest (healer) and Bo the Warrior (tank). They follow you, fight with you and leave
+  the loot to you. Change them in the Bots window: press Ctrl-B or click the Bots button by the minimap."* The window
+  gets **Ctrl-B** once, only if that key is free and the window has no key yet (Esc > Key Bindings > Bots > Bots window).
+  Without the add-on the realm says it in chat and points at `.companions` (a fallback only).
+* **The party covers what the player is not** (their role from their talents; none yet = damage):
+
+  | You | 1st bot | 2nd | 3rd, 4th |
+  |---|---|---|---|
+  | damage | healer | tank | damage |
+  | tank | healer | damage | damage |
+  | healer | tank | damage | damage |
+
+  Two bots for a damage dealer = a healer that keeps you up and a tank that holds what you pull: the most forgiving
+  open-world group, and a dungeon only needs two more. Classes are picked at random within the role (no Death Knight
+  below its start level, and none at all in the original world, cap 60). They **keep to the player's level** as the
+  player levels (re-levelled and re-geared by the bot module, their role's spec re-applied), and always pass on loot.
+* **Each login.** The same party comes back (the classes and specs that were with the character at logout, at most the
+  "how many" setting): *"Your bots are back: ..."*. Not after a crash: the bot module brings those back itself.
+* **Sent home on purpose = remembered per character.** Dismissing them all (the Bots window's Dismiss, the buddy's
+  off, or `.dismiss`) is kept: *"They won't join you by themselves now. Bring bots back any time from the Bots
+  window."* Nothing joins that character by itself until the player brings bots again (any fill, buddy or dungeon
+  pick); the party with them at the next logout is then remembered. Dismissing one bot just remembers the smaller party.
+* **Dungeons.** Entering a 5-player dungeon (walking in, the Bots window's Dungeons tab, or the Dungeon Finder alone
+  through mod-solo-lfg) fills the free slots with **dungeon bots** (1 tank, 1 healer, damage, minus what the group
+  already has): *"Dungeon bots join you: ... They head home when you leave."* The Bots window tags them "dungeon bot".
+  Leaving to the open world sends just those home and brings the rest of the party over. A ghost running back from
+  the graveyard keeps them; they are never part of the remembered party.
+* In a fight, dead, or with other bots still arriving: they wait and try again every 10 s (4 times).
+
+### The keys (for sp-ui and sp-core)
+
+The launcher writes these in the world's **`<world>/state/realm.env`** (`host/engine.rs` `Paths::realm_env`), which
+`world_env` layers last, over the profile and `modules.env`. The world server reads its environment when it starts:
+**a change applies at the next start of that world** (say so next to the settings, or restart it for the player).
+The Lua reads them with `os.getenv` at each use; "1" on, "0" off.
+
+| Setting (launcher words) | Key | Values | Default (profile) | Notes |
+|---|---|---|---|---|
+| Companions join me by themselves | `OV_COMPANIONS_AUTO` | `1` / `0` | `1` | off: no first-entry party, nothing at login; the Bots window still works |
+| How many follow me | `OV_COMPANIONS_FOLLOW` | `0`-`4` | `2` | clamped to 0..4 and to `OV_COMPANIONS_PER_PLAYER` (4); `0` = none join by themselves |
+| Dungeon buddies | `OV_COMPANIONS_DUNGEON_AUTO` | `1` / `0` | `1` | fills 5-player dungeons on entry; raids never (the Bots window's Raid fill does) |
+| Roaming bots in the world | `WU_BOTS` | `0`-`500` | Single player `20` (`engine.rs` `BOTS`), original world `0` | the engine turns it into `AC_PLAYERBOTS_MIN/MAX_RANDOM_BOTS` and drops the key. The original world's profile also sets `AC_PLAYERBOTS_RANDOM_BOT_AUTOLOGIN=0`: to give it roaming bots, write `AC_PLAYERBOTS_RANDOM_BOT_AUTOLOGIN=1` too (unverified that 0 keeps them all out; they stay held to 60 by `AC_PLAYERBOTS_RANDOM_BOT_MAX_LEVEL`) |
+
+Turning bots off entirely is the existing `OV_COMPANIONS=0` (also hides the Bots window's controls: "Bots are off on
+this realm"). The per-character choice is in the world's characters database, table `mod_companions_auto` (guid, mode
+`new`/`on`/`off`, party `tank=warrior:prot pve,healer=priest:holy pve,buddy=mage`, at), made by the script.
+
+Tests: `stream/tests/test_ov_companions.lua` (section "single player", 46 checks: off by default and with main.env,
+first entry, roles, level keeping, login return, dismiss kept, dungeon fill and leave, ghosts, the count, the first
+era, combat retry, the window's welcome, crash), `stream/tests/test_wuui_companions.lua` (the welcome line, Ctrl-B
+once and only if free, the dungeon bot tag), `hosting/tests/test_solo_profile.py` (the keys in solo.env, off
+everywhere else, documented here), `hosting/tests/test_solovanilla_profile.py` (the same keys as solo.env).
+
+Not verified in a real game: the Dungeon Finder alone (mod-solo-lfg) group accepting bots added by `addclass` inside
+the dungeon (the fill runs; whether the module lets them into a Dungeon Finder group is from reading); the map change
+event (28) firing for the instance teleport of the Dungeon Finder; Ctrl-B being unbound in the stock key set (the
+add-on checks before taking it); bots following the player out of an instance before the 2.5 s bring-over.
 
 ## Tests
 

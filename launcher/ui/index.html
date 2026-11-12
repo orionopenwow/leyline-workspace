@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leyline Launcher</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="listkit.css"><!-- the list kit: one look for every list (listkit.js, docs/LAUNCHER-LISTS.md) -->
 <link rel="stylesheet" href="simplehome.css"><!-- Simple mode: the four-button home (simplehome.js) -->
 <link rel="stylesheet" href="spin.css"><!-- the spinning mark: the header logo and every loading state (spin.js) -->
 <!-- themes (themes agent): Dark (style.css) or Light; the Themes section; themes.js applies the theme before paint -->
@@ -385,13 +386,12 @@
   <!-- REALMS -->
   <section class="page" id="page-realms">
     <div class="panel wide">
-      <!-- two lists (owner 2026-11-02): Official realms (ours, always up) and Community realms (players' Beacons);
-           search and filters work within the tab that is open (app.js rlTab) -->
+      <!-- the lists (owner 2026-11-02: Official realms, ours, always up, and Community realms, players' Beacons; 12 Nov:
+           the in-game Realm Selection's categories): All, Official, Community, Single player & Den, Friends' worlds,
+           Favourites. The tabs (#rl-tab-<id>), the search, the sort and the stars are the list kit's (listkit.js,
+           app.js rlList); search and filters work within the tab that is open -->
       <div class="panel-head"><h2>Realms</h2>
-        <div class="page-tabs rl-tabs" id="rl-tabs" role="tablist" aria-label="Realm lists">
-          <button type="button" class="page-tab" role="tab" id="rl-tab-official" data-rl-tab="official" aria-controls="rl-pane" aria-selected="true">Official realms</button>
-          <button type="button" class="page-tab" role="tab" id="rl-tab-community" data-rl-tab="community" aria-controls="rl-pane" aria-selected="false" tabindex="-1">Community realms</button>
-        </div></div>
+        <div class="page-tabs rl-tabs" id="rl-tabs" role="tablist" aria-label="Realm lists"></div></div>
       <div class="toolbar rl-tools">
         <input id="rl-q" type="search" placeholder="Find a realm" aria-label="Find a realm" autocomplete="off" spellcheck="false">
         <div class="rl-pop-wrap">
@@ -433,7 +433,7 @@
         <p class="status" id="rl-paste-status" role="status"></p>
       </form>
       <div class="rl-pane" id="rl-pane" role="tabpanel" aria-labelledby="rl-tab-official">
-        <p class="net-line" id="rl-net" aria-live="polite"></p>
+        <div class="rl-head-row"><p class="net-line" id="rl-net" aria-live="polite"></p><div class="rl-kbar" id="rl-kbar"></div></div>
         <p class="status" id="rl-status" role="status"></p>
         <div class="realm-list" id="rl-list"></div>
         <p class="rl-tab-note" id="rl-tab-note"></p>
@@ -961,6 +961,7 @@
 </nav>
 
 </div>
+<script src="listkit.js"></script><!-- the list kit: search, tabs, sort, favourites, keys, empty states (window.LeylineList; before every list) -->
 <script src="friendly.js"></script><!-- never a raw error to the player: window.LeylineFriendly -->
 <script src="bugreport.js"></script><!-- Help › Report a bug and the launcher's recent log (window.LeylineBugReport; early, to keep the log) -->
 <script src="spin.js"></script>

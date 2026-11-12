@@ -114,7 +114,10 @@ test('Realms page: two tabs, Official first; the slim line, one tag, players, Re
   const hue = (i) => cards.nth(i).locator('.rl-ic').evaluate((e) => e.style.getPropertyValue('--h'));
   assert.match(await hue(0), /^\d+$/);
   assert.notEqual(await hue(0), await hue(1), 'a hue from the name');
-  assert.equal(await cards.nth(1).locator('.rl-pop').textContent(), '30 / 100');
+  assert.equal(await cards.nth(1).locator('.rl-pop .state').textContent(), '30 / 100');
+  assert.equal(await cards.nth(1).locator('.rl-pop .rl-popl').textContent(), 'Medium · 40 bots', 'the population, as in the game\'s own list, and the bots');
+  assert.equal(await cards.nth(0).locator('.rl-pop .rl-popl').textContent(), 'Low');
+  assert.equal(await cards.nth(2).locator('.rl-popl').count(), 0, 'offline: no population');
   assert.equal(await cards.nth(1).locator('.rl-pop .state').getAttribute('title'), '30 of 100 playing · 40 bots');
   assert.equal(await cards.nth(1).locator('.rl-bar i').evaluate((e) => e.style.width), '30%', 'players fill the bar');
   assert.ok(await cards.nth(2).evaluate((e) => e.classList.contains('off') && getComputedStyle(e).opacity < 1), 'an offline realm is dimmed');
@@ -166,16 +169,26 @@ test('Realms page: PLAY starts exactly the picked client; one that cannot play t
 
 test('Realms tabs: arrow keys, Home / End, the choice remembered; storage off still works', async () => {
   const { page, errors } = await open(false);
+  // the in-game Realm Selection's tabs, in its order
+  assert.deepEqual(await page.$$eval('#rl-tabs [role="tab"]', (b) => b.map((x) => x.id)),
+    ['rl-tab-all', 'rl-tab-official', 'rl-tab-community', 'rl-tab-mine', 'rl-tab-friends', 'rl-tab-fav']);
+  assert.deepEqual(await page.$$eval('#rl-tabs [role="tab"]', (b) => b.map((x) => x.textContent)),
+    ['All', 'Official', 'Community', 'Single player & Den', "Friends' worlds", 'Favourites']);
   await page.focus('#rl-tab-official');
   await page.keyboard.press('ArrowRight');
   assert.equal(await page.getAttribute('#rl-tab-community', 'aria-selected'), 'true');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'rl-tab-community', 'focus moves with the tab');
   assert.equal(await page.getAttribute('#rl-tab-community', 'tabindex'), '0');
   assert.equal(await page.getAttribute('#rl-tab-official', 'tabindex'), '-1', 'one tab stop');
+  await page.keyboard.press('Home');
+  assert.equal(await page.getAttribute('#rl-tab-all', 'aria-selected'), 'true');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.getAttribute('#rl-tab-fav', 'aria-selected'), 'true', 'wraps around');
   await page.keyboard.press('ArrowRight');
-  assert.equal(await page.getAttribute('#rl-tab-official', 'aria-selected'), 'true', 'wraps around');
+  assert.equal(await page.getAttribute('#rl-tab-all', 'aria-selected'), 'true', 'and back');
   await page.keyboard.press('End');
-  assert.equal(await page.getAttribute('#rl-tab-community', 'aria-selected'), 'true');
+  assert.equal(await page.getAttribute('#rl-tab-fav', 'aria-selected'), 'true');
+  await page.click('#rl-tab-community');
   assert.equal(await page.evaluate(() => localStorage.getItem('leyline.realmsTab')), 'community');
   await page.reload();
   await page.click('.nav[data-page="realms"]');

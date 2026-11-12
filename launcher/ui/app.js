@@ -2578,7 +2578,10 @@ async function showLinkedRealm(id) {
   if (!r) { say("rl-status", "That realm isn't on the realm list right now: it may be offline. Try Refresh in a minute.", "warn"); return; }
   if (r.official || r.address) pickRealm(r);   // the play bar too, with a client of the version it needs
   $("rl-mine").checked = false;
+  if (rlList && rlList.query()) rlList.setQuery("");   // a search for something else would hide it
   setRealmsTab(realmTab(r));   // a community realm shows on the Community tab (renders the list)
+  rlLinked = realmKeyOf(r);   // lit until the player leaves the page (the list repaints: it stays lit)
+  renderRealms();
   const card = [...document.querySelectorAll("#rl-list .realm-card")].find((c) => c.querySelector(".name")?.textContent === r.name);
   if (card) { card.classList.add("linked"); card.scrollIntoView({ block: "center" }); const b = card.querySelector(".acts .btn"); if (b && !b.disabled) b.focus(); }
   const need = r.official ? "3.3.5a" : r.build;
@@ -2914,6 +2917,7 @@ async function loadRealms(quiet) {
   } catch (e) {
     sayErr("rl-status", e);
   }
+  rlLoading = false;
   renderRealms();
   renderRealmRows();
   renderSrvHead();
@@ -2969,45 +2973,204 @@ function realmFilterCount() {
   if ($("rl-mine") && $("rl-mine").checked) n++;
   return n;
 }
-function clearRealmFilters() {
-  for (const [id] of RL_FILTERS) if ($(id)) $(id).value = "";
-  $("rl-f-now").checked = false;
-  $("rl-mine").checked = false;
-  renderRealms();
-}
-// The two lists (owner 2026-11-02): Official realms are ours (official, or the official lineup: run by us, room for
-// everyone, up around the clock); Community realms are the players' own (Beacons on the relay). One panel, two tabs.
-const RL_TABS = ["official", "community"];
+// The lists (owner 2026-11-02: Official realms are ours, Community realms the players' own; 12 Nov: the in-game Realm
+// Selection's categories, WrathUnleashedUI/Leyline.lua TABS): All, Official, Community, Single player & Den (this
+// PC's own worlds), Friends' worlds (where your Leyline friends are, and friends' worlds you joined) and Favourites
+// (the star on any row). One panel; the list is the list kit's (listkit.js, docs/LAUNCHER-LISTS.md): the search, the
+// tabs, the sort, the stars, the keys and the empty states are the same as every other list in the launcher.
+const RL_TABS = ["all", "official", "community", "mine", "friends", "fav"];
+const RL_TAB_DEFS = [
+  { id: "all", label: "All", long: "All realms", suggest: false },
+  { id: "official", label: "Official", long: "Official realms" },
+  { id: "community", label: "Community", long: "Community realms" },
+  { id: "mine", label: "Single player & Den", long: "Single player & Den" },
+  { id: "friends", label: "Friends' worlds", long: "Friends' worlds" },
+  { id: "fav", label: "Favourites", long: "Favourites", suggest: false },
+];
 const realmTab = (r) => (r && (r.official || inLineup(r)) ? "official" : "community");
-let rlTab = "official";
-try { const t = localStorage.getItem("leyline.realmsTab"); if (RL_TABS.includes(t)) rlTab = t; } catch (_) { /* storage may be off */ }
-function setRealmsTab(tab, focus) {
-  if (!RL_TABS.includes(tab)) return;
-  if (rlTab !== tab) say("rl-status", "");   // a line about the other tab's realm goes with it
-  rlTab = tab;
-  try { localStorage.setItem("leyline.realmsTab", tab); } catch (_) { /* storage may be off */ }
-  renderRealms();
-  if (focus) $("rl-tab-" + tab).focus();
-}
-for (const b of document.querySelectorAll("#rl-tabs [data-rl-tab]")) {
-  b.addEventListener("click", () => setRealmsTab(b.dataset.rlTab));
-  b.addEventListener("keydown", (e) => {   // the usual tab list keys
-    const i = RL_TABS.indexOf(b.dataset.rlTab);
-    const j = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? RL_TABS.length - 1 : null;
-    if (j === null) return;
-    e.preventDefault();
-    setRealmsTab(RL_TABS[(j + RL_TABS.length) % RL_TABS.length], true);
-  });
-}
 const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
 // The count line of the open tab, from the list itself: the network's own totals count every realm online, ours
 // too (realms.rs totals), which is how the official realm came to be called a "community realm".
-const tabRealms = (tab) => realmsCache.filter((r) => realmTab(r) === tab && !(hiddenBuild(r.build) && !r.official));
+const listedRealms = () => realmsCache.filter((r) => !(hiddenBuild(r.build) && !r.official));
+const tabRealms = (tab) => listedRealms().filter((r) => realmTab(r) === tab);
 const livePlayers = (rs, k) => rs.reduce((n, r) => n + (r.state === "live" ? r[k] || 0 : 0), 0);
+
+// Friends' worlds: your Leyline friends in a world now (friends.js friends_state: "playing" is the realm's name when
+// they share it) and the friends' worlds this PC joined (worldfriends.js friend_worlds). A core without them: none.
+let rlFriends = { friends: [], worlds: [], loaded: false };
+async function loadRealmFriends() {
+  const [s, w] = await Promise.all([invoke("friends_state").catch(() => null), invoke("friend_worlds").catch(() => null)]);
+  const friends = s && Array.isArray(s.friends) ? s.friends : [];
+  const worlds = Array.isArray(w) ? w.filter((x) => x && x.realm_id) : [];
+  const was = JSON.stringify([rlFriends.friends, rlFriends.worlds]);
+  rlFriends = { friends, worlds, loaded: true };
+  if (JSON.stringify([friends, worlds]) !== was) renderRealms();
+}
+const sameName = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase() && !!String(a || "").trim();
+const friendLabel = (f) => f.name || `Hero ${String(f.peer_id || "").slice(0, 4).toUpperCase()}`;
+function friendsOn(name) {
+  return rlFriends.friends.filter((f) => f.online && sameName(f.playing, name)).map(friendLabel);
+}
+function friendsLine(names) {
+  if (!names.length) return "";
+  if (names.length === 1) return `${names[0]} is here`;
+  if (names.length === 2) return `${names[0]} and ${names[1]} are here`;
+  return `${names[0]} and ${names.length - 1} friends are here`;
+}
+
+// The Population column of the in-game list (Leyline.lua L.Population): Low, Medium, High or Full against the
+// realm's maximum when it has one (a quarter, 60 %, full), else 10 and 50 players (people, not bots).
+const POP_RANK = { Low: 1, Medium: 2, High: 3, Full: 4 };
+function population(r) {
+  if (!r || r.state !== "live") return "Offline";
+  const p = r.players;
+  if (p == null) return "";
+  if (r.max_players > 0) { const f = p / r.max_players; return f >= 1 ? "Full" : f >= 0.6 ? "High" : f >= 0.25 ? "Medium" : "Low"; }
+  return p >= 50 ? "High" : p >= 10 ? "Medium" : "Low";
+}
+// The Type column: PvP, RP, RP PvP where they fit, else the realm's own type (PvE)
+function realmType(r) {
+  const t = (r && r.tags) || [];
+  if (t.includes("pvp") && t.includes("rp")) return "RP PvP";
+  if (t.includes("pvp")) return "PvP";
+  if (t.includes("rp")) return "RP";
+  return (r && r.kind) || "";
+}
+
+// The rows of the list: { k: key, type: "realm" | "local" | "world" | "fw", ... }. Keys stay the same across loads,
+// so a star, the focus and the selection follow the realm: a listed realm by its id, ours as "r:official".
+const realmKeyOf = (r) => "r:" + (r.official && (r.slug === "official" || !r.realm_id) ? "official" : r.realm_id || r.slug || r.address || r.name);
+function realmListRows() {
+  const order = realmsCache.filter((r) => r.official).concat(realmsCache.filter(inLineup), realmsCache.filter((r) => !r.official && !inLineup(r)));
+  const out = order.filter((r) => !(hiddenBuild(r.build) && !r.official)).map((r) => ({ k: realmKeyOf(r), type: "realm", r }));
+  // this PC's own worlds (the play bar's realm picker has the same rows: Your Den, Single player, the original world)
+  out.push({ k: "l:den", type: "local", L: DEN, name: DEN.name });
+  if (worldsHere() && !localHosted(LOCAL.solo)) for (const k of WORLD_KINDS) out.push({ k: "w:" + k, type: "world", world: k, name: WORLD_TITLE[k] });
+  else out.push({ k: "l:solo", type: "local", L: LOCAL.solo, name: LOCAL.solo.name });
+  // friends' worlds this PC joined (Join again needs no new link)
+  for (const w of rlFriends.worlds) out.push({ k: "f:" + w.realm_id, type: "fw", w, name: w.name || "Your friend's world" });
+  return out;
+}
+const hostedRealmId = () => (kit && kit.realm && kit.realm.realm_id) || "";
+function rowInTab(row, tab) {
+  if (tab === "all") return true;
+  if (row.type === "realm") {
+    if (tab === "official" || tab === "community") return realmTab(row.r) === tab;
+    if (tab === "mine") return !!hostedRealmId() && row.r.realm_id === hostedRealmId();   // the realm this PC hosts
+    if (tab === "friends") return friendsOn(row.r.name).length > 0;
+    return false;
+  }
+  if (tab === "mine") return row.type === "local" || row.type === "world";
+  if (tab === "friends") return row.type === "fw";
+  return false;
+}
+// what the search box looks at: the name, the line, the type, the rules, the region, the language, the version
+function rowWords(row) {
+  if (row.type === "realm") {
+    const r = row.r;
+    return [r.name, r.tagline, r.kind, realmType(r), CORE_LABELS[r.core], REGION_LABELS[r.region], r.language, r.build,
+      population(r), ...(r.tags || []).map((t) => TAG_LABELS[t] || t), ...friendsOn(r.name)];
+  }
+  if (row.type === "local") return [row.name, row.L.title, "on this pc", row.L === DEN ? "den" : "single player"];
+  if (row.type === "world") return [row.name, WORLD_LINE[row.world], "on this pc", "single player"];
+  return [row.name, "friend", "friends' world"];
+}
+
+const RL_SORTS = [
+  { id: "name", label: "Name", compare: (a, b) => String(a.r ? a.r.name : a.name).localeCompare(String(b.r ? b.r.name : b.name), undefined, { sensitivity: "base" }) },
+  { id: "pop", label: "Population", desc: true, compare: (a, b) => (POP_RANK[population(a.r)] || 0) - (POP_RANK[population(b.r)] || 0) },
+  { id: "players", label: "Players · bots", desc: true, compare: (a, b) => {
+    const v = (x) => (x.r && x.r.state === "live" ? (x.r.players || 0) * 1000 + (x.r.bots || 0) : -1);
+    return v(a) - v(b);
+  } },
+  { id: "type", label: "Type", compare: (a, b) => String(a.r ? realmType(a.r) : "~").localeCompare(String(b.r ? realmType(b.r) : "~")) },
+];
+const rowLive = (row) => (row.type === "realm" ? row.r.state === "live" : row.type !== "fw");
+var rlList = null;   // the list kit's list (made below, once the page's elements are in)
+function setRealmsTab(tab, focus) {
+  if (!RL_TABS.includes(tab) || !rlList) return;
+  rlList.setTab(tab, focus);
+}
+const rlTabNow = () => (rlList ? rlList.tab() : "official");
+
 function networkLine(tab) {
+  if (tab === "mine") return "Your own worlds, on this PC";
+  if (tab === "friends") {
+    const on = rlFriends.friends.filter((f) => f.online && f.playing).length;
+    return on ? `${plural(on, "friend")} in a world now` : "Your Leyline friends' worlds";
+  }
+  if (tab === "fav") { const n = rlList ? rlList.rows().filter((x) => rlList.isFav(x)).length : 0; return plural(n, "favourite"); }
   if (!realmsCache.length) return "";
-  const rs = tabRealms(tab);
-  return `${plural(rs.length, tab === "official" ? "official realm" : "community realm")} · ${livePlayers(rs, "players")} playing`;
+  const rs = tab === "all" ? listedRealms() : tabRealms(tab);
+  const word = tab === "official" ? "official realm" : tab === "community" ? "community realm" : "realm";
+  return `${plural(rs.length, word)} · ${livePlayers(rs, "players")} playing`;
+}
+const RL_NOTES = {
+  all: ["Official realms are run by us around the clock; community realms are run by players.", "community", "See community realms"],
+  official: ["Community realms are run by players and may go offline.", "community", "See community realms"],
+  community: ["Official realms are run by us around the clock.", "official", "See official realms"],
+  mine: ["Your own worlds run on this PC: just you, or the friends you invite.", "", ""],
+  friends: ["Add friends on the Single player page: their worlds and the realms they play show here.", "", ""],
+  fav: ["Press the star on any realm to keep it here, and in the play bar's realm list.", "", ""],
+};
+// the line above the list, the line under it and the FILTERS count, after every paint of the list
+function realmsChrome(view) {
+  const tab = view ? view.tab : rlTabNow();
+  const net = $("rl-net");
+  if (net) {
+    net.textContent = networkLine(tab);
+    const bots = tab === "official" || tab === "community" || tab === "all" ? livePlayers(tab === "all" ? listedRealms() : tabRealms(tab), "bots") : 0;
+    net.title = bots ? `${bots} bots too` : "";
+  }
+  const note = $("rl-tab-note");
+  if (note) {
+    const [text, other, label] = RL_NOTES[tab] || ["", "", ""];
+    const parts = [el("span", "", text)];
+    if (other) {
+      const sw = el("button", "link-s", label);
+      sw.type = "button";
+      sw.addEventListener("click", () => setRealmsTab(other, true));
+      parts.push(" ", sw);
+    } else if (tab === "friends" || tab === "mine") {
+      const go = el("button", "link-s", tab === "friends" ? "Open Friends" : "Open Single player");
+      go.type = "button";
+      go.addEventListener("click", () => show("single"));
+      parts.push(" ", go);
+    }
+    note.replaceChildren(...parts);
+  }
+  const nf = realmFilterCount();
+  $("rl-fcount").hidden = !nf;
+  $("rl-fcount").textContent = nf ? String(nf) : "";
+  $("rl-filters-btn").classList.toggle("on", nf > 0);
+  $("rl-filters-btn").setAttribute("aria-label", nf ? `Filters, ${nf} on` : "Filters");
+}
+
+// The words when the open tab shows nothing (the list kit's info: why), and the one button that helps.
+function realmsEmpty(info) {
+  const tab = info.tab;
+  if (info.reason === "loading") return { text: "Loading the realm list…" };
+  if (!info.inTab) {
+    if (tab === "community") return "No community realms yet. Be the first to run one: see Host your own below.";   // the banner below is the one call to action
+    if (tab === "official") return "The official realms aren't on the list right now. Try Refresh in a minute.";
+    if (tab === "all") return "The realm list is empty right now. Try Refresh in a minute.";
+    if (tab === "fav") return "No favourites yet. Press the star by a realm to keep it here.";
+    if (tab === "friends") {
+      return { text: rlFriends.friends.length ? "None of your Leyline friends are in a world right now." : "Your friends' worlds show here once you add friends.",
+        actions: [{ label: "Open Friends", run: () => show("single") }] };
+    }
+    if (tab === "mine") return { text: "Your own worlds show here: Single player and Your Den.", actions: [{ label: "Open Single player", run: () => show("single") }] };
+  }
+  const q = info.query;
+  const word = tab === "official" || tab === "community" ? tab + " " : "";
+  if (info.suggest) {
+    return { text: q ? `No ${word}realm called “${q}”.` : `No ${word}realms match these filters.`,
+      actions: [{ label: `Show ${info.suggest.n} in ${info.suggest.long}`, run: () => setRealmsTab(info.suggest.tab, true) }] };
+  }
+  if (q) return { text: `No realm called “${q}”.`, actions: [{ label: "Clear search", run: () => rlList.setQuery("", true) }] };
+  const mine = $("rl-mine").checked;
+  return { text: mine && info.filtersOn === 1 ? "None of the listed realms fits your clients." : "No realms match these filters.",
+    actions: [{ label: "Clear filters", run: clearRealmFilters }] };
 }
 // A realm's look, as on the website: a hue from its name, the crystal for the official realm.
 function nameHue(name) {
@@ -3050,165 +3213,257 @@ function playersFill(players, max) {
 }
 
 let rlOtherShown = false;
-function renderRealms() {
-  const box = $("rl-list");
-  box.replaceChildren();
+let rlLoading = true;
+let rlLinked = "";      // the realm a website's Open in launcher showed (showLinkedRealm): lit while the page is open   // until the first realm list answer: the list says it is loading, not that it is empty
+// One realm: icon · name, version and one tag (Official or Featured) / one line (type · style) · players, population
+// and bots · PLAY, Play solo and the star.
+function realmCard(r, ctx) {
   const now = state.settings.selected_realm;
-  const mine = $("rl-mine").checked;
-  for (const b of document.querySelectorAll("#rl-tabs [data-rl-tab]")) {
-    const on = b.dataset.rlTab === rlTab;
-    b.setAttribute("aria-selected", String(on));
-    b.tabIndex = on ? 0 : -1;
+  const fit = clientFor(r);
+  const live = r.state === "live";
+  const card = el("article", "realm-card rl" + (r.address && r.address === now ? " on" : "") + (r.featured ? " featured" : "")
+    + (r.official ? " official" : "") + (live ? "" : " off"));
+  if (rlLinked && realmKeyOf(r) === rlLinked) card.classList.add("linked");
+  // what the phone app reads (phone.js): a relay realm's id and its version, to play it in the browser game
+  if (r.realm_id) card.dataset.realmId = r.realm_id;
+  if (r.build) card.dataset.build = r.build;
+  card.dataset.live = live ? "1" : "0";
+  const main = el("div", "rl-main");
+  const title = el("div", "rl-title");
+  const name = el("b", "name");
+  name.append(ctx.hl(r.name));
+  if (r.tagline) name.title = r.tagline;
+  title.append(name);
+  if (r.verified) { const v = el("span", "rl-ok", "✓"); v.title = "Verified host: checked by Leyline staff"; v.setAttribute("aria-label", "Verified host"); title.append(v); }
+  const ver = realmVersion(r);
+  if (ver) { const v = el("span", "rl-ver", ver); v.title = "Game client version"; title.append(v); }
+  if (r.official) { const b = el("span", "rl-bdg o", "Official"); if (r.temporary) b.title = "Temporary: our own realm for now"; title.append(b); }
+  else if (r.featured) title.append(el("span", "rl-bdg f", "Featured"));
+  const line = el("div", "rl-meta");
+  // the realm's type and style (owner 2 Nov UX pass: no server software names, "AzerothCore" is jargon to players)
+  const style = (r.official ? [] : (r.tags || []).filter((t) => t !== "pvp" && t !== "rp")).map((t) => TAG_LABELS[t] || t).slice(0, 2);
+  const bits = [r.kind, ...style];
+  if (r.direct && p2pHosting) bits.push("Direct connect available");
+  line.append(el("span", "", bits.filter(Boolean).join(" · ")));
+  // everything else about the realm, on hover
+  const more = [realmTab(r) === "official" ? "Run by Leyline" : "Community realm", r.is_new ? "New" : "",
+    r.region ? (REGION_LABELS[r.region] || r.region) + (r.region_estimated ? " (estimated)" : "") : "", r.language || "",
+    ...(r.official ? [] : (r.tags || []).map((t) => TAG_LABELS[t] || t))];
+  const u = r.uptime_7d != null ? r.uptime_7d : r.uptime_24h;
+  if (u != null) more.push(`${u}% up · ${r.uptime_7d != null ? "7 d" : "24 h"}`);
+  if (r.address) more.push("Realmlist: " + r.address);
+  line.title = more.filter(Boolean).join(" · ") + (r.rules && r.rules.length ? "\n" + r.rules.slice(0, 4).join("\n") : "");
+  main.append(title, line);
+  // your Leyline friends on it now (friends.js: when they share what they play)
+  const fr = friendsOn(r.name);
+  if (fr.length) { const f = el("div", "rl-friends", friendsLine(fr)); f.title = fr.join(", "); main.append(f); }
+  const rmods = window.LeylineGameMods ? window.LeylineGameMods.realmMods(r) : [];
+  if (rmods.length) {   // the realm's own mod list (docs/GAME-MODS.md); PLAY offers the ones this game lacks
+    const um = el("div", "rl-mods", `Uses ${rmods.length} mod${rmods.length === 1 ? "" : "s"}`);
+    um.title = rmods.map((m) => window.LeylineGameMods.nameOf(m.id) + (m.version ? " " + m.version : "")).join(", ");
+    main.append(um);
   }
-  $("rl-pane").setAttribute("aria-labelledby", "rl-tab-" + rlTab);
-  const net = $("rl-net");
-  if (net) {
-    net.textContent = networkLine(rlTab);
-    const bots = livePlayers(tabRealms(rlTab), "bots");
-    net.title = bots ? `${bots} bots too` : "";
+  // never a version in the sentence (the card's gold chip already shows it)
+  if (r.build && !fit) main.append(el("div", "rl-note", "Needs your own game folder for this version"));
+  // the realm's own links, quiet
+  const links = el("div", "rl-links");
+  if (r.join_url) links.append(linkBtn("Make an account", r.join_url));
+  if (r.discord) links.append(linkBtn("Discord", r.discord));
+  if (r.report_url && !r.official) { const rep = linkBtn("Report", r.report_url); rep.title = "Report this realm to Leyline staff (on the website)"; links.append(rep); }
+  if (links.children.length) main.append(links);
+  // players: an online dot and the count, the population (Low, Medium, High, Full) and bots, a small fill bar
+  const pop = el("div", "rl-pop");
+  const st = el("span", "state " + (live ? "is-online" : "is-offline"));
+  st.append(el("span", "dot"));
+  if (!live) st.append(el("span", "", "Offline"));
+  else if (r.players == null) st.append(el("span", "", "Online"));
+  else {
+    const n = el("span", "");
+    n.append(el("b", "rl-n", String(r.players)), document.createTextNode(r.max_players ? ` / ${r.max_players}` : " playing"));
+    st.append(n);
+    st.title = `${r.players}${r.max_players ? " of " + r.max_players : ""} playing` + (r.bots ? ` · ${r.bots} bots` : "");
   }
-  // the other list, in one line: who runs it
-  const note = $("rl-tab-note");
-  if (note) {
-    const other = rlTab === "official" ? "community" : "official";
-    const sw = el("button", "link-s", other === "community" ? "See community realms" : "See official realms");
-    sw.type = "button";
-    sw.addEventListener("click", () => setRealmsTab(other, true));
-    note.replaceChildren(el("span", "", rlTab === "official" ? "Community realms are run by players and may go offline." : "Official realms are run by us around the clock."), " ", sw);
+  pop.append(st);
+  const level = live ? population(r) : "";
+  if (level) {
+    const pl = el("span", "rl-popl");
+    const lv = el("span", "rl-lv lv-" + level.toLowerCase(), level);
+    lv.title = `Population: ${level}`;
+    pl.append(lv);
+    if (r.bots) pl.append(el("span", "rl-bots", ` · ${r.bots} bots`));
+    pop.append(pl);
   }
-  const nf = realmFilterCount();
-  $("rl-fcount").hidden = !nf;
-  $("rl-fcount").textContent = nf ? String(nf) : "";
-  $("rl-filters-btn").classList.toggle("on", nf > 0);
-  $("rl-filters-btn").setAttribute("aria-label", nf ? `Filters, ${nf} on` : "Filters");
+  if (live) {
+    const bar = el("span", "rl-bar");
+    bar.setAttribute("aria-hidden", "true");
+    const fill = el("i");
+    fill.style.width = playersFill(r.players, r.max_players) + "%";
+    bar.append(fill);
+    pop.append(bar);
+  }
+  const acts = el("div", "acts");
+  if (heroKeyOn && !r.official && r.realm_id && r.state === "live") {
+    const hk = el("button", "btn small", "Log in with your Hero Key");
+    hk.title = "No account to make: your Hero Key signs you in here (a one-time password, shown below)";
+    hk.disabled = !state.settings.clients.length;
+    hk.addEventListener("click", () => playRealmHeroKey(r, hk));
+    acts.append(hk);
+  }
+  const play = el("button", "btn small primary rl-play", "Play");
+  if (!state.settings.clients.length) { play.disabled = true; play.title = "Add a game client first"; }
+  else if (!fit) { play.title = "This realm needs another game folder: Play says which"; }
+  else play.title = `Plays with ${fit.name}`;
+  // said before Play, not after it (review 4 Nov): the list's own word, and Play still tries
+  if (!live && state.settings.clients.length) play.title = "The list says this realm is offline right now: Play tries anyway";
+  if (playHeld()) holdPlay(play, false);   // rebuilt right after a start: held like the one it replaces
+  play.addEventListener("click", () => playRealm(r, play));
+  acts.prepend(play);
+  if (window.LeylineHostModes) window.LeylineHostModes.realmRow(r, main, acts);   // its mode, "based on", Fork this mode (hostmodes.js)
+  // Play solo right after Play (solo.js, owner 3 Nov): the same game on this PC, with your own game files
+  if (window.LeylineSolo) window.LeylineSolo.attach(acts, main, window.LeylineSolo.forRealm(r), window.LeylineSolo.LABEL + " · ");
+  acts.append(ctx.star());
+  card.append(realmIcon(r.name, r.official), main, pop, acts);
+  return card;
+}
+// One of this PC's own worlds (the play bar's realm picker has the same rows and the same one click): Your Den,
+// Single player, and the original world on the Built-in engine.
+function localCard(row, ctx) {
+  const k = row.world;
+  const L = row.L;
+  const w = k ? worldSt[k] : null;
+  const ready = k ? !!(w && (w.set_up || w.running)) : localStep(L) === "play";
+  const running = k ? !!(w && w.running) : ready;
+  const picked = mode !== "browser" && (k ? worldChosen() === k : L === DEN ? (denChosen() || (!isOfficial() && chosenRealm() === DEN_LITE)) : localChosen() === L);
+  const card = el("article", "realm-card rl rl-local" + (picked ? " on" : ""));
+  card.dataset.local = k || L.profile;
+  const icon = markIcon(k ? "solo" : L.mark);
+  icon.classList.remove("sm");
+  const main = el("div", "rl-main");
+  const title = el("div", "rl-title");
+  const name = el("b", "name");
+  name.append(ctx.hl(row.name));
+  title.append(name);
+  if (ready) { const v = el("span", "rl-ver", k ? WORLD_BUILD : L.build); v.title = "Game client version"; title.append(v); }
+  const line = el("div", "rl-meta");
+  line.append(el("span", "", k ? WORLD_LINE[k] : L.title));
+  main.append(title, line);
+  const pop = el("div", "rl-pop");
+  const st = el("span", "state " + (running ? "is-online" : "is-local"));
+  st.append(el("span", "dot"), el("span", "", k ? worldSub(k) : L === DEN ? denSub() : localSub(L)));
+  pop.append(st);
+  const acts = el("div", "acts");
+  const play = el("button", "btn small primary rl-play", "Play");
+  play.title = k ? `${WORLD_TITLE[k]}, on this PC` : L.title;
+  if (playHeld()) holdPlay(play, false);
+  play.addEventListener("click", () => {
+    if (k) { pickWorld(k); playWorld(k); } else localGo(L);
+    renderRealms();
+  });
+  acts.append(play, ctx.star());
+  card.append(icon, main, pop, acts);
+  return card;
+}
+// A friend's world this PC joined: Join again (no new link: this PC's own key proves it's you)
+function friendWorldCard(row, ctx) {
+  const w = row.w;
+  const card = el("article", "realm-card rl rl-fw");
+  card.dataset.realmId = w.realm_id;
+  const main = el("div", "rl-main");
+  const title = el("div", "rl-title");
+  const name = el("b", "name");
+  name.append(ctx.hl(row.name));
+  title.append(name);
+  const line = el("div", "rl-meta");
+  line.append(el("span", "", "Your friend's world · your character is kept there"));
+  main.append(title, line);
+  const pop = el("div", "rl-pop");
+  const st = el("span", "state is-local");
+  st.append(el("span", "dot"), el("span", "", "A friend's PC"));
+  pop.append(st);
+  const acts = el("div", "acts");
+  const go = el("button", "btn small primary rl-play", "Join again");
+  go.title = "No new link needed while your friend shares their world (or trusts you)";
+  go.addEventListener("click", () => joinFriendWorld(w, go));
+  acts.append(go, ctx.star());
+  card.append(realmIcon(row.name, false), main, pop, acts);
+  return card;
+}
+async function joinFriendWorld(w, btn) {
+  const cs = state.settings.clients;
+  const c = cs.find((x) => x.id === state.settings.selected_client && x.build === WORLD_BUILD) || cs.find((x) => x.build === WORLD_BUILD);
+  if (!c) { say("rl-status", "Your friend's world plays with your own game folder, the same version as theirs: add it with Add a game folder… in the play bar, then press Join again.", "warn"); return; }
+  btn.disabled = true;
+  say("rl-status", "Joining your friend's world…");
+  try {
+    const j = await invoke("join_friend_again", { client: c.id, realmId: w.realm_id });
+    const g = j && j.guest;
+    say("rl-status", g && !g.auto ? `Joining your friend's world. At the login screen: account ${g.account}, password ${g.password}.`
+      : "Joining your friend's world: your game signs you in by itself, with your character there.", "ok");
+  } catch (e) { sayErr("rl-status", e); }
+  btn.disabled = false;
+}
+
+function renderRealms() {
+  if (!rlList) return;
   if (!rlOtherShown && !isOfficial()) { rlOtherShown = true; $("rl-other").open = true; }   // their own realm address: show where it is set
-  // the official realm first, then the official lineup (Vanilla Remastered when listed), then the network's order (realms.rs)
-  const order = realmsCache.filter((r) => r.official).concat(realmsCache.filter(inLineup), realmsCache.filter((r) => !r.official && !inLineup(r)));
-  const shows = (r) => !(mine && !clientFor(r)) && realmMatches(r) && realmSearched(r);
-  let shown = 0;
-  for (const r of order) {
-    if (realmTab(r) !== rlTab) continue;
-    const fit = clientFor(r);
-    if (!shows(r)) continue;
-    shown++;
-    const live = r.state === "live";
-    const card = el("article", "realm-card rl" + (r.address && r.address === now ? " on" : "") + (r.featured ? " featured" : "")
-      + (r.official ? " official" : "") + (live ? "" : " off"));
-    // what the phone app reads (phone.js): a relay realm's id and its version, to play it in the browser game
-    if (r.realm_id) card.dataset.realmId = r.realm_id;
-    if (r.build) card.dataset.build = r.build;
-    card.dataset.live = live ? "1" : "0";
-    // icon · name, version and one tag (Official or Featured) / one line (type · core) · players · PLAY
-    const main = el("div", "rl-main");
-    const title = el("div", "rl-title");
-    const name = el("b", "name", r.name);
-    if (r.tagline) name.title = r.tagline;
-    title.append(name);
-    if (r.verified) { const v = el("span", "rl-ok", "✓"); v.title = "Verified host: checked by Leyline staff"; v.setAttribute("aria-label", "Verified host"); title.append(v); }
-    const ver = realmVersion(r);
-    if (ver) { const v = el("span", "rl-ver", ver); v.title = "Game client version"; title.append(v); }
-    if (r.official) { const b = el("span", "rl-bdg o", "Official"); if (r.temporary) b.title = "Temporary: our own realm for now"; title.append(b); }
-    else if (r.featured) title.append(el("span", "rl-bdg f", "Featured"));
-    const line = el("div", "rl-meta");
-    // the realm's type and style (owner 2 Nov UX pass: no server software names, "AzerothCore" is jargon to players)
-    const style = (r.official ? [] : (r.tags || []).filter((t) => t !== "pvp" && t !== "rp")).map((t) => TAG_LABELS[t] || t).slice(0, 2);
-    const bits = [r.kind, ...style];
-    if (r.direct && p2pHosting) bits.push("Direct connect available");
-    line.append(el("span", "", bits.filter(Boolean).join(" · ")));
-    // everything else about the realm, on hover
-    const more = [realmTab(r) === "official" ? "Run by Leyline" : "Community realm", r.is_new ? "New" : "",
-      r.region ? (REGION_LABELS[r.region] || r.region) + (r.region_estimated ? " (estimated)" : "") : "", r.language || "",
-      ...(r.official ? [] : (r.tags || []).map((t) => TAG_LABELS[t] || t))];
-    const u = r.uptime_7d != null ? r.uptime_7d : r.uptime_24h;
-    if (u != null) more.push(`${u}% up · ${r.uptime_7d != null ? "7 d" : "24 h"}`);
-    if (r.address) more.push("Realmlist: " + r.address);
-    line.title = more.filter(Boolean).join(" · ") + (r.rules && r.rules.length ? "\n" + r.rules.slice(0, 4).join("\n") : "");
-    main.append(title, line);
-    const rmods = window.LeylineGameMods ? window.LeylineGameMods.realmMods(r) : [];
-    if (rmods.length) {   // the realm's own mod list (docs/GAME-MODS.md); PLAY offers the ones this game lacks
-      const um = el("div", "rl-mods", `Uses ${rmods.length} mod${rmods.length === 1 ? "" : "s"}`);
-      um.title = rmods.map((m) => window.LeylineGameMods.nameOf(m.id) + (m.version ? " " + m.version : "")).join(", ");
-      main.append(um);
-    }
-    // never a version in the sentence (the card's gold chip already shows it)
-    if (r.build && !fit) main.append(el("div", "rl-note", "Needs your own game folder for this version"));
-    // the realm's own links, quiet
-    const links = el("div", "rl-links");
-    if (r.join_url) links.append(linkBtn("Make an account", r.join_url));
-    if (r.discord) links.append(linkBtn("Discord", r.discord));
-    if (r.report_url && !r.official) { const rep = linkBtn("Report", r.report_url); rep.title = "Report this realm to Leyline staff (on the website)"; links.append(rep); }
-    if (links.children.length) main.append(links);
-    // players: an online dot, the count and a small fill bar
-    const pop = el("div", "rl-pop");
-    const st = el("span", "state " + (live ? "is-online" : "is-offline"));
-    st.append(el("span", "dot"));
-    if (!live) st.append(el("span", "", "Offline"));
-    else if (r.players == null) st.append(el("span", "", "Online"));
-    else {
-      const n = el("span", "");
-      n.append(el("b", "rl-n", String(r.players)), document.createTextNode(r.max_players ? ` / ${r.max_players}` : " playing"));
-      st.append(n);
-      st.title = `${r.players}${r.max_players ? " of " + r.max_players : ""} playing` + (r.bots ? ` · ${r.bots} bots` : "");
-    }
-    pop.append(st);
-    if (live) {
-      const bar = el("span", "rl-bar");
-      bar.setAttribute("aria-hidden", "true");
-      const fill = el("i");
-      fill.style.width = playersFill(r.players, r.max_players) + "%";
-      bar.append(fill);
-      pop.append(bar);
-    }
-    const acts = el("div", "acts");
-    if (heroKeyOn && !r.official && r.realm_id && r.state === "live") {
-      const hk = el("button", "btn small", "Log in with your Hero Key");
-      hk.title = "No account to make: your Hero Key signs you in here (a one-time password, shown below)";
-      hk.disabled = !state.settings.clients.length;
-      hk.addEventListener("click", () => playRealmHeroKey(r, hk));
-      acts.append(hk);
-    }
-    const play = el("button", "btn small primary rl-play", "Play");
-    if (!state.settings.clients.length) { play.disabled = true; play.title = "Add a game client first"; }
-    else if (!fit) { play.title = "This realm needs another game folder: Play says which"; }
-    else play.title = `Plays with ${fit.name}`;
-    // said before Play, not after it (review 4 Nov): the list's own word, and Play still tries
-    if (!live && state.settings.clients.length) play.title = "The list says this realm is offline right now: Play tries anyway";
-    if (playHeld()) holdPlay(play, false);   // rebuilt right after a start: held like the one it replaces
-    play.addEventListener("click", () => playRealm(r, play));
-    acts.prepend(play);
-    if (window.LeylineHostModes) window.LeylineHostModes.realmRow(r, main, acts);   // its mode, "based on", Fork this mode (hostmodes.js)
-    // Play solo right after Play (solo.js, owner 3 Nov): the same game on this PC, with your own game files
-    if (window.LeylineSolo) window.LeylineSolo.attach(acts, main, window.LeylineSolo.forRealm(r), window.LeylineSolo.LABEL + " · ");
-    card.append(realmIcon(r.name, r.official), main, pop, acts);
-    box.append(card);
-  }
-  const empty = (text, label, fn) => {
-    const e = el("div", "rl-empty");
-    e.append(el("span", "", text));
-    if (label) {
-      const b = el("button", "btn small", label);
-      b.type = "button";
-      b.addEventListener("click", fn);
-      e.append(b);
-    }
-    box.append(e);
-  };
-  const realmsQ = $("rl-q").value.trim();
-  const inTab = tabRealms(rlTab);
-  const other = rlTab === "official" ? "community" : "official";
-  const there = realmsCache.filter((r) => realmTab(r) === other && shows(r)).length;   // a search that finds realms in the other tab says so
-  if (!inTab.length) {
-    if (rlTab === "community") empty("No community realms yet. Be the first to run one: see Host your own below.");   // the banner below is the one call to action
-    else empty("The official realms aren't on the list right now. Try Refresh in a minute.");
-  } else if (!shown && (realmsQ || nf) && there) empty(realmsQ ? `No ${rlTab} realm called “${realmsQ}”.` : `No ${rlTab} realms match these filters.`,
-    `Show ${there} in ${other === "community" ? "Community" : "Official"} realms`, () => setRealmsTab(other, true));
-  else if (!shown && realmsQ) empty(`No realm called “${realmsQ}”.`, "Clear search", () => { $("rl-q").value = ""; renderRealms(); });
-  else if (!shown && nf) empty(mine && nf === 1 ? "None of the listed realms fits your clients." : "No realms match these filters.", "Clear filters", clearRealmFilters);
+  rlList.update(realmListRows());
+}
+// the FILTERS popover's own filters (the list kit asks for them: match, filtersOn, onReset)
+function clearRealmSelects() {
+  for (const [id] of RL_FILTERS) if ($(id)) $(id).value = "";
+  $("rl-f-now").checked = false;
+  $("rl-mine").checked = false;
+}
+function clearRealmFilters() {
+  clearRealmSelects();
+  renderRealms();
+}
+function realmRowMatches(row) {
+  if (row.type !== "realm") return realmFilterCount() === 0;   // a filter is about realms: your own worlds step aside
+  const r = row.r;
+  return !($("rl-mine").checked && !clientFor(r)) && realmMatches(r);
+}
+if (window.LeylineList) {
+  rlList = window.LeylineList.create($("rl-list"), {
+    id: "realms",
+    key: (row) => row.k,
+    nameOf: (row) => (row.r ? row.r.name : row.name),
+    label: "Realms",
+    noun: (n, total) => (n === total ? "" : `Showing ${n} of ${total}`),
+    render: (row, ctx) => (row.type === "realm" ? realmCard(row.r, ctx) : row.type === "fw" ? friendWorldCard(row, ctx) : localCard(row, ctx)),
+    search: { input: $("rl-q"), fields: rowWords, debounce: "auto" },
+    tabs: { items: RL_TAB_DEFS.map((t) => Object.assign({}, t, t.id === "fav" ? { favourites: true } : { filter: (row) => rowInTab(row, t.id) })),
+      value: "official", el: $("rl-tabs"), idPrefix: "rl-tab-", panel: $("rl-pane"), storageKey: "leyline.realmsTab", buttonClass: "page-tab",
+      label: "Realm lists",
+      onChange: (t) => {
+        say("rl-status", "");   // a line about the other tab's realm goes with it
+        if (t === "friends" || t === "all") loadRealmFriends();
+        if (t === "mine") Promise.all([readKit(), readWorlds()]).then(renderRealms).catch(() => {});
+      } },
+    sort: { options: RL_SORTS, none: "Suggested", el: $("rl-kbar"), label: "Sort" },
+    rank: (row) => (rowLive(row) ? 0 : 1),   // offline last, whatever the sort (as in the game's own list)
+    group: { of: (row) => (row.type === "fw" ? "Friends' worlds" : row.type !== "realm" ? "On this PC" : row.r.state === "live" ? "Online" : "Offline"),
+      order: ["Online", "On this PC", "Friends' worlds", "Offline"] },
+    favourites: { label: "Favourites" },
+    primary: (row, node) => { const b = node.querySelector(".rl-play"); if (b && !b.disabled) b.click(); },
+    match: realmRowMatches,
+    filtersOn: () => realmFilterCount(),
+    onReset: clearRealmSelects,
+    empty: (info) => (rlLoading && !realmsCache.length && (info.tab === "official" || info.tab === "community") && !info.inTab ? "Loading the realm list…" : realmsEmpty(info)),
+    classes: { empty: "rl-empty" },
+    bar: $("rl-kbar"),
+    onChange: realmsChrome,
+  });
 }
 for (const id of ["rl-f-build", "rl-f-tag", "rl-f-region", "rl-f-lang", "rl-f-now"]) {
   if ($(id)) $(id).addEventListener("change", () => renderRealms());
 }
-$("rl-q").addEventListener("input", () => renderRealms());
+// the Realms page: the friends and this PC's own worlds as they are now (the realm list itself loads on its own)
+document.addEventListener("leyline:page", (e) => {
+  if (!e.detail || e.detail.page !== "realms") { rlLinked = ""; return; }
+  loadRealmFriends();
+  Promise.all([readKit(), readWorlds()]).then(renderRealms).catch(() => {});
+});
 $("rl-f-clear").addEventListener("click", clearRealmFilters);
 if ($("rl-host")) $("rl-host").addEventListener("click", () => show("host"));
 if ($("rl-host-link")) $("rl-host-link").addEventListener("click", () => show("host"));   // the Host page has Link my server

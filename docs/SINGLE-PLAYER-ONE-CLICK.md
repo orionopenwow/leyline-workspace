@@ -372,6 +372,31 @@ add-on checks before taking it); bots following the player out of an instance be
   not on Windows, Characters, Play with friends.
 * `python3 -I hosting/tests/test_solovanilla_profile.py` (6), `python3 stream/tests/test_docs.py stream/wrath_portal.py`.
 
+## The playtest on the owner's PC (Control: `sp-playtest`)
+
+Built 11 Nov 2026 (owner: "make sure you do your own playtests on my pc and level up before releasing and then
+release"). Nobody clicks anything:
+
+* `Leyline play-test --fresh --game <folder> --single <single|vanilla> [--hold 20] [--level 10]
+  [--checks levelup,companions,stoponexit,repair]` (`src/sptest.rs` the pure parts, app.rs `single_play_test_cli`):
+  world_find_folder, the disk check, world_setup (its steps on stdout and `<data>/sp-play-test.log`), world_play with
+  `first: true` (a random Quick start), then waits for `characters.online = 1` on the login it played. Checks:
+  `companions` (bots of `mod_companions_owned` in the character's `group_member` group and online within 30 s, as
+  many as the world's env says), `levelup` (**server-driven**: `.levelup <name> 1` over SOAP on the test's own
+  127.0.0.1 world, `.saveall`, each level read back; the companions' levels must follow), `stoponexit` (the game
+  killed, the world's ports closed within 150 s), `repair` (a `.txt`/`.sql`/`.dist`/`.lua` of the engine deleted,
+  Repair, the file back, Play into the world again). Report: `<data>/sp-play-test.json` (no password, no key); exit 0
+  only when every step passed.
+* The test build: the launcher check workflow's `launcher-test-windows` job (only on `feat-sp-playtest` and
+  `feat-launcher-test`, after the tests pass) puts `Leyline.exe`, `Leyline.exe.sha256` and `launcher-test.json` on the
+  rolling prerelease `launcher-test` of leyline-workspace.
+* `tools/first-run/sp_playtest.py` (`Single player playtest.bat`): refuses your own data folders, busy world ports
+  (your own world running) and a drive under 12 GB free; downloads and checks the test build; takes the Wrath folder
+  from your launcher's settings (else `tools/first-run/folder.txt`, else `--game`); a test Hero Key from the website's
+  test-account API when it gives one; keeps the game folder's touched files aside and puts them back; screenshots at
+  each phase; results in `logs\sp-playtest\<time>\` and `logs\sp-playtest\latest.txt`. `--both` runs the original
+  world after Single player on the same engine and maps.
+
 ## Not verified (what only a Windows PC and a real game can prove)
 
 * **Nothing has been played.** The original world needs an engine build that has `solovanilla.env` (the next

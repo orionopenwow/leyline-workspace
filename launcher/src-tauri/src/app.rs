@@ -1957,8 +1957,8 @@ async fn world_settings_get(kind: String) -> Result<crate::host::spsettings::Wor
 
 /// Change a world's settings (only the ones given), written into its realm.env; the world needn't be set up yet. A
 /// running world takes them at its next start (`restart`: the page offers Restart).
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
+/// The page sends the keys as written here (companions_auto, ...), not in camelCase.
+#[tauri::command(rename_all = "snake_case")]
 async fn world_settings_set(
     kind: String,
     companions_auto: Option<bool>,

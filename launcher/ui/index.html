@@ -38,6 +38,7 @@
 <link rel="stylesheet" href="bossrush.css"><!-- Boss Rush: its page and Home row (bossrush.js) -->
 <link rel="stylesheet" href="solo.css"><!-- Play solo everywhere, Invite a friend, the GM command center (solo.js, gmcenter.js) -->
 <link rel="stylesheet" href="hostfriends.css"><!-- Play with friends: the one window, Ready for friends?, the friend's steps (hostfriends.js) -->
+<link rel="stylesheet" href="info.css"><!-- the "i" button and its bubble (info.js) -->
 <link rel="stylesheet" href="guide.css"><!-- the first-run tour and the one-time encouragement toast (guide.js) -->
 <link rel="stylesheet" href="phone.css"><!-- the phone app's layout (html.phone only; phone.js, docs/ANDROID.md): last, over the rest -->
 </head>
@@ -467,6 +468,7 @@
   <section class="page" id="page-single">
     <div class="panel wide sv-panel" id="sv"></div>
     <div class="panel wide sp" id="sp"></div>
+    <div class="panel wide pf" id="pf" aria-label="Play with a friend"></div><!-- oneclick.js: Invite a friend, the link, how a friend joins, who's in -->
     <div class="panel wide oc-set" id="oc-set" aria-label="Single player settings"></div><!-- oneclick.js: Stop the world when the game closes -->
   </section>
 
@@ -973,6 +975,7 @@
 <script src="home.js"></script>
 <script src="simplehome.js"></script><!-- Simple mode: Play, Host, Visit, Back up (window.LeylineSimpleHome; after vanilla.js, hostfriends.js and app.js) -->
 <script src="agents.js"></script><!-- Agents: the page and the approval card on every page (window.LeylineAgents) -->
+<script src="info.js"></script><!-- the "i" button: what this page is, Learn more in the docs (window.LeylineInfo) -->
 <script src="guide.js"></script><!-- the first-run tour, Help › Show me again, the one-time encouragement lines (window.LeylineGuide; last) -->
 <script src="phone.js"></script><!-- the phone app: its tab bar, PLAY in the app, what needs a computer (window.LeylinePhone; after everything) -->
 </body>

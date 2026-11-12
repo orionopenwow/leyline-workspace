@@ -5,8 +5,8 @@
 //! next time. Peer to peer: nothing on a website or a cloud server is asked; the two launchers meet over the
 //! invite's own way in (the Leyline relay tunnel or the same network), and the relay only passes bytes through.
 //!
-//! **Identity.** Each launcher has its own Ed25519 key pair ([`Peer`]: `<app data>/peer.key`, a stand-in for
-//! identity.rs; the same shapes). Its peer id is base32(sha256(public key))[:16], as the mesh's realm ids. The
+//! **Identity.** Each launcher has its own Ed25519 key pair: identity.rs's [`Peer`] (`<app data>/peer.key`, the same
+//! key the Friends list signs with). Its peer id is base32(sha256(public key))[:16], as the mesh's realm ids. The
 //! friend's login on a world is [`name_for`]: `G` + 15 base32 of sha256(context, the world's realm id, the peer id):
 //! the same on every join from that identity, a different name on every world, and never the shape of today's
 //! one-time invite logins (`G` + 9) or the host's own (`SOLO`, `HK...`). A Hero Key is not needed.
@@ -56,7 +56,7 @@ pub const MAGIC: &str = "LLC1";
 pub const LINK_MARK: &str = "lf1";
 pub const CTX: &str = "leyline-world-claim-v1";
 pub const BOOK_FILE: &str = "friends.json";
-pub const PEER_KEY_FILE: &str = "peer.key";
+pub const PEER_KEY_FILE: &str = crate::identity::KEY_FILE;
 /// The friend's side: the worlds it joined (`<app data>/friend-worlds.json`), for "Join your friend again".
 pub const WORLDS_FILE: &str = "friend-worlds.json";
 pub const TICKET_DAYS: u64 = 7;
@@ -126,38 +126,23 @@ pub fn name_for(realm_id: &str, peer: &str) -> String {
 
 // ------------------------------------------------------------------------------------------------ the peer identity
 
-/// This launcher's own identity (stand-in for identity.rs, which keeps the same file and shapes): an Ed25519 key
-/// pair, its 32-byte seed in `<app data>/peer.key` (hex, made once, never sent), the peer id from its public key.
-pub struct Peer {
-    seed: [u8; 32],
-    pub public: [u8; 32],
-    pub id: String,
-}
+/// This launcher's own identity: identity.rs's (one key, `<app data>/peer.key`, the same peer id the Friends list
+/// uses), so a friend on the Leyline network and a friend with a lasting login on a world are the same person.
+pub use crate::identity::PeerIdentity as Peer;
 
-impl Peer {
-    pub fn from_seed(seed: [u8; 32]) -> Result<Peer, String> {
-        let public = crate::host::litenet::public_key(&seed)?;
-        Ok(Peer { seed, public, id: peer_id(&public) })
-    }
-
-    pub fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, String> {
-        let kp = ring::signature::Ed25519KeyPair::from_seed_unchecked(&self.seed).map_err(|_| "bad key".to_string())?;
-        Ok(kp.sign(msg).as_ref().to_vec())
-    }
-}
-
-/// The peer id: base32(sha256(public key))[:16], lower case (the mesh's realm ids).
+/// The peer id: base32(sha256(public key))[:16], lower case (identity.rs, the mesh's rule).
 pub fn peer_id(public: &[u8; 32]) -> String {
-    crate::host::litenet::realm_id(public)
+    crate::identity::peer_id(public)
 }
 
-/// This launcher's identity, made the first time.
+/// This launcher's identity in `app_dir` (identity.rs `load_or_create`: made the first time, a broken file refused).
 pub fn peer_identity(app_dir: &Path) -> Result<Peer, String> {
-    Peer::from_seed(crate::host::litenet::load_or_create_key(&app_dir.join(PEER_KEY_FILE))?)
+    crate::identity::load_or_create(app_dir)
 }
 
+/// An Ed25519 signature check (identity.rs `verify_join`, the same raw check the join handshake uses).
 pub fn verify(public: &[u8], msg: &[u8], sig: &[u8]) -> bool {
-    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, public).verify(msg, sig).is_ok()
+    crate::identity::verify_join(msg, public, sig)
 }
 
 // ------------------------------------------------------------------------------------------------ the claim
@@ -203,8 +188,8 @@ pub fn signed_text(realm_id: &str, chal: &str, ticket: &str, pass: &str) -> Stri
 /// The friend's side: the sealed claim for the host's challenge `chal`.
 pub fn make_claim(peer: &Peer, realm_id: &str, secret: &str, chal: &str, ticket: Option<(&str, &str)>, pass: &str, old: &[String]) -> Result<String, String> {
     let (t, tp) = ticket.unwrap_or(("", ""));
-    let sig = peer.sign(signed_text(realm_id, chal, t, pass).as_bytes())?;
-    let doc = json!({ "v": 1, "pk": hex(&peer.public), "sig": hex(&sig), "pass": pass, "ticket": t, "tpass": tp, "old": old });
+    let sig = peer.sign(signed_text(realm_id, chal, t, pass).as_bytes());
+    let doc = json!({ "v": 1, "pk": peer.public_hex(), "sig": hex(&sig), "pass": pass, "ticket": t, "tpass": tp, "old": old });
     seal(&claim_key(secret, realm_id), doc.to_string().as_bytes())
 }
 
@@ -890,19 +875,29 @@ mod tests {
     #[test]
     fn the_lasting_login_is_derived_from_the_peer_and_the_world() {
         let a = peer(1);
-        assert_eq!(a.id.len(), 16);
-        assert_eq!(a.id, peer(1).id, "the same key: the same peer id");
-        let n = name_for(RID, &a.id);
+        assert_eq!(a.peer_id.len(), 16);
+        assert_eq!(a.peer_id, peer(1).peer_id, "the same key: the same peer id");
+        let n = name_for(RID, &a.peer_id);
         assert!(lasting_ok(&n) && friend_login_ok(&n) && !ticket_ok(&n), "{n}");
-        assert_eq!(n, name_for(RID, &peer(1).id), "the same on every join");
-        assert_ne!(n, name_for("aaaaaaaaaaaaaaaa", &a.id), "another world: another name");
-        assert_ne!(n, name_for(RID, &peer(2).id), "another friend: another name");
+        assert_eq!(n, name_for(RID, &peer(1).peer_id), "the same on every join");
+        assert_ne!(n, name_for("aaaaaaaaaaaaaaaa", &a.peer_id), "another world: another name");
+        assert_ne!(n, name_for(RID, &peer(2).peer_id), "another friend: another name");
         assert!(ticket_ok("GABCDE2345") && !lasting_ok("GABCDE2345"));
         assert!(!friend_login_ok("SOLO") && !friend_login_ok("HKABCDEFGHIJKLMN") && !friend_login_ok("G1; drop"));
         let d = tempfile::tempdir().unwrap();
         let p1 = peer_identity(d.path()).unwrap();
-        assert_eq!(p1.id, peer_identity(d.path()).unwrap().id, "peer.key is made once and kept");
+        assert_eq!(p1.peer_id, peer_identity(d.path()).unwrap().peer_id, "peer.key is made once and kept");
         assert!(d.path().join(PEER_KEY_FILE).is_file());
+        // one identity: the Friends list (identity.rs) and a world's lasting logins read the same key, the same id
+        let me = crate::identity::load_or_create(d.path()).unwrap();
+        assert_eq!((me.peer_id.as_str(), me.public_key), (p1.peer_id.as_str(), p1.public_key));
+        assert_eq!(name_for(RID, &me.peer_id), name_for(RID, &p1.peer_id));
+        // a claim signed with it opens as that friend's peer id
+        let s = make_claim(&me, RID, SECRET, "00ff", None, "PASSWORD2345", &[]).unwrap();
+        assert_eq!(open_claim(RID, SECRET, "00ff", &s).unwrap().peer, me.peer_id);
+        // a broken key file is refused here too, never replaced (a new key would be a new person to every friend)
+        std::fs::write(d.path().join(PEER_KEY_FILE), "nope").unwrap();
+        assert!(peer_identity(d.path()).is_err());
     }
 
     #[test]
@@ -911,7 +906,7 @@ mod tests {
         let s = make_claim(&a, RID, SECRET, "00ff", Some(("GABCDE2345", "ABCDEFGH2345")), "PASSWORD2345", &[]).unwrap();
         assert!(!s.contains("PASSWORD2345") && !s.to_ascii_uppercase().contains(&hex(b"PASSWORD2345").to_ascii_uppercase()), "nothing readable");
         let o = open_claim(RID, SECRET, "00ff", &s).unwrap();
-        assert_eq!((o.peer.as_str(), o.ticket.as_str(), o.pass.as_str()), (a.id.as_str(), "GABCDE2345", "PASSWORD2345"));
+        assert_eq!((o.peer.as_str(), o.ticket.as_str(), o.pass.as_str()), (a.peer_id.as_str(), "GABCDE2345", "PASSWORD2345"));
         assert!(!format!("{o:?}").contains("PASSWORD2345") && !format!("{o:?}").contains("ABCDEFGH2345"), "Debug never shows a password");
         assert!(open_claim(RID, "ANOTHERSECRETANOTHERSEC", "00ff", &s).is_err(), "another invite can't read it");
         assert!(open_claim("aaaaaaaaaaaaaaaa", SECRET, "00ff", &s).is_err(), "another world can't");
@@ -933,7 +928,7 @@ mod tests {
         assert!(admit(&mut book, RID, &claim(&a, "aa", None, "PASSWORD2345", &[]), t).is_err());
         // the ticket: a new lasting login
         let g = admit(&mut book, RID, &claim(&a, "aa", Some(("GTICKET234", "TPASS2345678")), "PASSWORD2345", &[]), t).unwrap();
-        assert_eq!(g, Granted { user: name_for(RID, &a.id), create: true, adopted: false });
+        assert_eq!(g, Granted { user: name_for(RID, &a.peer_id), create: true, adopted: false });
         // the same identity again, no ticket, while invited: the same login, made already
         let g2 = admit(&mut book, RID, &claim(&a, "bb", None, "PASSWORD9999", &[]), t + 5).unwrap();
         assert_eq!((g2.user, g2.create), (g.user.clone(), false));
@@ -967,14 +962,14 @@ mod tests {
         let a = peer(7);
         let g = admit(&mut book, RID, &claim(&a, "aa", Some(("GNEW234567", "NEWPASS23456")), "PASSWORD2345", &["GOLD234567".into()]), t).unwrap();
         assert_eq!(g, Granted { user: "GOLD234567".into(), create: false, adopted: true });
-        assert_eq!(book.friends[0].peer, a.id);
+        assert_eq!(book.friends[0].peer, a.peer_id);
         // and the next time it is known by its identity
         assert_eq!(admit(&mut book, RID, &claim(&a, "bb", None, "PASSWORD2345", &[]), t).unwrap().user, "GOLD234567");
     }
 
     #[test]
     fn the_console_lines_for_a_friends_login() {
-        let u = name_for(RID, &peer(1).id);
+        let u = name_for(RID, &peer(1).peer_id);
         let v = create_lines(Era::Wrath, &u, "PASSWORD2345").unwrap();
         assert_eq!(v, vec![format!("account create {u} PASSWORD2345"), format!("account set addon {u} 2"), format!("account set password {u} PASSWORD2345 PASSWORD2345")]);
         assert_eq!(create_lines(Era::Classic, "GABCDE2345", "PASSWORD2345").unwrap().len(), 2);
@@ -1009,7 +1004,7 @@ mod tests {
         let port = front.port;
         let a = peer(9);
         let (u, p) = claim_at(&format!("127.0.0.1:{port}"), &a, RID, SECRET, Some(("GTICKET234", "TPASS2345678")), &[]).unwrap();
-        assert_eq!(u, name_for(RID, &a.id));
+        assert_eq!(u, name_for(RID, &a.peer_id));
         assert!(pass_ok(&p));
         assert!(log.lock().unwrap().iter().any(|l| l == &format!("account create {u} {p}")));
         // again, with no ticket: a fresh one-time password on the same login

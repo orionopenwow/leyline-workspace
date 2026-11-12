@@ -182,6 +182,10 @@ pub fn key_path(app: &Path) -> PathBuf {
 
 /// This PC's identity: the key in `<app>/peer.key`, made the first time.
 pub fn load_or_create(app: &Path) -> Result<PeerIdentity, String> {
+    // one at a time: the Friends list and a world's claim can both ask on a first run, and two new keys would be two
+    // people (the second write would replace the key the first one is already signing with)
+    static MAKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _g = MAKING.lock().unwrap_or_else(|e| e.into_inner());
     let path = key_path(app);
     match std::fs::read_to_string(&path) {
         Ok(t) => {

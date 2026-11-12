@@ -689,7 +689,7 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
             let app = settings::app_dir();
             let (addr, rid3, secret3, game, ticket) = (address.clone(), rid.clone(), secret.clone(), profile.path.clone(), guest.clone());
             let claimed = blocking(move || {
-                let peer = wf::peer_identity(&app)?;
+                let peer = crate::identity::peer_identity()?;
                 let mut old: Vec<String> = Vec::new();
                 if let Some(j) = wf::worlds(&app).get(&rid3) {
                     old.extend(j.old.iter().cloned());

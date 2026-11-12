@@ -26,11 +26,16 @@ fetch() { # dir repo commit
 patch_dir() { # dir name
   p="patches/$2.patch"
   [ -f "$p" ] || return 0
-  if git -C "$1" apply --check -R "$(pwd)/$p" 2>/dev/null; then
+  # A Windows checkout can give the patch CRLF line endings, which then no longer match the core's LF files:
+  # apply a copy with the carriage returns taken out.
+  lf="$(pwd)/.$2.lf.patch"
+  tr -d '\r' < "$p" > "$lf"
+  if git -C "$1" apply --check -R "$lf" 2>/dev/null; then
     echo "  patched $2 (already)"
   else
-    git -C "$1" apply "$(pwd)/$p" && echo "  patched $2"
+    git -C "$1" apply "$lf" && echo "  patched $2"
   fi
+  rm -f "$lf"
 }
 grep -v '^#' sources.lock | while read -r name repo branch commit; do
   [ -z "$name" ] && continue

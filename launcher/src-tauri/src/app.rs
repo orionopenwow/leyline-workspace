@@ -2025,6 +2025,8 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
         eng::console(&p, &set).map_err(|e| format!("Boss Rush's realm didn't take the hero's login ({e}). Try again in a minute."))?;
         (hero, s.hero_password.clone())
     } else {
+        // the login healed first: whatever happened to the world's database, the stored login works again
+        eng::resync_login(&p).map_err(|e| format!("{}'s login couldn't be set up again ({e}). Press Repair on its card, then Play.", k.title()))?;
         (s.account.clone(), s.password.clone())
     };
     let make = match &quick {

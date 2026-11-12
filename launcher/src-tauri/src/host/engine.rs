@@ -760,6 +760,22 @@ pub fn account_sql(user: &str, pass: &str, salt: &[u8; 32]) -> Result<String, St
     ))
 }
 
+/// Before every Play: the player's login written into the world's database again (a fresh salt and the stored
+/// password's verifier, the same row as setup makes, characters kept) and the realm's row pointed back at this PC.
+/// A database rebuilt or restored from a backup, a password that drifted, or an account removed by hand would
+/// otherwise leave the game at its login screen with "incorrect password"; this heals all of them. Needs the
+/// world's database running (it is whenever the world is).
+pub fn resync_login(p: &Paths) -> Result<(), String> {
+    let s = load_state(p);
+    if !s.account_made || s.password.is_empty() {
+        return Err(format!("Set {} up first.", p.kind.title()));
+    }
+    let mut salt = [0u8; 32];
+    use ring::rand::SecureRandom;
+    ring::rand::SystemRandom::new().fill(&mut salt).map_err(|_| "no random source on this PC".to_string())?;
+    sql(p, "acore_auth", &format!("{}{}", account_sql(&s.account, &s.password, &salt)?, realm_sql_named(p.kind.realm_name())))
+}
+
 // ------------------------------------------------------------------------------------------------ SOAP (the clean stop)
 
 pub fn base64(b: &[u8]) -> String {

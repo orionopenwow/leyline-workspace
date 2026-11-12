@@ -1226,7 +1226,7 @@ fn den_launch(core: &Core, client: &str) -> Result<(SoloPlay, DenStart), String>
     use crate::host::lite;
     let profile = core.client(client)?;
     let _ = crate::herokey::set_login(&profile.path, lite::ACCOUNT, Some(lite::REALM));
-    let refused = crate::hybrid::refused_marker(&profile.path).exists();
+    let refused = crate::hybrid::refused(&profile.path);
     let session = if refused { None } else { Some(den_session()) };
     let (message, hybrid) = point_and_play_with(core, client, lite::ADDRESS, true, session, true)?;
     let glue = hybrid.is_ok();
@@ -1300,9 +1300,8 @@ fn den_watch(st: DenStart, test: Option<u64>, cover: Option<Arc<crate::cover::Si
     }
     if out == Outcome::GlueRefused {
         // the game closed on our login screen code: never again for this game, and once more without it
-        let m = crate::hybrid::refused_marker(&st.game);
-        let _ = std::fs::create_dir_all(m.parent().unwrap_or(&st.game));
-        let _ = std::fs::write(&m, "This game closed on Leyline's login screen code; My Den signs in with the launcher's keys.\n");
+        // recorded with when and why: it expires after a launcher update, a week, or Repair (hybrid::refused)
+        let _ = crate::hybrid::write_refused(&st.game, "The game closed on Leyline's login screen code; the launcher's keys sign in instead.");
         let _ = crate::hybrid::remove(&st.game);
         if let Ok(plan) = launch::plan(&st.profile, &st.wine, launch::Os::current()) {
             if let Ok(child) = launch::run(&plan) {
@@ -2045,7 +2044,7 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     let made = make.as_ref().map(|m| m.name.clone()).unwrap_or_default();
     let realm = k.realm_name();
     let _ = crate::herokey::set_login(&profile.path, &user, Some(realm));
-    let refused = crate::hybrid::refused_marker(&profile.path).exists();
+    let refused = crate::hybrid::refused(&profile.path);
     let enter = pick.is_some() || make.is_some();
     let session = (!refused).then(|| crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: Some(realm.into()), enter, pick, make });
     let (message, hybrid) = point_and_play_with(core, client, eng::REALM, true, session, true)?;
@@ -2747,7 +2746,7 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
     };
     let realm = eng::Kind::BossRush.realm_name();
     let _ = crate::herokey::set_login(&profile.path, &hero_acc, Some(realm));
-    let refused = crate::hybrid::refused_marker(&profile.path).exists();
+    let refused = crate::hybrid::refused(&profile.path);
     let session = if refused { None } else { Some(crate::hybrid::Session { user: hero_acc.clone(), pass: pass.clone(), realm: Some(realm.into()), enter: true, pick: None, make: None }) };
     let (message, hybrid) = point_and_play_with(&core, &client, eng::REALM, true, session, true)?;
     let auto = hybrid.is_ok();

@@ -26,8 +26,8 @@
       "Single player runs a small game server on your PC, made only for you, with bot companions if you want them.",
       "The first setup takes 5–20 minutes; after that your world starts in seconds.",
       "Choose companions, dungeon buddies and how busy the world is in the settings below.",
-      "Play with a friend: start your world, press Invite a friend and send them the link.",
-    ] },
+      "Friends: invite one to your world, and they keep their character there for next time.",
+    ], also: { label: "Playing with friends", link: "hostfriends" } },
     realms: { title: "Realms", link: "docsplay", lines: [
       "Realms are worlds you play online with other people.",
       "Official realms are run by Leyline; Community realms are hosted by players over the relay.",
@@ -56,6 +56,15 @@
       "Settings for Leyline itself: your game folders, how it looks, updates and the advanced options.",
     ] },
   };
+  // a part of a page with its own bubble while it is on screen (its element id → the same shape as PAGES)
+  const SECTIONS = {
+    spf: { page: "single", title: "Friends", link: "hostfriends", more: "Playing with friends", lines: [
+      "Invite a friend: start your world, press Invite a friend and send the link. They keep their character on your world for next time.",
+      "Friends with a character on your world: Trust lets them come back without a new invite. Remove keeps their characters unless you delete them.",
+      "Your friends' worlds: Join again needs no new link while your friend shares their world.",
+      "Your friends list: add a friend with a friend code, or someone on your own network. It's signed by you both and kept on your PCs, with no server.",
+    ], also: { label: "Single player docs", link: "docsingle" } },
+  };
   const FALLBACK = { title: "Leyline", link: "docs", more: "Read the docs", lines: [
     "Leyline's docs explain every page, step by step.",
   ] };
@@ -81,7 +90,21 @@
     const on = document.querySelector(".page.on");
     return on && on.id ? on.id.replace(/^page-/, "") : "";
   };
-  const infoOf = (p) => PAGES[p] || FALLBACK;
+  // the section most on screen, when the page has one (the Friends area of Single player)
+  function sectionOf(p) {
+    for (const [id, sec] of Object.entries(SECTIONS)) {
+      if (sec.page !== p) continue;
+      const el = document.getElementById(id);
+      if (!el || el.hidden || !el.getClientRects().length) continue;
+      if (el.contains(document.activeElement) && document.activeElement !== document.body) return id;
+      const r = el.getBoundingClientRect();
+      const h = window.innerHeight || document.documentElement.clientHeight;
+      if (r.top < h * 0.5 && r.bottom > h * 0.35) return id;
+    }
+    return "";
+  }
+  let section = "";
+  const infoOf = (p) => (section && SECTIONS[section]) || PAGES[p] || FALLBACK;
 
   function fill() {
     const i = infoOf(current());
@@ -102,12 +125,25 @@
       }
     });
     const r = mk("div", "ll-info-row");
-    r.append(more, note);
+    r.append(more);
+    if (i.also) {
+      const also = mk("button", "btn small", i.also.label);
+      also.type = "button";
+      also.id = "ll-info-also";
+      also.dataset.link = i.also.link;
+      also.addEventListener("click", async () => {
+        try { await call("open_link", { name: i.also.link }); close(false); } catch (e) { note.textContent = typeof e === "string" ? e : "The browser didn't open."; }
+      });
+      r.append(also);
+    }
+    r.append(note);
     nodes.push(r);
     bubble.replaceChildren(...nodes);
     bubble.dataset.page = current() || "";
+    bubble.dataset.section = section;
   }
   function open() {
+    section = sectionOf(current());
     fill();
     bubble.hidden = false;
     b.setAttribute("aria-expanded", "true");
@@ -125,8 +161,9 @@
   document.addEventListener("mousedown", (e) => { if (!bubble.hidden && !bubble.contains(e.target) && !b.contains(e.target)) close(false); });
   document.addEventListener("leyline:page", (e) => {
     page = (e.detail && e.detail.page) || "";
+    section = "";
     if (!bubble.hidden) fill();
   });
 
-  window.LeylineInfo = { open, close: () => close(false), PAGES, FALLBACK, page: current };
+  window.LeylineInfo = { open, close: () => close(false), PAGES, SECTIONS, FALLBACK, page: current, section: () => section };
 })();

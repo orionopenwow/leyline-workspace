@@ -49,8 +49,8 @@
     el.classList.add("lf");
     el.replaceChildren();
     const head = mk("div", "lf-head");
-    head.append(mk("h3", "lf-title", "Friends"), mk("p", "lf-lede",
-      "Friends on the Leyline network: you and your friends sign your friendship yourselves, and it lives on your PCs. It works on the same network with no internet, and from anywhere through a relay that can't read your messages."));
+    head.append(mk("h3", "lf-title", "Your friends list"), mk("p", "lf-lede",
+      "You and your friends sign your friendship yourselves, and it lives on your PCs. It works on the same network with no internet, and from anywhere through a relay that can't read your messages."));
     const status = mk("p", "status lf-status");
     status.setAttribute("role", "status");
     const say = (t, k) => { status.textContent = t || ""; status.className = "status lf-status" + (k ? " " + k : ""); };
@@ -125,6 +125,10 @@
       mk("p", "lf-note", "Your key stays on this PC (peer.key). Lose it and friends need to add you again."));
 
     el.append(head, status, add, reqBox, nearBox, listBox, profBox);
+    // until the first answer: nothing empty on screen
+    reqBox.hidden = true;
+    nearBox.hidden = true;
+    listBox.append(mk("b", "", "Your friends"), mk("p", "lf-empty", "Reading your friends…"));
 
     async function act(peerId, action, msg) {
       try { await call("friends_answer", { peerId, action }); say(msg, "ok"); } catch (e) { say(oops(e), "bad"); }
@@ -197,12 +201,17 @@
         }
         const pick = mk("select", "lf-world");
         pick.setAttribute("aria-label", "Which world");
-        for (const [v, t] of WORLDS) { const o = mk("option", "", t); o.value = v; pick.append(o); }
+        for (const [v, t] of WORLDS) { const o = mk("option", "", t); o.value = v; o.selected = v === runningKind; pick.append(o); }
+        pick.addEventListener("change", () => { picked = pick.value; });
+        if (picked) pick.value = picked;
         acts.append(pick, btn("Invite", "btn small lf-invite", async (ev) => {
           const b = ev.currentTarget;
           b.disabled = true;
           say(`Inviting ${label(f)}…`);
-          try { const way = await call("friends_invite", { peerId: f.peer_id, kind: pick.value }); say(`Invite sent to ${label(f)} ${WAYS[way] || ""}.`, "ok"); } catch (e) { say(oops(e), "bad"); }
+          try {
+            const way = await call("friends_invite", { peerId: f.peer_id, kind: pick.value });
+            say(`Invite sent to ${label(f)} ${WAYS[way] || ""}. They press Join on your name, and their character stays on your world for next time.`, "ok");
+          } catch (e) { say(oops(e), "bad"); }
           b.disabled = false;
         }), btn("Remove", "btn small lf-remove", async () => {
           if (!window.confirm(`Remove ${label(f)} from your friends? They'll need your code to add you again.`)) return;
@@ -215,12 +224,30 @@
 
     let profileLoaded = false;
     let loadedOnce = false;
+    // Invite's world: the one running on this PC (else Single player), unless the player picked another
+    let runningKind = "single";
+    let picked = "";
+    async function whichRuns() {
+      const W = window.LeylineWorlds;
+      if (!W || !W.status) return;
+      for (const [k] of WORLDS) {
+        try { const st = await W.status(k); if (st && st.running) { runningKind = k; return; } } catch (_) { /* not this one */ }
+      }
+    }
     async function refresh() {
       let s;
-      try { s = await call("friends_state"); } catch (e) { if (loadedOnce) say(oops(e), "bad"); return; }
+      try { s = await call("friends_state"); } catch (e) {
+        if (loadedOnce) say(oops(e), "bad");
+        else {
+          const old = /not found|unknown (command )?/i.test(String(e || ""));
+          listBox.replaceChildren(mk("b", "", "Your friends"), mk("p", "lf-empty", old ? "Your friends list needs a newer Leyline: update Leyline, then come back." : oops(e, "Your friends list didn't load. It tries again in a few seconds.")));
+        }
+        return;
+      }
       if (!s || typeof s !== "object") return;
       s = { me: s.me || null, friends: s.friends || [], incoming: s.incoming || [], outgoing: s.outgoing || [], near: s.near || [], net: s.net || null };
       loadedOnce = true;
+      if (s.friends.length) await whichRuns();
       drawRequests(s);
       drawNear(s);
       drawFriends(s);

@@ -21,3 +21,25 @@
 .lf-profile summary { cursor: pointer; font-weight: 600; }
 .lf-field { display: flex; align-items: center; gap: 8px; }
 .lf-field > span { min-width: 220px; }
+
+/* The Single player page's one Friends area (index.html #spf): invite (#pf), friends on your world (#wf), your
+   friends' worlds (#fw), your friends list (#lf); worldfriends.js draws #wf and #fw. */
+.spf { display: grid; gap: 14px; }
+.spf-head { display: grid; gap: 4px; }
+.spf-title { margin: 0; }
+.spf-lede { margin: 0; font-size: 13px; color: var(--t-muted); max-width: 72ch; }
+.spf > .pf, .spf > .wf, .spf > .lf-panel { padding-top: 12px; border-top: 1px solid var(--line, rgba(127, 127, 127, .2)); }
+.spf > [hidden] { display: none; }
+.wf { display: grid; gap: 8px; }
+.wf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.wf-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.wf-friend { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--line, rgba(127, 127, 127, .25)); border-radius: 8px; }
+.wf-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wf-name { font-weight: 600; }
+.wf-sub { font-size: 12px; color: var(--t-muted); }
+.wf-chars { margin: 0; font-size: 12.5px; color: var(--t-muted); }
+.wf-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.wf-confirm { display: grid; gap: 6px; padding: 8px 10px; border-radius: 6px; background: var(--chip, rgba(127, 127, 127, .1)); }
+.wf-confirm p { margin: 0; font-size: 12.5px; }
+.wf-confirm.bad { box-shadow: inset 3px 0 0 var(--t-bad, #e5534b); }
+.wf-line:empty { display: none; }

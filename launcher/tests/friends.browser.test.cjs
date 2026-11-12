@@ -135,6 +135,10 @@ test('invite to my world, join theirs, remove', async () => {
     await page.click(`${row} .lf-invite`);
     await page.waitForFunction(() => /Invite sent/.test(document.querySelector('#auto .lf-status').textContent));
     assert.deepEqual(await calls(page, 'friends_invite'), [{ peerId: 'cccccccccccccccc', kind: 'vanilla' }]);
+    assert.match(await page.textContent('#auto .lf-status'), /their character stays on your world for next time/, 'a lasting login, said');
+    // the pick survives the list's next read
+    await page.evaluate(() => document.getElementById('auto').__friends.refresh());
+    assert.equal(await page.inputValue(`${row} .lf-world`), 'vanilla');
     await page.click('#auto .lf-join');
     await page.waitForFunction(() => window.__joined);
     assert.match(await page.evaluate(() => window.__joined), /\/join\/abcdefghijk2345a#/);
@@ -166,12 +170,31 @@ test('errors in plain words; an empty list says what to do', async () => {
     await page.goto('about:blank');
     await page.setContent('<div id="auto" data-leyline-friends></div>');
     await page.addScriptTag({ path: path.join(UI, 'friends.js') });
-    await page.waitForSelector('#auto .lf-empty');
-    assert.match(await page.textContent('#auto .lf-empty'), /share your code/);
+    await page.waitForFunction(() => /share your code/.test((document.querySelector('#auto .lf-empty') || {}).textContent || ''));
     assert.equal(await page.isHidden('#auto .lf-requests'), true);
     assert.equal(await page.isHidden('#auto .lf-near'), true);
     await page.fill('#auto .lf-paste', 'nope');
     await page.click('#auto .lf-add-go');
     await page.waitForFunction(() => /friend code/.test(document.querySelector('#auto .lf-status').textContent));
   } finally { await browser.close(); }
+});
+
+test("Invite picks the world that runs; a core without friends says to update, with no empty boxes", async () => {
+  const { browser, page } = await open();
+  try {
+    await page.evaluate(() => { window.LeylineWorlds = { status: async (k) => ({ running: k === 'vanilla' }) }; });
+    await page.evaluate(() => document.getElementById('auto').__friends.refresh());
+    assert.equal(await page.inputValue('#auto .lf-friend[data-peer="bbbbbbbbbbbbbbbb"] .lf-world'), 'vanilla');
+  } finally { await browser.close(); }
+  const b2 = await chromium.launch();
+  const page2 = await b2.newPage();
+  try {
+    await page2.addInitScript(FAKE, { state: STATE, fail: { friends_state: 'Command friends_state not found', friends_start: 'Command friends_start not found' } });
+    await page2.goto('about:blank');
+    await page2.setContent('<div id="auto" data-leyline-friends></div>');
+    await page2.addScriptTag({ path: path.join(UI, 'friends.js') });
+    await page2.waitForFunction(() => /newer Leyline/.test(document.querySelector('#auto .lf-list').textContent));
+    assert.equal(await page2.isHidden('#auto .lf-requests'), true);
+    assert.equal(await page2.isHidden('#auto .lf-near'), true);
+  } finally { await b2.close(); }
 });

@@ -116,7 +116,15 @@ jobs:
           "OPENSSL_ROOT_DIR=$ssl" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "OpenSSL at $ssl"
 
+      - name: The engine built before from these same sources (a packaging-only change skips the 1.5-hour build)
+        id: built
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\acdist
+          key: engine-acdist-${{ env.BOOST_VERSION }}-${{ env.MYSQL_VERSION }}-${{ hashFiles('realm/custom/sources.lock', 'realm/custom/patches/**', 'realm/custom/fetch.sh', 'realm/custom/modules/**') }}
+
       - name: Configure (Release, every tool, scripts and modules static, as the Docker build)
+        if: steps.built.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -129,6 +137,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
       - name: Build (the long one, 2-4 hours)
+        if: steps.built.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           cmake --build C:\acb --config Release --parallel 4
@@ -136,6 +145,13 @@ jobs:
           cmake --install C:\acb --config Release
           if ($LASTEXITCODE -ne 0) { throw "install failed" }
           Get-ChildItem -Recurse C:\acdist -Include *.exe | ForEach-Object { "{0,10:N0} KB  {1}" -f ($_.Length / 1KB), $_.FullName }
+
+      - name: Keep the built engine for the next run
+        if: steps.built.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\acdist
+          key: ${{ steps.built.outputs.cache-primary-key }}
 
       - name: Package (programs, a trimmed MySQL, the SQL, our scripts and profiles; never game data)
         shell: pwsh

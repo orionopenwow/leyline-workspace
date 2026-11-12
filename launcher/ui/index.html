@@ -38,6 +38,8 @@
 <link rel="stylesheet" href="bossrush.css"><!-- Boss Rush: its page and Home row (bossrush.js) -->
 <link rel="stylesheet" href="solo.css"><!-- Play solo everywhere, Invite a friend, the GM command center (solo.js, gmcenter.js) -->
 <link rel="stylesheet" href="hostfriends.css"><!-- Play with friends: the one window, Ready for friends?, the friend's steps (hostfriends.js) -->
+<link rel="stylesheet" href="info.css"><!-- the "i" button and its bubble (info.js) -->
+<link rel="stylesheet" href="friends.css"><!-- Friends on the Leyline network (friends.js) -->
 <link rel="stylesheet" href="guide.css"><!-- the first-run tour and the one-time encouragement toast (guide.js) -->
 <link rel="stylesheet" href="phone.css"><!-- the phone app's layout (html.phone only; phone.js, docs/ANDROID.md): last, over the rest -->
 </head>
@@ -95,13 +97,12 @@
          Your Den (den.js) has no item (owner 2026-11-02: "only in the server drop up list next to play"): the play bar's
          realm list (app.js renderRealmMenu) and Home's banner lead there.
          Single player (single.js, owner 4 Nov: the flagship, a top-level choice) has its item under Home, with the sword mark.
-         Boss Rush (bossrush.js, owner 5 Nov: "its own launched mini game mode") has its item under Single player, a shield.
+         Boss Rush (bossrush.js) has no item (owner 12 Nov: off the side menu): Home's Boss Rush row leads there.
          Characters (characters.js, docs/SINGLE-PLAYER-ONE-CLICK.md) has no item (the menu matches the website's): the
          Single player page's Characters button and Home's Single player row lead there. -->
     <button class="nav" data-page="simple"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>Home</button>
     <button class="nav" data-page="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
     <button class="nav" data-page="single"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/></svg>Single player</button>
-    <button class="nav" data-page="bossrush"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.4 7 10 4-1.6 7-5.5 7-10V6z"/><path d="M9.5 12.5 11 14l3.5-3.5"/></svg>Boss Rush</button>
     <button class="nav" data-page="realms"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Realms</button>
     <button class="nav" data-page="modes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9h12a3 3 0 0 1 3 3v2a3 3 0 0 1-5.2 2L14 14h-4l-1.8 2A3 3 0 0 1 3 14v-2a3 3 0 0 1 3-3z"/><path d="M8 11v2M7 12h2M16 11.5h.01M17.5 13h.01"/></svg>Modes</button>
     <button class="nav" data-page="mods"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mods &amp; Addons<span class="badge" id="nav-mods-count" hidden></span></button>
@@ -468,7 +469,18 @@
   <section class="page" id="page-single">
     <div class="panel wide sv-panel" id="sv"></div>
     <div class="panel wide sp" id="sp"></div>
-    <div class="panel wide oc-set" id="oc-set" aria-label="Single player settings"></div><!-- oneclick.js: Stop the world when the game closes -->
+    <div class="panel wide oc-set" id="oc-set" aria-label="Single player settings"></div><!-- oneclick.js: Stop the world when the game closes, Your world's settings -->
+    <!-- The one Friends area: invite to your world, who keeps a character on it, the worlds you joined, your friends list -->
+    <div class="panel wide spf" id="spf" role="region" aria-labelledby="spf-title">
+      <div class="spf-head">
+        <h2 class="spf-title" id="spf-title">Friends</h2>
+        <p class="spf-lede">Play together on your own worlds. A friend who joins keeps their character on your world, and you keep yours on theirs. No account and no server of ours: your friendships are signed by you and your friends and kept on your PCs.</p>
+      </div>
+      <div class="pf" id="pf" aria-label="Invite a friend to your world"></div><!-- oneclick.js: Invite a friend, the link, how a friend joins, who's in -->
+      <div class="wf" id="wf" aria-label="Friends with a character on your world"></div><!-- worldfriends.js: their characters, trust, remove -->
+      <div class="wf fw" id="fw" aria-label="Your friends' worlds" hidden></div><!-- worldfriends.js: Join again -->
+      <div class="lf-panel" id="lf" data-leyline-friends aria-label="Your friends list"></div><!-- friends.js: friends on the Leyline network, no server (LeylineFriends.mount) -->
+    </div>
   </section>
 
   <!-- CHARACTERS (characters.js): On this PC (each local world's characters) and Online (the official realm) -->
@@ -961,6 +973,8 @@
 <script src="denpack.js"></script><!-- Den codes (window.LeylineDenPack; before den.js) -->
 <script src="den.js"></script><!-- Your Den: the one Den page and the Home entry (window.LeylineDen; after app.js and hostconsole.js) -->
 <script src="hostfriends.js"></script><!-- Play with friends: Invite a friend in one step, Ready for friends?, the friend's steps (window.LeylineHostFriends; after solo.js and den.js) -->
+<script src="friends.js"></script><!-- Friends on the Leyline network: signed by each other, no server (window.LeylineFriends; after solo.js) -->
+<script src="worldfriends.js"></script><!-- Friends with a character on your world, and Join your friend again (window.LeylineWorldFriends; after friends.js) -->
 <script src="denmarket.js"></script><!-- Mods & Addons › Dens: shared Dens and stamps, Share (window.LeylineDenMarket; after app.js and den.js) -->
 <script src="single.js"></script><!-- Single player: its page, three steps, then Manage (window.LeylineSingle; after app.js, den.js and solo.js) -->
 <script src="vanilla.js"></script><!-- the original world in one click, and window.LeylineWorlds: every local world's play path (after single.js) -->
@@ -974,6 +988,7 @@
 <script src="home.js"></script>
 <script src="simplehome.js"></script><!-- Simple mode: Play, Host, Visit, Back up (window.LeylineSimpleHome; after vanilla.js, hostfriends.js and app.js) -->
 <script src="agents.js"></script><!-- Agents: the page and the approval card on every page (window.LeylineAgents) -->
+<script src="info.js"></script><!-- the "i" button: what this page is, Learn more in the docs (window.LeylineInfo) -->
 <script src="guide.js"></script><!-- the first-run tour, Help › Show me again, the one-time encouragement lines (window.LeylineGuide; last) -->
 <script src="phone.js"></script><!-- the phone app: its tab bar, PLAY in the app, what needs a computer (window.LeylinePhone; after everything) -->
 </body>

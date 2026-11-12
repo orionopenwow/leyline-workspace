@@ -33,6 +33,7 @@
     set: (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (_) { /* private window */ } } };
   const W = () => window.LeylineWorlds || null;
   const BUILD = "3.3.5a";
+  const SETTINGS_KINDS = ["single", "vanilla"];   // the worlds with companions (host/spsettings.rs supports)
   const PRESSED = "leyline.oneclick.pressed";   // the world whose setup Play started (a launch after an interruption goes on)
   const PICK_KEY = "leyline.single.folder";     // the folder the local worlds play with (single.js, vanilla.js)
   const cfg = { pollMs: 2000, minRateMs: 4000 };
@@ -54,15 +55,26 @@
   const REPAIRS = ["download", "maps", "db", "antivirus", "login", "other"];
 
   // ---------------------------------------------------------------- the steps' plain names
-  const PHASES = ["Getting the engine", "Reading your maps", "Filling the world", "Starting"];
+  // owner 12 Nov: "more descriptive of what filling the world means". The core's own step names (host/engine.rs
+  // Step::label) say the same; each gets one line on what it is.
+  const STEPS = [
+    { t: "Getting the engine (one-time download)", sub: "The small game server that runs your world. Downloaded once, kept on this PC." },
+    { t: "Reading the maps from your game folder (one time)", sub: "The land, water and buildings, so everything knows where it can walk. Read once, kept." },
+    { t: "Filling the world: placing creatures, quests and items into its database (one time)", sub: "Tens of thousands of creatures, quests, items, vendors and spells, placed once." },
+    { t: "Creating your local login", sub: "A login for this PC only. Leyline fills it in for you." },
+    { t: "Starting your world", sub: "Switching the server on: the only step from now on, a few seconds." },
+  ];
+  const PHASES = STEPS.map((s) => s.t);
+  const FIRST_LINE = "First time only: 5–20 minutes. After this, your world starts in seconds.";
   function phaseOf(p) {
     const t = String((p && p.step) || "").toLowerCase();
     if (/map/.test(t)) return 1;
-    if (/database|fill|world data|\bdb\b|login|account|quest|creature/.test(t)) return 2;
-    if (/start|ready|sign|enter|open/.test(t)) return 3;
+    if (/login|account/.test(t)) return 3;
+    if (/database|fill|world data|\bdb\b|quest|creature/.test(t)) return 2;
+    if (/start|ready|sign|enter|open/.test(t)) return 4;
     if (/download|engine|unpack|getting|check/.test(t)) return 0;
     const f = frac(p);
-    return Math.min(3, Math.floor(f * 4));
+    return Math.min(4, Math.floor(f * 5));
   }
   function frac(p) {
     if (!p) return 0;
@@ -105,6 +117,7 @@
     other: null,        // the other world running
     wait: null,         // { resolve, kind: "folder"|"choice"|"quick"|"answer" }
     opts: {},           // the caller's say / job / onOther / onDocker
+    world: null,        // the "Your world" panel: { kind, v: world_settings_get, pre: world_preflight, saving, line }
   };
   const callerSay = (t, k) => { if (S.opts.say) S.opts.say(t, k); };
 
@@ -214,8 +227,10 @@
       if (st && st.supported === false) throw { docker: true };
       const running = !!(st && st.running);
       // 2. room for it (only when it has work to do)
+      let pre = null;
       if (!running || o.repair) {
         const pf = await maybe("world_preflight", { kind, client });
+        if (pf.ok && pf.v && typeof pf.v === "object") pre = pf.v;
         if (pf.ok && pf.v && (pf.v.ok === false || (pf.v.ok !== true && pf.v.message))) {
           S.disk = pf.v;
           const again = await ask("disk");
@@ -223,6 +238,17 @@
           if (!again) { close(); return null; }
           S.flow = null;
           return play(kind, Object.assign({}, o, { client }));
+        }
+      }
+      // 2b. Your world (owner 12 Nov): what happens and its settings, before anything is downloaded; the first time
+      // only (a world not set up whose settings weren't chosen). An older core without world_settings_get: skipped.
+      if (!(st && st.set_up) && !o.repair && !o.resume && SETTINGS_KINDS.includes(kind)) {
+        const g = await maybe("world_settings_get", { kind });
+        if (g.ok && g.v && typeof g.v === "object" && !g.v.chosen) {
+          S.world = { kind, v: Object.assign({}, g.v), pre, saving: false, line: "" };
+          const ok = await ask("world");
+          S.world = null;
+          if (!ok) { close(); callerSay(""); return null; }
         }
       }
       // 3. the first entry
@@ -337,6 +363,24 @@
     return play(k, { resume: true });
   }
 
+  // The panel on its own, for a start that doesn't go through play() (single.js's Start): true to go on (shown and
+  // saved, or not needed), false when the player cancelled.
+  async function askWorld(kind, client) {
+    if (S.flow || S.wait || !SETTINGS_KINDS.includes(kind)) return true;
+    const st = W() ? await W().status(kind) : null;
+    if (st && st.set_up) return true;
+    const g = await maybe("world_settings_get", { kind }).catch(() => ({ ok: false }));
+    if (!g.ok || !g.v || typeof g.v !== "object" || g.v.chosen) return true;
+    const pf = client ? await maybe("world_preflight", { kind, client }).catch(() => ({ ok: false })) : { ok: false };
+    S.kind = kind;
+    S.world = { kind, v: Object.assign({}, g.v), pre: pf.ok && pf.v && typeof pf.v === "object" ? pf.v : null, saving: false, line: "" };
+    const ok = await ask("world");
+    S.world = null;
+    S.view = "";
+    paint();
+    return !!ok;
+  }
+
   // ---------------------------------------------------------------- the card
   const card = mk("div", "oc");
   card.id = "oc";
@@ -362,9 +406,10 @@
     const at = p ? phaseOf(p) : 0;
     const ol = mk("ol", "oc-steps");
     ol.id = "oc-steps";
-    PHASES.forEach((name, i) => {
-      const li = mk("li", "oc-step " + (i < at ? "done" : i === at ? "now" : "todo"), name);
+    STEPS.forEach((s, i) => {
+      const li = mk("li", "oc-step " + (i < at ? "done" : i === at ? "now" : "todo"));
       li.dataset.state = i < at ? "done" : i === at ? "now" : "todo";
+      li.append(mk("span", "oc-step-t", s.t), mk("span", "oc-step-s", s.sub));
       ol.append(li);
     });
     const bar = mk("div", "oc-bar");
@@ -380,7 +425,9 @@
     left.id = "oc-left";
     box.append(ol, bar, left);
     if (p && p.detail) box.append(mk("p", "oc-fine", p.detail));
-    box.append(mk("p", "oc-fine", "The first time takes 10 to 30 minutes. You can hide this: it keeps going, and the game opens by itself when it's ready."));
+    const fl = mk("p", "oc-line oc-first", FIRST_LINE);
+    fl.id = "oc-first";
+    box.append(fl, mk("p", "oc-fine", "You can hide this: it keeps going, and the game opens by itself when it's ready."));
     box.append(row(btn("Hide", "btn small", () => { S.hidden = true; paint(); }, "oc-hide")));
     return box;
   }
@@ -502,6 +549,124 @@
     return box;
   }
 
+  // ---------------------------------------------------------------- Your world: the settings (panel and page)
+  const COMPANIONS = [[0, "Off"], [1, "1"], [2, "2"], [3, "3"], [4, "4"]];
+  const POPULATION = [[0, "Quiet"], [20, "Some"], [60, "Lively"], [150, "Busy"]];
+  const XP = [[1, "1x"], [1.5, "1.5x"], [2, "2x"]];
+  // one row of choices (a radio group of buttons): [value, label]
+  function choices(id, label, items, cur, on) {
+    const g = mk("div", "ws-choices");
+    g.id = id;
+    g.setAttribute("role", "radiogroup");
+    g.setAttribute("aria-label", label);
+    const list = items.slice();
+    if (!list.some(([v]) => v === cur)) list.push([cur, `Custom (${cur})`]);
+    for (const [v, t] of list) {
+      const b = btn(t, "ws-choice" + (v === cur ? " on" : ""), () => on(v));
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(v === cur));
+      b.dataset.v = String(v);
+      g.append(b);
+    }
+    return g;
+  }
+  function setting(title, ctl, line) {
+    const r = mk("div", "ws-row");
+    r.append(mk("b", "ws-name", title), ctl, mk("p", "oc-fine ws-line", line));
+    return r;
+  }
+  // the four settings; on(key, value) is called with the world_settings_set key(s) changed
+  function settingsForm(v, idp, on) {
+    const box = mk("div", "ws-form");
+    box.id = `${idp}-form`;
+    const follow = v.companions_auto ? Math.max(1, Number(v.companions_follow) || 0) : 0;
+    box.append(setting("Companions that travel with you",
+      choices(`${idp}-follow`, "Companions that travel with you", COMPANIONS, follow, (n) => on({ companions_auto: n > 0, companions_follow: n })),
+      "Bot companions that fight beside you. They join when you enter the world; change them any time in the Bots window."));
+    const dl = mk("label", "check ws-check");
+    const dc = mk("input");
+    dc.type = "checkbox";
+    dc.id = `${idp}-dungeon`;
+    dc.checked = !!v.dungeon_auto;
+    dc.addEventListener("change", () => on({ dungeon_auto: dc.checked }));
+    dl.append(dc, document.createTextNode(dc.checked ? "On" : "Off"));
+    box.append(setting("Dungeon buddies", dl, "Bots fill your group only when you enter a dungeon, and head home when you leave."));
+    box.append(setting("World population",
+      choices(`${idp}-bots`, "World population", POPULATION, Number(v.roaming_bots) || 0, (n) => on({ roaming_bots: n })),
+      "Other adventurers (bots) roaming the world: Quiet has none, Busy about 150. More feels alive and uses more of your PC."));
+    if (typeof v.xp_rate === "number") {
+      box.append(setting("XP rate",
+        choices(`${idp}-xp`, "XP rate", XP, v.xp_rate, (n) => on({ xp_rate: n })),
+        "How fast you level: kills, quests and exploring give this much experience."));
+    }
+    return box;
+  }
+  const payload = (kind, v) => ({ kind, companions_auto: !!v.companions_auto, companions_follow: Number(v.companions_follow) || 0,
+    dungeon_auto: !!v.dungeon_auto, roaming_bots: Number(v.roaming_bots) || 0, xp_rate: v.xp_rate });
+
+  // How a friend joins: the same lines in the panel and on the page (TODO(owner): his words)
+  const FRIEND_LINES = [
+    "Your friend needs Leyline and their own game folder, the same version as yours.",
+    "Press Invite a friend while your world runs, and send them the link. They open it, and Leyline takes them in.",
+    "Their character stays on your world: next time they press Join again, with no new link.",
+    "On the same network they connect straight to your PC; from anywhere else, through the Leyline relay.",
+    "In the game, the Social panel's Leyline tab invites a friend without leaving the world.",
+  ];
+  function friendLines() {
+    const ul = mk("ul", "ws-friend-lines");
+    for (const l of FRIEND_LINES) ul.append(mk("li", "", l));
+    return ul;
+  }
+
+  function worldNode() {
+    const w = S.world;
+    const box = mk("div", "oc-body ws");
+    // what happens
+    const what = mk("section", "ws-what");
+    what.id = "ws-what";
+    what.setAttribute("aria-label", "What happens");
+    what.append(mk("h4", "ws-h", "What happens"), mk("p", "oc-line", "Single player runs a small game server on your PC, made only for you. The first time, Leyline:"));
+    const mb = w.pre && Number(w.pre.download_mb) > 0 ? Number(w.pre.download_mb) : 0;
+    // a core that tells the size says 0 once the engine is here (world_preflight download_mb)
+    const installed = !!w.pre && w.pre.download_mb === 0;
+    const engineLine = mb ? `Gets the engine: a one-time download of about ${mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : mb + " MB"}.`
+      : installed ? "Gets the engine: it's already on this PC." : "Gets the engine: a one-time download.";
+    const ol = mk("ol", "ws-steps");
+    ol.id = "ws-steps";
+    for (const l of [engineLine,
+      "Reads the maps from your own game folder: the land, water and buildings, so everything knows where it can walk. Read once, kept.",
+      "Fills the world: every creature, quest, item, vendor and spell placed into your world's own database, tens of thousands of entries. Done once.",
+      "Creates your local login, for this PC only.",
+      "Starts your world and takes you in."]) ol.append(mk("li", "", l));
+    const why = mk("p", "oc-line ws-why", "Why the wait: the first time takes 5–20 minutes because of the reading and filling above. Everything is kept on your PC, so from then on a start only switches the server on: seconds.");
+    why.id = "ws-why";
+    what.append(ol, why);
+    // the settings
+    const set = mk("section", "ws-set");
+    set.setAttribute("aria-label", "Your settings");
+    set.append(mk("h4", "ws-h", "Your settings"),
+      settingsForm(w.v, "ws", (ch) => { Object.assign(w.v, ch); paint(); }),
+      mk("p", "oc-fine", "You can change all of these later in Single player settings."));
+    // a friend
+    const fr = mk("section", "ws-friend");
+    fr.id = "ws-friend";
+    fr.setAttribute("aria-label", "Play with a friend");
+    fr.append(mk("h4", "ws-h", "Play with a friend"), friendLines());
+    box.append(what, set, fr);
+    if (w.line) { const e = mk("p", "oc-err", w.line); e.id = "ws-err"; e.setAttribute("role", "alert"); box.append(e); }
+    const go = btn(w.saving ? "Saving…" : "Set up my world", "btn primary", saveWorld, "ws-go");
+    go.disabled = !!w.saving;
+    box.append(row(go, btn("Cancel", "btn small", () => answer(false), "ws-cancel")));
+    return box;
+  }
+  async function saveWorld() {
+    const w = S.world;
+    if (!w || w.saving) return;
+    w.saving = true; w.line = ""; paint();
+    try { await call("world_settings_set", payload(w.kind, w.v)); answer(true); }
+    catch (e) { w.saving = false; w.line = coded(e) ? coded(e).text : oops(e, "Your settings weren't saved. Try again."); paint(); }
+  }
+
   function paint() {
     const title = titleOf(S.kind);
     const v = S.view;
@@ -510,6 +675,7 @@
     x.setAttribute("aria-label", v === "setup" ? "Hide" : "Close");
     const nodes = [];
     if (v === "setup") nodes.push(head(`Setting up ${title}`, "Once only. Then one click takes you in."), setupNode(title));
+    else if (v === "world") nodes.push(head(S.world && S.world.kind === "vanilla" ? "Your original world" : "Your world", "Set it up once. Here's what happens, and how you want it."), worldNode());
     else if (v === "error") nodes.push(head(`${title} didn't start`), errorNode());
     else if (v === "quick") nodes.push(head("Your first character", "Ready to go, or change anything first."), quickNode());
     else if (v === "folders") nodes.push(head("Which game folder?", `${title} plays with your own game folder. Tap one.`), foldersNode());
@@ -566,9 +732,57 @@
     home.hidden = !(st && st.supported);
   }
 
-  // ---------------------------------------------------------------- 8. Single player's setting
+  // ---------------------------------------------------------------- 8. Single player's settings
   const setRoot = byId("oc-set");
   const stopOnExit = () => { const s = appState(); const v = s && s.settings ? s.settings.world_stop_on_exit : undefined; return v === undefined ? true : !!v; };
+  // the world settings on the page: { kind, v, line: [text, kind], restart, busy, missing }
+  const PS = { kind: "single", v: null, line: ["", ""], restart: false, busy: false, missing: false, loading: false };
+  async function loadWorldSettings() {
+    if (PS.loading) return;
+    PS.loading = true;
+    const g = await maybe("world_settings_get", { kind: PS.kind }).catch((e) => ({ ok: true, v: null, e }));
+    // the Built-in engine reads these; where it doesn't run (Docker plays Single player there) they'd change nothing
+    try { const st = W() ? await W().status(PS.kind) : null; PS.unsupported = !!st && st.supported === false; } catch (_) { PS.unsupported = false; }
+    PS.loading = false;
+    PS.missing = !g.ok;
+    PS.v = g.ok && g.v && typeof g.v === "object" ? g.v : null;
+    // a refusal is said once (no reading again in a loop); picking the world again or the page again retries
+    PS.failed = !!g.e;
+    if (g.e) PS.line = [coded(g.e) ? coded(g.e).text : oops(g.e, "Your world's settings didn't load."), "bad"];
+    paintSetting();
+  }
+  async function changeWorld(ch) {
+    if (!PS.v || PS.busy) return;
+    const before = Object.assign({}, PS.v);
+    Object.assign(PS.v, ch);
+    PS.busy = true;
+    paintSetting();
+    try {
+      const r = await call("world_settings_set", Object.assign({ kind: PS.kind }, ch));
+      if (r && r.settings) PS.v = Object.assign({}, PS.v, r.settings);
+      PS.restart = !!(r && r.restart);
+      PS.line = [(r && r.message) || "Saved.", "ok"];
+    } catch (e) {
+      PS.v = before;
+      PS.line = [coded(e) ? coded(e).text : oops(e, "That setting wasn't saved. Try again."), "bad"];
+    }
+    PS.busy = false;
+    paintSetting();
+  }
+  async function restartWorld() {
+    const w = W();
+    PS.busy = true;
+    PS.line = ["Restarting… Everyone is saved first.", ""];
+    paintSetting();
+    try {
+      if (w) await w.stopWorld(PS.kind);
+      await call("world_start", { kind: PS.kind });
+      PS.restart = false;
+      PS.line = ["Restarting with your settings. It's ready in a few seconds.", "ok"];
+    } catch (e) { PS.line = [oops(e, "It didn't restart. Press Play to start it."), "bad"]; }
+    PS.busy = false;
+    paintSetting();
+  }
   function paintSetting() {
     if (!setRoot) return;
     const h = mk("h3", "oc-set-h", "Single player settings");
@@ -596,17 +810,153 @@
       box.disabled = false;
     });
     lab.append(box, document.createTextNode("Stop the world when the game closes"));
-    setRoot.replaceChildren(h, lab, mk("p", "oc-fine", "On: everyone is saved and the world stops when you close the game. Off: it keeps running, so friends can stay."), line);
+    const nodes = [h, lab, mk("p", "oc-fine", "On: everyone is saved and the world stops when you close the game. Off: it keeps running, so friends can stay."), line];
+    // the world's own settings (host/spsettings.rs), for later changes
+    if (!PS.missing && PS.unsupported) nodes.push(mk("p", "oc-fine", "Your world's companion and population settings are for the Built-in engine, on Windows PCs."));
+    if (!PS.missing && !PS.unsupported) {
+      const ws = mk("section", "ws-page");
+      ws.id = "wss";
+      ws.setAttribute("aria-label", "Your world's settings");
+      const top = mk("div", "ws-page-h");
+      const sel = mk("select", "oc-sel");
+      sel.id = "wss-kind";
+      sel.setAttribute("aria-label", "Which world");
+      for (const k of SETTINGS_KINDS) { const o = mk("option", "", titleOf(k)); o.value = k; o.selected = k === PS.kind; sel.append(o); }
+      sel.addEventListener("change", () => { PS.kind = sel.value; PS.v = null; PS.failed = false; PS.restart = false; PS.line = ["", ""]; paintSetting(); loadWorldSettings(); });
+      top.append(mk("b", "ws-h", "Your world"), sel);
+      ws.append(top);
+      if (!PS.v && !PS.failed) ws.append(mk("p", "oc-fine", "Reading your world's settings…"));
+      else if (PS.v) {
+        const f = settingsForm(PS.v, "wss", changeWorld);
+        if (PS.busy) f.querySelectorAll("button, input").forEach((x) => { x.disabled = true; });
+        ws.append(f);
+        ws.append(mk("p", "oc-fine", PS.v.running ? "Your world is running: changes apply at its next start." : "Changes apply when your world starts."));
+      }
+      const st = mk("p", "status ws-status" + (PS.line[1] ? " " + PS.line[1] : ""), PS.line[0]);
+      st.id = "wss-status";
+      st.setAttribute("role", "status");
+      ws.append(st);
+      if (PS.restart) {
+        const rb = btn("Restart now", "btn small primary", restartWorld, "wss-restart");
+        rb.disabled = PS.busy;
+        ws.append(row(rb, mk("span", "oc-fine", "Saves everyone, then starts it again with your settings.")));
+      }
+      nodes.push(ws);
+    }
+    setRoot.replaceChildren(...nodes);
+    if (!PS.v && !PS.missing && !PS.loading && !PS.failed) loadWorldSettings();
+  }
+
+  // ---------------------------------------------------------------- 9. Play with a friend (the Single player page)
+  // One instant link from the running world (app.rs world_invite: same network straight in, else the Leyline relay),
+  // Copy, how a friend joins, and whether they're in (den_net_state: the world's tunnel and its streams). The full
+  // checklist (Ready for friends?) stays in hostfriends.js, one button away.
+  const pfRoot = byId("pf");
+  const PF = { kind: null, link: "", ways: [], line: ["", ""], busy: false, net: null, timer: null };
+  async function runningWorld() {
+    const w = W();
+    if (!w) return null;
+    for (const k of SETTINGS_KINDS) { const st = await w.status(k); if (st && st.running) return k; }
+    return null;
+  }
+  function friendState() {
+    const n = PF.net;
+    if (PF.link && n && n.running && n.connected && Number(n.streams) > 0) return "connected";
+    if (PF.link) return "invited";
+    return "none";
+  }
+  async function readFriends() {
+    const was = friendState();
+    PF.kind = await runningWorld();
+    try { PF.net = await call("den_net_state"); } catch (_) { PF.net = null; }
+    if (!PF.kind && PF.link) { PF.link = ""; PF.ways = []; }
+    paintFriends();
+    // a friend came in (or left): who keeps a character here, read again
+    if (friendState() !== was && window.LeylineWorldFriends) window.LeylineWorldFriends.refresh();
+  }
+  function watchFriends() {
+    if (PF.timer) { clearTimeout(PF.timer); PF.timer = null; }
+    const on = byId("page-single");
+    if (on && on.classList.contains("on") && document.visibilityState !== "hidden") PF.timer = setTimeout(() => readFriends().then(watchFriends), 5000);
+  }
+  async function inviteFriend() {
+    if (PF.busy) return;
+    PF.busy = true;
+    PF.line = ["Making your invite link…", ""];
+    paintFriends();
+    PF.kind = await runningWorld();
+    if (!PF.kind) {
+      PF.busy = false;
+      PF.line = ["Start your world first (Play): friends join it while it runs.", "warn"];
+      paintFriends();
+      return;
+    }
+    try {
+      const r = await call("world_invite", { kind: PF.kind });
+      PF.link = String((r && r.link) || "");
+      PF.ways = Array.isArray(r && r.ways) ? r.ways : [];
+      PF.line = PF.link ? ["Your link is ready. Copy it and send it to your friend.", "ok"] : ["No link came back. Try again.", "bad"];
+      if (PF.link) { try { await navigator.clipboard.writeText(PF.link); PF.line = ["Link copied. Send it to your friend.", "ok"]; } catch (_) { /* the Copy button */ } }
+    } catch (e) { PF.line = [oops(e, "The invite didn't work. Try again."), "bad"]; }
+    try { PF.net = await call("den_net_state"); } catch (_) { /* as it was */ }
+    PF.busy = false;
+    paintFriends();
+    if (window.LeylineWorldFriends) window.LeylineWorldFriends.refresh();
+  }
+  const STATE_TEXT = { none: "No friend invited yet", invited: "Invited: waiting for your friend", connected: "Your friend is in" };
+  function paintFriends() {
+    if (!pfRoot) return;
+    const h = mk("div", "pf-head");
+    const fs = friendState();
+    const chip = mk("span", "sp-dock pf-state " + (fs === "connected" ? "ok" : fs === "invited" ? "wait" : "warn"),
+      fs === "connected" && PF.net && Number(PF.net.streams) > 1 ? `${STATE_TEXT.connected} (${PF.net.streams} connections)` : STATE_TEXT[fs]);
+    chip.id = "pf-status";
+    chip.dataset.state = fs;
+    h.append(mk("h3", "oc-set-h", "Invite a friend to your world"), chip);
+    const nodes = [h, friendLines()];
+    const go = btn(PF.busy ? "Making the link…" : PF.link ? "New link" : "Invite a friend", "btn primary", inviteFriend, "pf-invite");
+    go.disabled = PF.busy;
+    const acts = [go];
+    if (window.LeylineHostFriends && window.LeylineHostFriends.open) acts.push(btn("Check it works for friends", "btn small", () => window.LeylineHostFriends.open({ kind: PF.kind || "single" }), "pf-more"));
+    nodes.push(row(...acts));
+    if (!PF.kind && !PF.link) nodes.push(mk("p", "oc-fine", "Your world runs only while you play: start it, then invite."));
+    if (PF.link) {
+      const inp = mk("input", "pf-link");
+      inp.id = "pf-link";
+      inp.type = "text";
+      inp.readOnly = true;
+      inp.value = PF.link;
+      inp.setAttribute("aria-label", "Your invite link");
+      inp.addEventListener("focus", () => inp.select());
+      nodes.push(row(inp, btn("Copy", "btn small", () => copyTo(PF.link, "Link copied. Send it to your friend."), "pf-copy")));
+      if (PF.ways.length) {
+        const ul = mk("ul", "pf-ways");
+        ul.id = "pf-ways";
+        for (const w of PF.ways) if (w && w.id !== "own") { const li = mk("li", w.ok ? "ok" : "off", String(w.line || "")); ul.append(li); }
+        nodes.push(ul);
+      }
+    }
+    const st = mk("p", "status pf-line" + (PF.line[1] ? " " + PF.line[1] : ""), PF.line[0]);
+    st.id = "pf-line";
+    st.setAttribute("role", "status");
+    nodes.push(st);
+    pfRoot.replaceChildren(...nodes);
+  }
+  async function copyTo(text, okLine) {
+    try { await navigator.clipboard.writeText(text); PF.line = [okLine, "ok"]; } catch (_) { PF.line = ["Select the link and copy it with Ctrl+C.", "warn"]; }
+    paintFriends();
   }
 
   document.addEventListener("leyline:page", (e) => {
     const pg = e.detail && e.detail.page;
     if (pg === "play") paintHome();
-    if (pg === "single") paintSetting();
+    if (pg === "single") { PS.v = null; PS.failed = false; paintSetting(); readFriends().then(watchFriends); }
   });
+  document.addEventListener("visibilitychange", watchFriends);
   document.addEventListener("leyline:state", () => { if (setRoot && !setRoot.contains(document.activeElement)) paintSetting(); });
   paintSetting();
+  paintFriends();
   setTimeout(() => { paintHome(); resume(); }, 300);
 
-  window.LeylineOneClick = { play, resume, coded, phaseOf, PHASES, cfg, state: () => ({ view: S.view, hidden: S.hidden, busy: !!S.flow, kind: S.kind }) };
+  window.LeylineOneClick = { play, resume, askWorld, coded, phaseOf, PHASES, STEPS, FIRST_LINE, cfg, friends: () => ({ state: friendState(), link: PF.link, kind: PF.kind }), state: () => ({ view: S.view, hidden: S.hidden, busy: !!S.flow, kind: S.kind }) };
 })();

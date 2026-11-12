@@ -162,7 +162,9 @@ impl Kind {
     }
     pub fn bots(self) -> u32 {
         match self {
-            Kind::Single => BOTS,
+            // a quiet world until the player asks for more (owner 12 Nov; host/spsettings.rs): BOTS is what worlds set
+            // up before then had, kept for them in their realm.env
+            Kind::Single => 0,
             // no roaming population: companions and dungeon buddies only (the profile's WU_BOTS says the same)
             Kind::BossRush | Kind::Vanilla => 0,
         }
@@ -406,6 +408,12 @@ pub struct State {
     pub hero_accounts: Vec<String>,
     /// The Hero Key login the world's own login's characters moved to, once (empty: not yet).
     pub hero_moved_to: String,
+    /// The player chose this world's settings (companions, dungeon buddies, roaming bots, XP: host/spsettings.rs), in
+    /// the "Your world" panel or the Single player page: the panel isn't shown again.
+    pub settings_chosen: bool,
+    /// The world's settings are in its realm.env (written once: a new world's quiet defaults, or what a world set up
+    /// before the settings existed already had).
+    pub settings_settled: bool,
 }
 
 pub fn load_state(p: &Paths) -> State {
@@ -571,6 +579,8 @@ pub fn world_env(p: &Paths, s: &State, profile: &str, modules: &str, realm: Opti
     put(&mut v, &env_name("Warden.Enabled"), "0");
     put(&mut v, &env_name("PlayerLimit"), p.kind.player_limit().to_string());
     put(&mut v, "AC_ALE_SCRIPT_PATH", fwd(&p.lua()));
+    // the realm script for the in-game Leyline tab of the Friends window (lua_scripts/ov_worldfriends.lua): only here
+    put(&mut v, "OV_WORLDFRIENDS", "1");
     put(&mut v, &env_name("WorldServerPort"), WORLD_PORT.to_string());
     put(&mut v, &env_name("RealmID"), "1");
     put(&mut v, &env_name("Console.Enable"), "0");
@@ -859,13 +869,13 @@ impl Step {
     /// What the page shows for it (single.js's progress line).
     pub fn label(self) -> &'static str {
         match self {
-            Step::Download => "Getting the engine (a one-time download)",
-            Step::Unpack => "Checking and unpacking it",
-            Step::Maps => "Reading the maps from your game folder",
-            Step::Database => "Setting up the database",
-            Step::Fill => "Filling the world (the first time takes a few minutes)",
-            Step::Account => "Making your account",
-            Step::Start => "Starting the realm",
+            Step::Download => "Getting the engine (one-time download)",
+            Step::Unpack => "Unpacking the engine (one time)",
+            Step::Maps => "Reading the maps from your game folder (one time)",
+            Step::Database => "Making the world's database (one time)",
+            Step::Fill => "Filling the world: placing creatures, quests and items into its database (one time)",
+            Step::Account => "Creating your local login",
+            Step::Start => "Starting your world",
             Step::Verify => "Checking the engine's files",
             Step::Login => "Setting up your login again",
             Step::Ports => "Checking the world answers",
@@ -1097,6 +1107,10 @@ pub fn begin_setup(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: bo
         return Err(tag("ports", format!("{} is running on this PC and uses the same ports. Stop it first, then press Start again.", o.title())));
     }
     let mut s = load_state(&p);
+    // the world's settings in its realm.env before its server first reads it (host/spsettings.rs)
+    if crate::host::spsettings::settle(&p, &mut s) {
+        let _ = save_state(&p, &s);
+    }
     let h = have(&p, &s, update);
     let steps = plan(&h);
     if steps.is_empty() {
@@ -1637,8 +1651,14 @@ pub fn preflight(p: &Paths) -> crate::host::oneclick::Preflight {
     let s = load_state(p);
     let h = have(p, &s, false);
     let meta = if !h.installed { release_meta(p) } else { None };
-    let need = oc::need_bytes(&h, &oc::Sizes::from_json(meta.as_ref()));
-    oc::preflight(oc::free_bytes(&p.app), need, p.kind.title())
+    let sizes = oc::Sizes::from_json(meta.as_ref());
+    let need = oc::need_bytes(&h, &sizes);
+    let mut r = oc::preflight(oc::free_bytes(&p.app), need, p.kind.title());
+    if !h.installed {
+        r.download_mb = sizes.zip.div_ceil(1024 * 1024);
+        r.download_known = meta.as_ref().and_then(|m| m.get("zip_bytes")).and_then(|x| x.as_u64()).is_some_and(|z| z > 0);
+    }
+    r
 }
 
 /// The release's checksum now; true when it isn't the installed one.
@@ -2090,10 +2110,40 @@ pub fn hero_login(p: &Paths, hero: &str) -> Result<String, String> {
     Ok(pass)
 }
 
-/// Friends playing in this world now: online characters on friends' logins (`G` + 9, worldshare::new_guest), never
-/// the player's own or the bots'.
+/// Friends playing in this world now: online characters on friends' logins (one-time `G` + 9, worldshare::new_guest,
+/// and lasting `G` + 15, worldfriends::name_for), never the player's own or the bots'.
 pub const FRIENDS_SQL: &str = "SELECT COUNT(*) FROM characters c JOIN acore_auth.account a ON a.id = c.account \
-    WHERE c.online <> 0 AND a.username REGEXP '^G[A-Z0-9]{9}$'";
+    WHERE c.online <> 0 AND a.username REGEXP '^G[A-Z0-9]{9}$|^G[A-Z2-7]{15}$'";
+
+/// Friends' logins with characters here, each with its characters: `username, name, level, online` rows.
+pub const FRIEND_CHARS_SQL: &str = "SELECT a.username, c.name, c.level, c.online FROM characters c JOIN acore_auth.account a \
+    ON a.id = c.account WHERE a.username REGEXP '^G[A-Z0-9]{9}$|^G[A-Z2-7]{15}$' ORDER BY a.username, c.guid";
+
+/// A friend's character on this world (the Characters page's "Friends").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FriendChar {
+    pub user: String,
+    pub name: String,
+    pub level: u8,
+    pub online: bool,
+}
+
+pub fn parse_friend_chars(rows: &str) -> Vec<FriendChar> {
+    rows.lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.trim_end_matches('\r').split('\t').collect();
+            if f.len() < 4 || !crate::host::worldfriends::friend_login_ok(f[0]) || !crate::hybrid::char_name_ok(f[1]) {
+                return None;
+            }
+            Some(FriendChar { user: f[0].into(), name: f[1].into(), level: f[2].trim().parse::<u32>().unwrap_or(0).min(255) as u8, online: f[3].trim() != "0" })
+        })
+        .collect()
+}
+
+/// Friends' characters on this world now (it must be running).
+pub fn friend_chars(p: &Paths) -> Result<Vec<FriendChar>, String> {
+    Ok(parse_friend_chars(&query(p, "acore_characters", FRIEND_CHARS_SQL)?))
+}
 
 pub fn friends_online(p: &Paths) -> Result<u32, String> {
     query(p, "acore_characters", FRIENDS_SQL)?.trim().parse::<u32>().map_err(|_| "The world's answer didn't look right.".to_string())
@@ -2615,8 +2665,8 @@ mod tests {
         assert!(!v.iter().any(|(_, x)| x.contains("ac-database") || x.contains("ov-local-test")), "no container names or test passwords");
         // the compose block, for this PC
         assert_eq!(g("AC_LOGIN_DATABASE_INFO"), Some(format!("127.0.0.1;13306;root;{};acore_auth", s.db_password)));
-        assert_eq!(g("AC_PLAYERBOTS_MIN_RANDOM_BOTS").as_deref(), Some("20"), "the kit's solo bot count, not modules.env's 30");
-        assert_eq!(g("AC_PLAYERBOTS_MAX_RANDOM_BOTS").as_deref(), Some("20"));
+        assert_eq!(g("AC_PLAYERBOTS_MIN_RANDOM_BOTS").as_deref(), Some("0"), "a quiet world until the player asks (host/spsettings.rs), not modules.env's 30");
+        assert_eq!(g("AC_PLAYERBOTS_MAX_RANDOM_BOTS").as_deref(), Some("0"));
         assert_eq!(g("AC_PLAYER_LIMIT").as_deref(), Some("5"));
         assert_eq!(g("AC_WARDEN_ENABLED").as_deref(), Some("0"));
         assert_eq!(g("AC_MOVE_MAPS_ENABLE").as_deref(), Some("0"));
@@ -2654,7 +2704,7 @@ mod tests {
         assert_eq!(get(&v, "AC_BIND_IP"), Some("127.0.0.1"));
         assert!(get(&v, "AC_LOGIN_DATABASE_INFO").unwrap().starts_with("127.0.0.1;13306;root;"));
         assert_eq!(get(&v, "AC_CONSOLE_ENABLE"), Some("0"));
-        assert_eq!(get(&v, "AC_PLAYERBOTS_MIN_RANDOM_BOTS"), Some("20"));
+        assert_eq!(get(&v, "AC_PLAYERBOTS_MIN_RANDOM_BOTS"), Some("0"), "not a number: the quiet default");
     }
 
     #[test]
@@ -2740,6 +2790,12 @@ mod tests {
         assert!(move_sql("SOLO", "solo").is_err(), "not onto itself");
         assert!(move_sql("SO'LO", "HKA").is_err() && move_sql("SOLO", "H K").is_err());
         assert!(FRIENDS_SQL.contains("^G[A-Z0-9]{9}$") && FRIENDS_SQL.contains("online"));
+        assert!(FRIENDS_SQL.contains("^G[A-Z2-7]{15}$"), "lasting friends' logins count too");
+        let rows = "GABCDE2345\tWren\t12\t1\nGABCDEFGHIJKLMNO\tAsh\t80\t0\nSOLO\tMine\t5\t1\nGABCDE2345\tBad;name\t1\t0\n";
+        let v = parse_friend_chars(rows);
+        assert_eq!(v.len(), 2, "only friends' logins and real names");
+        assert_eq!((v[0].user.as_str(), v[0].name.as_str(), v[0].level, v[0].online), ("GABCDE2345", "Wren", 12, true));
+        assert!(!v[1].online && v[1].level == 80);
         let s = State { account: "SOLO".into(), hero_accounts: vec!["HKA2345".into(), "SOLO".into()], ..st() };
         let p = Paths::for_kind(std::path::Path::new("x"), Kind::Single);
         assert_eq!(char_accounts(&p, &s), vec!["SOLO".to_string(), "HKA2345".to_string()], "the player's logins, each once");

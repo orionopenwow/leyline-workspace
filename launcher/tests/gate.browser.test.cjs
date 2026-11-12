@@ -398,6 +398,8 @@ test('back on the same PC after Log out: the kept Hero Key file is one click, "L
   await page.waitForSelector('#gate-again');
   assert.equal(await page.textContent('#gate-again'), 'Log in as Alice#4821');
   assert.match(await page.textContent('#gate-pane'), /With Leyline Hero Key\.txt from your Downloads/);
+  // the gate focuses it right after drawing (setTimeout 0): wait for that, not for the next frame
+  await page.waitForFunction(() => document.activeElement && document.activeElement.id === 'gate-again', null, { timeout: 3000 }).catch(() => {});
   assert.ok(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gate-again'), 'it has the focus: Enter logs in');
   assert.equal(await page.getAttribute('#gate-browser', 'class'), 'btn gate-big', 'one primary button');
   await c.click('#gate-again');

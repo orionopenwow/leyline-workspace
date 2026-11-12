@@ -14,7 +14,7 @@ local C = W.Companions
 if not C or not C.UI then return end
 local U = C.UI
 local label, button, section, fill, panel = U.label, U.button, U.section, U.fill, U.panel
-local ACCENT = U.ACCENT
+local G = U.look   -- the game's own look (GameLook.lua)
 
 -- class words the realm knows (ov_companions.lua CLASS) and the classes each role can be (its ROLES picks)
 local WORD_ID = { warrior = 1, paladin = 2, hunter = 3, rogue = 4, priest = 5, dk = 6, shaman = 7, mage = 8, warlock = 9,
@@ -145,7 +145,7 @@ function C.Choose(anchor, title, options, current, onPick)
             b:ClearAllPoints(); b:SetPoint("TOPLEFT", 16 + col * 140, -30 - row * 24)
             b.key = o[1]
             b:SetText(o[2])
-            if W.Style then W.Style.Tab(b, o[1] == current) end
+            G.Select(b, o[1] == current)
             b:Show()
         elseif b then
             b:Hide()
@@ -173,7 +173,6 @@ end
 local function para(parent, text, y, w)
     local fs = label(parent, text, "GameFontHighlightSmall", "TOPLEFT", 22, y)
     fs:SetWidth(w or (U.WIN_W - 44))
-    if fs.SetTextColor then fs:SetTextColor(0.72, 0.74, 0.78) end
     return fs
 end
 
@@ -189,7 +188,6 @@ C.AddTab("party", "Party", 64, function(page)
         local row = CreateFrame("Frame", nil, page)
         row:SetWidth(U.WIN_W - 40); row:SetHeight(34)
         row:SetPoint("TOPLEFT", 20, y)
-        fill(row, 1, 1, 1, i % 2 == 0 and 0.03 or 0.015)
         row.icon = roleIcon(row, 24, role, "LEFT", 6, 0)
         row.role = label(row, U.ROLE_LABEL[role], "GameFontNormal", "LEFT", 38, 0)
         row.cls = button(row, "", 160, function(self)
@@ -212,7 +210,6 @@ C.AddTab("party", "Party", 64, function(page)
         page.slots[i] = row
     end
     page.fill = button(page, "Fill my party", 140, function() C.Fill("party", C.Picks()) end, "TOPLEFT", 20, -270)
-    if W.Style then W.Style.SetKind(page.fill, "primary") end
     page.reset = button(page, "Every slot Any", 120, function() C.ResetPicks(); C.Refresh() end, "TOPLEFT", 166, -270)
     page.dismiss = button(page, "Dismiss all", 100, function() C.Dismiss("all") end, "TOPLEFT", 292, -270)
     para(page, "Up to 4 bots in a party. They always pass on loot. The Dungeons tab uses these picks too.", -304)
@@ -241,13 +238,12 @@ C.AddTab("raid", "Raid", 60, function(page)
         local slot = CreateFrame("Frame", nil, page)
         slot:SetWidth(42); slot:SetHeight(42)
         slot:SetPoint("TOPLEFT", 26 + (i - 1) * 48, -100)
-        slot.bg = fill(slot, 1, 1, 1, 0.04)
+        G.Inset(slot)   -- the options panels' group box; its edge turns gold for a role you have
         slot.icon = roleIcon(slot, 30, role, "CENTER", 0, 0)
         page.icons[i] = slot
     end
     page.shape = para(page, "", -152)
     page.fill = button(page, "Fill raid", 120, function() C.Fill("raid") end, "TOPLEFT", 20, -180)
-    if W.Style then W.Style.SetKind(page.fill, "primary") end
     page.prepare = button(page, "Prepare for raid", 140, function() C.Prepare() end, "TOPLEFT", 146, -180)
     page.dismiss = button(page, "Dismiss all", 100, function() C.Dismiss("all") end, "TOPLEFT", 292, -180)
     page.note = para(page, "", -214)
@@ -263,7 +259,7 @@ end, function(page)
         used[role] = used[role] + 1
         local on = used[role] <= (have[role] or 0)
         slot.icon:SetAlpha(on and 1 or 0.3)
-        slot.bg:SetTexture(on and ACCENT[1] or 1, on and ACCENT[2] or 1, on and ACCENT[3] or 1, on and 0.18 or 0.04)
+        G.InsetOn(slot, on)
     end
     page.shape:SetText(string.format("With you now: %d %s (%d tank%s, %d healer%s, %d damage).", #C.bots,
         #C.bots == 1 and "bot" or "bots", have.tank, have.tank == 1 and "" or "s", have.healer, have.healer == 1 and "" or "s",
@@ -285,7 +281,6 @@ C.AddTab("alts", "Your alts", 78, function(page)
         local row = CreateFrame("Frame", nil, page)
         row:SetWidth(U.WIN_W - 40); row:SetHeight(28)
         row:SetPoint("TOPLEFT", 20, -84 - (i - 1) * 30)
-        fill(row, 1, 1, 1, i % 2 == 0 and 0.03 or 0.015)
         row.name = label(row, "", "GameFontNormal", "LEFT", 10, 0)
         row.name:SetWidth(150)
         row.info = label(row, "", "GameFontHighlightSmall", "LEFT", 170, 0)
@@ -297,7 +292,6 @@ C.AddTab("alts", "Your alts", 78, function(page)
     page.empty = label(page, "", "GameFontDisable", "TOPLEFT", 30, -96)
     page.usual = para(page, "", -334)
     page.bringUsual = button(page, "Bring my usual party", 160, function() C.Usual() end, "TOPLEFT", 20, -356)
-    if W.Style then W.Style.SetKind(page.bringUsual, "primary") end
     page.save = button(page, "Save who is with me as my usual party", 250, function() C.Save() end, "TOPLEFT", 186, -356)
 end, function(page)
     for i, row in ipairs(page.rows) do
@@ -332,7 +326,7 @@ C.AddTab("buddy", "Buddy", 64, function(page)
     local card = CreateFrame("Frame", nil, page)
     card:SetWidth(U.WIN_W - 40); card:SetHeight(64)
     card:SetPoint("TOPLEFT", 20, -100)
-    if W.Style then W.Style.Box(card, 0.9) else fill(card, 1, 1, 1, 0.04) end
+    G.Inset(card)
     card.portrait = card:CreateTexture(nil, "ARTWORK")
     card.portrait:SetWidth(48); card.portrait:SetHeight(48)
     card.portrait:SetPoint("LEFT", 8, 0)
@@ -350,7 +344,6 @@ C.AddTab("buddy", "Buddy", 64, function(page)
     page.toggle = button(page, "Bring a buddy", 150, function(self)
         if self.off then C.Buddy("off") else C.Buddy(charDB().buddyClass or "any") end
     end, "TOPLEFT", 196, -180)
-    if W.Style then W.Style.SetKind(page.toggle, "primary") end
     page.note = para(page, "", -214)
 end, function(page)
     local buddy
@@ -370,7 +363,6 @@ end, function(page)
     page.cls:SetText("Class: " .. colourWord(charDB().buddyClass))
     page.toggle.off = buddy ~= nil
     page.toggle:SetText(buddy and "Send buddy home" or "Bring a buddy")
-    if W.Style then W.Style.SetKind(page.toggle, buddy and "danger" or "primary") end
     if C.buddyOn and (C.state == "on" or C.state == nil) then page.toggle:Enable() else page.toggle:Disable() end
     if buddy then page.cls:Disable() else page.cls:Enable() end
     page.note:SetText(C.buddyOn and "" or "The levelling buddy is off on this realm.")
@@ -382,15 +374,18 @@ local DUNGEON_ROWS, DUNGEON_ROW_H = 6, 46
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_GroupNeedMore"
 local function norm(s) return (tostring(s or ""):lower():gsub("^the ", ""):gsub("[^%a]", "")) end
 
--- The game's own Dungeon Finder art for a dungeon: the client's own name for it when GetLFGDungeonInfo knows the
--- dungeon by name, else CompanionsData.lua's name. Paths only; the art is the client's.
+-- The game's own Dungeon Finder art for a dungeon: the client's own name for it when the client knows the dungeon by
+-- name, else CompanionsData.lua's name. Paths only; the art is the client's. The 3.3.5 client's call is
+-- LFGGetDungeonInfoByID (name, type, levels..., expansion, group, textureFilename tenth); GetLFGDungeonInfo only
+-- exists on later clients, with another order, so it is not used.
 local lfgNames
 function C.DungeonIcon(d)
     if not lfgNames then
         lfgNames = {}
-        if GetLFGDungeonInfo then
+        local info = rawget(_G, "LFGGetDungeonInfoByID")
+        if type(info) == "function" then
             for id = 1, 300 do
-                local ok, name, _, _, _, _, _, _, _, _, tex = pcall(GetLFGDungeonInfo, id)
+                local ok, name, _, _, _, _, _, _, _, _, tex = pcall(info, id)
                 if ok and type(name) == "string" and type(tex) == "string" and tex ~= "" then
                     lfgNames[norm(name)] = lfgNames[norm(name)] or tex
                 end
@@ -425,7 +420,6 @@ C.AddTab("dungeons", "Dungeons", 84, function(page)
         local row = CreateFrame("Frame", nil, page)
         row:SetWidth(U.WIN_W - 40); row:SetHeight(DUNGEON_ROW_H - 4)
         row:SetPoint("TOPLEFT", 20, -84 - (i - 1) * DUNGEON_ROW_H)
-        fill(row, 1, 1, 1, i % 2 == 0 and 0.03 or 0.015)
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetWidth(36); row.icon:SetHeight(36)
         row.icon:SetPoint("LEFT", 4, 0)
@@ -434,7 +428,6 @@ C.AddTab("dungeons", "Dungeons", 84, function(page)
         row.info = label(row, "", "GameFontHighlightSmall", "TOPLEFT", 48, -23)
         row.info:SetWidth(300)
         row.go = button(row, "Go", 90, function(self) if self.id then C.Dungeon(self.id, C.Picks()) end end, "RIGHT", -6, 0)
-        if W.Style then W.Style.SetKind(row.go, "primary") end
         row:Hide()
         page.rows[i] = row
     end

@@ -73,6 +73,8 @@ jobs:
           lua5.1 stream/tests/test_wuui_host.lua
           lua5.1 stream/tests/test_wuui_leyline.lua
           lua5.1 stream/tests/test_ov_leyline.lua
+      - name: ov_worldfriends (the Leyline tab of the Friends window, on your own worlds) and the tab
+        run: lua5.1 stream/tests/test_wuui_worldfriends.lua
       - name: ov_admin (the Admin Console's console words)
         run: lua5.1 stream/tests/test_ov_admin.lua realm/custom/lua_scripts
       - name: ov_discord (World chat bridge, game side)

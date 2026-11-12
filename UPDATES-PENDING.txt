@@ -927,3 +927,8 @@
 1360b ship  Save as Orion and release the launcher: the launcher build passes on Windows again (one Solo test wrote its paths the Linux way; no launcher release went out since 10 Nov)
 1361g sp-playtest  Single player playtest again: levelling to 10 with the console's own command
 1362a ship  Save as Orion and release the launcher: single player in one click (folder found by itself, setup card, Retry/Repair, Hero Key login, typed in for a stock game, Quick start, companions, stop on close), engine download fixed, playtested on this PC (all passed)
+1363a sp-playtest  Single player playtest of the 12 Nov batch (quiet world defaults, Your world settings, friends): the launcher-test build, setup, Quick start, level up, stop on exit, Repair (a test only; the batch itself waits for your ship)
+1363b ship  Save as Orion and release the launcher: Your world settings before the first setup (quiet worlds by default), friends signed by each other with no server, friends keep their characters, in-game realm list and companion window in the game's look, the i button, Boss Rush off the side menu (playtested on this PC: all passed)
+1363c scripts  Realm scripts: the in-game realm list's protocol v2 (tabs, search, players and bots)
+1363d foreverui  The browser game's add-on: realm list, companion window and the Leyline tab in the game's look
+1363e addons  The same add-on for desktop players

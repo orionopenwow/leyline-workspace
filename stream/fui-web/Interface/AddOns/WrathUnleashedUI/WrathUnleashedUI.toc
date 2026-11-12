@@ -7,6 +7,7 @@
 ## SavedVariablesPerCharacter: WrathUnleashedUIChar
 WrathUnleashedUI.lua
 Style.lua
+GameLook.lua
 DenLayout.lua
 ModsPanel.lua
 Collections.lua
@@ -40,6 +41,7 @@ CompanionsTabs.lua
 BotBar.lua
 BossFights.lua
 Social.lua
+WorldFriends.lua
 Host.lua
 SkinGM.lua
 GMHide.lua

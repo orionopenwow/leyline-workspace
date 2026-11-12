@@ -1238,6 +1238,51 @@ check("dungeon: leaving sends just the dungeon bots home", count(fe4, "^playerbo
 events[4](4, fe4)
 check("dungeon bots are never remembered", autos[300].party:match("^tank=%a+:[%a ]+ pve$"))
 
+-- a new world's defaults (realm/profiles/solo.env, owner 12 Nov: no party by itself, dungeon buddies on), read from
+-- the file itself; then the two switches each on their own
+do
+    local saved = {}
+    for k, v in pairs(env) do saved[k] = v end
+    local f = assert(io.open((file:match("^(.*/)custom/lua_scripts/[^/]+$") or "../realm/") .. "profiles/solo.env"))
+    for line in f:lines() do local k, v = line:match("^([%w_]+)=(.*)$"); if k then env[k] = v end end
+    f:close()
+    check("solo.env: a new world has OV_COMPANIONS_AUTO=0 and OV_COMPANIONS_DUNGEON_AUTO=1", env.OV_COMPANIONS_AUTO == "0"
+        and env.OV_COMPANIONS_DUNGEON_AUTO == "1")
+    env.OV_COMPANIONS_REALM_MAX = "2000"   -- this test's realm already has many bots out; the cap isn't what's tested
+    clock = clock + 31
+    local nw = player({ guid = 340, level = 12, spec = "dps" })
+    login(nw); run(nw)
+    check("AUTO=0: the first entry brings no party, says nothing, keeps no record", #addclasses(nw) == 0 and #nw.msgs == 0
+        and autos[340] == nil)
+    events[4](4, nw)
+    check("AUTO=0: logout keeps no record either", autos[340] == nil)
+    -- a character that had a party while AUTO was 1 (300: mode on, a tank): AUTO=0 now, so it doesn't come back
+    local was = autos[300] and autos[300].mode
+    local back = player({ guid = 300, level = 11, spec = "dps" })
+    login(back); run(back)
+    check("AUTO=0: a party remembered from before doesn't come back by itself", was == "on" and #addclasses(back) == 0)
+    events[4](4, back)
+    check("AUTO=0: and its record is left as it was", autos[300].mode == "on")
+    -- dungeon buddies still on: walking into a 5-player dungeon fills the party
+    nw = player({ guid = 341, level = 12, spec = "dps" })
+    login(nw); run(nw)
+    nw.dungeon, nw.map = true, 36
+    events[28](28, nw); run(nw, 1)
+    check("AUTO=0, DUNGEON_AUTO=1: a dungeon still fills the party (4 dungeon bots)", #addclasses(nw) == 4)
+    -- the other way round: a party on entry, but no dungeon buddies
+    env.OV_COMPANIONS_AUTO, env.OV_COMPANIONS_FOLLOW, env.OV_COMPANIONS_DUNGEON_AUTO = "1", "2", "0"
+    clock = clock + 31
+    local d0 = player({ guid = 342, level = 12, spec = "dps" })
+    login(d0)
+    check("AUTO=1: the first entry's party is asked for", #addclasses(d0) == 2)
+    serve(d0); run(d0)
+    d0.dungeon, d0.map = true, 36
+    events[28](28, d0); run(d0)
+    check("DUNGEON_AUTO=0: entering a dungeon adds no dungeon bots", #addclasses(d0) == 2)
+    for k in pairs(env) do env[k] = nil end
+    for k, v in pairs(saved) do env[k] = v end
+end
+
 -- the party covers what you are not; the count; the first era has no Death Knights
 local tk = player({ guid = 330, level = 70, spec = "tank" })
 local roles = {}

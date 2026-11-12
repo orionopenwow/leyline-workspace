@@ -31,6 +31,7 @@ pub mod denclick; // My Den in one click on the desktop game: sign-in keys, the 
 pub mod gfx; // Mods & Addons › Graphics: the client's own graphics settings in Config.wtf (gfx.rs)
 pub mod forum; // the Forum page: reading the website's forum (stream/forum.py)
 pub mod herokey; // Hero Key sign-in to community realms (docs/HERO-KEY-SSO.md; the herokey_sso flag)
+pub mod identity; // this launcher's own peer key (peer.key), signatures and sealed boxes for friends (docs/LEYLINE-FRIENDS.md)
 pub mod hybrid; // the hybrid client: the desktop game signs in and loads like the browser game (docs/HYBRID-CLIENT.md)
 pub mod host;
 pub mod launch;
@@ -121,6 +122,11 @@ pub const LINKS: &[(&str, &str)] = &[
     ("docs", crate::site!("/wrath/docs")),
     ("start", crate::site!("/wrath/start")), // Start here: the four ways in (Help, the tour; stream/wrath_portal.py)
     ("gettingstarted", crate::site!("/wrath/docs/getting-started")), // the player guide (Help, Find your game files)
+    // the "i" button's Learn more (ui/info.js): the docs page for the page on screen (stream/docs.py PAGES)
+    ("docsingle", crate::site!("/wrath/docs/single-player")),
+    ("docsplay", crate::site!("/wrath/docs/play")),
+    ("docsmods", crate::site!("/wrath/docs/mods")),
+    ("docslauncher", crate::site!("/wrath/docs/launcher")),
     ("mods", crate::site!("/wrath/mods")),
     ("discord", "https://discord.gg/RfChVr8J7T"),
     ("forum", forum::PAGE), // the website's forum: posting happens there (forum.rs)
@@ -196,6 +202,8 @@ mod link_tests {
     #[test]
     fn news_and_the_player_guide_link_to_the_site_and_nothing_asks_for_money() {
         assert_eq!(super::link("news"), Some("https://leylinelauncher.com/wrath/leyline/news"));
+        assert_eq!(super::link("docsingle"), Some("https://leylinelauncher.com/wrath/docs/single-player"));
+        assert_eq!(super::link("docslauncher"), Some("https://leylinelauncher.com/wrath/docs/launcher"));
         assert_eq!(super::link("gettingstarted"), Some("https://leylinelauncher.com/wrath/docs/getting-started"));
         assert_eq!(super::link("start"), Some("https://leylinelauncher.com/wrath/start"));
         assert!(super::link("support").is_none());

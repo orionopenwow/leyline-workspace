@@ -172,9 +172,11 @@ test('Home: Play single player, folder picked silently, the setup card with plai
   assert.deepEqual(await callsOf(page, 'world_find_folder'), [{ kind: 'single' }]);
   assert.deepEqual(await callsOf(page, 'world_preflight'), [{ kind: 'single', client: 'c335a-1' }]);
   assert.deepEqual(await callsOf(page, 'world_setup'), [{ client: 'c335a-1', kind: 'single' }]);
-  assert.deepEqual(await page.$$eval('#oc-steps li', (l) => l.map((x) => x.textContent)), ['Getting the engine', 'Reading your maps', 'Filling the world', 'Starting']);
+  assert.deepEqual(await page.$$eval('#oc-steps li .oc-step-t', (l) => l.map((x) => x.textContent)), ['Getting the engine (one-time download)',
+    'Reading the maps from your game folder (one time)', 'Filling the world: placing creatures, quests and items into its database (one time)',
+    'Creating your local login', 'Starting your world']);
   // the steps move on, the time left is worked out from the rate
-  await page.waitForFunction(() => document.querySelector('#oc-steps li[data-state="now"]') && document.querySelector('#oc-steps li[data-state="now"]').textContent === 'Starting', null, { timeout: 15000 });
+  await page.waitForFunction(() => document.querySelector('#oc-steps li[data-state="now"]') && document.querySelector('#oc-steps li[data-state="now"] .oc-step-t').textContent === 'Starting your world', null, { timeout: 15000 });
   await page.waitForFunction(() => /min left|Less than a minute left/.test(document.getElementById('oc-left').textContent), null, { timeout: 15000 });
   assert.ok(Number(await page.getAttribute('#oc-bar', 'aria-valuenow')) > 50);
   await shot(page, 'setup');

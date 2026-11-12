@@ -30,8 +30,8 @@
 
 local W = WrathUnleashedUI
 local PREFIX, MOD = "OVMOD", "wucomp"
-local WIN_W, WIN_H = 540, 650
-local PAGE_TOP = 36   -- the pages start under the title bar; the tab row sits in their top strip
+local WIN_W, WIN_H = 540, 622
+local PAGE_TOP = 8    -- the pages start under the title; the tabs hang under the window (the game's bottom tabs)
 local ROWS, ROW_H = 9, 36
 local QUIET_ORDER, QUIET_JOIN = 8, 25   -- seconds of hidden bot whispers after an order / after a bot joins
 local ASK_DEBOUNCE, ANSWER_WAIT = 1.5, 6
@@ -52,8 +52,10 @@ local FORMATIONS = { { "chaos", "Loose" }, { "near", "Close" }, { "melee", "Mele
     { "circle", "Circle" }, { "arrow", "Arrow" }, { "shield", "Shield" }, { "queue", "Single file" } }
 local FORMATION_LABEL = {}
 for _, f in ipairs(FORMATIONS) do FORMATION_LABEL[f[1]] = f[2] end
-local ACCENT = W.Style and { W.Style.C.accent[1], W.Style.C.accent[2], W.Style.C.accent[3] } or { 0.4, 0.8, 1 }
-local BG = W.Style and W.Style.C.bg or { 0.05, 0.06, 0.08, 0.95 }
+-- The game's own look (GameLook.lua; owner 12 Nov: "as you'd expect with forever ui elements not leyline
+-- squarechunks"): its dialog, buttons, tabs and fonts, and its gold for headings.
+local G = W.GameLook
+local ACCENT = { 1, 0.82, 0 }
 
 -- State, and the functions the tests reach (W.Companions).
 local C = { bots = {}, specs = {}, names = {}, count = 0, cap = 4, raid = false, formation = "chaos", assist = false,
@@ -350,13 +352,7 @@ local function label(parent, text, font, ...)
 end
 
 local function button(parent, text, w, onClick, ...)
-    if W.Style then local b = W.Style.Button(parent, text, w, onClick, nil, ...); b:SetHeight(22); return b end
-    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    b:SetWidth(w); b:SetHeight(22)
-    b:SetText(text)
-    b:SetPoint(...)
-    b:SetScript("OnClick", onClick)
-    return b
+    return G.Button(parent, text, w, onClick, ...)
 end
 
 local function fill(frame, r, g, b, a, layer)
@@ -366,43 +362,21 @@ local function fill(frame, r, g, b, a, layer)
     return t
 end
 
+-- A window or popup in the game's dialog dress (GameLook.lua): Forever UI's dialog frame, else the stock dialog.
 local function panel(parent, name, w, h)
     local f = CreateFrame("Frame", name, parent)
     f:SetWidth(w); f:SetHeight(h)
-    if not W.Style then   -- Style.lua draws the window (S.Window, at its title)
-        f:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border", tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 } })
-    end
-    if W.Style then W.Style.Backdrop(f, BG) end
-    f:SetBackdropColor(BG[1], BG[2], BG[3], BG[4])   -- solid: the dialog texture draws see-through in the browser client
-    local bg = f:CreateTexture(nil, "BACKGROUND")    -- a colour fill the engine draws itself (no texture file)
-    bg:SetTexture(BG[1], BG[2], BG[3], BG[4])
-    bg:SetPoint("TOPLEFT", 10, -10); bg:SetPoint("BOTTOMRIGHT", -10, 10)
+    G.Dialog(f)
     return f
 end
 
+-- A heading in the game's gold (GameFontNormal), as in its options panels.
 local function section(parent, text, y)
-    local fs = label(parent, text, "GameFontNormalSmall", "TOPLEFT", 20, y)
-    fs:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
-    local line = parent:CreateTexture(nil, "ARTWORK")
-    line:SetTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.25)
-    line:SetHeight(1)
-    line:SetPoint("TOPLEFT", 20, y - 14); line:SetPoint("TOPRIGHT", -20, y - 14)
-    return fs
+    return label(parent, text, "GameFontNormal", "TOPLEFT", 20, y)
 end
 
 local function bar(parent, w, h, ...)
-    local back = parent:CreateTexture(nil, "BORDER")
-    back:SetTexture(0, 0, 0, 0.55)
-    back:SetWidth(w + 2); back:SetHeight(h + 2)
-    back:SetPoint(...)
-    local s = CreateFrame("StatusBar", nil, parent)
-    s:SetWidth(w); s:SetHeight(h)
-    s:SetPoint("CENTER", back, "CENTER", 0, 0)
-    s:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    s:SetMinMaxValues(0, 1); s:SetValue(1)
-    return s
+    return G.StatusBar(parent, w, h, ...)
 end
 
 local function classColour(cls)
@@ -417,12 +391,71 @@ local function hex(r, g, b)
 end
 
 -- What the other files build with (CompanionsTabs.lua, BotBar.lua): one look everywhere.
-C.UI = { label = label, button = button, fill = fill, panel = panel, section = section, bar = bar,
+C.UI = { label = label, button = button, fill = fill, panel = panel, section = section, bar = bar, look = G,
     classColour = classColour, hex = hex, now = now, tidy = tidy, specLabel = specLabel, db = db,
-    ACCENT = ACCENT, BG = BG, CLASS_TOKEN = CLASS_TOKEN, CLASS_NAME = CLASS_NAME, ROLE_LABEL = ROLE_LABEL,
+    ACCENT = ACCENT, CLASS_TOKEN = CLASS_TOKEN, CLASS_NAME = CLASS_NAME, ROLE_LABEL = ROLE_LABEL,
     ROLE_ICON = ROLE_ICON, ROLE_COORDS = ROLE_COORDS, KIND_TAG = KIND_TAG, WIN_W = WIN_W }
 
 -- ---------------------------------------------------------------- the per-bot menu
+
+-- The game's own right-click menu (UIDropDownMenu, as a party member's portrait menu): the bot's name as the title,
+-- its level and spec, the orders, Spec and Role as sub-menus, Gear up, Send home and Cancel. A client without
+-- UIDropDownMenu gets the same choices as a small dialog with panel buttons (below).
+local dropdown
+function C.MenuMode()
+    if UIDropDownMenu_Initialize and UIDropDownMenu_AddButton and ToggleDropDownMenu then return "dropdown" end
+    return "panel"
+end
+
+local function menuItems(b, level, value)
+    local own = b.kind ~= "alt"
+    local items = {}
+    local function add(t) items[#items + 1] = t end
+    local name = b.name
+    if level == 2 and value == "spec" then
+        for _, s in ipairs(C.specs[b.cls] or {}) do
+            add({ text = specLabel(s.spec), checked = s.spec == b.spec, disabled = (not own) or s.spec == b.spec,
+                func = function() C.SetSpec(name, s.spec) end })
+        end
+        return items
+    elseif level == 2 and value == "role" then
+        local roles = C.RolesFor(b.cls)
+        for _, r in ipairs({ "tank", "healer", "dps" }) do
+            add({ text = ROLE_LABEL[r], checked = r == b.role, disabled = (not own) or (not roles[r]) or r == b.role,
+                func = function() C.SetRole(name, r) end })
+        end
+        return items
+    end
+    local r, g, bl = classColour(b.cls)
+    add({ text = hex(r, g, bl) .. name .. "|r  |cff9d9d9d" .. KIND_TAG[b.kind] .. "|r", isTitle = true, notCheckable = true })
+    add({ text = string.format("Level %d %s, %s", b.level, CLASS_NAME[b.cls] or "", b.spec ~= "" and specLabel(b.spec)
+        or ROLE_LABEL[b.role]), disabled = true, notCheckable = true })
+    add({ text = "Follow", notCheckable = true, func = function() C.Order("follow", name) end })
+    add({ text = "Stay", notCheckable = true, func = function() C.Order("stay", name) end })
+    add({ text = "Attack", notCheckable = true, func = function()
+        if UnitExists and not UnitExists("target") then return status("Target something first.") end
+        C.Order("attack", name)
+    end })
+    local passive = b.status == "passive"
+    add({ text = passive and "Fight" or "Passive", notCheckable = true,
+        func = function() C.Order(passive and "active" or "passive", name) end })
+    add({ text = "Spec", value = "spec", hasArrow = true, notCheckable = true, disabled = not own })
+    add({ text = "Role", value = "role", hasArrow = true, notCheckable = true, disabled = not own })
+    add({ text = "Gear up", notCheckable = true, disabled = not own, func = function() C.Gear(name) end })
+    if not own then add({ text = "Your own character keeps its own talents and gear.", disabled = true, notCheckable = true }) end
+    add({ text = "Send home", notCheckable = true, func = function() C.Dismiss(name) end })
+    add({ text = rawget(_G, "CANCEL") or "Cancel", notCheckable = true, func = function() end })
+    return items
+end
+C.MenuItems = menuItems
+
+local function dropdownInit(self, level)
+    local b = C.Find(self.botName or "")
+    if not b then return end
+    for _, info in ipairs(menuItems(b, level or 1, rawget(_G, "UIDROPDOWNMENU_MENU_VALUE"))) do
+        UIDropDownMenu_AddButton(info, level)
+    end
+end
 
 local MENU_W = 250
 local function buildMenu()
@@ -430,10 +463,9 @@ local function buildMenu()
     menu:SetFrameStrata("FULLSCREEN_DIALOG")
     menu:EnableMouse(true)
     menu:SetClampedToScreen(true)
-    menu.title = W.Style and W.Style.Window(menu, "") or label(menu, "", "GameFontNormal", "TOPLEFT", 20, -18)
+    menu.title = label(menu, "", "GameFontNormal", "TOPLEFT", 20, -18)
     menu.sub = label(menu, "", "GameFontDisableSmall", "TOPLEFT", 20, -34)
-    local close = (W.Style and W.Style.Close(menu) or CreateFrame("Button", nil, menu, "UIPanelCloseButton"))
-    close:SetPoint("TOPRIGHT", -4, -4)
+    menu.close = G.Close(menu)
     menu.specHead = section(menu, "Spec", -52)
     menu.specBtns = {}
     for i = 1, 6 do
@@ -470,9 +502,23 @@ local function buildMenu()
     menu:Hide()
 end
 
+function C.Dropdown() return dropdown end
+
 function C.OpenMenu(name, anchor)
     local b = C.Find(name)
     if not b then return end
+    if C.MenuMode() == "dropdown" then
+        if not dropdown then
+            dropdown = CreateFrame("Frame", "WrathUnleashedBotMenuDropDown", UIParent, "UIDropDownMenuTemplate")
+            dropdown.gameLook = "UIDropDownMenuTemplate"
+        end
+        if menu then menu:Hide() end
+        if CloseDropDownMenus then pcall(CloseDropDownMenus) end
+        dropdown.botName = b.name
+        UIDropDownMenu_Initialize(dropdown, dropdownInit, "MENU")
+        ToggleDropDownMenu(1, nil, dropdown, "cursor", 0, 0)
+        return dropdown
+    end
     if not menu then buildMenu() end
     menu.botName = b.name
     local r, g, bl = classColour(b.cls)
@@ -484,7 +530,8 @@ function C.OpenMenu(name, anchor)
         local s = specs[i]
         sb.spec = s and s.spec
         if s then
-            sb:SetText((s.spec == b.spec and "|cff7fff7f" or "") .. specLabel(s.spec))
+            sb:SetText(specLabel(s.spec))
+            G.Select(sb, s.spec == b.spec)
             sb:Show()
             if own and s.spec ~= b.spec then sb:Enable() else sb:Disable() end
         else
@@ -492,7 +539,8 @@ function C.OpenMenu(name, anchor)
         end
     end
     for _, rb in ipairs(menu.roleBtns) do
-        rb:SetText((rb.role == b.role and "|cff7fff7f" or "") .. ROLE_LABEL[rb.role])
+        rb:SetText(ROLE_LABEL[rb.role])
+        G.Select(rb, rb.role == b.role)
         if own and roles[rb.role] and rb.role ~= b.role then rb:Enable() else rb:Disable() end
     end
     if own then menu.gear:Enable() else menu.gear:Disable() end
@@ -502,6 +550,7 @@ function C.OpenMenu(name, anchor)
     menu:ClearAllPoints()
     if anchor then menu:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0) else menu:SetPoint("CENTER") end
     menu:Show()
+    return menu
 end
 
 -- ---------------------------------------------------------------- the formation picker
@@ -534,8 +583,7 @@ local function buildRow(i)
     local row = CreateFrame("Button", nil, win.page)
     row:SetWidth(WIN_W - 40); row:SetHeight(ROW_H - 2)
     row:SetPoint("TOPLEFT", 20, -78 - (i - 1) * ROW_H)
-    if i % 2 == 0 then fill(row, 1, 1, 1, 0.025) end
-    row.hover = fill(row, ACCENT[1], ACCENT[2], ACCENT[3], 0.08, "ARTWORK"); row.hover:Hide()
+    row.hover = G.RowHighlight(row)
     row.role = row:CreateTexture(nil, "OVERLAY")
     row.role:SetWidth(20); row.role:SetHeight(20)
     row.role:SetPoint("LEFT", 6, 0)
@@ -544,7 +592,6 @@ local function buildRow(i)
     row.name:SetWidth(200)
     row.info = label(row, "", "GameFontHighlightSmall", "TOPLEFT", 34, -19)
     row.info:SetWidth(200)
-    row.info:SetTextColor(0.7, 0.72, 0.76)
     row.hp = bar(row, 120, 8, "TOPLEFT", 252, -7)
     row.hp:SetStatusBarColor(0.2, 0.8, 0.3)
     row.mp = bar(row, 120, 5, "TOPLEFT", 252, -20)
@@ -649,8 +696,8 @@ function C.ShowTab(key)
     C.tab = at
     for i, t in ipairs(C.tabs) do
         if i == at then t.page:Show() else t.page:Hide() end
-        if W.Style then W.Style.Tab(t.btn, i == at) elseif t.btn.SetAlpha then t.btn:SetAlpha(i == at and 1 or 0.6) end
     end
+    G.SelectTab(win, at, #C.tabs, C.tabs)
     local t = C.tabs[at]
     if t.onShow then pcall(t.onShow, t.page) end
     C.Refresh()
@@ -724,17 +771,13 @@ build = function()
     win:SetScript("OnDragStop", win.StopMovingOrSizing)
     tinsert(UISpecialFrames, "WrathUnleashedBotsFrame")   -- Esc closes it
 
-    local title = (W.Style and W.Style.Window(win, "Bots") or label(win, "Bots", "GameFontNormalLarge", "TOPLEFT", 22, -20))
-    title:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
-    local close = (W.Style and W.Style.Close(win) or CreateFrame("Button", nil, win, "UIPanelCloseButton"))
-    close:SetPoint("TOPRIGHT", -6, -6)
+    win.title = G.Window(win, "Bots", "Interface\\Icons\\INV_Misc_GroupNeedMore")
+    win.close = G.Close(win)
 
-    -- the tab row, then each tab's page under it
-    local x = 16
+    -- the game's bottom tabs (CharacterFrameTabButtonTemplate), each tab's page in the window
     for i, t in ipairs(C.tabs) do
-        t.btn = button(win, t.text, t.w, function() C.ShowTab(i) end, "TOPLEFT", x, -PAGE_TOP - 4)
+        t.btn = G.Tab(win, i, t.text, function() C.ShowTab(i) end)
         t.btn.tabKey = t.key
-        x = x + t.w + 3
         t.page = newPage()
         local ok, err = pcall(t.build, t.page)
         if not ok and DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage(TAG .. "a tab failed to load: " .. tostring(err)) end

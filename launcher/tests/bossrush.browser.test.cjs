@@ -117,15 +117,15 @@ async function open(o, scheme = 'dark') {
 const callsOf = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png'), fullPage: true }); };
 async function toPage(page) {
-  await page.click('.nav[data-page="bossrush"]');
+  await page.click('#hm-bossrush-go');
   await page.waitForSelector('#br .br-fight');
 }
 
-test('the entries: the side menu under Single player and Home lead to the page; nothing asked before', async () => {
+test('the entries: Home leads to the page (no side menu item, owner 12 Nov); nothing asked before', async () => {
   const { page, ctx, errors } = await open({});
   const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.dataset.page));
-  assert.deepEqual(nav.slice(0, 3), ['play', 'single', 'bossrush']);
-  assert.equal((await page.textContent('.nav[data-page="bossrush"]')).trim(), 'Boss Rush');
+  assert.deepEqual(nav.slice(0, 3), ['play', 'single', 'realms']);
+  assert.equal(await page.$('.nav[data-page="bossrush"]'), null);
   assert.equal((await callsOf(page, 'bossrush_catalog')).length, 0, 'nothing asked until it is opened');
   assert.equal(await page.textContent('#hm-bossrush b'), 'Boss Rush');
   await page.click('#hm-bossrush-go');

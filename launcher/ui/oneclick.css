@@ -26,7 +26,10 @@ html.ll-simple .oc { bottom: 22px; }
 
 /* the steps in plain words, the bar, the time left */
 .oc-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.oc-step { position: relative; padding-left: 24px; font-size: 13.5px; color: var(--t-muted); }
+.oc-step { position: relative; display: grid; gap: 1px; padding-left: 24px; font-size: 13.5px; color: var(--t-muted); }
+.oc-step-s { font-size: 11.5px; font-weight: 400; color: var(--t-muted); }
+.oc-step.todo .oc-step-s, .oc-step.done .oc-step-s { display: none; }
+.oc-first { font-weight: 700; }
 .oc-step::before { content: ""; position: absolute; left: 3px; top: 4px; width: 10px; height: 10px; border-radius: 50%;
   border: 1.5px solid color-mix(in srgb, var(--t-muted) 60%, transparent); }
 .oc-step.done { color: var(--t-text); }
@@ -81,3 +84,40 @@ body > .oc-chip, html.ll-simple .oc-chip { position: fixed; right: 22px; bottom:
 .oc-set { display: grid; gap: 6px; }
 .oc-set-h { margin: 0; font: 700 15px var(--t-font); color: var(--t-text); }
 .oc-set-status:empty { display: none; }
+
+/* Your world (oneclick.js view "world"): what happens, the settings, a friend; and the same settings on the page */
+.oc[data-view="world"] { width: min(900px, calc(100vw - 280px)); top: 56px; bottom: auto; max-height: calc(100vh - 160px); }
+@media (max-width: 900px) { .oc[data-view="world"] { width: calc(100vw - 32px); } }
+.ws { grid-template-columns: 1fr 1fr; column-gap: 22px; align-items: start; }
+.ws > .ws-what { grid-column: 1; grid-row: 1; }
+.ws > .ws-set { grid-column: 2; grid-row: 1 / span 2; }
+.ws > .ws-friend { grid-column: 1; grid-row: 2; padding-top: 8px; border-top: 1px solid var(--t-border); }
+.ws > .oc-err, .ws > .oc-row { grid-column: 1 / -1; }
+@media (max-width: 900px) { .ws { grid-template-columns: 1fr; } .ws > * { grid-column: 1 !important; grid-row: auto !important; } }
+.ws section { display: grid; gap: 6px; }
+.ws-h { margin: 0; font: 700 14px var(--t-font); color: var(--t-text); }
+.ws-steps { margin: 0; padding-left: 20px; display: grid; gap: 3px; font-size: 13px; color: var(--t-text); }
+.ws-why { color: var(--t-muted); }
+.ws-form { display: grid; gap: 10px; }
+.ws-row { display: grid; gap: 4px; }
+.ws-name { font-size: 13px; color: var(--t-text); }
+.ws-line { margin: 0; }
+.ws-choices { display: flex; flex-wrap: wrap; gap: 4px; }
+.ws-choice { padding: 4px 11px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12.5px; color: var(--t-text);
+  background: var(--t-surface); border: var(--t-border-w, 1px) solid var(--t-border); }
+.ws-choice:hover, .ws-choice:focus-visible { border-color: var(--t-accent); }
+.ws-choice.on { background: color-mix(in srgb, var(--t-accent) 26%, transparent); border-color: var(--t-accent); font-weight: 700; }
+.ws-choice:disabled { opacity: .6; cursor: default; }
+.ws-friend-lines { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 12.5px; color: var(--t-text); }
+.ws-page { display: grid; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--t-border); }
+.ws-page-h { display: flex; align-items: center; gap: 10px; }
+.ws-status:empty { display: none; }
+
+/* Play with a friend on the Single player page */
+.pf { display: grid; gap: 8px; }
+.pf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pf-link { flex: 1; min-width: 220px; padding: 6px 9px; border-radius: 6px; font: inherit; font-size: 12.5px; color: var(--t-text);
+  background: var(--t-surface); border: var(--t-border-w, 1px) solid var(--t-border); }
+.pf-ways { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: 12px; color: var(--t-muted); }
+.pf-ways li.ok { color: var(--t-text); }
+.pf-line:empty { display: none; }

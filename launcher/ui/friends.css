@@ -1,0 +1,45 @@
+/* Friends on the Leyline network (friends.js): the section any page mounts with LeylineFriends.mount(el). */
+.lf { display: flex; flex-direction: column; gap: 10px; }
+.lf-title { margin: 0; }
+.lf-lede { margin: 2px 0 0; opacity: .8; font-size: .92em; }
+.lf-card { border: 1px solid var(--line, rgba(127, 127, 127, .25)); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.lf-card[hidden] { display: none; }
+.lf-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lf-paste { flex: 1; min-width: 200px; }
+.lf-code { user-select: all; word-break: break-all; font-size: .85em; padding: 4px 6px; border-radius: 4px; background: var(--chip, rgba(127, 127, 127, .12)); }
+.lf-name { font-weight: 600; }
+.lf-sub { opacity: .75; font-size: .9em; }
+.lf-req .lf-sub, .lf-out .lf-sub { flex: 1; }
+.lf-near-row .lf-name { flex: 1; }
+.lf-friend { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line, rgba(127, 127, 127, .15)); }
+.lf-friend:first-of-type { border-top: 0; }
+.lf-dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(127, 127, 127, .5); flex: none; }
+.lf-friend.on .lf-dot { background: var(--ok, #3fb950); }
+.lf-who { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.lf-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.lf-empty, .lf-note { opacity: .75; font-size: .9em; margin: 0; }
+.lf-profile summary { cursor: pointer; font-weight: 600; }
+.lf-field { display: flex; align-items: center; gap: 8px; }
+.lf-field > span { min-width: 220px; }
+
+/* The Single player page's one Friends area (index.html #spf): invite (#pf), friends on your world (#wf), your
+   friends' worlds (#fw), your friends list (#lf); worldfriends.js draws #wf and #fw. */
+.spf { display: grid; gap: 14px; }
+.spf-head { display: grid; gap: 4px; }
+.spf-title { margin: 0; }
+.spf-lede { margin: 0; font-size: 13px; color: var(--t-muted); max-width: 72ch; }
+.spf > .pf, .spf > .wf, .spf > .lf-panel { padding-top: 12px; border-top: 1px solid var(--line, rgba(127, 127, 127, .2)); }
+.spf > [hidden] { display: none; }
+.wf { display: grid; gap: 8px; }
+.wf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.wf-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.wf-friend { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--line, rgba(127, 127, 127, .25)); border-radius: 8px; }
+.wf-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wf-name { font-weight: 600; }
+.wf-sub { font-size: 12px; color: var(--t-muted); }
+.wf-chars { margin: 0; font-size: 12.5px; color: var(--t-muted); }
+.wf-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.wf-confirm { display: grid; gap: 6px; padding: 8px 10px; border-radius: 6px; background: var(--chip, rgba(127, 127, 127, .1)); }
+.wf-confirm p { margin: 0; font-size: 12.5px; }
+.wf-confirm.bad { box-shadow: inset 3px 0 0 var(--t-bad, #e5534b); }
+.wf-line:empty { display: none; }

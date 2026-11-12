@@ -924,3 +924,4 @@
 1359b ship  Save as Orion: Simple mode polish (matches the launcher's panels and cards, line icons, Ready/Running chips, buttons lined up, Back up off when there is nothing yet); CI builds the launcher
 1359c ship  Save as Orion and release the launcher: Single player and the original world are rows in the server list, picked like any realm, and PLAY plays them (set up once, started if stopped, the other world stopped only on a second PLAY)
 1360a ship  Save as Orion: the Built-in engine builds again on GitHub (its core patch failed on Windows since 6 Nov, so Single player had no engine to download); Single player and the original world fix their own login before every Play
+1360b ship  Save as Orion and release the launcher: the launcher build passes on Windows again (one Solo test wrote its paths the Linux way; no launcher release went out since 10 Nov)

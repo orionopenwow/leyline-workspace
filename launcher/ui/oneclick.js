@@ -125,6 +125,10 @@
     const r = await maybe("world_find_folder", { kind });
     if (!r.ok) { const c = W().folder(); return c ? c.id : addFolder(); }   // an older core: the page's own pick, else ask
     const v = r.v && typeof r.v === "object" ? r.v : {};
+    // the core may have just added the folders it found (added: true): the launcher's own list catches up
+    if ((v.picked || (Array.isArray(v.found) && v.found.length)) && !folderIds().includes(v.picked || v.found[0].id) && window.LeylineApp && window.LeylineApp.refresh) {
+      try { await window.LeylineApp.refresh(); } catch (_) { /* the id still plays */ }
+    }
     if (v.picked) return v.picked;
     S.found = Array.isArray(v.found) ? v.found : [];
     if (S.found.length) return chooseFolder();
@@ -164,6 +168,7 @@
 
   // ---------------------------------------------------------------- 3. the first entry
   async function firstEntry(kind) {
+    if (kind === "bossrush") return {};   // Boss Rush hands out its own ready heroes
     const lc = await maybe("local_characters");
     if (!lc.ok || !Array.isArray(lc.v)) return {};
     const w = lc.v.find((x) => x && (x.kind === kind || (W().WORLDS[kind] && x.kind === W().WORLDS[kind].serde)));
@@ -211,7 +216,7 @@
       // 2. room for it (only when it has work to do)
       if (!running || o.repair) {
         const pf = await maybe("world_preflight", { kind, client });
-        if (pf.ok && pf.v && pf.v.ok === false) {
+        if (pf.ok && pf.v && (pf.v.ok === false || (pf.v.ok !== true && pf.v.message))) {
           S.disk = pf.v;
           const again = await ask("disk");
           S.view = "";
@@ -230,7 +235,7 @@
       if (setup) { store.set(PRESSED, kind); S.view = "setup"; paint(); }
       else if (S.view) { S.view = ""; paint(); }
       const r = await w.run(kind, {
-        client, stopOther: !!o.stopOther, repair: !!o.repair, pick: o.pick || null,
+        client, stopOther: !!o.stopOther, repair: !!o.repair, resume: !!o.resume, pick: o.pick || null,
         quick: first.quick || null, first: !!first.first, pollMs: cfg.pollMs,
         say: (t, k) => { callerSay(t, k); if (setup) paint(); },
         job: (p) => {
@@ -322,13 +327,14 @@
     let k = null;
     try { k = await call("world_resume_pending"); } catch (_) { k = null; }
     if (!k || typeof k !== "string" || !W() || !W().WORLDS[k] || S.flow) return null;
-    if (store.get(PRESSED) === k) return play(k, {});   // Play was pressed: it goes on by itself
+    // world_setup {client: ""} goes on with the folder the setup started with (the folder found still plays it)
+    if (store.get(PRESSED) === k) return play(k, { resume: true });   // Play was pressed: it goes on by itself
     S.kind = k;
     const go = await ask("resume");
     S.view = "";
     paint();
     if (!go) { store.set(PRESSED, null); return null; }
-    return play(k, {});
+    return play(k, { resume: true });
   }
 
   // ---------------------------------------------------------------- the card
@@ -391,7 +397,7 @@
     const b = [btn("Retry", "btn small primary", () => answer("retry"), "oc-retry")];
     if (e.code === "ports") b.push(btn("Stop the other one and play", "btn small", () => answer("ports"), "oc-ports"));
     if (REPAIRS.includes(e.code)) b.push(btn("Repair", "btn small", () => answer("repair"), "oc-repair"));
-    if (e.code === "folder") b.push(btn("Pick folder", "btn small", () => answer("folder"), "oc-pick"));
+    if (e.code === "folder" || e.code === "maps") b.push(btn(e.code === "maps" ? "Pick another folder" : "Pick folder", "btn small", () => answer("folder"), "oc-pick"));
     b.push(btn(S.log === null ? "Open log" : "Hide log", "btn small", () => { if (S.log === null) openLog(); else { S.log = null; paint(); } }, "oc-log-btn"));
     box.append(row(...b));
     if (S.log !== null) {
@@ -510,7 +516,8 @@
     else if (v === "folder") nodes.push(head("Your game folder"), folderNode());
     else if (v === "disk") {
       const b = mk("div", "oc-body");
-      const m = mk("p", "oc-err", (S.disk && S.disk.message) || "There isn't enough free space on this PC.");
+      const raw = S.disk && S.disk.message ? String(S.disk.message) : "";
+      const m = mk("p", "oc-err", (coded(raw) ? coded(raw).text : raw) || "There isn't enough free space on this PC.");
       m.id = "oc-disk";
       b.append(m);
       if (S.disk && S.disk.need_gb) b.append(mk("p", "oc-fine", `Needs about ${S.disk.need_gb} GB; ${Number(S.disk.free_gb || 0).toFixed(1)} GB is free.`));

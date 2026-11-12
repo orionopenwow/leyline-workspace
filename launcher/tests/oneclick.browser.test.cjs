@@ -247,11 +247,11 @@ test('no game folder: the picker opens by itself; cancelled, the card offers it 
 });
 
 test('not enough room: the message and "Free some space, then Retry"; Retry goes on', async () => {
-  const preflight = [{ ok: false, free_gb: 2.4, need_gb: 12, message: 'Single player needs about 12 GB free on drive C: and 2.4 GB is free.' }, { ok: true, free_gb: 40, need_gb: 12, message: '' }];
+  const preflight = [{ ok: false, free_gb: 2.4, need_gb: 12, message: '[disk] Single player needs about 12 GB free on drive C: and 2.4 GB is free.' }, { ok: true, free_gb: 40, need_gb: 12, message: '' }];
   const { page, ctx, errors } = await open({ preflight });
   await homeGo(page);
   await waitView(page, 'disk');
-  assert.match(await page.textContent('#oc-disk'), /needs about 12 GB free/);
+  assert.equal(await page.textContent('#oc-disk'), 'Single player needs about 12 GB free on drive C: and 2.4 GB is free.', 'the sentence without its code');
   assert.match(await page.textContent('#oc'), /Free some space, then Retry/);
   assert.equal((await callsOf(page, 'world_setup')).length, 0);
   await shot(page, 'disk');
@@ -297,7 +297,7 @@ test('errors by code: [maps] Retry, Repair (world_repair, then in), Open log wit
   await homeGo(page);
   await waitView(page, 'error');
   assert.equal(await page.textContent('#oc-err'), 'The maps couldn\'t be read from your game folder.', 'the sentence without its code');
-  assert.deepEqual(await page.$$eval('#oc .oc-row button', (l) => l.map((x) => x.textContent)), ['Retry', 'Repair', 'Open log']);
+  assert.deepEqual(await page.$$eval('#oc .oc-row button', (l) => l.map((x) => x.textContent)), ['Retry', 'Repair', 'Pick another folder', 'Open log']);
   await page.click('#oc-log-btn');
   await page.waitForFunction(() => /map 0 missing/.test((document.getElementById('oc-log') || {}).textContent || ''));
   assert.deepEqual(await callsOf(page, 'world_logs'), [{ kind: 'single', lines: 200 }]);
@@ -356,10 +356,13 @@ test('an interrupted setup on launch: Continue; on by itself when Play had been 
   await shot(page, 'resume');
   await page.click('#oc-resume-go');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'world_play'), null, { timeout: 15000 });
+  assert.deepEqual(await callsOf(page, 'world_setup'), [{ client: '', kind: 'single' }], 'goes on with the folder it started with');
+  assert.equal((await callsOf(page, 'world_play'))[0].client, 'c335a-1');
   assert.deepEqual(errors, []);
   await ctx.close();
   ({ page, ctx, errors } = await open({ resume: 'single', storage: { 'leyline.oneclick.pressed': 'single' } }));
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'world_setup'), null, { timeout: 15000 });
+  assert.deepEqual(await callsOf(page, 'world_setup'), [{ client: '', kind: 'single' }]);
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'world_play'), null, { timeout: 15000 });
   assert.deepEqual(errors, []);
   await ctx.close();

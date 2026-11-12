@@ -78,7 +78,8 @@
       if (o.repair) { say(`Repairing ${w.title}…`); await call("world_repair", { kind, client: c.id }); }
       else {
         say(st && st.set_up ? `Starting ${w.title}…` : `Setting up ${w.title} (once)…`);
-        await call(st && st.set_up ? "world_start" : "world_setup", st && st.set_up ? { kind } : { client: c.id, kind });
+        // o.resume: an interrupted setup goes on with the folder it started with (world_setup client "")
+        await call(st && st.set_up ? "world_start" : "world_setup", st && st.set_up ? { kind } : { client: o.resume ? "" : c.id, kind });
       }
       // follow its progress line until it is done
       for (;;) {

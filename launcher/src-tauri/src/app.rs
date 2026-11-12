@@ -4524,7 +4524,7 @@ pub fn single_play_test_cli(cli: crate::playtest::Cli) -> i32 {
         rep.levels.push(level);
         while level < cli.level_to && why.is_empty() {
             let next = level + 1;
-            let r = sp::levelup_command(&me.name, 1).and_then(|c| eng::console(&p, &c));
+            let r = sp::levelup_command(&me.name, next).and_then(|c| eng::console(&p, &c));
             if let Err(e) = r {
                 why = format!("level {next}: the world's console said no: {e}");
                 break;

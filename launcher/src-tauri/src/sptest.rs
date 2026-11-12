@@ -7,7 +7,7 @@
 //! * `companions`: the bots that join by themselves (ov_companions.lua "single player") are in the character's group
 //!   and online within [`COMPANIONS_WITHIN_S`] seconds, as many as the world's settings say ([`expected_companions`]);
 //! * `levelup`: **server-driven levelling** on the test's own local world only (SOAP on 127.0.0.1, the world's own GM
-//!   login): `.levelup <name> 1` step by step to `--level` (10), each step's level read back from the database after
+//!   login): `character level <name> <next>` step by step to `--level` (10), each step's level read back from the database after
 //!   `.saveall`, then the companions following the player's level. Labelled as such in the report: not hand play;
 //! * `stoponexit`: the game the test started closed, the world stopped by itself (Settings › Stop my world when the
 //!   game closes, on by default) within [`STOP_WITHIN_S`] seconds;
@@ -38,7 +38,7 @@ pub const IN_WORLD_S: u64 = 480;
 /// The level `levelup` goes to unless `--level` says otherwise.
 pub const LEVEL_TO: u8 = 10;
 /// How the levelling is labelled in the report (honest: the server gave the levels, nobody played them).
-pub const LEVEL_NOTE: &str = "server-driven levelling: GM .levelup on the test's own local world (127.0.0.1), not hand play";
+pub const LEVEL_NOTE: &str = "server-driven levelling: GM character level on the test's own local world (127.0.0.1), not hand play";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -206,12 +206,13 @@ pub fn expected_companions(env: &[(String, String)]) -> u32 {
     num("OV_COMPANIONS_FOLLOW", 2, 4).min(num("OV_COMPANIONS_PER_PLAYER", 4, 4))
 }
 
-/// The console command that gives one character `n` levels (the world's own GM login over SOAP, 127.0.0.1 only).
-pub fn levelup_command(name: &str, n: u8) -> Result<String, String> {
-    if !crate::hybrid::char_name_ok(name) || n == 0 {
-        return Err("That character's name doesn't look right.".into());
+/// The console command that sets one character's level (the world's own GM login over SOAP, 127.0.0.1 only).
+/// `.levelup` is in-game only; `character level` is the console's, and works on a character in the world.
+pub fn levelup_command(name: &str, level: u8) -> Result<String, String> {
+    if !crate::hybrid::char_name_ok(name) || !(2..=80).contains(&level) {
+        return Err("That character's name or level doesn't look right.".into());
     }
-    Ok(format!(".levelup {name} {n}"))
+    Ok(format!("character level {name} {level}"))
 }
 
 /// The worldserver log's line for a character entering the world (`Login Character:[Name]`).
@@ -448,9 +449,10 @@ mod tests {
 
     #[test]
     fn levelup_only_for_a_name() {
-        assert_eq!(levelup_command("Anna", 1).unwrap(), ".levelup Anna 1");
-        assert!(levelup_command("Anna; .server shutdown", 1).is_err());
+        assert_eq!(levelup_command("Anna", 2).unwrap(), "character level Anna 2");
+        assert!(levelup_command("Anna; .server shutdown", 2).is_err());
         assert!(levelup_command("Anna", 0).is_err());
+        assert!(levelup_command("Anna", 81).is_err());
         assert!(log_in_world("Account: HK2 (IP: 127.0.0.1) Login Character:[Anna] (GUID: 5) Level: 1", "Anna"));
         assert!(!log_in_world("Login Character:[Annabel]", "Anna"));
         assert!(!log_in_world("Login Character:[]", ""));

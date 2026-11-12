@@ -94,10 +94,19 @@
 --   OV_COMPANIONS_BUDDY           .buddy on/off                                            default 1
 --   OV_COMPANIONS_DUNGEON_TRAVEL  the Dungeons tab takes you to the door                   default 1
 --   OV_COMPANIONS_DUNGEON_COOLDOWN seconds between two trips to a dungeon door             default 300
+-- Single player (realm/profiles/solo.env, solovanilla.env; the launcher may override them in the world's realm.env,
+-- docs/SINGLE-PLAYER-ONE-CLICK.md "Companions settings"). OFF unless the profile turns them on: main.env never does.
+--   OV_COMPANIONS_AUTO            bots join a character by themselves: the first time it enters the world (with a
+--                                 welcome line), and again at each login unless the player sent them home default 0
+--   OV_COMPANIONS_FOLLOW          how many join by themselves (0..4; never past OV_COMPANIONS_PER_PLAYER) default 2
+--   OV_COMPANIONS_DUNGEON_AUTO    entering a 5-player dungeon (on foot, from the Bots window or the Dungeon Finder)
+--                                 fills the party with dungeon bots; leaving sends just those home          default 0
+-- See "single player" below for the party they make and how the choice is kept per character.
 -- mod-playerbots' own Playerbots.MaxAddedBots (AC_PLAYERBOTS_MAX_ADDED_BOTS, 9) is the hard cap behind these.
--- Characters database: mod_companions_usual (account, slot, guid, name, saved_at) and mod_companions_owned
--- (bot, owner, name, role, spec, kind, at), made here if missing.
--- mod-ale events: 3 ON_LOGIN, 4 ON_LOGOUT, 13 ON_LEVEL_CHANGE, 42 ON_COMMAND (return false = handled).
+-- Characters database: mod_companions_usual (account, slot, guid, name, saved_at), mod_companions_owned
+-- (bot, owner, name, role, spec, kind, at) and mod_companions_auto (guid, mode, party, at: single player's choice per
+-- character), made here if missing.
+-- mod-ale events: 3 ON_LOGIN, 4 ON_LOGOUT, 13 ON_LEVEL_CHANGE, 28 ON_MAP_CHANGE, 42 ON_COMMAND (return false = handled).
 --
 -- Achievement lines ("<bot> has earned the achievement ...") come from the core (AchievementMgr::
 -- SendAchievementEarned tells everyone in say range) when a bot is levelled, geared and taught spells and mounts
@@ -160,6 +169,10 @@ local function groupMax()      return num("OV_COMPANIONS_GROUP_MAX", 10, 2, raid
 local function cooldown()      return num("OV_COMPANIONS_COOLDOWN", 30, 0, 3600) end
 local function dungeonTravel() return flag("OV_COMPANIONS_DUNGEON_TRAVEL", true) end
 local function travelCooldown() return num("OV_COMPANIONS_DUNGEON_COOLDOWN", 300, 0, 86400) end
+-- single player: off by default, so a realm whose profile doesn't name them (the official one) never does this
+local function autoOn()        return onSwitch() and flag("OV_COMPANIONS_AUTO", false) end
+local function autoCount()     return num("OV_COMPANIONS_FOLLOW", 2, 0, 4) end
+local function dungeonAutoOn() return onSwitch() and flag("OV_COMPANIONS_DUNGEON_AUTO", false) end
 
 local PARTY = 5
 
@@ -296,6 +309,14 @@ local function dkLevel()
     return tonumber(os.getenv("AC_START_HEROIC_PLAYER_LEVEL") or "") or 55
 end
 
+-- A world held to the first era (level cap 60 or under: the original world, solovanilla.env) has no Death Knights.
+local function dkInWorld() return (tonumber(os.getenv("AC_MAX_PLAYER_LEVEL") or "") or 80) > 60 end
+local function dkOk(player) return dkInWorld() and player:GetLevel() >= dkLevel() end
+local function dkRefusal()
+    if not dkInWorld() then return "Death Knights aren't in this world." end
+    return "Death Knights join from level " .. dkLevel() .. "."
+end
+
 local function classOf(word)
     word = CLASS_ALIAS[word] or word
     return CLASS[word] and word or nil
@@ -324,6 +345,8 @@ local pending = {}      -- [ownerGuid] = { { cls, word, spec, role, buddy, alt, 
 local lastRecruit = {}  -- [ownerGuid] = os.time()
 local ticking = {}      -- [ownerGuid] = the running arrival timer's number
 local raidWanted = {}   -- [ownerGuid] = true while a raid fill is arriving
+local autoJoined = {}   -- [ownerGuid] = { kind = "first"|"back"|"dungeon", names = { "Anna the Priest (healer)" } }
+local hasWindow = {}    -- [ownerGuid] = true once the player's Bots window has asked for something (it is there)
 
 local ARRIVE_TICK_MS, ARRIVE_TICKS, ARRIVE_TIMEOUT = 2000, 8, 15
 local TELEPORT_DISTANCE = 40
@@ -454,7 +477,7 @@ end
 ------------------------------------------------------------------------------------------------
 -- arrival: claim the bots that joined, set them up
 ------------------------------------------------------------------------------------------------
-local ownSave, pushRoster   -- below
+local ownSave, pushRoster, autoArrived, autoDismissed   -- below
 
 local function claimed(botGuid)
     for _, list in pairs(companions) do if list[botGuid] then return true end end
@@ -528,11 +551,13 @@ local function arrivals(owner)
                 if p.alt then role = roleOf(owner, m) end
                 companions[guid] = companions[guid] or {}
                 companions[guid][bg] = { name = m:GetName(), cls = cls, role = role, spec = p.spec, buddy = p.buddy,
-                    alt = p.alt, order = "follow" }
+                    alt = p.alt, order = "follow", keep = p.auto ~= nil or nil, dungeon = p.dungeon or nil }
                 ownSave(guid, bg, companions[guid][bg])
                 setUp(owner, m, p)
                 joined = true
-                if p.buddy then
+                if p.auto or p.dungeon then
+                    autoArrived(owner, p, m)   -- one line for the whole party, once they are all here
+                elseif p.buddy then
                     say(owner, string.format("%s the %s is your levelling buddy bot. Say 'stay' or 'follow' in party chat.",
                         m:GetName(), CLASS_LABEL[cls] or "bot"))
                 elseif p.alt then
@@ -546,16 +571,19 @@ local function arrivals(owner)
     end
     if #list == 0 then raidWanted[guid] = nil end
     if joined then pushRoster(owner) end
+    if #list == 0 then autoArrived(owner) end
 end
 
 local function expire(owner, final)
     local guid = owner:GetGUIDLow()
     local list = pending[guid]
     if not list then return end
-    local now, kept, lost, alts = os.time(), {}, 0, {}
+    local now, kept, lost, alts, autoLost = os.time(), {}, 0, {}, 0
     for _, p in ipairs(list) do
         if final or now - p.at >= ARRIVE_TIMEOUT then
-            if p.alt then alts[#alts + 1] = p.name else lost = lost + 1 end
+            if p.alt then alts[#alts + 1] = p.name
+            elseif p.auto or p.dungeon then autoLost = autoLost + 1
+            else lost = lost + 1 end
         else
             kept[#kept + 1] = p
         end
@@ -568,6 +596,11 @@ local function expire(owner, final)
     end
     if #alts > 0 then
         say(owner, table.concat(alts, ", ") .. " didn't arrive. Try again in a minute.")
+    end
+    if autoLost > 0 then
+        autoArrived(owner)
+        owner:SendBroadcastMessage(TAG .. string.format("%s couldn't join right now (none free). The Bots window can "
+            .. "bring more later.", autoLost == 1 and "One bot" or (autoLost .. " bots")))
     end
 end
 
@@ -627,12 +660,21 @@ dbExec([[CREATE TABLE IF NOT EXISTS mod_companions_owned (
 
 local ROLE_WORDS = { tank = true, healer = true, dps = true, alt = true, buddy = true }
 
+-- Single player's choice per character: mode "new" (bots asked for, never arrived yet), "on" (they come back at
+-- each login: party is what was with the player, "tank=warrior:prot pve,healer=priest:holy pve,buddy=mage") or
+-- "off" (the player sent them home: nothing joins by itself until the player brings bots again).
+dbExec([[CREATE TABLE IF NOT EXISTS mod_companions_auto (
+  guid INT UNSIGNED NOT NULL, mode VARCHAR(4) NOT NULL, party VARCHAR(255) NOT NULL, at INT UNSIGNED NOT NULL,
+  PRIMARY KEY (guid)
+)]])
+
 ownSave = function(owner, bg, c)
     local name = safeName(c.name)
     local role = ROLE_WORDS[c.role or ""] and c.role or "dps"
     local spec = tostring(c.spec or "")
     if not spec:match("^[%a ]*$") or #spec > 32 then spec = "" end
-    local kind = c.buddy and "buddy" or c.alt and "alt" or "bot"
+    -- auto: joined by itself (keeps to the owner's level); temp: a dungeon bot (goes home when the owner leaves)
+    local kind = c.buddy and "buddy" or c.alt and "alt" or c.dungeon and "temp" or c.keep and "auto" or "bot"
     if name == "" then return end
     dbExec(string.format("REPLACE INTO mod_companions_owned (bot, owner, name, role, spec, kind, at) "
         .. "VALUES (%d, %d, '%s', '%s', '%s', '%s', %d)", bg, owner, name, role, spec, kind, os.time()))
@@ -679,7 +721,8 @@ adopt = function(player)
                 local spec = row and row.spec ~= "" and row.spec or nil
                 companions[guid] = companions[guid] or {}
                 local c = { name = m:GetName(), cls = m:GetClass(), role = role, spec = spec, buddy = buddy, alt = alt,
-                    order = "follow" }
+                    order = "follow", keep = (row ~= nil and row.kind == "auto") or nil,
+                    dungeon = (row ~= nil and row.kind == "temp") or nil }
                 companions[guid][bg] = c
                 ownSave(guid, bg, c)
                 n = n + 1
@@ -717,24 +760,26 @@ local function comingSoon(player)
 end
 
 -- Shared checks for every .recruit and .buddy. opts.raid: this command makes a raid; opts.size: the group
--- size it fills to. Returns how many may be recruited now (0 = refused, already said why) and the cap used.
+-- size it fills to; opts.auto: single player's own joins (no cooldown, nothing said: they try again later).
+-- Returns how many may be recruited now (0 = refused, already said why) and the cap used.
 local function room(player, want, opts)
     opts = opts or {}
-    if not onSwitch() then say(player, "Bots are off on this realm."); return 0 end
-    if try(player, "IsDead") then say(player, "Not while dead."); return 0 end
-    if try(player, "IsInCombat") then say(player, "Not in combat."); return 0 end
-    if inPvp(player) then say(player, "Not in battlegrounds or arenas."); return 0 end
+    local function no(text) if not opts.auto then say(player, text) end; return 0 end
+    if not onSwitch() then return no("Bots are off on this realm.") end
+    if try(player, "IsDead") then return no("Not while dead.") end
+    if try(player, "IsInCombat") then return no("Not in combat.") end
+    if inPvp(player) then return no("Not in battlegrounds or arenas.") end
     if instanceKind(player) and groupInCombat(player) then
-        say(player, "Wait until your group is out of combat."); return 0
+        return no("Wait until your group is out of combat.")
     end
     local group = try(player, "GetGroup")
     if group and try(group, "IsLeader", player:GetGUID()) == false then
-        say(player, "Only the group leader can recruit."); return 0
+        return no("Only the group leader can recruit.")
     end
     local guid, now = player:GetGUIDLow(), os.time()
     local cd = cooldown()
-    if lastRecruit[guid] and now - lastRecruit[guid] < cd then
-        say(player, string.format("You can recruit again in %d s.", cd - (now - lastRecruit[guid]))); return 0
+    if not opts.auto and lastRecruit[guid] and now - lastRecruit[guid] < cd then
+        return no(string.format("You can recruit again in %d s.", cd - (now - lastRecruit[guid])))
     end
     prune(player)
     local raiding = opts.raid or isRaidGroup(player)
@@ -745,6 +790,7 @@ local function room(player, want, opts)
     local realmLeft = realmMax() - realmCount()
     local n = math.min(want, cap - have, slots, realmLeft)
     if n <= 0 then
+        if opts.auto then return 0 end
         if cap - have <= 0 then
             say(player, string.format("You have %s, the most allowed %s (.dismiss to make room).",
                 plural(have, "bot"), raiding and "in a raid" or "in a party"))
@@ -758,10 +804,10 @@ local function room(player, want, opts)
     return n, raiding
 end
 
-local function queue(player, list)
+local function queue(player, list, auto)
     local guid = player:GetGUIDLow()
     pending[guid] = pending[guid] or {}
-    lastRecruit[guid] = os.time()
+    if not auto then lastRecruit[guid] = os.time() end
     for _, p in ipairs(list) do
         p.at = os.time()
         table.insert(pending[guid], p)
@@ -774,7 +820,7 @@ end
 local function picksFor(player, roleWord, onlyClass)
     local picks = {}
     for _, pk in ipairs(ROLES[roleWord].picks) do
-        if (not onlyClass or pk[1] == onlyClass) and (pk[1] ~= "dk" or player:GetLevel() >= dkLevel()) then
+        if (not onlyClass or pk[1] == onlyClass) and (pk[1] ~= "dk" or dkOk(player)) then
             picks[#picks + 1] = pk
         end
     end
@@ -906,7 +952,7 @@ local function roleCommand(player, roleWord, extra)
         end
     end
     if want < 1 then return say(player, "Recruit at least one.") end
-    if #picksFor(player, roleWord, onlyClass) == 0 then return say(player, "Death Knights join from level " .. dkLevel() .. ".") end
+    if #picksFor(player, roleWord, onlyClass) == 0 then return say(player, dkRefusal()) end
     local n = room(player, want)
     if n == 0 then return end
     local list = {}
@@ -1029,7 +1075,8 @@ local function buddyCommand(player, arg)
         end
         companions[guid][bg] = nil
         ownForget(bg)
-        return say(player, b.name .. " heads home.")
+        say(player, b.name .. " heads home.")
+        return autoDismissed(player)
     end
     if b then
         if not bg then return say(player, "Your buddy is on the way.") end
@@ -1041,13 +1088,13 @@ local function buddyCommand(player, arg)
         word = classOf(arg)
         if not word then return say(player, "Usage: |cffffff00.buddy [class]|r  (warrior, paladin, hunter, rogue, priest, "
             .. "shaman, mage, warlock, druid, dk)") end
-        if word == "dk" and player:GetLevel() < dkLevel() then
-            return say(player, "Death Knights join from level " .. dkLevel() .. ".")
+        if word == "dk" and not dkOk(player) then
+            return say(player, dkRefusal())
         end
     else
         local all = {}
         for _, w in ipairs(BUDDY_CLASSES) do
-            if w ~= "dk" or player:GetLevel() >= dkLevel() then all[#all + 1] = w end
+            if w ~= "dk" or dkOk(player) then all[#all + 1] = w end
         end
         word = all[math.random(#all)]
     end
@@ -1107,6 +1154,7 @@ local function dismissCommand(player, arg)
     end
     table.sort(gone)
     say(player, table.concat(gone, ", ") .. (#gone == 1 and " heads" or " head") .. " home.")
+    autoDismissed(player)
 end
 
 local function showHelp(player)
@@ -1219,7 +1267,8 @@ pushRoster = function(player)
     for _, e in ipairs(list) do
         local c, m = e.c, e.m
         local cls = c.cls or m:GetClass()
-        lines[#lines + 1] = table.concat({ "B", clean(c.name), cls, e.role, c.buddy and "buddy" or c.alt and "alt" or "bot",
+        lines[#lines + 1] = table.concat({ "B", clean(c.name), cls, e.role,
+            c.buddy and "buddy" or c.alt and "alt" or c.dungeon and "dungeon" or "bot",
             clean(c.spec or ""), itemLevel(m), statusOf(m, c), m:GetLevel() }, "\t")
         if not seen[cls] then seen[cls] = true; classes[#classes + 1] = cls end
     end
@@ -1238,7 +1287,9 @@ end
 
 -- Every window action: answers go to the window from now on; bots on this realm, and on.
 local function windowReady(player)
-    if isBot(player) or flooding(player:GetGUIDLow()) then return false end
+    if isBot(player) then return false end
+    hasWindow[player:GetGUIDLow()] = true
+    if flooding(player:GetGUIDLow()) then return false end
     replyTo[player:GetGUIDLow()] = true
     if not botsBuilt(player) then comingSoon(player); return false end
     if not onSwitch() then say(player, "Bots are off on this realm."); return false end
@@ -1496,9 +1547,277 @@ local function dungeonCommand(player, id, picks)
     end)
 end
 
+------------------------------------------------------------------------------------------------
+-- single player: bots that join by themselves (OV_COMPANIONS_AUTO, OV_COMPANIONS_FOLLOW, OV_COMPANIONS_DUNGEON_AUTO)
+------------------------------------------------------------------------------------------------
+-- A new player never lands alone and never needs a chat command:
+--   First entry   the first time a character enters the world, OV_COMPANIONS_FOLLOW bots (default 2) join it, ~6 s
+--                 after login, with one welcome line saying how to change them (the Bots window; the window's
+--                 add-on adds its key, Companions.lua "welcome"). The party covers what the player is not:
+--                     you deal damage   -> a healer, then a tank, then damage
+--                     you tank          -> a healer, then damage
+--                     you heal          -> a tank, then damage
+--                 (your role: your talents through mod-playerbots' IsTank / IsHealer; with none yet, damage). Two
+--                 bots for a damage dealer = a healer that keeps you up and a tank that holds what you pull: the
+--                 most forgiving open-world group, and a dungeon only needs two more. They keep to your level as
+--                 you level (as the buddy does), with their role's premade spec.
+--   Each login    the same party comes back (the classes and specs that were with you at logout, at most FOLLOW),
+--                 unless you sent them all home (.dismiss, the window's Dismiss, the buddy's off): then nothing joins
+--                 by itself until you bring bots again (any fill, buddy or dungeon pick turns it back on at logout).
+--   Dungeons      entering a 5-player dungeon (walking in, the Dungeons tab, or the Dungeon Finder alone through
+--                 mod-solo-lfg) fills the free slots with dungeon bots (1 tank, 1 healer, damage, minus what the
+--                 group has); leaving to the open world alive sends just those home and brings your party over.
+-- Nothing here runs unless the realm's profile turns it on (main.env never does), and never for bots themselves.
+local AUTO_LOGIN_MS, AUTO_DUNGEON_MS, AUTO_RETRY_MS, AUTO_TRIES = 6000, 4000, 10000, 4
+-- what the bots that join by themselves should cover, by the player's own role
+local AUTO_ORDER = {
+    dps    = { "healer", "tank", "dps", "dps" },
+    tank   = { "healer", "dps", "dps", "dps" },
+    healer = { "tank", "dps", "dps", "dps" },
+}
+local CLASS_WORD = {}
+for w, id in pairs(CLASS) do CLASS_WORD[id] = w end
+
+local function autoRow(guid)
+    local r = dbRows(string.format("SELECT mode, party FROM mod_companions_auto WHERE guid = %d", guid), { "s", "s" })[1]
+    if not r or (r[1] ~= "new" and r[1] ~= "on" and r[1] ~= "off") then return nil end
+    return { mode = r[1], party = r[2] or "" }
+end
+
+local function autoSet(guid, mode, party)
+    party = tostring(party or "")
+    if not party:match("^[%a =:,]*$") or #party > 255 then party = "" end
+    dbExec(string.format("REPLACE INTO mod_companions_auto (guid, mode, party, at) VALUES (%d, '%s', '%s', %d)",
+        guid, mode, party, os.time()))
+end
+
+-- The party to remember: the player's bots that aren't alts or dungeon bots, as "role=class:spec" / "buddy=class".
+local function partyOf(guid)
+    local items = {}
+    for _, c in pairs(companions[guid] or {}) do
+        local word = CLASS_WORD[c.cls or 0]
+        if word and not c.alt and not c.dungeon then
+            if c.buddy then items[#items + 1] = "buddy=" .. word
+            elseif ROLES[c.role or ""] then
+                local spec = tostring(c.spec or "")
+                items[#items + 1] = c.role .. "=" .. word .. (spec:match("^[%a ]+$") and (":" .. spec) or "")
+            end
+        end
+    end
+    table.sort(items, function(x, y)
+        local rx, ry = RANK[x:match("^%a+")] or 4, RANK[y:match("^%a+")] or 4
+        if rx ~= ry then return rx < ry end
+        return x < y
+    end)
+    return table.concat(items, ",")
+end
+
+-- A remembered party back into recruit entries (a class that can't take the role, or isn't in this world: dropped).
+local function partyEntries(player, party)
+    local out = {}
+    for item in tostring(party or ""):gmatch("[^,]+") do
+        local role, word, spec = item:match("^(%a+)=(%a+):?([%a ]*)$")
+        word = word and classOf(word)
+        if word and (word ~= "dk" or dkOk(player)) then
+            if role == "buddy" then
+                if buddyOn() then out[#out + 1] = { cls = CLASS[word], word = word, role = "buddy", buddy = true } end
+            elseif ROLES[role or ""] then
+                local fits
+                for _, pk in ipairs(ROLES[role].picks) do if pk[1] == word then fits = pk[2] end end
+                if fits then
+                    for _, sp in ipairs(specsFor(CLASS[word])) do
+                        if sp == spec and specRole(sp) == role then fits = sp end
+                    end
+                    out[#out + 1] = { cls = CLASS[word], word = word, spec = fits, role = role }
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- The party for a character with none remembered: n bots covering what the player is not (AUTO_ORDER).
+local function freshEntries(player, n)
+    local counts, order = { tank = 0, healer = 0, dps = 0 }, AUTO_ORDER[roleOf(player, player)] or AUTO_ORDER.dps
+    for i = 1, math.min(n, #order) do counts[order[i]] = counts[order[i]] + 1 end
+    local list = {}
+    for _, r in ipairs(ROLE_ORDER) do addRole(player, list, r, counts[r]) end
+    return list
+end
+
+local function labelOf(m, c)
+    local role = c.buddy and "buddy" or (ROLES[c.role or ""] and ROLES[c.role].label) or "bot"
+    return string.format("%s the %s (%s)", m:GetName(), CLASS_LABEL[m:GetClass()] or "bot", role)
+end
+
+local function joinNames(names)
+    if #names <= 1 then return names[1] or "" end
+    return table.concat(names, ", ", 1, #names - 1) .. " and " .. names[#names]
+end
+
+-- Called by arrivals for each bot that joined by itself (p, m), and with no bot once the arrivals are over: then,
+-- when no bot of the kind is still on the way, one line for all of them.
+autoArrived = function(owner, p, m)
+    local guid = owner:GetGUIDLow()
+    if p then
+        local a = autoJoined[guid] or { names = {} }
+        autoJoined[guid] = a
+        a.kind = p.dungeon and "dungeon" or p.auto
+        local c = (companions[guid] or {})[m:GetGUIDLow()] or {}
+        a.names[#a.names + 1] = labelOf(m, c)
+        return
+    end
+    local a = autoJoined[guid]
+    if not a then return end
+    for _, q in ipairs(pending[guid] or {}) do if q.auto or q.dungeon then return end end
+    autoJoined[guid] = nil
+    if #a.names == 0 then return end
+    local who = joinNames(a.names)
+    if a.kind == "dungeon" then
+        owner:SendBroadcastMessage(TAG .. "Dungeon bots join you: " .. who .. ". They head home when you leave.")
+    elseif a.kind == "back" then
+        owner:SendBroadcastMessage(TAG .. "Your bots are back: " .. who .. ".")
+    else
+        local here, rest = "Your bots are here: " .. who .. ".", "They follow you, fight with you and leave the loot to you."
+        if hasWindow[guid] and OVMod then
+            OVMod.Send(owner, MOD, "welcome", here .. " " .. rest)   -- the add-on says it, with the Bots window's key
+        else
+            if #here + #rest < 150 then owner:SendBroadcastMessage(TAG .. here .. " " .. rest)
+            else owner:SendBroadcastMessage(TAG .. here); owner:SendBroadcastMessage(TAG .. rest) end
+            owner:SendBroadcastMessage(TAG .. "Change them any time: .companions")
+        end
+    end
+    if a.kind ~= "dungeon" and autoOn() then autoSet(guid, "on", partyOf(guid)) end
+end
+
+-- After the player sends bots home: none left with them (dungeon bots aside) = they chose to play alone, kept.
+autoDismissed = function(player)
+    if not autoOn() then return end
+    local guid = player:GetGUIDLow()
+    for _, c in pairs(companions[guid] or {}) do if not c.dungeon then return end end
+    local row = autoRow(guid)
+    if row and row.mode == "off" then return end
+    autoSet(guid, "off", "")
+    say(player, "They won't join you by themselves now. Bring bots back any time from the Bots window.")
+end
+
+-- n bots join the player by themselves (kind "first" / "back"), or dungeon bots fill the party (kind "dungeon").
+-- Not now (combat, dead, a recruit on the way): again in 10 s, AUTO_TRIES times.
+local autoTry
+local function autoJoin(player, kind, tries)
+    local guid = player:GetGUIDLow()
+    local function again()
+        if tries < AUTO_TRIES then
+            later(player, AUTO_RETRY_MS, function(p) autoTry(p, kind, tries + 1) end)
+        end
+    end
+    if #(pending[guid] or {}) > 0 or try(player, "IsInCombat") or try(player, "IsDead") then return again() end
+    local list
+    if kind == "dungeon" then
+        if not dungeonAutoOn() or instanceKind(player) ~= "dungeon" or isRaidGroup(player) then return end
+        prune(player)
+        local free = PARTY - groupSize(player)
+        if free <= 0 then return end
+        local n = room(player, free, { auto = true, size = PARTY })
+        if n == 0 then return again() end
+        local counts = planRoles(rolesInGroup(player), SHAPE[PARTY], n)
+        list = {}
+        for _, r in ipairs(ROLE_ORDER) do addRole(player, list, r, counts[r]) end
+        for _, p in ipairs(list) do p.dungeon = true end
+    else
+        if not autoOn() then return end
+        prune(player)
+        local row = autoRow(guid)
+        if row and row.mode == "off" then return end
+        local want = math.min(autoCount(), perPlayer()) - mine(guid)
+        if want <= 0 then return end
+        local n = room(player, want, { auto = true })
+        if n == 0 then return again() end
+        local saved = row and row.mode == "on" and partyEntries(player, row.party) or {}
+        list = {}
+        if #saved > 0 then
+            for i = 1, math.min(n, #saved) do list[#list + 1] = saved[i] end
+        else
+            list = freshEntries(player, n)
+        end
+        if not row then autoSet(guid, "new", "") end
+        for _, p in ipairs(list) do p.auto = kind end
+    end
+    if #list == 0 then return end
+    queue(player, list, true)
+end
+autoTry = function(p, kind, tries)
+    if not p or isBot(p) or not botsBuilt(p) then return end
+    local ok, err = pcall(autoJoin, p, kind, tries)
+    if not ok then print("[ov_companions] auto join failed: " .. tostring(err)) end
+end
+
+-- Login: the first entry's party, or the remembered one. Not after a crash: the module brings those bots back by
+-- itself and onLogin's looks adopt them (their ownership rows are still there).
+local function autoLogin(player)
+    if not (autoOn() or dungeonAutoOn()) or isBot(player) or not botsBuilt(player) then return end
+    local guid = player:GetGUIDLow()
+    if next(ownRows(guid)) then return end
+    later(player, AUTO_LOGIN_MS, function(p)
+        if autoOn() then
+            local row = autoRow(guid)
+            autoTry(p, (not row or row.mode == "new") and "first" or "back", 1)
+        end
+        -- logged in inside a dungeon: its bots too, once the party is here (autoJoin waits for the arrivals)
+        if dungeonAutoOn() and instanceKind(p) == "dungeon" then
+            later(p, AUTO_DUNGEON_MS, function(q) autoTry(q, "dungeon", 1) end)
+        end
+    end)
+end
+
+-- Map change: into a 5-player dungeon, its bots; out to the open world (alive: a ghost running back keeps them),
+-- the dungeon bots go home and the rest of the party is brought over.
+local function onMapChange(event, player)
+    if not player or isBot(player) or not botsBuilt(player) or not onSwitch() then return end
+    local guid = player:GetGUIDLow()
+    local kind = instanceKind(player)
+    if kind == "dungeon" then
+        if dungeonAutoOn() then later(player, AUTO_DUNGEON_MS, function(p) autoTry(p, "dungeon", 1) end) end
+        return
+    end
+    if kind or try(player, "IsDead") then return end
+    local temps = {}
+    for bg, c in pairs(companions[guid] or {}) do if c.dungeon then temps[#temps + 1] = bg end end
+    if #temps == 0 then return end
+    local _, members = groupMembers(player)
+    local byGuid = {}
+    for _, m in ipairs(members) do byGuid[m:GetGUIDLow()] = m end
+    local names = {}
+    for _, bg in ipairs(temps) do
+        local c = companions[guid][bg]
+        companions[guid][bg] = nil
+        ownForget(bg)
+        if byGuid[bg] then tell(player, byGuid[bg], "leave") end
+        local nm = safeName(c.name)
+        if nm ~= "" then names[#names + 1] = nm end
+    end
+    say(player, "Your dungeon bots head home.")
+    later(player, 2500, function(p)
+        for _, nm in ipairs(names) do botCommand(p, "remove " .. nm) end
+        for _, e in ipairs(myBots(p)) do bringOver(p, e.m) end
+        pushRoster(p)
+    end)
+end
+
+-- Logout: remember the party that was with the player (an empty one changes nothing: a party that never arrived,
+-- or one the module already logged out; sending them home on purpose was kept at the time, autoDismissed).
+local function autoLogout(player)
+    if not autoOn() or isBot(player) then return end
+    local guid = player:GetGUIDLow()
+    local party = partyOf(guid)
+    if party ~= "" then autoSet(guid, "on", party) end
+end
+
 if OVMod then
     OVMod.On(MOD, "roster", function(player)
-        if isBot(player) or flooding(player:GetGUIDLow()) then return end
+        if isBot(player) then return end
+        hasWindow[player:GetGUIDLow()] = true
+        if flooding(player:GetGUIDLow()) then return end
         pushRoster(player)
     end)
     OVMod.On(MOD, "order", onOrder)
@@ -1583,8 +1902,8 @@ local function rawBotCommand(player, words, rawWords)
     elseif sub == "addclass" and words[at] and not words[at + 1] then
         local cls = classOf(words[at])
         if not cls then return say(player, "Usage: |cffffff00.recruit tank|healer|dps <class>|r") or false end
-        if cls == "dk" and player:GetLevel() < dkLevel() then
-            say(player, "Death Knights join from level " .. dkLevel() .. "."); return false
+        if cls == "dk" and not dkOk(player) then
+            say(player, dkRefusal()); return false
         end
         local role, spec
         for _, r in ipairs(ROLE_ORDER) do
@@ -1635,28 +1954,40 @@ local function onCommand(event, player, command)
     return false
 end
 
--- The buddy keeps to the player's level (mod-playerbots re-levels and re-gears it with init=auto).
+-- The buddy keeps to the player's level (mod-playerbots re-levels and re-gears it with init=auto), and so do the
+-- bots that joined by themselves (single player: c.keep), which then get their role's spec back.
+local function keepers(guid)
+    for _, c in pairs(companions[guid] or {}) do if c.buddy or c.keep then return true end end
+    return false
+end
 local function onLevelChange(event, player, oldLevel)
     if not player or isBot(player) then return end
     local guid = player:GetGUIDLow()
-    if not buddyOf(guid) then return end
+    if not keepers(guid) then return end
     player:RegisterEvent(function(_, _, _, p)
         if not p then return end
         prune(p)
-        local bg, b = buddyOf(guid)
-        if not bg then return end
         local _, members = groupMembers(p)
-        for _, m in ipairs(members) do
-            if m:GetGUIDLow() == bg and m:GetLevel() ~= p:GetLevel() then
+        local byGuid = {}
+        for _, m in ipairs(members) do byGuid[m:GetGUIDLow()] = m end
+        local caught, waiting = 0, false
+        for bg, c in pairs(companions[guid] or {}) do
+            local m = byGuid[bg]
+            if m and (c.buddy or c.keep) and not c.alt and m:GetLevel() ~= p:GetLevel() then
                 if try(p, "IsInCombat") or try(m, "IsInCombat") then
-                    say(p, b.name .. " catches up to your level after the fight (.buddy, or level again).")
+                    if c.buddy then say(p, c.name .. " catches up to your level after the fight (.buddy, or level again).")
+                    else waiting = true end
                 else
-                    botCommand(p, "init=auto " .. safeName(b.name))
+                    botCommand(p, "init=auto " .. safeName(c.name))
+                    if c.spec and not c.buddy then tell(p, m, "talents spec " .. c.spec) end
                     tell(p, m, "follow")
-                    say(p, string.format("%s keeps up: level %d.", b.name, p:GetLevel()))
+                    if c.buddy then say(p, string.format("%s keeps up: level %d.", c.name, p:GetLevel()))
+                    else caught = caught + 1 end
                 end
             end
         end
+        if caught > 0 then say(p, string.format("Your bots keep up: level %d.", p:GetLevel())) end
+        if waiting then say(p, "Your bots catch up to your level after the fight (or when you level again).") end
     end, 3000, 1)
 end
 
@@ -1665,6 +1996,7 @@ end
 local LOGIN_LOOKS, LOGIN_LOOK_MS = 3, 15000
 local function onLogin(event, player)
     if not player or isBot(player) or not botsBuilt(player) then return end
+    autoLogin(player)
     local looks, found = 0, false
     player:RegisterEvent(function(_, _, _, p)
         looks = looks + 1
@@ -1681,7 +2013,9 @@ end
 local function onLogout(event, player)
     if not player then return end
     local guid = player:GetGUIDLow()
+    pcall(autoLogout, player)
     companions[guid], pending[guid], ticking[guid], raidWanted[guid] = nil, nil, nil, nil
+    autoJoined[guid], hasWindow[guid] = nil, nil
     orders[guid], replyTo[guid], lastPrepare[guid], rate[guid] = nil, nil, nil, nil
     -- A normal logout: the module logs the bots out with the player, so the ownership rows go. (A crash never
     -- gets here: the rows stay for adopt.)
@@ -1691,9 +2025,11 @@ end
 RegisterPlayerEvent(3, onLogin)         -- PLAYER_EVENT_ON_LOGIN
 RegisterPlayerEvent(4, onLogout)        -- PLAYER_EVENT_ON_LOGOUT
 RegisterPlayerEvent(13, onLevelChange)  -- PLAYER_EVENT_ON_LEVEL_CHANGE
+RegisterPlayerEvent(28, onMapChange)    -- PLAYER_EVENT_ON_MAP_CHANGE
 RegisterPlayerEvent(42, onCommand)      -- PLAYER_EVENT_ON_COMMAND
 
 -- for stream/tests/test_ov_companions.lua (read only)
 OV_COMPANIONS_TEST = { companions = companions, pending = pending, realmCount = realmCount, ROLES = ROLES,
     planRoles = planRoles, SHAPE = SHAPE, specsFor = specsFor, specRole = specRole, adopt = adopt, orders = orders,
-    pushRoster = pushRoster, window = OVMod ~= nil, DUNGEONS = DUNGEONS, parsePicks = parsePicks }
+    pushRoster = pushRoster, window = OVMod ~= nil, DUNGEONS = DUNGEONS, parsePicks = parsePicks,
+    AUTO_ORDER = AUTO_ORDER, partyOf = partyOf, partyEntries = partyEntries, freshEntries = freshEntries }

@@ -16,12 +16,17 @@
 //! * `node`: "Be a node" (`be_a_node`): the Host page's one switch. While on, the launcher shares Leyline's own files
 //!   with no game running, within caps, only while idle and plugged in. See docs/BE-A-NODE.md.
 //!
+//! * `friends`, `friendnet`: friends with no server: signed cards and friendships, sealed messages, the same network
+//!   or a relay's blind mailbox (docs/LEYLINE-FRIENDS.md).
+//!
 //! See docs/P2P-AND-TORRENT.md.
 
 pub mod bencode;
 pub mod checker;
 pub mod direct;
 pub mod flags;
+pub mod friendnet;
+pub mod friends;
 pub mod magnet;
 pub mod mesh;
 pub mod nat;

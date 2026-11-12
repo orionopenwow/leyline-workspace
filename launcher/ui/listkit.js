@@ -27,6 +27,8 @@
 //     role: "listbox" | "grid",              // listbox for plain rows; grid when rows hold their own buttons (default)
 //     classes: { row, empty, group },        // extra class names (a page's old selectors keep working)
 //     onChange: (view) => {},                // after each paint: { tab, query, sort, shown, total, inTab, counts }
+//     onSelect: (row, rowEl) => {}, label: "Realms" (aria-label), nameOf: (row) => name (the star's label),
+//     count: <element> | false,              // where the count goes (default: the bar)
 //   });
 //   list.update(rows)        new data; keeps the scroll, the focused row (and the button in it) and the selection
 //   list.setLoading(on, text)  a loading line while there are no rows yet; a quiet busy mark when there are

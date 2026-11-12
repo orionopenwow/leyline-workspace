@@ -316,7 +316,7 @@ jobs:
           & .\dbimport.exe -c configs\dbimport.conf
           $rc = $LASTEXITCODE
           if ($rc -ne 0) { Pop-Location; throw "dbimport failed ($rc)" }
-          $n = & "$pkg\mysql\bin\mysql.exe" -h127.0.0.1 -P13306 -uroot "--password=$pw" -N -e "SELECT COUNT(*) FROM acore_world.creature_template"
+          $n = & "$pkg\mysql\bin\mysql.exe" "--host=127.0.0.1" "--port=13306" "--user=root" "--password=$pw" -N -e "SELECT COUNT(*) FROM acore_world.creature_template"
           Write-Host "creature_template rows: $n"
           if ([int]$n -lt 1000) { Pop-Location; throw 'the world database looks empty' }
           $auth = Start-Process -FilePath "$pkg\bin\authserver.exe" -ArgumentList '-c', 'configs\authserver.conf' -PassThru -NoNewWindow
@@ -324,7 +324,7 @@ jobs:
           for ($i = 0; $i -lt 30 -and -not $up; $i++) { Start-Sleep 2; $up = (Test-NetConnection 127.0.0.1 -Port 3724 -WarningAction SilentlyContinue).TcpTestSucceeded }
           Pop-Location
           Stop-Process -Id $auth.Id -Force -ErrorAction SilentlyContinue
-          & "$pkg\mysql\bin\mysqladmin.exe" -h127.0.0.1 -P13306 -uroot "--password=$pw" shutdown
+          & "$pkg\mysql\bin\mysqladmin.exe" "--host=127.0.0.1" "--port=13306" "--user=root" "--password=$pw" shutdown
           if (-not $up) { throw 'the login server did not answer on 127.0.0.1:3724' }
           # what the smoke made is not shipped
           Remove-Item "$pkg\bin\configs\dbimport.conf", "$pkg\bin\configs\authserver.conf" -ErrorAction SilentlyContinue

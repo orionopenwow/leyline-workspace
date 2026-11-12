@@ -48,7 +48,7 @@ import time
 from wunet import domains, keys, mux, ws
 from wunet.mux import CLOSE, DATA, OPEN
 
-from . import httpd, listing, meshnode, nodes
+from . import httpd, listing, mailbox, meshnode, nodes
 
 log = logging.getLogger("wu-relay")
 SID_RE = re.compile(r"^[a-z2-7]{16}$")
@@ -125,6 +125,9 @@ class Config:
         # the release log's public key (wunet/release-log.json, the same key as launcher/branding.json): empty = no chain
         self.release_log_key = e("RELAY_RELEASE_LOG_KEY", "")
         self.volunteer = e("RELAY_VOLUNTEER", "0") == "1"
+        # Friends' mailbox (wurelay/mailbox.py, docs/LEYLINE-FRIENDS.md), off by default: sealed friend messages between
+        # launchers that aren't on the same network, kept in memory until fetched by the key's owner (24 h at most).
+        self.friends_mailbox = e("RELAY_FRIENDS_MAILBOX", "0") == "1"
         # Community nodes (wurelay/nodes.py, docs/leyline/be-a-node.md). On a seed: RELAY_NODE_REGISTRY=1 takes node
         # registrations, checks their health and serves /api/nodes.json. On a node: RELAY_NODE_DIR is the folder the
         # owner's launcher shares with it (status.json out, a "pause" file in); RELAY_TOTAL_KBPS caps this PC's upload
@@ -432,6 +435,7 @@ class Relay:
         self.listing = listing.Listing(self.cfg, self) if self.cfg.listing else None
         self.mesh = meshnode.MeshNode(self.cfg, self) if self.cfg.mesh else None
         self.nodes = nodes.Registry(self.cfg, self) if (self.cfg.node_registry and not self.cfg.volunteer) else None
+        self.mailbox = mailbox.Mailbox(self.cfg) if getattr(self.cfg, "friends_mailbox", False) else None
         self.node_self = nodes.NodeSelf(self.cfg, self) if self.cfg.volunteer else None
         self.total_bucket = mux.TokenBucket(self.cfg.total_kbps * 1024) if self.cfg.total_kbps > 0 else None
         self._load()
@@ -1120,6 +1124,8 @@ class Relay:
             return await self.listing.route(req, parts[2:])
         if parts[:2] == ["api", "mesh"] and self.mesh:
             return await self.mesh.route(req, parts[2:])
+        if parts[:2] == ["api", "mailbox"] and self.mailbox is not None:
+            return await self.mailbox.route(req, parts[2:])
         if parts[:2] == ["api", "nodes"] and self.nodes is not None:
             return await self.nodes.route(req, parts[2:])
         return httpd.response(404, {"error": "not found"})

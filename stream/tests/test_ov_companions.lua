@@ -19,6 +19,7 @@ local sqlLog = {}
 local chars = {}   -- { guid, account, name, level, class, online }
 local usual = {}   -- [account] = { { slot, guid, name } }
 local owned = {}   -- [bot guid] = { owner, name, role, spec, kind }
+local autos = {}   -- [character guid] = { mode, party }: mod_companions_auto (single player)
 local function result(rows)
     if not rows or #rows == 0 then return nil end
     local r = { rows = rows, i = 1 }
@@ -31,6 +32,8 @@ function CharDBExecute(sql)
     sqlLog[#sqlLog + 1] = sql
     local ob, oo, on, orl, osp, ok = sql:match("^REPLACE INTO mod_companions_owned %(bot, owner, name, role, spec, kind, at%) VALUES %((%d+), (%d+), '([%a\128-\255]+)', '(%a+)', '([%a ]*)', '(%a+)', %d+%)$")
     if ob then owned[tonumber(ob)] = { owner = tonumber(oo), name = on, role = orl, spec = osp, kind = ok } end
+    local ag, am, ap = sql:match("^REPLACE INTO mod_companions_auto %(guid, mode, party, at%) VALUES %((%d+), '(%a+)', '([%a =:,]*)', %d+%)$")
+    if ag then autos[tonumber(ag)] = { mode = am, party = ap } end
     local db = sql:match("^DELETE FROM mod_companions_owned WHERE bot = (%d+)$")
     if db then owned[tonumber(db)] = nil end
     local dow = sql:match("^DELETE FROM mod_companions_owned WHERE owner = (%d+)$")
@@ -45,6 +48,8 @@ function CharDBExecute(sql)
 end
 function CharDBQuery(sql)
     sqlLog[#sqlLog + 1] = sql
+    local au = sql:match("^SELECT mode, party FROM mod_companions_auto WHERE guid = (%d+)$")
+    if au then local r = autos[tonumber(au)]; return r and result({ { r.mode, r.party } }) or nil end
     local ow = sql:match("^SELECT bot, name, role, spec, kind FROM mod_companions_owned WHERE owner = (%d+)$")
     if ow then
         local rows = {}
@@ -90,6 +95,9 @@ end
 
 check("usual-party table made at load, mod_ prefix",
     sqlLog[1] and sqlLog[1]:match("^CREATE TABLE IF NOT EXISTS mod_companions_usual") ~= nil)
+check("single player's table made at load, mod_ prefix", (function()
+    for _, q in ipairs(sqlLog) do if q:match("^CREATE TABLE IF NOT EXISTS mod_companions_auto") then return true end end
+    return false end)())
 check("ownership table made at load, mod_ prefix",
     sqlLog[2] and sqlLog[2]:match("^CREATE TABLE IF NOT EXISTS mod_companions_owned") ~= nil)
 check("the window channel is there (ov_modapi.lua loaded through require)", T.window == true and onServerAddon ~= nil)
@@ -1099,6 +1107,202 @@ check("dungeon: group leader only", said(mf):match("Only the group leader") and 
 win(md, "dismiss", "all"); run(md)
 for _, p in ipairs({ wq, solo, ma, mb, md, low, mr, mf }) do for _, x in ipairs(replies(p, "msg")) do allMsgs[#allMsgs + 1] = x end end
 for _, p in ipairs({ wp, wd, me, ws }) do for _, x in ipairs(replies(p, "msg")) do allMsgs[#allMsgs + 1] = x end end
+
+-- single player: bots that join by themselves (OV_COMPANIONS_AUTO, _FOLLOW, _DUNGEON_AUTO) ------------------------
+local function addclasses(p)
+    local out = {}
+    for _, c in ipairs(p.cmds) do local w = c:match("^playerbots bot addclass (%a+)$"); if w then out[#out + 1] = w end end
+    return out
+end
+local function saw(p, pat) for _, m in ipairs(p.msgs) do if m:match(pat) then return true end end; return false end
+local function isRole(word, role) for _, pk in ipairs(T.ROLES[role].picks) do if pk[1] == word then return true end end; return false end
+local function login(p) p.queue = {}; events[3](3, p); return run(p, 1) end   -- the login's 6 s wait, then the ask
+
+-- off unless the profile says so: a realm without the keys (and the official one) never does any of it
+clock = clock + 31
+local off = player({ guid = 320, level = 10 })
+login(off); run(off)
+check("auto: off by default: nobody joins by themselves", #addclasses(off) == 0)
+off.dungeon, off.map = true, 36
+events[28](28, off); run(off)
+check("auto: off by default: entering a dungeon fills nothing", #addclasses(off) == 0)
+do
+    local saved = {}
+    for k, v in pairs(env) do saved[k] = v end
+    local f = assert(io.open((file:match("^(.*/)custom/lua_scripts/[^/]+$") or "../realm/") .. "profiles/main.env"))
+    for line in f:lines() do local k, v = line:match("^([%w_]+)=(.*)$"); if k then env[k] = v end end
+    f:close()
+    local o = player({ guid = 321, level = 10 })
+    login(o); run(o)
+    o.dungeon, o.map = true, 36
+    events[28](28, o); run(o)
+    check("auto: the official realm's main.env: nothing joins, nothing fills", #addclasses(o) == 0)
+    env.OV_COMPANIONS_AUTO, env.OV_COMPANIONS_DUNGEON_AUTO = "1", "1"
+    local o2 = player({ guid = 322, level = 10 })
+    login(o2); run(o2)
+    check("auto: even if main.env named them, bots off there (OV_COMPANIONS=0) wins", #addclasses(o2) == 0)
+    for k in pairs(env) do env[k] = nil end
+    for k, v in pairs(saved) do env[k] = v end
+end
+
+env.OV_COMPANIONS_AUTO, env.OV_COMPANIONS_DUNGEON_AUTO = "1", "1"
+
+-- first entry: a damage dealer gets a healer and a tank, with one welcome line
+local fe = player({ guid = 300, level = 10, spec = "dps" })
+login(fe)
+local w1 = addclasses(fe)
+check("first entry: 2 bots asked for by themselves (OV_COMPANIONS_FOLLOW default 2)", #w1 == 2)
+check("first entry: damage dealer -> a tank and a healer", isRole(w1[1], "tank") and isRole(w1[2], "healer"))
+check("first entry: nothing said before they arrive", #fe.msgs == 0)
+check("first entry: the choice is on record ('new') before they arrive", autos[300] and autos[300].mode == "new")
+serve(fe); run(fe)
+check("first entry: both joined, kept to your level (ownership kind 'auto')", n(T.companions[300]) == 2
+    and (function() for b, v in pairs(owned) do if v.owner == 300 and v.kind ~= "auto" then return false end end; return true end)())
+local welcome = table.concat(fe.msgs, "\n")
+check("first entry: one welcome line names them and their roles", welcome:match("Your bots are here: %a+ the %a+ %(tank%) and %a+ the %a+ %(healer%)%. They follow you")
+    and (function() local k = 0; for _, m in ipairs(fe.msgs) do if m:match("Your bots are here") then k = k + 1 end end; return k == 1 end)())
+check("first entry: no per-bot 'joins as' lines", not welcome:match("joins as"))
+check("first entry without the Bots window: how to change them", welcome:match("Change them any time: %.companions"))
+check("first entry: the party is remembered", autos[300].mode == "on" and autos[300].party:match("^tank=%a+:[%a ]+ pve,healer=%a+:[%a ]+ pve$"))
+check("first entry: no cooldown taken from the player", (function()
+    local before = #fe.cmds; cmd(fe, "recruit dps"); local ok = #fe.cmds == before + 1
+    serve(fe); run(fe); cmd(fe, "dismiss " .. T.companions[300][fe.group.members[#fe.group.members].guid].name:lower()); run(fe)
+    return ok end)())
+
+-- they keep to your level, with their role's spec
+fe.level = 11
+events[13](13, fe, 10); run(fe)
+check("level up: both re-levelled (init=auto) and re-specced", count(fe, "^playerbots bot init=auto ") == 2
+    and (function() local k = 0; for _, w in ipairs(fe.whispers) do if w.text:match("^talents spec ") then k = k + 1 end end; return k >= 4 end)())
+check("level up: one line", saw(fe, "Your bots keep up: level 11"))
+
+-- logout and back: the same party returns
+local party1 = autos[300].party
+events[4](4, fe)
+check("logout: the party is kept", autos[300].mode == "on" and autos[300].party == party1)
+local fe2 = player({ guid = 300, level = 11, spec = "dps" })
+login(fe2)
+local w2 = addclasses(fe2)
+check("login: the same classes come back", #w2 == 2 and party1:match("^tank=" .. w2[1] .. ":") and party1:match(",healer=" .. w2[2] .. ":"))
+serve(fe2); run(fe2)
+check("login: 'Your bots are back', no welcome again", saw(fe2, "Your bots are back: ") and not saw(fe2, "Your bots are here")
+    and not saw(fe2, "%.companions"))
+check("login: they get their saved spec", (function()
+    local k = 0
+    for item in party1:gmatch("[^,]+") do
+        local spec = item:match(":(.*)$")
+        for _, w in ipairs(fe2.whispers) do if w.text == "talents spec " .. spec then k = k + 1; break end end
+    end
+    return k == 2 end)())
+
+-- sent home on purpose: kept, nothing joins by itself
+cmd(fe2, "dismiss all"); run(fe2)
+check("dismiss all: remembered as a choice", autos[300].mode == "off" and saw(fe2, "won't join you by themselves"))
+events[4](4, fe2)
+check("logout after dismissing: still off", autos[300].mode == "off")
+local fe3 = player({ guid = 300, level = 11, spec = "dps" })
+login(fe3); run(fe3)
+check("login after dismissing: nobody joins", #addclasses(fe3) == 0)
+-- bringing bots again turns it back on
+clock = clock + 31
+cmd(fe3, "recruit tank"); serve(fe3); run(fe3)
+events[4](4, fe3)
+check("a recruit later: kept again ('on', just what was with you)", autos[300].mode == "on" and autos[300].party:match("^tank=%a+:[%a ]+ pve$"))
+local fe4 = player({ guid = 300, level = 11, spec = "dps" })
+login(fe4)
+check("login: that one comes back (no more than you had)", #addclasses(fe4) == 1 and isRole(addclasses(fe4)[1], "tank"))
+serve(fe4); run(fe4)
+
+-- dungeons: the free slots fill on entry, and only those go home on leaving
+fe4.dungeon, fe4.map = true, 36
+events[28](28, fe4)
+check("dungeon: nothing until the loading screen is over (4 s)", #addclasses(fe4) == 1 and fe4.queue[#fe4.queue].delay == 4000)
+run(fe4, 1)
+local dw = addclasses(fe4)
+check("dungeon: 3 dungeon bots fill the party (a healer and damage: the tank is with you)", #dw == 4
+    and isRole(dw[2], "healer") and isRole(dw[3], "dps") and isRole(dw[4], "dps"))
+serve(fe4, { map = 36 }); run(fe4)
+check("dungeon: one line, and they are marked dungeon bots", saw(fe4, "Dungeon bots join you: .+%. They head home when you leave%.")
+    and (function() local k = 0; for _, v in pairs(owned) do if v.owner == 300 and v.kind == "temp" then k = k + 1 end end; return k == 3 end)())
+check("dungeon: full party", #fe4.group.members == 5)
+events[28](28, fe4); run(fe4)
+check("dungeon: a second entry (same dungeon) adds nobody", #addclasses(fe4) == 4)
+local removes = count(fe4, "^playerbots bot remove ")
+fe4.dungeon, fe4.map, fe4.dead = false, 0, true
+events[28](28, fe4); run(fe4)
+check("dungeon: a ghost running back keeps them", count(fe4, "^playerbots bot remove ") == removes and n(T.companions[300]) == 4)
+fe4.dead = false
+events[28](28, fe4); run(fe4)
+check("dungeon: leaving sends just the dungeon bots home", count(fe4, "^playerbots bot remove ") == removes + 3
+    and n(T.companions[300]) == 1 and saw(fe4, "Your dungeon bots head home"))
+events[4](4, fe4)
+check("dungeon bots are never remembered", autos[300].party:match("^tank=%a+:[%a ]+ pve$"))
+
+-- the party covers what you are not; the count; the first era has no Death Knights
+local tk = player({ guid = 330, level = 70, spec = "tank" })
+local roles = {}
+for _, p in ipairs(T.freshEntries(tk, 2)) do roles[#roles + 1] = p.role end
+table.sort(roles)
+check("you tank -> a healer and damage", table.concat(roles, ",") == "dps,healer")
+local hl = player({ guid = 331, level = 70, spec = "healer" })
+roles = {}
+for _, p in ipairs(T.freshEntries(hl, 2)) do roles[#roles + 1] = p.role end
+table.sort(roles)
+check("you heal -> a tank and damage", table.concat(roles, ",") == "dps,tank")
+env.OV_COMPANIONS_FOLLOW = "4"
+local f4 = player({ guid = 332, level = 20 })
+login(f4)
+check("OV_COMPANIONS_FOLLOW=4: four (1 tank, 1 healer, 2 damage)", #addclasses(f4) == 4)
+serve(f4); run(f4)
+check("four names: the welcome stays short (two lines)", saw(f4, "^.-Your bots are here: .+%.$") and saw(f4, "They follow you"))
+env.OV_COMPANIONS_FOLLOW = "0"
+local f0 = player({ guid = 333, level = 20 })
+login(f0); run(f0)
+check("OV_COMPANIONS_FOLLOW=0: nobody", #addclasses(f0) == 0)
+env.OV_COMPANIONS_FOLLOW = "9"
+local f9 = player({ guid = 334, level = 20 })
+login(f9)
+check("OV_COMPANIONS_FOLLOW past 4: four (a party)", #addclasses(f9) == 4)
+serve(f9); run(f9)
+env.OV_COMPANIONS_FOLLOW = nil
+env.AC_MAX_PLAYER_LEVEL = "60"
+check("the original world (cap 60): never a Death Knight", (function()
+    local era = player({ guid = 335, level = 58 })
+    for _ = 1, 60 do for _, p in ipairs(T.freshEntries(era, 4)) do if p.word == "dk" then return false end end end
+    return #T.partyEntries(era, "tank=dk:blood pve,healer=priest:holy pve") == 1
+end)())
+env.AC_MAX_PLAYER_LEVEL = nil
+
+-- in a fight at login: they wait, then come
+local cb = player({ guid = 336, level = 20, combat = true })
+login(cb)
+check("in combat: nobody yet, asked again in 10 s", #addclasses(cb) == 0 and cb.queue[#cb.queue].delay == 10000)
+cb.combat = false
+run(cb, 4)
+check("out of combat: they come", #addclasses(cb) == 2)
+serve(cb); run(cb)
+
+-- the Bots window is there: it says the welcome (with its key)
+local ww = player({ guid = 337, level = 20 })
+win(ww, "roster")
+login(ww); serve(ww); run(ww)
+check("with the window: the welcome goes to the add-on, not the chat", #replies(ww, "welcome") == 1
+    and replies(ww, "welcome")[1]:match("^Your bots are here: .+ They follow you") and not saw(ww, "Your bots are here"))
+
+-- bots logging in, and after a crash
+local bb = player({ guid = 1500, bot = true, accName = "RNDBOT1500", level = 20 })
+bb.queue = {}; events[3](3, bb)
+check("auto: bots logging in ask for nothing", #bb.queue == 0)
+local cr2 = player({ guid = 338, level = 20 })
+owned[4242] = { owner = 338, name = "Crashy", role = "tank", spec = "", kind = "auto" }
+login(cr2); run(cr2)
+check("auto: after a crash (ownership rows left) nothing new is asked for: they are adopted", #addclasses(cr2) == 0)
+owned[4242] = nil
+
+-- the remembered party is checked on the way back in
+check("remembered party: a class that can't take the role is dropped",
+    #T.partyEntries(player({ guid = 339, level = 80 }), "tank=mage:frost pve,healer=priest:holy pve,buddy=rogue") == 2)
+env.OV_COMPANIONS_AUTO, env.OV_COMPANIONS_DUNGEON_AUTO = nil, nil
 
 -- names: no brand names, and companions are called bots
 -- raw module commands from players: the same limits as .recruit --------------------------------------------

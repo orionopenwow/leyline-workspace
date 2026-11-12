@@ -51,6 +51,7 @@ pub mod rankings; // Discover's sort tabs, install counts and ratings (hub ranki
 pub mod realms;
 pub mod releaselog; // the signed, hash-chained release log ("the chain"; docs/RESILIENCE.md)
 pub mod settings;
+pub mod sptest; // `Leyline play-test --single`: single player's self-driving playtest, its checks, SQL and report (sptest.rs)
 pub mod social;
 pub mod status;
 pub mod themes; // theme packs (themes agent)
@@ -62,7 +63,7 @@ pub mod upstream; // upstream addons: curated third-party addons installed from 
 #[cfg(all(feature = "app", desktop))]
 mod app;
 #[cfg(all(feature = "app", desktop))]
-pub use app::{den_play_cli, play_test_cli, run};
+pub use app::{den_play_cli, play_test_cli, run, single_play_test_cli};
 #[cfg(all(feature = "app", mobile))]
 mod mobile;
 #[cfg(all(feature = "app", mobile))]

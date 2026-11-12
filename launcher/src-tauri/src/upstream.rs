@@ -321,7 +321,7 @@ pub fn redirect_ok(from: &str, to: &str) -> bool {
     if cfg!(test) && from.starts_with("http://127.0.0.1:") && to.starts_with("http://127.0.0.1:") {
         return true;
     }
-    if !net::plain_https(to) {
+    if !net::plain_https_up_to(to, 4096) {
         return false;
     }
     let host = |u: &str| net::origin(u).map(|o| o.trim_start_matches("https://").to_string());
@@ -815,6 +815,13 @@ mod tests {
         let gh = format!("https://github.com/alice/Frames/archive/{C1}.zip");
         assert!(redirect_ok(&gh, &format!("https://codeload.github.com/alice/Frames/zip/{C1}")));
         assert!(redirect_ok("https://github.com/a/b/releases/download/v1/x.zip", "https://objects.githubusercontent.com/github-production-release-asset/1"));
+        // GitHub's signed asset address as it really comes (well over 400 characters), on both of its hosts
+        let signed = format!("/github-production-release-asset-2e65be/1432784179/54b8fed0?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential={}&X-Amz-Signature={}&response-content-disposition=attachment%3B%20filename%3Dleyline-engine-win64.zip", "a".repeat(200), "f".repeat(300));
+        assert!(signed.len() > 400);
+        for host in ["https://objects.githubusercontent.com", "https://release-assets.githubusercontent.com"] {
+            assert!(redirect_ok("https://github.com/o/r/releases/download/engine-latest/x.zip", &format!("{host}{signed}")), "{host}");
+        }
+        assert!(!redirect_ok("https://github.com/o/r/releases/download/v1/x.zip", &format!("https://objects.githubusercontent.com/{}", "a".repeat(5000))));
         assert!(redirect_ok("https://github.com/a/b/releases/download/v1/x.zip", "https://release-assets.githubusercontent.com/x"));
         assert!(!redirect_ok(&gh, "https://evil.example.com/x.zip"));
         assert!(!redirect_ok(&gh, "http://codeload.github.com/alice/Frames/zip/x"), "https only");

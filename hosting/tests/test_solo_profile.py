@@ -55,6 +55,29 @@ class SoloEnv(unittest.TestCase):
         v = env_values(os.path.join(REPO, "realm", "profiles", "main.env"))
         self.assertEqual((v["OV_COMPANIONS"], v["AC_PLAYERBOTS_MAX_ADDED_BOTS"]), ("0", "0"))
 
+    def test_single_player_bots_join_by_themselves(self):
+        """Single player: bots join a new character by themselves, come back at login, fill dungeons (ov_companions.lua
+        "single player"); the launcher's Companions settings override these keys in the world's realm.env."""
+        v = env_values(SOLO)
+        self.assertEqual((v["OV_COMPANIONS_AUTO"], v["OV_COMPANIONS_FOLLOW"], v["OV_COMPANIONS_DUNGEON_AUTO"]), ("1", "2", "1"))
+        self.assertLessEqual(int(v["OV_COMPANIONS_FOLLOW"]), int(v["OV_COMPANIONS_PER_PLAYER"]))
+        lua = open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_companions.lua"), encoding="utf-8").read()
+        for k in ("OV_COMPANIONS_AUTO", "OV_COMPANIONS_DUNGEON_AUTO"):
+            self.assertIn(f'flag("{k}", false)', lua, f"{k} is off unless a profile names it")
+        doc = open(os.path.join(REPO, "docs", "SINGLE-PLAYER-ONE-CLICK.md"), encoding="utf-8").read()
+        self.assertIn("## Companions settings", doc)
+        for k in ("OV_COMPANIONS_AUTO", "OV_COMPANIONS_FOLLOW", "OV_COMPANIONS_DUNGEON_AUTO", "WU_BOTS"):
+            self.assertIn(k, doc)
+
+    def test_no_other_profile_turns_them_on(self):
+        """Only the single player profiles: the official realm and every hosted ruleset keep them off."""
+        pdir = os.path.join(REPO, "realm", "profiles")
+        for f in sorted(os.listdir(pdir)):
+            if f.endswith(".env") and f not in ("solo.env", "solovanilla.env"):
+                v = env_values(os.path.join(pdir, f))
+                for k in ("OV_COMPANIONS_AUTO", "OV_COMPANIONS_DUNGEON_AUTO"):
+                    self.assertNotEqual(v.get(k, "0"), "1", f"{f}: {k}")
+
     def test_every_key_the_lua_reads_is_known(self):
         lua = os.path.join(REPO, "realm", "custom", "lua_scripts")
         text = "".join(open(os.path.join(lua, f), encoding="utf-8").read() for f in os.listdir(lua) if f.endswith(".lua"))

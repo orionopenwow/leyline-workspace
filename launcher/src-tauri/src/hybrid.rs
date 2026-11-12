@@ -22,7 +22,7 @@
 //! is never touched: the switch then says why and the old way (type the one-time password) is used.
 
 use crate::mpq;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -211,9 +211,68 @@ fn data_dir(client: &Path) -> Result<PathBuf, String> {
 }
 
 /// `<game>/Leyline/glue-refused` (app.rs den_watch): this game closed on our login screen code once (a game
-/// program that checks its login screen files), so the archive is never written for it again.
+/// program that checks its login screen files), so the archive isn't written for it again until the refusal
+/// expires ([`refused`]).
 pub fn refused_marker(client: &Path) -> PathBuf {
     client.join("Leyline").join("glue-refused")
+}
+
+/// How long a refusal holds before the sign-in gets another chance (docs/SINGLE-PLAYER-ONE-CLICK.md §contract).
+pub const REFUSED_DAYS: u64 = 7;
+
+/// What the marker records: when, which launcher, and why (when known). Older launchers wrote a line of text: read as
+/// a marker of unknown version, so it expires on the first start of this launcher (a launcher update).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Refused {
+    pub at: u64,
+    pub version: String,
+    pub why: String,
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// The marker's record (None: no marker, or the old text form).
+pub fn read_refused(client: &Path) -> Option<Refused> {
+    serde_json::from_slice(&fs::read(refused_marker(client)).ok()?).ok()
+}
+
+/// A refusal still holds: written by this launcher's version, less than [`REFUSED_DAYS`] ago (a clock set back
+/// counts as fresh). The old text marker (`None`) never holds.
+pub fn refused_holds(r: Option<&Refused>, now: u64, version: &str) -> bool {
+    match r {
+        Some(r) if !r.version.is_empty() && r.version == version => now < r.at.saturating_add(REFUSED_DAYS * 86_400),
+        _ => false,
+    }
+}
+
+/// This game refused our login screen code and the refusal still holds. An expired marker is taken away here, so
+/// the next start tries the sign-in again (once: a game that refuses it again writes a fresh marker).
+pub fn refused(client: &Path) -> bool {
+    let m = refused_marker(client);
+    if !m.exists() {
+        return false;
+    }
+    if refused_holds(read_refused(client).as_ref(), now_secs(), env!("CARGO_PKG_VERSION")) {
+        return true;
+    }
+    let _ = fs::remove_file(&m);
+    false
+}
+
+/// Record a refusal (den_watch): now, this launcher, and why.
+pub fn write_refused(client: &Path, why: &str) -> Result<(), String> {
+    let m = refused_marker(client);
+    fs::create_dir_all(m.parent().unwrap_or(client)).map_err(|e| e.to_string())?;
+    let r = Refused { at: now_secs(), version: env!("CARGO_PKG_VERSION").into(), why: why.chars().take(300).collect() };
+    crate::settings::write_atomic(&m, serde_json::to_string_pretty(&r).unwrap_or_default().as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Repair: the sign-in gets another chance now. True when there was a marker.
+pub fn clear_refused(client: &Path) -> bool {
+    fs::remove_file(refused_marker(client)).is_ok()
 }
 
 /// The locale folders under Data (`enUS`, `deDE`...): the game reads `Data/<locale>/patch-<locale>-<X>.MPQ` too.
@@ -273,7 +332,7 @@ pub fn has_session(client: &Path) -> bool {
 /// someone else's, the game refused our login screen code before, or the game holds the archive open (it is
 /// running). Returns the root slot's path.
 pub fn write(client: &Path, s: Option<&Session>) -> Result<PathBuf, String> {
-    if s.is_some() && refused_marker(client).exists() {
+    if s.is_some() && refused(client) {
         return Err("This game doesn't take Leyline's login screen (it closed on it once).".into());
     }
     let all = slots(client)?;
@@ -467,8 +526,7 @@ mod tests {
         assert!(remove(d.path()).unwrap());
         assert_eq!(fs::read(d.path().join("Data/enUS/patch-enUS-Z.MPQ")).unwrap(), b"theirs");
         // the game closed on our login screen code once: never written with a session again
-        fs::create_dir_all(d.path().join("Leyline")).unwrap();
-        fs::write(refused_marker(d.path()), "x").unwrap();
+        write_refused(d.path(), "closed on the login screen").unwrap();
         assert!(write(d.path(), Some(&sess())).unwrap_err().contains("doesn't take"));
         assert!(!d.path().join("Data").join(SLOT).exists());
     }
@@ -533,5 +591,26 @@ mod tests {
         assert!(write(e.path(), Some(&sess())).is_err());
         assert!(!e.path().join("Data").join(SLOT).exists());
         assert!(!status(e.path()).foreverui);
+    }
+
+    #[test]
+    fn a_refusal_expires_after_an_update_a_week_or_repair() {
+        let v = "1.2.3";
+        let r = Refused { at: 1_000_000, version: v.into(), why: "closed".into() };
+        assert!(refused_holds(Some(&r), 1_000_000 + 60, v), "fresh, same launcher: holds");
+        assert!(!refused_holds(Some(&r), 1_000_000 + REFUSED_DAYS * 86_400, v), "a week later: another chance");
+        assert!(!refused_holds(Some(&r), 1_000_000 + 60, "1.2.4"), "a launcher update: another chance");
+        assert!(!refused_holds(None, 0, v), "the old text marker: another chance");
+        assert!(refused_holds(Some(&r), 5, v), "a clock set back counts as fresh");
+        let d = tempfile::tempdir().unwrap();
+        assert!(!refused(d.path()));
+        write_refused(d.path(), "closed on the login screen").unwrap();
+        assert!(refused(d.path()));
+        assert_eq!(read_refused(d.path()).unwrap().why, "closed on the login screen");
+        assert!(clear_refused(d.path()) && !refused(d.path()), "Repair clears it");
+        // the old marker (text) is taken away on the first look
+        fs::create_dir_all(d.path().join("Leyline")).unwrap();
+        fs::write(refused_marker(d.path()), "This game closed on Leyline's login screen code.").unwrap();
+        assert!(!refused(d.path()) && !refused_marker(d.path()).exists());
     }
 }

@@ -86,6 +86,9 @@ pub enum Key {
     Enter,
     /// A short step forward (the test's "first movement").
     Forward,
+    /// The game in front, then as [`Key::Password`] with a character's name: the create screen's name box + Enter
+    /// (single player's first entry on a stock game, host/localclick.rs).
+    Name,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -530,7 +533,12 @@ pub mod win {
         let Some(h) = window(pid) else { return false };
         let gap = || std::thread::sleep(std::time::Duration::from_millis(30));
         match k {
-            Key::Password => {
+            Key::Password | Key::Name => {
+                if k == Key::Name {
+                    // SAFETY: bringing the game's own window to the front (the create screen's name box wants it)
+                    unsafe { SetForegroundWindow(h) };
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
                 let mut ok = true;
                 for _ in 0..16 {
                     ok &= key(h, VK_BACK, 0);
@@ -649,6 +657,7 @@ mod tests {
                 (Key::Enter, 1) if self.stock => ["world_auth", "char_enum"].iter().for_each(|e| self.log(e)),
                 (Key::Enter, _) => ["player_login", "in_world"].iter().for_each(|e| self.log(e)),
                 (Key::Forward, _) => ["first_move", "walked"].iter().for_each(|e| self.log(e)),
+                (Key::Name, _) => {}
             }
             true
         }

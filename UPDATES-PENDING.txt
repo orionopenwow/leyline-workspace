@@ -925,3 +925,5 @@
 1359c ship  Save as Orion and release the launcher: Single player and the original world are rows in the server list, picked like any realm, and PLAY plays them (set up once, started if stopped, the other world stopped only on a second PLAY)
 1360a ship  Save as Orion: the Built-in engine builds again on GitHub (its core patch failed on Windows since 6 Nov, so Single player had no engine to download); Single player and the original world fix their own login before every Play
 1360b ship  Save as Orion and release the launcher: the launcher build passes on Windows again (one Solo test wrote its paths the Linux way; no launcher release went out since 10 Nov)
+1361g sp-playtest  Single player playtest again: levelling to 10 with the console's own command
+1362a ship  Save as Orion and release the launcher: single player in one click (folder found by itself, setup card, Retry/Repair, Hero Key login, typed in for a stock game, Quick start, companions, stop on close), engine download fixed, playtested on this PC (all passed)

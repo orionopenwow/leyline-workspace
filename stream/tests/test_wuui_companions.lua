@@ -611,6 +611,46 @@ check("Dismiss all: they leave, the window empties", #player.group.members == 1 
 check("nothing in the chat from any of it", #serverChat == 0)
 check("no bots: the bot bar and the orders bar hide", not Bar.Frame():IsShown() and not Bar.Orders():IsShown())
 
+-- single player: the welcome (the realm's "welcome" when bots joined a new character by themselves) ----------------
+do
+    local actions = { ["B"] = "OPENALLBAGS" }
+    function GetBindingAction(k) return actions[k] or "" end
+    function SetBinding(k, a) actions[k] = a; bindings[a] = k; return 1 end
+    local saved = 0
+    function SaveBindings() saved = saved + 1 end
+    WrathUnleashedUIDB.botsKeyOffered = nil
+    bindings.WUBOTS_WINDOW = nil
+    inCombat = true
+    check("welcome: no key change in combat (the client refuses)", C.OfferKey() == false and bindings.WUBOTS_WINDOW == nil
+        and not WrathUnleashedUIDB.botsKeyOffered)
+    inCombat = false
+    local before = #chatLines
+    fireClient("OVMOD", "wucomp\twelcome\t1/1\tYour bots are here: Anna the Priest (healer) and Bo the Warrior (tank). "
+        .. "They follow you, fight with you and leave the loot to you.", "WHISPER", "Tester")
+    local line = chatLines[#chatLines] or ""
+    check("welcome: one chat line", #chatLines == before + 1)
+    check("welcome: the window gets Ctrl-B (it was free) and keeps it", bindings.WUBOTS_WINDOW == "CTRL-B" and saved == 1
+        and WrathUnleashedUIDB.botsKeyOffered == true)
+    check("welcome: names them and says how to change them, with the key", line:find("Your bots are here: Anna the Priest", 1, true)
+        and line:find("Change them in the Bots window: press Ctrl-B or click the Bots button by the minimap.", 1, true))
+    check("welcome: no chat command in it", not line:find("/comp", 1, true) and not line:find("%.companions"))
+    check("welcome: a short line on screen too", (errorsLines[#errorsLines] or ""):find("Bots window: Ctrl-B", 1, true))
+    check("welcome: the minimap button shows", _G.WrathUnleashedBotsMinimapButton and _G.WrathUnleashedBotsMinimapButton:IsShown())
+    -- a player who cleared the key keeps it cleared
+    actions["CTRL-B"], bindings.WUBOTS_WINDOW = nil, nil
+    fireClient("OVMOD", "wucomp\twelcome\t1/1\tYour bots are here: Anna the Priest (healer).", "WHISPER", "Tester")
+    check("welcome: the key is offered once only", bindings.WUBOTS_WINDOW == nil and saved == 1
+        and (chatLines[#chatLines] or ""):find("Change them in the Bots window: click the Bots button by the minimap.", 1, true))
+    -- a key the player uses for something else is never taken
+    WrathUnleashedUIDB.botsKeyOffered = nil
+    actions["CTRL-B"] = "TOGGLEBAG1"
+    check("welcome: Ctrl-B taken: left alone", C.OfferKey() == false and actions["CTRL-B"] == "TOGGLEBAG1" and bindings.WUBOTS_WINDOW == nil)
+    -- dungeon bots are tagged as such
+    check("roster: a dungeon bot's tag", C.ParseRoster("H\t1\t4\t0\tchaos\t0\t0\ton\t1\t1\nB\tDuno\t5\thealer\tdungeon\tholy pve\t10\tfollow\t20")
+        and C.bots[1].kind == "dungeon" and C.UI.KIND_TAG.dungeon == "dungeon bot")
+    C.ParseRoster("H\t0\t4\t0\tchaos\t0\t0\ton\t1\t1")
+end
+
 -- a realm without bots: the window says so
 player.IsPlayerbot = nil
 C.Ask()

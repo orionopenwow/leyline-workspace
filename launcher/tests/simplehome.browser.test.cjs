@@ -119,11 +119,11 @@ test('the switch turns Simple mode on and off, and it is remembered', async () =
 test('Play sets up and starts the world through the launcher\'s own path', async () => {
   const { page, ctx, errors } = await open({ storage: { 'leyline.simple': '1', 'leyline.simple.daily': '0' } });
   await page.waitForSelector('#page-simple.on #sh-play-go');
-  assert.match(await page.textContent('#sh-play-go'), /Set up and play/);
+  assert.equal(await page.textContent('#sh-play-go'), 'Play single player');
   await page.click('#sh-play-go');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'world_play'), null, { timeout: 15000 });
   assert.deepEqual((await callsOf(page, 'world_setup'))[0], { client: 'c335a-1', kind: 'single' });
-  await page.waitForFunction(() => /Started/.test(document.getElementById('sh-status').textContent));
+  await page.waitForFunction(() => /Taking you in/.test(document.getElementById('sh-status').textContent));
   assert.match(await page.textContent('#sh-play-state'), /Running now/);
   // the other world: picked, then Play asks to stop the running one
   await page.selectOption('#sh-world', 'vanilla');
@@ -138,11 +138,12 @@ test('Play sets up and starts the world through the launcher\'s own path', async
   await ctx.close();
 });
 
-test('Play with no game folder goes to the Single player page', async () => {
+test('Play with no game folder asks for it in the one-click card (oneclick.js), and nothing starts', async () => {
   const { page, ctx } = await open({ clients: [], storage: { 'leyline.simple': '1', 'leyline.simple.daily': '0' } });
   await page.waitForSelector('#page-simple.on #sh-play-go');
   await page.click('#sh-play-go');
-  await page.waitForSelector('#page-single.on');
+  await page.waitForSelector('#oc[data-view="folder"] #oc-folder-pick');
+  assert.equal((await callsOf(page, 'world_setup')).length, 0);
   await ctx.close();
 });
 

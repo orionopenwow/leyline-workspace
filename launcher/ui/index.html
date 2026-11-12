@@ -34,6 +34,7 @@
 <link rel="stylesheet" href="stone.css"><!-- the title bar and play bar on the owner's stone texture -->
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
 <link rel="stylesheet" href="single.css"><!-- Single player: its page and Home row (single.js) -->
+<link rel="stylesheet" href="oneclick.css"><!-- single player in one click: the setup card, the chip, Home's button (oneclick.js) -->
 <link rel="stylesheet" href="bossrush.css"><!-- Boss Rush: its page and Home row (bossrush.js) -->
 <link rel="stylesheet" href="solo.css"><!-- Play solo everywhere, Invite a friend, the GM command center (solo.js, gmcenter.js) -->
 <link rel="stylesheet" href="hostfriends.css"><!-- Play with friends: the one window, Ready for friends?, the friend's steps (hostfriends.js) -->
@@ -196,6 +197,12 @@
 
     <!-- below the fold (home.js): one row each, shown once its data is in, hidden when empty -->
     <div class="home-more" id="home-more">
+      <!-- Play single player in one click (oneclick.js): shown where this PC's own worlds run (the Built-in engine) -->
+      <section class="hm-sec hm-oneclick" id="hm-oneclick" aria-label="Play single player" hidden>
+        <div class="hm-oc-txt"><b>Single player in one click</b><span>Just you and your companions, on this PC. Leyline finds your game folder, sets everything up and takes you in.</span><!-- TODO(owner): the line, his words --></div>
+        <button type="button" class="btn primary hm-oc-go" id="hm-oneclick-go">Play single player</button>
+        <p class="status hm-oc-status" id="hm-oneclick-status" role="status"></p>
+      </section>
       <!-- Your Den first (den.js): Home's one Den entry, the same one click as the side menu and the play bar -->
       <section class="hm-sec hm-den" id="hm-den" aria-label="Your Den">
         <span class="hm-den-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5M6 9v11h12V9M10 20v-5h4v5"/></svg></span>
@@ -461,6 +468,7 @@
   <section class="page" id="page-single">
     <div class="panel wide sv-panel" id="sv"></div>
     <div class="panel wide sp" id="sp"></div>
+    <div class="panel wide oc-set" id="oc-set" aria-label="Single player settings"></div><!-- oneclick.js: Stop the world when the game closes -->
   </section>
 
   <!-- CHARACTERS (characters.js): On this PC (each local world's characters) and Online (the official realm) -->
@@ -956,6 +964,7 @@
 <script src="denmarket.js"></script><!-- Mods & Addons › Dens: shared Dens and stamps, Share (window.LeylineDenMarket; after app.js and den.js) -->
 <script src="single.js"></script><!-- Single player: its page, three steps, then Manage (window.LeylineSingle; after app.js, den.js and solo.js) -->
 <script src="vanilla.js"></script><!-- the original world in one click, and window.LeylineWorlds: every local world's play path (after single.js) -->
+<script src="oneclick.js"></script><!-- single player in one click: folder, room, Quick start, the setup card, errors (window.LeylineOneClick; after vanilla.js) -->
 <script src="characters.js"></script><!-- Characters: On this PC and Online (window.LeylineCharacters; after vanilla.js) -->
 <script src="bossrush.js"></script><!-- Boss Rush: its page (window.LeylineBossRush; after app.js) -->
 <script src="singleupdate.js"></script><!-- Single player: the bots, always up to date (Update the bots, Bots updated; window.LeylineSingleUpdate) -->

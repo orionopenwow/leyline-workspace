@@ -60,29 +60,64 @@ pub struct Cli {
     pub world: bool,
     /// Seconds the game stays open after it got there (for the screenshot), then it is closed.
     pub hold: u64,
+    /// `--single <single|vanilla>`: single player's playtest on that local world instead of the official realm
+    /// (crate::sptest; app.rs single_play_test_cli).
+    pub single: Option<String>,
+    /// `--checks <list>` with `--single`: which of its checks run (`--checks` alone: every one).
+    pub sp_checks: Vec<crate::sptest::Check>,
+    /// `--level <n>` with `--single`: the level the levelup check goes to.
+    pub level_to: u8,
 }
 
 impl Default for Cli {
     fn default() -> Self {
-        Cli { official: false, fresh: false, game: None, more: Vec::new(), checks: false, world: false, hold: 30 }
+        Cli {
+            official: false,
+            fresh: false,
+            game: None,
+            more: Vec::new(),
+            checks: false,
+            world: false,
+            hold: 30,
+            single: None,
+            sp_checks: Vec::new(),
+            level_to: crate::sptest::LEVEL_TO,
+        }
     }
 }
 
-/// `Leyline play-test [--official] [--fresh] [--game <folder>]... [--checks] [--world] [--hold <s>]`. None when the first
-/// argument isn't `play-test`; Err for an argument it doesn't know (a key or a password on the command line among
-/// them: those go through [`KEY_ENV`] only).
+/// `Leyline play-test [--official] [--fresh] [--game <folder>]... [--checks] [--world] [--hold <s>]`, or single
+/// player's: `Leyline play-test --single <single|vanilla> [--fresh] [--game <folder>] [--hold <s>] [--level <n>]
+/// [--checks levelup,companions,stoponexit,repair]` (crate::sptest). None when the first argument isn't `play-test`;
+/// Err for an argument it doesn't know (a key or a password on the command line among them: those go through
+/// [`KEY_ENV`] only).
 pub fn parse_cli(args: &[String]) -> Option<Result<Cli, String>> {
     if args.get(1).map(String::as_str) != Some("play-test") {
         return None;
     }
     let mut c = Cli::default();
-    let mut it = args.iter().skip(2);
+    let mut list: Option<String> = None;
+    let mut it = args.iter().skip(2).peekable();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--official" => c.official = true,
             "--fresh" => c.fresh = true,
             "--world" => c.world = true,
-            "--checks" => c.checks = true,
+            "--checks" => {
+                c.checks = true;
+                // a list after it (single player's checks); the next flag isn't one
+                if let Some(l) = it.next_if(|n| !n.starts_with("--")) {
+                    list = Some(l.clone());
+                }
+            }
+            "--single" => match it.next().map(|w| w.trim().to_ascii_lowercase()) {
+                Some(w) if w == "single" || w == "vanilla" => c.single = Some(w),
+                _ => return Some(Err("--single takes single or vanilla".into())),
+            },
+            "--level" => match it.next().and_then(|n| n.parse::<u8>().ok()) {
+                Some(n) if (2..=80).contains(&n) => c.level_to = n,
+                _ => return Some(Err("--level takes a level from 2 to 80".into())),
+            },
             "--game" => match it.next() {
                 Some(g) if !g.trim().is_empty() => {
                     let g = PathBuf::from(g.trim());
@@ -100,8 +135,25 @@ pub fn parse_cli(args: &[String]) -> Option<Result<Cli, String>> {
             other => return Some(Err(format!("play-test doesn't take {other:?}"))),
         }
     }
+    if c.single.is_some() {
+        if c.official {
+            return Some(Err("play-test plays the official realm or a single player world, not both".into()));
+        }
+        c.sp_checks = match list.as_deref() {
+            Some(l) => match crate::sptest::parse_checks(l) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            },
+            None if c.checks => crate::sptest::ALL.to_vec(),
+            None => Vec::new(),
+        };
+        return Some(Ok(c));
+    }
+    if list.is_some() {
+        return Some(Err("a list of checks goes with --single".into()));
+    }
     if !c.official {
-        return Some(Err("play-test plays the official realm: add --official".into()));
+        return Some(Err("play-test plays the official realm: add --official (or --single <single|vanilla>)".into()));
     }
     Some(Ok(c))
 }
@@ -337,6 +389,37 @@ mod tests {
             many.push(n.as_str());
         }
         assert!(parse_cli(&args(&many)).unwrap().is_err());
+    }
+
+    #[test]
+    fn single_player_line() {
+        use crate::sptest::Check;
+        let c = parse_cli(&args(&[
+            "play-test", "--fresh", "--game", "C:\\Games\\Wrath", "--single", "single", "--hold", "20", "--checks",
+            "levelup,companions,stoponexit,repair",
+        ]))
+        .unwrap()
+        .unwrap();
+        assert_eq!(c.single.as_deref(), Some("single"));
+        assert!(c.fresh && !c.official);
+        assert_eq!(c.sp_checks, vec![Check::Companions, Check::Levelup, Check::StopOnExit, Check::Repair]);
+        assert_eq!(c.level_to, crate::sptest::LEVEL_TO);
+        assert_eq!(c.hold, 20);
+        // --checks alone: every check; then another flag right after it isn't taken as the list
+        let all = parse_cli(&args(&["play-test", "--single", "VANILLA", "--checks", "--level", "12"])).unwrap().unwrap();
+        assert_eq!(all.single.as_deref(), Some("vanilla"));
+        assert_eq!(all.sp_checks, crate::sptest::ALL.to_vec());
+        assert_eq!(all.level_to, 12);
+        let none = parse_cli(&args(&["play-test", "--single", "single"])).unwrap().unwrap();
+        assert!(none.sp_checks.is_empty());
+        assert!(parse_cli(&args(&["play-test", "--single", "bossrush"])).unwrap().is_err(), "Boss Rush has its own page");
+        assert!(parse_cli(&args(&["play-test", "--single"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--single", "single", "--official"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--single", "single", "--checks", "levelup,fly"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--single", "single", "--level", "1"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--single", "single", "--level", "x"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--official", "--checks", "levelup"])).unwrap().is_err(), "the list is single player's");
+        assert!(parse_cli(&args(&["play-test", "--single", "single", "--password", "x"])).unwrap().is_err());
     }
 
     #[test]

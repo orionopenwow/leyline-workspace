@@ -136,7 +136,7 @@ test('one click: the original world is set up with the game folder, its own prog
   await page.click('#sv-play');
   await page.waitForSelector('#sv-prog');
   assert.match(await page.textContent('#sv-prog'), /Reading the maps from your game folder/);
-  await page.waitForFunction(() => document.getElementById('sv-status').textContent.startsWith('Started'), null, { timeout: 15000 });
+  await page.waitForFunction(() => document.getElementById('sv-status').textContent.startsWith('Taking you in'), null, { timeout: 15000 });
   assert.deepEqual(await callsOf(page, 'world_setup'), [{ client: 'c335a-1', kind: 'vanilla' }]);
   assert.deepEqual(await callsOf(page, 'world_play'), [{ client: 'c335a-1', kind: 'vanilla' }], 'no Quick start, no pick: character select');
   await page.waitForSelector('#sv-run');
@@ -179,7 +179,7 @@ test('Quick start: the first era\'s races, each with its classes; the pick goes 
   await page.selectOption('#sv-sex', '1');
   await page.fill('#sv-name', 'Tamsin');
   await page.click('#sv-quick-go');
-  await page.waitForFunction(() => document.getElementById('sv-status').textContent.includes('making Tamsin'));
+  await page.waitForFunction(() => document.getElementById('sv-status').textContent.includes('Making Tamsin'));
   assert.deepEqual(await callsOf(page, 'world_play'), [{ client: 'c335a-1', kind: 'vanilla', quick: { name: 'Tamsin', race: 4, class: 11, female: true } }]);
   // a class the new race can't be is moved to one it can
   await page.selectOption('#sv-race', '6');

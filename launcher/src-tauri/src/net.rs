@@ -223,7 +223,13 @@ pub fn origin(url: &str) -> Option<String> {
 
 /// A plain https URL with a normal host name and nothing odd in it: what the UI may be handed to open.
 pub fn plain_https(url: &str) -> bool {
-    if url.len() > 400 || !url.starts_with("https://") || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+    plain_https_up_to(url, 400)
+}
+
+/// [`plain_https`] with its own length limit: a download's redirect (GitHub's signed release-asset addresses run past
+/// 700 characters; with 400 every release download stopped at its redirect, the playtest of 11 Nov).
+pub fn plain_https_up_to(url: &str, max: usize) -> bool {
+    if url.len() > max || !url.starts_with("https://") || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return false;
     }
     let Some(o) = origin(url) else { return false };

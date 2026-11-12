@@ -393,6 +393,19 @@ pub struct State {
     pub maps_from: String,
     /// Boss Rush: the hero account's login password (host/bossrush.rs `account_lines`; made once, kept here).
     pub hero_password: String,
+    /// A setup was started and hasn't finished (the launcher closed midway, or a step failed): the next launch offers
+    /// to go on (`world_resume_pending`). `setup_client`: the game folder's id it was started with.
+    pub setup_pending: bool,
+    pub setup_client: String,
+    /// The world's databases began filling (dbimport ran at least once). Filling again after a stop midway starts
+    /// from empty databases, never trusting half a fill (only before the login is made: nothing of the player's).
+    pub fill_started: bool,
+    /// The character last played here (a pick, Quick start's new one, or the last one to log out when read).
+    pub last_character: String,
+    /// The Hero Key logins that played this world on this PC (oneclick::hero_name): their characters are the player's.
+    pub hero_accounts: Vec<String>,
+    /// The Hero Key login the world's own login's characters moved to, once (empty: not yet).
+    pub hero_moved_to: String,
 }
 
 pub fn load_state(p: &Paths) -> State {
@@ -834,6 +847,12 @@ pub enum Step {
     Fill,
     Account,
     Start,
+    /// Repair only: every engine file checked (and the broken or missing ones fetched again).
+    Verify,
+    /// Repair only: the login written again and the sign-in given another chance.
+    Login,
+    /// Repair only: the login, world and database ports answer.
+    Ports,
 }
 
 impl Step {
@@ -847,6 +866,9 @@ impl Step {
             Step::Fill => "Filling the world (the first time takes a few minutes)",
             Step::Account => "Making your account",
             Step::Start => "Starting the realm",
+            Step::Verify => "Checking the engine's files",
+            Step::Login => "Setting up your login again",
+            Step::Ports => "Checking the world answers",
         }
     }
 }
@@ -907,13 +929,15 @@ pub fn db_made(p: &Paths) -> bool {
 }
 
 pub fn have(p: &Paths, s: &State, update: bool) -> Have {
+    // a database folder that's gone (removed by hand, a clean-up tool) takes its fill and login with it
+    let db = s.db_made && db_made(p);
     Have {
         installed: installed(p),
         update: update && !s.latest_sha256.is_empty() && s.latest_sha256 != s.sha256,
         maps: maps_done(p),
-        db: s.db_made && db_made(p),
-        filled: s.filled,
-        account: s.account_made,
+        db,
+        filled: s.filled && db,
+        account: s.account_made && db,
         running: port_answers(DB_PORT) && port_answers(LOGIN_PORT) && port_answers(WORLD_PORT) && other_running(p).is_none(),
     }
 }
@@ -1053,26 +1077,47 @@ pub fn begin(app_dir: &Path, game: Option<PathBuf>, update: bool) -> Result<Stri
 
 /// [`begin`] for one of the two realms. The other one running is said, never stopped here (the page asks first).
 pub fn begin_kind(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: bool) -> Result<String, String> {
+    begin_setup(app_dir, kind, game, update, None)
+}
+
+/// [`begin_kind`], remembering the game folder's id (`client`) for a setup that has to go on after a restart
+/// (`world_resume_pending`). Errors start with their code (oneclick::CODES).
+pub fn begin_setup(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: bool, client: Option<&str>) -> Result<String, String> {
+    use crate::host::oneclick::tag;
     let title = kind.title();
     if !supported() {
-        return Err(match kind {
+        return Err(tag("other", match kind {
             Kind::Single => "The Built-in engine is made for Windows PCs for now: Docker runs Single player here.".to_string(),
             Kind::BossRush => "Boss Rush's exact engine is made for Windows PCs for now: the light version runs here.".to_string(),
             Kind::Vanilla => "The Built-in engine is made for Windows PCs for now: Docker runs the original world here.".to_string(),
-        });
+        }));
     }
     let p = Paths::for_kind(app_dir, kind);
     if let Some(o) = other_running(&p) {
-        return Err(format!("{} is running on this PC and uses the same ports. Stop it first, then press Start again.", o.title()));
+        return Err(tag("ports", format!("{} is running on this PC and uses the same ports. Stop it first, then press Start again.", o.title())));
     }
-    let s = load_state(&p);
+    let mut s = load_state(&p);
     let h = have(&p, &s, update);
     let steps = plan(&h);
     if steps.is_empty() {
         return Ok(format!("{title} is running."));
     }
     if steps.contains(&Step::Maps) && game.is_none() {
-        return Err(format!("Pick your game folder first: {title} reads its maps from it once."));
+        return Err(tag("folder", format!("Pick your game folder first: {title} reads its maps from it once.")));
+    }
+    if steps.iter().any(|x| *x != Step::Start) {
+        s.setup_pending = true;
+        if let Some(c) = client.filter(|c| !c.is_empty()) {
+            s.setup_client = c.to_string();
+        }
+        if s.maps_from.is_empty() {
+            if let Some(g) = &game {
+                s.maps_from = g.display().to_string();
+            }
+        }
+        // the state folder may not exist yet on a first setup
+        let _ = fs::create_dir_all(&p.state);
+        let _ = save_state(&p, &s);
     }
     {
         let mut g = JOB.lock().map_err(|_| "busy")?;
@@ -1088,6 +1133,13 @@ pub fn begin_kind(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: boo
     let msg = if steps.contains(&Step::Download) { "Getting the engine…".to_string() } else { format!("Starting {title}…") };
     std::thread::spawn(move || {
         let r = run(&p, game.as_deref(), &steps);
+        if r.is_ok() {
+            let mut s = load_state(&p);
+            if s.setup_pending {
+                s.setup_pending = false;
+                let _ = save_state(&p, &s);
+            }
+        }
         setup_log(&p, &match &r {
             Ok(()) => "done".to_string(),
             Err(e) => format!("stopped: {e}"),
@@ -1111,28 +1163,100 @@ pub fn begin_kind(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: boo
     Ok(msg)
 }
 
-impl Kind {
-    /// The realm a progress line's `kind` is of.
-    pub fn of_job(k: &str) -> Kind {
-        KINDS.into_iter().find(|x| x.job_kind() == k).unwrap_or(Kind::Single)
+/// The steps Repair takes, in order: the engine's files, whatever setup is missing (the maps only when their marker
+/// or folders are gone; never the database when it is there), start, the login, the ports.
+pub fn repair_plan(h: &Have) -> Vec<Step> {
+    let mut v = vec![Step::Verify];
+    if !h.maps {
+        v.push(Step::Maps);
     }
+    if !h.db {
+        v.push(Step::Database);
+    }
+    if !h.filled {
+        v.push(Step::Fill);
+    }
+    if !h.account {
+        v.push(Step::Account);
+    }
+    v.extend([Step::Start, Step::Login, Step::Ports]);
+    v
 }
 
-fn setup_log(p: &Paths, line: &str) {
-    let _ = fs::create_dir_all(&p.logs);
-    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(p.logs.join("setup.log")) {
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let _ = writeln!(f, "{} {line}", stamp(now));
+/// Repair a world (in the background, on [`progress`] as setup is): stop it (everyone saved), check every engine
+/// file and fetch again only what's broken or missing, read the maps again only if they're gone, set up what's
+/// missing, start it, write its login again, check its ports. The saves (`db/`) and back-ups are never touched; a
+/// database that is there is never filled again.
+pub fn begin_repair(app_dir: &Path, kind: Kind, game: Option<PathBuf>) -> Result<String, String> {
+    use crate::host::oneclick::tag;
+    if !supported() {
+        return Err(tag("other", format!("{} runs on Windows PCs for now, so there's nothing to repair here.", kind.title())));
     }
+    let p = Paths::for_kind(app_dir, kind);
+    if let Some(o) = other_running(&p) {
+        return Err(tag("ports", format!("{} is running on this PC and uses the same ports: stop it first, then press Repair again.", o.title())));
+    }
+    let s = load_state(&p);
+    let h = have(&p, &s, false);
+    let steps = repair_plan(&h);
+    if steps.contains(&Step::Maps) && game.is_none() {
+        return Err(tag("folder", format!("Pick your game folder first: {} reads its maps from it again.", kind.title())));
+    }
+    {
+        let mut g = JOB.lock().map_err(|_| tag("other", "Busy: try again in a moment."))?;
+        if g.as_ref().is_some_and(|(j, _)| j.running) {
+            return Err(tag("other", "A world is setting up or starting already: wait for it, then press Repair."));
+        }
+        *g = Some((
+            Job { idle: false, kind: kind.job_kind().into(), running: true, step: steps[0].label().into(), n: 1, of: steps.len(), ..Default::default() },
+            Instant::now(),
+        ));
+    }
+    std::thread::spawn(move || {
+        setup_log(&p, "repair");
+        let r = repair(&p, game.as_deref(), &steps);
+        if r.is_ok() {
+            let mut s = load_state(&p);
+            s.setup_pending = false;
+            let _ = save_state(&p, &s);
+        }
+        setup_log(&p, &match &r {
+            Ok(()) => "repaired".to_string(),
+            Err(e) => format!("repair stopped: {e}"),
+        });
+        job(|j| {
+            j.running = false;
+            j.pct = None;
+            match r {
+                Ok(()) => {
+                    j.code = Some(0);
+                    j.step = "Repaired".into();
+                    j.n = j.of;
+                }
+                Err(e) => {
+                    j.code = Some(1);
+                    j.problem = Some(e);
+                }
+            }
+        });
+    });
+    Ok(format!("Repairing {}…", kind.title()))
 }
 
-fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
+fn repair(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
+    use crate::host::oneclick::{classify, tag};
     for d in [&p.root, &p.logs, &p.state, &p.tmp] {
-        fs::create_dir_all(d).map_err(|e| format!("Couldn't make the engine's folder: {e}"))?;
+        fs::create_dir_all(d).map_err(|e| tag("disk", format!("Couldn't make the engine's folder: {e}")))?;
+    }
+    heal_partial(p);
+    // files in use can't be mended: the world stops first (everyone saved)
+    if (port_answers(WORLD_PORT) || port_answers(DB_PORT) || port_answers(LOGIN_PORT)) && other_running(p).is_none() {
+        job(|j| j.detail = "Stopping the world first (everyone is saved)".into());
+        stop(p).map_err(|e| tag("other", e))?;
     }
     let mut s = load_state(p);
-    if ensure_secrets_for(&mut s, p.kind)? {
-        save_state(p, &s)?;
+    if ensure_secrets_for(&mut s, p.kind).map_err(|e| tag("other", e))? {
+        save_state(p, &s).map_err(|e| tag("disk", e))?;
     }
     let mut want = String::new();
     for (i, step) in steps.iter().enumerate() {
@@ -1143,48 +1267,211 @@ fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
             j.detail.clear();
         });
         setup_log(p, step.label());
-        match step {
-            Step::Download => want = download(p)?,
-            Step::Unpack => {
-                if port_answers(WORLD_PORT) || port_answers(DB_PORT) {
-                    stop(p)?;
+        let r = match step {
+            Step::Verify => verify_files(p, &mut s),
+            Step::Login => resync_login(p),
+            Step::Ports => {
+                if port_answers(DB_PORT) && port_answers(LOGIN_PORT) && port_answers(WORLD_PORT) {
+                    Ok(())
+                } else {
+                    Err(tag("ports", format!("{} started but doesn't answer on its ports: another program may be holding them, so restart the PC and press Play.", p.kind.title())))
                 }
-                let zip = p.tmp.join(ASSET);
-                let r = place(p, &zip, &want, &mut s);
-                let _ = fs::remove_file(&zip);
-                r?;
-                save_state(p, &s)?;
             }
-            Step::Maps => {
-                extract_maps(p, game.ok_or("Pick your game folder first.")?)?;
-                s.maps_from = game.map(|g| g.display().to_string()).unwrap_or_default();
-                save_state(p, &s)?;
-            }
-            Step::Database => {
-                init_db(p, &s)?;
-                s.db_made = true;
-                save_state(p, &s)?;
-            }
-            Step::Fill => {
-                start_db(p)?;
-                fill(p, &s)?;
-                s.filled = true;
-                save_state(p, &s)?;
-            }
-            Step::Account => {
-                start_db(p)?;
-                let mut salt = [0u8; 32];
-                use ring::rand::SecureRandom;
-                ring::rand::SystemRandom::new().fill(&mut salt).map_err(|_| "no random source on this PC".to_string())?;
-                sql(p, "acore_auth", &account_sql(&s.account, &s.password, &salt)?)?;
-                sql(p, "acore_auth", &realm_sql_named(p.kind.realm_name()))?;
-                s.account_made = true;
-                save_state(p, &s)?;
-            }
-            Step::Start => start(p, &s)?,
-        }
+            other => run_step(p, game, *other, &mut s, &mut want),
+        };
+        r.map_err(|e| classify(*step, e))?;
     }
     Ok(())
+}
+
+/// The engine's files checked: against engine.json's `files` list (size and sha256 of each) when the engine has one;
+/// all fine: nothing is downloaded. Otherwise (something broken or missing, or an engine without the list) the
+/// release is fetched (checked against its sha256) and only the files that differ or are missing are put back; the
+/// rest, and anything of the player's, stay. A release newer than the installed engine is installed whole (an update).
+fn verify_files(p: &Paths, s: &mut State) -> Result<(), String> {
+    use crate::host::oneclick as oc;
+    let list = oc::read_manifest(&p.dist);
+    if installed(p) {
+        if let Some(m) = &list {
+            let bad = oc::manifest_bad(&p.dist, m);
+            if bad.is_empty() {
+                job(|j| j.detail = format!("All {} files are fine", m.len()));
+                return Ok(());
+            }
+            setup_log(p, &format!("{} engine files broken or missing", bad.len()));
+            job(|j| j.detail = format!("{} files to fetch again", bad.len()));
+        }
+    }
+    let want = download(p)?;
+    let zip = p.tmp.join(ASSET);
+    let latest = crate::host::forge::sha_in(&want).unwrap_or_default();
+    if !p.dist.exists() || s.sha256.is_empty() || latest != s.sha256 {
+        let r = place(p, &zip, &want, s);
+        let _ = fs::remove_file(&zip);
+        r?;
+        save_state(p, s)?;
+    } else {
+        let r = unpack_checked(p, &zip, &want);
+        let _ = fs::remove_file(&zip);
+        let (new, _, _) = r?;
+        let mended = oc::mend_from(&new, &p.dist);
+        let _ = fs::remove_dir_all(&new);
+        let n = mended?;
+        make_confs(&p.bin());
+        setup_log(p, &format!("{n} engine files put back"));
+        job(|j| j.detail = format!("{n} files put back"));
+    }
+    if let Some(gone) = required(p).into_iter().find(|f| !f.exists()) {
+        return Err(oc::tag("antivirus", format!(
+            "{} disappeared right after it was put back, which is what a virus scanner does: allow Leyline's engine folder in it, then press Repair.",
+            gone.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+        )));
+    }
+    Ok(())
+}
+
+impl Kind {
+    /// The realm a progress line's `kind` is of.
+    pub fn of_job(k: &str) -> Kind {
+        KINDS.into_iter().find(|x| x.job_kind() == k).unwrap_or(Kind::Single)
+    }
+}
+
+/// A line in the world's setup log (logs/setup.log): never a password.
+pub fn setup_log(p: &Paths, line: &str) {
+    let _ = fs::create_dir_all(&p.logs);
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(p.logs.join("setup.log")) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let _ = writeln!(f, "{} {line}", stamp(now));
+    }
+}
+
+fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
+    use crate::host::oneclick::{classify, tag};
+    for d in [&p.root, &p.logs, &p.state, &p.tmp] {
+        fs::create_dir_all(d).map_err(|e| tag("disk", format!("Couldn't make the engine's folder: {e}")))?;
+    }
+    let mut s = load_state(p);
+    if ensure_secrets_for(&mut s, p.kind).map_err(|e| tag("other", e))? {
+        save_state(p, &s).map_err(|e| tag("disk", e))?;
+    }
+    heal_partial(p);
+    let mut want = String::new();
+    for (i, step) in steps.iter().enumerate() {
+        job(|j| {
+            j.n = i + 1;
+            j.step = step.label().into();
+            j.pct = None;
+            j.detail.clear();
+        });
+        setup_log(p, step.label());
+        run_step(p, game, *step, &mut s, &mut want).map_err(|e| classify(*step, e))?;
+    }
+    Ok(())
+}
+
+/// What a setup stopped midway (the launcher closed, the PC slept) can leave, cleared before going on, so nothing
+/// half-done is trusted: a part-downloaded zip and a part-unpacked `dist.new` go (the zip is checked against its
+/// sha256 anyway); an engine moved aside for an update but not replaced comes back; a map reader or database filler of
+/// ours still running from before is ended (their pid files). Half-read maps (no marker) are read again by
+/// `extract_maps`, and a half fill starts from empty databases (`Step::Fill`).
+pub fn heal_partial(p: &Paths) {
+    let _ = fs::remove_file(p.tmp.join(ASSET));
+    let _ = fs::remove_dir_all(p.root.join("dist.new"));
+    // Single player's install holds the engine files every world shares
+    let single = Paths::for_kind(&p.app, Kind::Single);
+    let old = single.root.join("dist.old");
+    if !single.dist.exists() && old.is_dir() {
+        let _ = fs::rename(&old, &single.dist);
+    }
+    for (which, program) in [("dbimport", "dbimport"), ("extract", "map_extractor")] {
+        let f = p.pid(which);
+        if let Some(pid) = read_pid(&f) {
+            // only when that process is still ours (a pid number can be reused after a restart)
+            if pid_runs(pid, program) {
+                kill_pid(pid);
+            }
+        }
+        let _ = fs::remove_file(&f);
+    }
+}
+
+/// Process `pid` is running and is `program` (its file name without .exe).
+fn pid_runs(pid: u32, program: &str) -> bool {
+    let want = program.to_ascii_lowercase();
+    if cfg!(windows) {
+        let mut c = Command::new("tasklist");
+        c.args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"]);
+        no_window(&mut c);
+        c.output().map(|o| String::from_utf8_lossy(&o.stdout).to_ascii_lowercase().contains(&format!("\"{want}.exe\""))).unwrap_or(false)
+    } else {
+        fs::read_to_string(format!("/proc/{pid}/comm")).map(|n| n.trim().to_ascii_lowercase().starts_with(&want[..want.len().min(15)])).unwrap_or(false)
+    }
+}
+
+/// One setup step.
+fn run_step(p: &Paths, game: Option<&Path>, step: Step, s: &mut State, want: &mut String) -> Result<(), String> {
+    match step {
+        Step::Download => *want = download(p)?,
+        Step::Unpack => {
+            if port_answers(WORLD_PORT) || port_answers(DB_PORT) {
+                stop(p)?;
+            }
+            let zip = p.tmp.join(ASSET);
+            let r = place(p, &zip, want, s);
+            let _ = fs::remove_file(&zip);
+            r?;
+            save_state(p, s)?;
+            // every program was there a moment ago (place checks): one gone now was taken by a virus scanner
+            if let Some(gone) = required(p).into_iter().find(|f| !f.exists()) {
+                return Err(crate::host::oneclick::tag("antivirus", format!(
+                    "{} disappeared right after unpacking, which is what a virus scanner does: allow Leyline's engine folder in it, then press Repair.",
+                    gone.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+                )));
+            }
+        }
+        Step::Maps => {
+            extract_maps(p, game.ok_or("Pick your game folder first.")?)?;
+            s.maps_from = game.map(|g| g.display().to_string()).unwrap_or_default();
+            save_state(p, s)?;
+        }
+        Step::Database => {
+            init_db(p, s)?;
+            s.db_made = true;
+            save_state(p, s)?;
+        }
+        Step::Fill => {
+            start_db(p)?;
+            if s.fill_started && !s.account_made {
+                // a fill that stopped midway: from empty databases again (nothing of the player's is in them yet)
+                setup_log(p, "the last fill stopped midway: starting it again from empty databases");
+                sql(p, "mysql", &drop_sql())?;
+            }
+            s.fill_started = true;
+            save_state(p, s)?;
+            fill(p, s)?;
+            s.filled = true;
+            save_state(p, s)?;
+        }
+        Step::Account => {
+            start_db(p)?;
+            let mut salt = [0u8; 32];
+            use ring::rand::SecureRandom;
+            ring::rand::SystemRandom::new().fill(&mut salt).map_err(|_| "no random source on this PC".to_string())?;
+            sql(p, "acore_auth", &account_sql(&s.account, &s.password, &salt)?)?;
+            sql(p, "acore_auth", &realm_sql_named(p.kind.realm_name()))?;
+            s.account_made = true;
+            save_state(p, s)?;
+        }
+        Step::Start => start(p, s)?,
+        Step::Verify | Step::Login | Step::Ports => {}
+    }
+    Ok(())
+}
+
+/// The world's databases, for a fill that has to start again from empty ones (only ever before the login is made).
+pub fn drop_sql() -> String {
+    ["acore_world", "acore_characters", "acore_auth", "acore_playerbots"].iter().map(|d| format!("DROP DATABASE IF EXISTS `{d}`;\n")).collect()
 }
 
 // ------------------------------------------------------------------------------------------------ get and unpack
@@ -1281,6 +1568,28 @@ const CAPS: crate::clientimport::Caps = crate::clientimport::Caps { download: ZI
 /// (no game data, our layout, every program), then swapped with `dist` (the old one removed only after). The
 /// player's data, database, state and back-ups are never touched.
 pub fn place(p: &Paths, zip: &Path, want_text: &str, s: &mut State) -> Result<(), String> {
+    let (new, version, want) = unpack_checked(p, zip, want_text)?;
+    let probe = Paths { dist: new.clone(), ..p.clone() };
+    make_confs(&probe.bin());
+    let old = p.root.join("dist.old");
+    let _ = fs::remove_dir_all(&old);
+    if p.dist.exists() {
+        fs::rename(&p.dist, &old).map_err(|e| format!("Couldn't replace the old engine (is it still running?): {e}"))?;
+    }
+    if let Err(e) = fs::rename(&new, &p.dist) {
+        let _ = fs::rename(&old, &p.dist);
+        return Err(format!("Couldn't put the engine in place: {e}"));
+    }
+    let _ = fs::remove_dir_all(&old);
+    s.sha256 = want.clone();
+    s.latest_sha256 = want;
+    s.version = version;
+    Ok(())
+}
+
+/// The downloaded zip checked against the release's sha256 and unpacked into `dist.new`, then checked there (no
+/// game data, our layout, every program): `(dist.new, its version, its sha256)`. Nothing else is touched.
+pub fn unpack_checked(p: &Paths, zip: &Path, want_text: &str) -> Result<(PathBuf, String, String), String> {
     let want = crate::host::forge::sha_in(want_text).ok_or("The engine's checksum file doesn't look right, so nothing was installed.")?;
     let got = crate::net::sha256_file(zip).map_err(|e| format!("Couldn't read the engine's download: {e}"))?;
     if got != want {
@@ -1306,21 +1615,30 @@ pub fn place(p: &Paths, zip: &Path, want_text: &str, s: &mut State) -> Result<()
     if let Some(missing) = required(&probe).into_iter().find(|f| !f.exists()) {
         return refuse(format!("The engine's download is missing {}, so it wasn't used.", missing.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
     }
-    make_confs(&probe.bin());
-    let old = p.root.join("dist.old");
-    let _ = fs::remove_dir_all(&old);
-    if p.dist.exists() {
-        fs::rename(&p.dist, &old).map_err(|e| format!("Couldn't replace the old engine (is it still running?): {e}"))?;
-    }
-    if let Err(e) = fs::rename(&new, &p.dist) {
-        let _ = fs::rename(&old, &p.dist);
-        return Err(format!("Couldn't put the engine in place: {e}"));
-    }
-    let _ = fs::remove_dir_all(&old);
-    s.sha256 = want.clone();
-    s.latest_sha256 = want;
-    s.version = version;
-    Ok(())
+    Ok((new, version, want))
+}
+
+/// The release's .json (engine.json beside the zip, `leyline-engine-win64.json`), for the disk check's sizes.
+pub fn release_meta(p: &Paths) -> Option<serde_json::Value> {
+    fs::create_dir_all(&p.tmp).ok()?;
+    let f = p.tmp.join("release.json");
+    let got = crate::upstream::download(&format!("{}{}", release(), ASSET.replace(".zip", ".json")), &f, 4 * 1024 * 1024);
+    let text = fs::read_to_string(&f).ok();
+    let _ = fs::remove_file(&f);
+    got.ok()?;
+    serde_json::from_str(&text?).ok()
+}
+
+/// The disk check before a setup (docs/SINGLE-PLAYER-ONE-CLICK.md §contract): what's left to do, from the release's
+/// .json (only fetched when the engine is still to be downloaded) or the estimates, against the free space where
+/// Leyline keeps its worlds.
+pub fn preflight(p: &Paths) -> crate::host::oneclick::Preflight {
+    use crate::host::oneclick as oc;
+    let s = load_state(p);
+    let h = have(p, &s, false);
+    let meta = if !h.installed { release_meta(p) } else { None };
+    let need = oc::need_bytes(&h, &oc::Sizes::from_json(meta.as_ref()));
+    oc::preflight(oc::free_bytes(&p.app), need, p.kind.title())
 }
 
 /// The release's checksum now; true when it isn't the installed one.
@@ -1361,6 +1679,10 @@ fn extract_maps(p: &Paths, game: &Path) -> Result<(), String> {
     game_ok(game)?;
     fs::create_dir_all(&p.data).map_err(|e| format!("Couldn't make the maps folder: {e}"))?;
     let _ = fs::remove_file(p.maps_marker());
+    // no marker: whatever is there is from a read that didn't finish, so it's read again from nothing
+    for d in ["maps", "dbc", "Cameras"] {
+        let _ = fs::remove_dir_all(p.data.join(d));
+    }
     let mut cmd = Command::new(p.extractor());
     cmd.arg("-i").arg(game).arg("-o").arg(&p.data);
     // Boss Rush: only the raid maps (and the start tiles the world server checks), when the engine's extractor
@@ -1373,6 +1695,7 @@ fn extract_maps(p: &Paths, game: &Path) -> Result<(), String> {
     cmd.current_dir(&p.data).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     no_window(&mut cmd);
     let mut child = cmd.spawn().map_err(|e| format!("The map reader didn't start: {e}"))?;
+    let _ = fs::write(p.pid("extract"), child.id().to_string());
     let log = fs::File::create(p.logs.join("extract.log")).ok();
     let err = child.stderr.take();
     let elog = log.as_ref().and_then(|f| f.try_clone().ok());
@@ -1403,6 +1726,7 @@ fn extract_maps(p: &Paths, game: &Path) -> Result<(), String> {
     }
     let st = child.wait().map_err(|e| e.to_string())?;
     let _ = eh.join();
+    let _ = fs::remove_file(p.pid("extract"));
     if !st.success() {
         return Err(format!("The maps couldn't be read from your game folder (the map reader stopped, code {}). The log has its lines.", st.code().unwrap_or(-1)));
     }
@@ -1662,7 +1986,11 @@ pub fn chars_file(p: &Paths) -> PathBuf {
 pub fn char_accounts(p: &Paths, s: &State) -> Vec<String> {
     match p.kind {
         Kind::BossRush => vec![crate::host::bossrush::hero_account(&s.account)],
-        Kind::Single | Kind::Vanilla => vec![s.account.clone()],
+        Kind::Single | Kind::Vanilla => {
+            let mut v = vec![s.account.clone()];
+            v.extend(s.hero_accounts.iter().filter(|h| !h.is_empty() && **h != s.account).cloned());
+            v
+        }
     }
 }
 
@@ -1679,7 +2007,96 @@ pub fn refresh_chars(p: &Paths) -> Result<Vec<crate::host::localworld::LocalChar
     let chars = lw::parse_chars(&rows);
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     lw::write_kept(&chars_file(p), &lw::Kept { at: now, chars: chars.clone() })?;
+    let last = last_of(&chars, &s.last_character);
+    if last != s.last_character {
+        let mut s2 = load_state(p);
+        s2.last_character = last;
+        let _ = save_state(p, &s2);
+    }
     Ok(chars)
+}
+
+/// The character to go back to: the one that logged out last; else the one kept, while it's still there; else none.
+pub fn last_of(chars: &[crate::host::localworld::LocalChar], kept: &str) -> String {
+    if let Some(c) = chars.iter().filter(|c| c.last > 0).max_by_key(|c| c.last) {
+        return c.name.clone();
+    }
+    chars.iter().find(|c| c.name.eq_ignore_ascii_case(kept)).map(|c| c.name.clone()).unwrap_or_default()
+}
+
+/// One account's characters in this world (it must be running).
+pub fn chars_of(p: &Paths, account: &str) -> Result<Vec<crate::host::localworld::LocalChar>, String> {
+    use crate::host::localworld as lw;
+    Ok(lw::parse_chars(&query(p, "acore_characters", &lw::chars_sql(&[account])?)?))
+}
+
+/// Remember the character played (a pick or Quick start's new one).
+pub fn set_last_character(p: &Paths, name: &str) {
+    let mut s = load_state(p);
+    if s.last_character != name {
+        s.last_character = name.to_string();
+        let _ = save_state(p, &s);
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ the Hero Key's login
+
+/// The SQL that moves one login's characters (and its key bindings and tutorial flags) to another login in the same
+/// world, then counts both logins' characters for the realm list again. Both must exist; nothing is deleted.
+pub fn move_sql(from: &str, to: &str) -> Result<String, String> {
+    let ok = |a: &str| (3..=16).contains(&a.len()) && a.bytes().all(|b| b.is_ascii_alphanumeric());
+    if !ok(from) || !ok(to) || from.eq_ignore_ascii_case(to) {
+        return Err("That login doesn't look right.".into());
+    }
+    let (f, t) = (from.to_ascii_uppercase(), to.to_ascii_uppercase());
+    Ok(format!(
+        "UPDATE characters c JOIN acore_auth.account f ON f.id = c.account AND f.username = '{f}' JOIN acore_auth.account t ON t.username = '{t}' SET c.account = t.id;\n\
+         UPDATE IGNORE account_data d JOIN acore_auth.account f ON f.id = d.accountId AND f.username = '{f}' JOIN acore_auth.account t ON t.username = '{t}' SET d.accountId = t.id;\n\
+         UPDATE IGNORE account_tutorial d JOIN acore_auth.account f ON f.id = d.accountId AND f.username = '{f}' JOIN acore_auth.account t ON t.username = '{t}' SET d.accountId = t.id;\n\
+         REPLACE INTO acore_auth.realmcharacters (realmid, acctid, numchars) SELECT 1, a.id, (SELECT COUNT(*) FROM characters x WHERE x.account = a.id) FROM acore_auth.account a WHERE a.username IN ('{f}', '{t}');\n"
+    ))
+}
+
+/// The Hero Key's login in this world for one Play (docs/SINGLE-PLAYER-ONE-CLICK.md §contract): made or updated
+/// with a fresh password for this Play only (returned, never stored or logged), the realm row pointed back at this PC.
+/// The first time any Hero Key plays this world, the world's own login's characters move to it, inside a back-up
+/// taken first (no back-up, no move: they stay where they are). Needs the world running.
+pub fn hero_login(p: &Paths, hero: &str) -> Result<String, String> {
+    use crate::host::oneclick::tag;
+    let mut s = load_state(p);
+    if !s.account_made {
+        return Err(tag("login", format!("Set {} up first.", p.kind.title())));
+    }
+    let pass = secret(12).map_err(|e| tag("other", e))?;
+    let mut salt = [0u8; 32];
+    use ring::rand::SecureRandom;
+    ring::rand::SystemRandom::new().fill(&mut salt).map_err(|_| tag("other", "This PC has no random source."))?;
+    sql(p, "acore_auth", &format!("{}{}", account_sql(hero, &pass, &salt)?, realm_sql_named(p.kind.realm_name())))
+        .map_err(|e| tag("login", format!("Your Hero Key's login couldn't be made in {} ({e}).", p.kind.title())))?;
+    let hero = hero.to_ascii_uppercase();
+    if !s.hero_accounts.contains(&hero) {
+        s.hero_accounts.push(hero.clone());
+    }
+    if s.hero_moved_to.is_empty() {
+        let mine = chars_of(p, &s.account).map_err(|e| tag("db", e))?;
+        if !mine.is_empty() {
+            backup(p).map_err(|e| tag("db", format!("Your characters weren't moved to your Hero Key because the back-up before it failed ({e}).")))?;
+            sql(p, "acore_characters", &move_sql(&s.account, &hero)?).map_err(|e| tag("db", format!("Your characters couldn't be moved to your Hero Key ({e}).")))?;
+            setup_log(p, &format!("{} characters moved to this PC's Hero Key login (a back-up was taken first)", mine.len()));
+        }
+        s.hero_moved_to = hero;
+    }
+    save_state(p, &s).map_err(|e| tag("disk", e))?;
+    Ok(pass)
+}
+
+/// Friends playing in this world now: online characters on friends' logins (`G` + 9, worldshare::new_guest), never
+/// the player's own or the bots'.
+pub const FRIENDS_SQL: &str = "SELECT COUNT(*) FROM characters c JOIN acore_auth.account a ON a.id = c.account \
+    WHERE c.online <> 0 AND a.username REGEXP '^G[A-Z0-9]{9}$'";
+
+pub fn friends_online(p: &Paths) -> Result<u32, String> {
+    query(p, "acore_characters", FRIENDS_SQL)?.trim().parse::<u32>().map_err(|_| "The world's answer didn't look right.".to_string())
 }
 
 /// Boss Rush's hero account password: made once and kept in state.json.
@@ -1708,9 +2125,11 @@ fn sql_file(p: &Paths, db: &str, file: &Path) -> Result<(), String> {
 fn fill(p: &Paths, s: &State) -> Result<(), String> {
     let log = p.logs.join("dbimport.out.log");
     let mut c = spawn(&p.dbimport(), &["-c", "configs/dbimport.conf"], &p.bin(), &dbimport_env(p, s), &log)?;
+    let _ = fs::write(p.pid("dbimport"), c.id().to_string());
     let t = Instant::now();
     loop {
         if let Some(st) = c.try_wait().map_err(|e| e.to_string())? {
+            let _ = fs::remove_file(p.pid("dbimport"));
             if !st.success() {
                 return Err(format!("Filling the world stopped (code {}). {}", st.code().unwrap_or(-1), tail_of(&log, 2)));
             }
@@ -2261,6 +2680,79 @@ mod tests {
             assert!(!s.label().is_empty());
             assert!(!s.label().to_lowercase().contains("warcraft") && !s.label().contains("3.3.5"));
         }
+    }
+
+    #[test]
+    fn repair_checks_files_then_only_whats_missing_and_never_refills_saves() {
+        let done = Have { installed: true, maps: true, db: true, filled: true, account: true, ..Default::default() };
+        assert_eq!(repair_plan(&done), [Step::Verify, Step::Start, Step::Login, Step::Ports]);
+        let no_maps = Have { maps: false, ..done };
+        assert_eq!(repair_plan(&no_maps), [Step::Verify, Step::Maps, Step::Start, Step::Login, Step::Ports]);
+        assert!(!repair_plan(&done).contains(&Step::Fill), "a database that is there is never filled again");
+        for st in [Step::Verify, Step::Login, Step::Ports] {
+            assert!(!st.label().is_empty() && !st.label().to_lowercase().contains("warcraft"));
+        }
+    }
+
+    #[test]
+    fn a_database_folder_gone_takes_its_fill_and_login_with_it() {
+        let d = tempfile::tempdir().unwrap();
+        let p = Paths::new(d.path());
+        let s = State { db_made: true, filled: true, account_made: true, ..st() };
+        let h = have(&p, &s, false);
+        assert!(!h.db && !h.filled && !h.account, "no db folder: fill and login again");
+        std::fs::create_dir_all(p.db.join("mysql")).unwrap();
+        let h = have(&p, &s, false);
+        assert!(h.db && h.filled && h.account);
+        let sql = drop_sql();
+        for db in ["acore_world", "acore_characters", "acore_auth", "acore_playerbots"] {
+            assert!(sql.contains(&format!("DROP DATABASE IF EXISTS `{db}`;")));
+        }
+    }
+
+    #[test]
+    fn a_setup_cut_short_leaves_nothing_half_done_trusted() {
+        let d = tempfile::tempdir().unwrap();
+        let p = Paths::for_kind(d.path(), Kind::Vanilla);
+        let single = Paths::new(d.path());
+        std::fs::create_dir_all(&p.tmp).unwrap();
+        std::fs::write(p.tmp.join(ASSET), b"half a zip").unwrap();
+        std::fs::create_dir_all(p.root.join("dist.new").join("bin")).unwrap();
+        // an update moved the engine aside and stopped before putting the new one in
+        std::fs::create_dir_all(single.root.join("dist.old").join("bin")).unwrap();
+        std::fs::write(single.root.join("dist.old").join("engine.json"), b"{}").unwrap();
+        std::fs::create_dir_all(&p.state).unwrap();
+        std::fs::write(p.pid("dbimport"), std::process::id().to_string()).unwrap();
+        assert!(!pid_runs(std::process::id(), "dbimport"), "this test isn't the database filler: never ended");
+        heal_partial(&p);
+        assert!(!p.tmp.join(ASSET).exists() && !p.root.join("dist.new").exists());
+        assert!(single.dist.join("engine.json").is_file(), "the engine put back where it was");
+        assert!(!p.pid("dbimport").exists());
+    }
+
+    #[test]
+    fn characters_move_to_the_hero_keys_login_by_sql_that_deletes_nothing() {
+        let q = move_sql("SOLO", "HKABCDEFGHIJKLMN").unwrap();
+        assert!(q.contains("f.username = 'SOLO'") && q.contains("t.username = 'HKABCDEFGHIJKLMN'"));
+        assert!(q.contains("SET c.account = t.id"));
+        assert!(q.contains("UPDATE IGNORE account_data") && q.contains("realmcharacters"));
+        assert!(!q.to_ascii_uppercase().contains("DELETE") && !q.to_ascii_uppercase().contains("DROP"));
+        assert!(move_sql("SOLO", "solo").is_err(), "not onto itself");
+        assert!(move_sql("SO'LO", "HKA").is_err() && move_sql("SOLO", "H K").is_err());
+        assert!(FRIENDS_SQL.contains("^G[A-Z0-9]{9}$") && FRIENDS_SQL.contains("online"));
+        let s = State { account: "SOLO".into(), hero_accounts: vec!["HKA2345".into(), "SOLO".into()], ..st() };
+        let p = Paths::for_kind(std::path::Path::new("x"), Kind::Single);
+        assert_eq!(char_accounts(&p, &s), vec!["SOLO".to_string(), "HKA2345".to_string()], "the player's logins, each once");
+    }
+
+    #[test]
+    fn the_last_character_is_the_last_to_log_out() {
+        use crate::host::localworld::LocalChar;
+        let c = |n: &str, last: u64| LocalChar { name: n.into(), last, ..Default::default() };
+        assert_eq!(last_of(&[c("Wren", 5), c("Odo", 9), c("Isra", 0)], ""), "Odo");
+        assert_eq!(last_of(&[c("Wren", 0), c("Odo", 0)], "odo"), "Odo", "none logged out yet: the kept one, while it's there");
+        assert_eq!(last_of(&[c("Wren", 0)], "Odo"), "", "the kept one is gone");
+        assert_eq!(last_of(&[], "Odo"), "");
     }
 
     #[test]

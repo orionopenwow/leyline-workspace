@@ -182,6 +182,12 @@ check("the realm script is off unless OV_WORLDFRIENDS=1 (only the launcher's own
 env = "1"
 dofile(scripts .. "/ov_worldfriends.lua")
 local T = assert(OVWorldFriends)
+check("single player's login tips say how to invite a friend in game (Friends, the Leyline tab, /together)", (function()
+    local n = 0
+    for _, t in ipairs(OV_EXTRA_TIPS or {}) do
+        if t.text:find("Invite a friend") and t.text:find("Leyline tab") and t.text:find("/together") then n = n + 1 end
+    end
+    return n == 1 end)())
 check("it makes its tables when missing", #executed == 3 and executed[1]:find("CREATE TABLE IF NOT EXISTS ov_world_share"))
 os.getenv = realGetenv
 

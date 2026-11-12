@@ -102,6 +102,15 @@ function T.Info(player)
     return table.concat(lines, "\n")
 end
 
+-- The login tips (ov_qol.lua, one a login, in turn): on your own world, how to play with a friend in game.
+OV_EXTRA_TIPS = rawget(_G, "OV_EXTRA_TIPS") or {}
+T.TIPS = {
+    { text = "Play with a friend: open Friends (|cffffff00O|r), the Leyline tab, and press Invite a friend. Send them the "
+        .. "link; their character here is theirs to keep. |cffffff00/together|r opens it too." },
+    { text = "A friend already joined? Friends (|cffffff00O|r), the Leyline tab lists them and their characters here, online or not." },
+}
+for _, t in ipairs(T.TIPS) do table.insert(OV_EXTRA_TIPS, t) end
+
 local lastAsk = -1e9
 OVMod.On(MOD, "info", function(player) OVMod.Send(player, MOD, "info", T.Info(player)) end)
 OVMod.On(MOD, "invite", function(player)

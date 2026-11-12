@@ -12,7 +12,13 @@
 -- for and keeps that button.
 --
 -- Transport: the Open Mod API (OVMOD, mod "wufriends", whispered to yourself): info / invite; the realm answers info,
--- ok, err (ov_worldfriends.lua has the format). Only the realm's whispers to you count.
+-- ok, err (ov_worldfriends.lua has the format), in parts when long (n/m, put back together here). Only the realm's
+-- whispers to you count.
+--
+-- With Forever UI: its Social window (ForeverUI.Social, Social.lua there) sits on the Friends window and hides every
+-- other part of it (the game's tabs, our tab and panel included), with its own tabs for the game's five. There the
+-- Leyline tab is one of Forever UI's tabs (its own tab art, after Raid) and the panel is its page (S.registerPage),
+-- under its title. Without either window, /together (or /invitefriend) opens it.
 
 local W = WrathUnleashedUI
 local F = { status = nil, answered = false, line = "" }
@@ -62,11 +68,27 @@ end
 
 local refresh   -- set once the panel is made
 
+-- One part of an answer (ov_modapi.lua sends at most 2000 bytes a part: a host with many friends gets several).
+local parts = {}
+local function gather(kind, i, n, data)
+    i, n = tonumber(i), tonumber(n)
+    if not i or not n or n < 1 or n > 16 or i < 1 or i > n then return nil end
+    if n == 1 then parts[kind] = nil; return data end
+    local buf = parts[kind]
+    if i == 1 or not buf or buf.n ~= n then buf = { n = n, got = 0 }; parts[kind] = buf end
+    if not buf[i] then buf[i] = data; buf.got = buf.got + 1 end
+    if buf.got < n then return nil end
+    parts[kind] = nil
+    return table.concat(buf, "", 1, n)
+end
+
 function F.OnMessage(prefix, msg, channel, sender)
     if prefix ~= "OVMOD" or channel ~= "WHISPER" or type(msg) ~= "string" then return end
     if UnitName and sender ~= UnitName("player") then return end
-    local kind, data = msg:match("^wufriends\t(%a+)\t1/1\t(.*)$")
+    local kind, i, n, part = msg:match("^wufriends\t(%a+)\t(%d+)/(%d+)\t(.*)$")
     if not kind then return end
+    local data = gather(kind, i, n, part)
+    if not data then return end
     F.answered = true
     if kind == "info" then
         F.status = F.Parse(data)
@@ -254,11 +276,11 @@ refresh = function()
     if line == "" and s.answer and s.answer ~= "" then line = s.answer:gsub("^ok:", ""):gsub("^err:", "") end
     if line == "" and link == "" then line = "No link yet: press Invite a friend." end
     panel.line:SetText(line)
-    local n = 0
+    local n, most = 0, math.min(#panel.rows, F.maxRows or #panel.rows)
     for _, f in ipairs(s.friends) do
         n = n + 1
         local r = panel.rows[n]
-        if not r then break end
+        if not r or n > most then n = n - 1; break end
         r.name:SetText(charText(f))
         local state = f.online and "|cff40ff40Online|r" or "|cff9d9d9dOffline|r"
         if f.trusted then state = state .. "  Trusted: comes back any time" end
@@ -290,10 +312,72 @@ function F.Select()
     if not (F.tab and build()) then return false end
     if PanelTemplates_SetTab then PanelTemplates_SetTab(FriendsFrame, F.tab:GetID()) end
     FriendsFrame.selectedTab = F.tab:GetID()
-    others(false)
-    panel:Show()
+    if F.fui then
+        -- Forever UI's window shows the page of the selected tab: ours
+        pcall(F.fui.apply)
+    else
+        others(false)
+        panel:Show()
+    end
     if PlaySound then PlaySound("igCharacterInfoTab") end
     return true
+end
+
+-- Forever UI's Social window, when it is there and has what the tab needs.
+function F.ForeverSocial()
+    local fui = rawget(_G, "ForeverUI")
+    local S = type(fui) == "table" and fui.Social
+    if type(S) ~= "table" or not S.frame then return nil end
+    for _, k in ipairs({ "registerPage", "createTab", "selectTab", "apply" }) do
+        if type(S[k]) ~= "function" then return nil end
+    end
+    return S
+end
+
+-- The Leyline tab among Forever UI's tabs, and the panel as its page.
+function F.HookForever()
+    if F.fui then return F.fuiTab end
+    local S = F.ForeverSocial()
+    if not (S and F.tab and build()) then return nil end
+    local id = F.tab:GetID()
+    F.fui = S
+    F.maxRows = 6   -- its window is shorter than the game's Friends window
+    S.registerPage(id, {
+        build = function(page)
+            panel:SetParent(page)
+            panel:ClearAllPoints()
+            panel:SetPoint("TOPLEFT", S.frame, "TOPLEFT", 16, -64)
+            panel:SetPoint("BOTTOMRIGHT", S.frame, "BOTTOMRIGHT", -16, 32)
+            panel.title:Hide()   -- the window's own title band says it
+            panel.sub:ClearAllPoints()
+            panel.sub:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, 0)
+            panel.sub:SetWidth(330)
+            panel.social:ClearAllPoints()
+            panel.social:SetPoint("BOTTOMLEFT", S.frame, "BOTTOMLEFT", 4, 4)
+            panel:Show()
+        end,
+        title = function() return "Play together" end,
+        update = function() if refresh then refresh() end end,
+    })
+    local tab = S.createTab(S.frame, "WrathUnleashedForeverSocialTabLeyline", false)
+    tab:SetText("Leyline")
+    local last = type(S.tabs) == "table" and S.tabs[#S.tabs] and S.tabs[#S.tabs].button
+    local gap = type(S.G) == "table" and tonumber(S.G.tabGap) or 3
+    if last then tab:SetPoint("TOPLEFT", last, "TOPRIGHT", gap, 0) else tab:SetPoint("TOPLEFT", S.frame, "BOTTOMLEFT", 5, 2) end
+    if type(S.tabWidth) == "function" then
+        local ok, w = pcall(S.tabWidth, tab)
+        if ok and tonumber(w) then tab:SetWidth(w) end
+    end
+    tab:SetScript("OnClick", function() F.Select() end)
+    F.fuiTab = tab
+    local function mark()
+        pcall(S.selectTab, tab, FriendsFrame.selectedTab == id, true)
+    end
+    mark()
+    if hooksecurefunc then pcall(hooksecurefunc, S, "update", mark) end
+    -- the game's own Leyline tab is hidden under Forever UI's window: never left showing beside it
+    F.tab:Hide()
+    return tab
 end
 
 function F.Open()
@@ -320,6 +404,7 @@ function F.Hook()
     F.tab = tab
     -- another tab picked: ours hides, the game's own panels come back (FriendsFrame_Update shows the right one)
     local function update()
+        if F.fui then return end   -- Forever UI's window shows and hides its pages itself
         if FriendsFrame.selectedTab ~= tab:GetID() then
             if panel and panel:IsShown() then panel:Hide(); others(FriendsFrame.selectedTab == 1) end
         elseif panel then   -- the window opened again on this tab
@@ -327,7 +412,9 @@ function F.Hook()
         end
     end
     if hooksecurefunc and FriendsFrame_Update then hooksecurefunc("FriendsFrame_Update", update) end
-    if FriendsFrame.HookScript then FriendsFrame:HookScript("OnHide", function() if panel then panel:Hide() end end) end
+    if FriendsFrame.HookScript then
+        FriendsFrame:HookScript("OnHide", function() if panel and not F.fui then panel:Hide() end end)
+    end
     F.update = update
     -- the older Leyline button on the window: this tab has it now
     local old = _G["WrathUnleashedSocialFriendsButton"]
@@ -340,9 +427,10 @@ local listener = CreateFrame("Frame")
 listener:RegisterEvent("CHAT_MSG_ADDON")
 listener:RegisterEvent("PLAYER_ENTERING_WORLD")
 listener:SetScript("OnEvent", function(_, event, prefix, msg, channel, sender)
-    if event == "CHAT_MSG_ADDON" then F.OnMessage(prefix, msg, channel, sender) else F.Hook() end
+    if event == "CHAT_MSG_ADDON" then F.OnMessage(prefix, msg, channel, sender) else F.Hook(); F.HookForever() end
 end)
 F.Hook()
+F.HookForever()
 
 SLASH_WUWORLDFRIENDS1, SLASH_WUWORLDFRIENDS2 = "/together", "/invitefriend"
 SlashCmdList["WUWORLDFRIENDS"] = function() F.Open() end

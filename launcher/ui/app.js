@@ -1580,6 +1580,11 @@ function renderRealmMenu() {
   const builtinSolo = worldsHere() && !localHosted(LOCAL.solo);
   const solo = builtinSolo ? [worldRow("single"), worldRow("vanilla")] : [localRow(LOCAL.solo)];
   const top = [realmRow(off), ...lineup.map(realmRow), localRow(DEN), ...solo];
+  // Favourites: the realms starred on the Realms page (the list kit's store, leyline.list.realms.fav), the ones not
+  // already above
+  const favStore = window.LeylineList ? window.LeylineList.favourites("realms") : null;
+  const favs = favStore ? (realmsCache || []).filter((r) => !r.official && !inLineup(r) && r.address && !hiddenBuild(r.build) && !hiddenRealm(r)
+    && favStore.has(realmKeyOf(r)) && !(kit && kit.realm && kit.realm.realm_id && r.realm_id === kit.realm.realm_id)) : [];
   // Your realms: the one this PC hosts (not the Den or Single player: they have their rows) and the community realm you picked
   const mine = [];
   const hosted = kit && kit.realm && kit.realm.profile !== DEN.profile && kit.realm.profile !== LOCAL.solo.profile ? kit.realm : null;
@@ -1595,7 +1600,7 @@ function renderRealmMenu() {
     const r = realmAt(addr);
     const L = localAt(addr);
     if (L) { if (L !== DEN && L !== LOCAL.solo && L !== hostedLocal) mine.push(localRow(L)); }
-    else if (r) { if (!inLineup(r) && r !== hostedListed && !hiddenRealm(r) && !r.official) mine.push(realmRow(r)); }
+    else if (r) { if (!inLineup(r) && r !== hostedListed && !hiddenRealm(r) && !r.official && !favs.includes(r)) mine.push(realmRow(r)); }
     else if (!isOfficialAddr(addr)) mine.push(row("pb-realm-opt", addr, { icon: realmIcon(addr, false, "sm"), selected: online && !isOfficial() && addr === here, sub: "Your address",
       run: () => pickRealm({ official: false, address: addr }) }));
   }
@@ -1624,6 +1629,7 @@ function renderRealmMenu() {
     }
   }
   const parts = [top];
+  if (favs.length) parts.push([head("Favourites"), ...favs.map(realmRow)]);
   if (mine.length) parts.push([head("Your realms"), ...mine]);
   parts.push(acts);
   if (clients.length) parts.push(clients);
@@ -1710,6 +1716,8 @@ $("pb-rmenu").addEventListener("keydown", (e) => {
 document.addEventListener("pointerdown", (e) => {
   if (rmenuOpen && !e.target.closest(".pb-mid .pb-pick")) closeRealmMenu(false);
 });
+// a star on the Realms page: the picker's Favourites follow at once
+document.addEventListener("leyline:list-fav", (e) => { if (rmenuOpen && e.detail && e.detail.list === "realms") renderRealmMenu(); });
 
 function renderPlayBar() {
   if (!state) return;

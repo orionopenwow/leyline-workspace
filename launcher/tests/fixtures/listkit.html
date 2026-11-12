@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- The list kit alone (listkit.js, listkit.css), for tests/listkit.browser.test.cjs: the launcher's own tokens
+     (style.css) and nothing else, so a test sees the kit and not a page. -->
+<html lang="en" data-base="dark">
+<head>
+<meta charset="utf-8">
+<title>List kit</title>
+<link rel="stylesheet" href="../../ui/style.css">
+<link rel="stylesheet" href="../../ui/spin.css">
+<link rel="stylesheet" href="../../ui/listkit.css">
+<style>body { padding: 20px; overflow: auto; } #a, #b { max-width: 760px; margin-bottom: 30px; }</style>
+</head>
+<body>
+<input id="outside" aria-label="Somewhere else">
+<div id="a"></div>
+<div id="b"></div>
+<script src="../../ui/listkit.js"></script>
+</body>
+</html>

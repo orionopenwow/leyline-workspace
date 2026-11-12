@@ -1384,14 +1384,28 @@ pub fn heal_partial(p: &Paths) {
     if !single.dist.exists() && old.is_dir() {
         let _ = fs::rename(&old, &single.dist);
     }
-    for which in ["dbimport", "extract"] {
+    for (which, program) in [("dbimport", "dbimport"), ("extract", "map_extractor")] {
         let f = p.pid(which);
         if let Some(pid) = read_pid(&f) {
-            if read_pid_alive(&f) {
+            // only when that process is still ours (a pid number can be reused after a restart)
+            if pid_runs(pid, program) {
                 kill_pid(pid);
             }
         }
         let _ = fs::remove_file(&f);
+    }
+}
+
+/// Process `pid` is running and is `program` (its file name without .exe).
+fn pid_runs(pid: u32, program: &str) -> bool {
+    let want = program.to_ascii_lowercase();
+    if cfg!(windows) {
+        let mut c = Command::new("tasklist");
+        c.args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"]);
+        no_window(&mut c);
+        c.output().map(|o| String::from_utf8_lossy(&o.stdout).to_ascii_lowercase().contains(&format!("\"{want}.exe\""))).unwrap_or(false)
+    } else {
+        fs::read_to_string(format!("/proc/{pid}/comm")).map(|n| n.trim().to_ascii_lowercase().starts_with(&want[..want.len().min(15)])).unwrap_or(false)
     }
 }
 
@@ -2708,7 +2722,8 @@ mod tests {
         std::fs::create_dir_all(single.root.join("dist.old").join("bin")).unwrap();
         std::fs::write(single.root.join("dist.old").join("engine.json"), b"{}").unwrap();
         std::fs::create_dir_all(&p.state).unwrap();
-        std::fs::write(p.pid("dbimport"), "999999999").unwrap();
+        std::fs::write(p.pid("dbimport"), std::process::id().to_string()).unwrap();
+        assert!(!pid_runs(std::process::id(), "dbimport"), "this test isn't the database filler: never ended");
         heal_partial(&p);
         assert!(!p.tmp.join(ASSET).exists() && !p.root.join("dist.new").exists());
         assert!(single.dist.join("engine.json").is_file(), "the engine put back where it was");

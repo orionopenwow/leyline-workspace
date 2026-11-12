@@ -57,6 +57,12 @@ function Frame:GetPoint() if self.point then return unpack(self.point) end end
 function Frame:SetTexture(t) self.tex = t; return 1 end
 function Frame:GetTexture() return self.tex end
 function Frame:SetAlpha(a) self.alpha = a end
+function Frame:SetBackdrop(t) self.backdrop = t end
+function Frame:SetBackdropBorderColor(r, g, b) self.edgeColour = { r, g, b } end
+function Frame:SetStatusBarTexture(t) self.barTex = t end
+function Frame:SetNormalTexture(t) self.normalTex = t end
+function Frame:LockHighlight() self.locked = true end
+function Frame:UnlockHighlight() self.locked = nil end
 local function new(kind, name, parent)
     local f = setmetatable({ kind = kind, name = name, parent = parent, scripts = {}, events = {}, shown = true }, Frame)
     if name then _G[name] = f end
@@ -602,6 +608,138 @@ check("Hide bot chatter off: achievements show", filters.CHAT_MSG_ACHIEVEMENT(ni
     and WrathUnleashedUIDB.botsChatter == true)
 win.quiet:SetChecked(true); win.quiet:Fire("OnClick")
 check("on again", filters.CHAT_MSG_ACHIEVEMENT(nil, "CHAT_MSG_ACHIEVEMENT", "x", bots[2].name) == true)
+
+-- ---------------------------------------------------------------- the game's own look (owner 12 Nov: "forever ui
+-- elements not leyline squarechunks"): templates, backdrops and textures by the client's own names
+do
+    local G = W.GameLook
+    local function under(f, root)
+        local p = f
+        for _ = 1, 20 do if p == nil then return false end; if p == root then return true end; p = p.parent end
+        return false
+    end
+    local function flat(root)
+        for _, f in ipairs(created) do
+            if f ~= root and under(f, root) or f == root then
+                if f.styleBg or f.styleFill or f.styleEdge or f.edRound then return "Style.lua helper on " .. tostring(f.kind) end
+                if f.kind == "Texture" and type(f.tex) == "number" then return "a solid-colour texture" end
+                if f.backdrop and (tostring(f.backdrop.bgFile):find("white8x8", 1, true)
+                    or tostring(f.backdrop.edgeFile):find("white8x8", 1, true)) then return "the flat white8x8 backdrop" end
+            end
+        end
+        return nil
+    end
+    check("look: GameLook.lua loads before the bots' files", at["GameLook.lua"] and at["GameLook.lua"] < at["CompanionsData.lua"])
+    -- the window
+    check("look: Bots window is the stock dialog (dialog border, dark dialog background) with the gold header banner",
+        win.backdrop and win.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border"
+        and win.backdrop.bgFile == "Interface\\DialogFrame\\UI-DialogBox-Background-Dark"
+        and win.gameHeader and win.gameHeader.tex == "Interface\\DialogFrame\\UI-DialogBox-Header"
+        and win.title:GetText() == "Bots" and win.close.template == "UIPanelCloseButton")
+    check("look: the window's tabs are the game's bottom tabs, named for PanelTemplates", (function()
+        for i, t in ipairs(win.tabs) do
+            if t.btn.template ~= "CharacterFrameTabButtonTemplate" or t.btn:GetName() ~= "WrathUnleashedBotsFrameTab" .. i then return false end
+        end
+        return win.numTabs == 6 end)())
+    check("look: the window's buttons are UIPanelButtonTemplate", find(win, "Fill party").template == "UIPanelButtonTemplate"
+        and win.passive.template == "UIPanelButtonTemplate" and win.rows[1].hp.barTex == "Interface\\TargetingFrame\\UI-StatusBar")
+    check("look: roster rows hover with the game's list highlight", win.rows[1].hover.tex == "Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    -- the bot bar
+    local bf = Bar.Frame()
+    local s1 = bf.slots[1]
+    check("look: each bot is a party member frame (party art round a 37 px portrait, 70 x 7 stock bars)",
+        s1.art.tex == "Interface\\TargetingFrame\\UI-PartyFrame" and s1.hp.barTex == "Interface\\TargetingFrame\\UI-StatusBar"
+        and s1.mp.barTex == "Interface\\TargetingFrame\\UI-StatusBar" and s1.portrait.h == 37)
+    check("look: the bar's header is a tooltip box with the game's plus button",
+        bf.head.backdrop and bf.head.backdrop.edgeFile == "Interface\\Tooltips\\UI-Tooltip-Border"
+        and bf.open.normalTex == "Interface\\Buttons\\UI-PlusButton-Up")
+    local ob = Bar.Orders()
+    check("look: the orders bar is a tooltip box, its orders dressed as action buttons",
+        ob.backdrop and ob.backdrop.edgeFile == "Interface\\Tooltips\\UI-Tooltip-Border"
+        and ob.btns.follow.normalTex == "Interface\\Buttons\\UI-Quickslot2" and ob.btns.passive.on.tex == "Interface\\Buttons\\CheckButtonHilight")
+    -- the tips
+    Bar.Tip(1)
+    local tf = Bar.Tips()
+    check("look: the tips are a tooltip box, panel buttons", tf.backdrop and tf.backdrop.bgFile == "Interface\\Tooltips\\UI-Tooltip-Background"
+        and tf.backdrop.edgeFile == "Interface\\Tooltips\\UI-Tooltip-Border" and tf.next.template == "UIPanelButtonTemplate"
+        and tf.skip.template == "UIPanelButtonTemplate" and tf.head:GetText() == "Tip 1 of 3")
+    tf.next:Fire("OnClick")
+    check("tips: Next still advances", tf.step == 2 and tf:IsShown())
+    tf.skip:Fire("OnClick")
+    check("tips: Skip tips still closes them", not tf:IsShown())
+    -- the fallback menu (no UIDropDownMenu in this client)
+    C.OpenMenu(C.bots[1].name)
+    local pm = _G.WrathUnleashedBotMenu
+    check("look: the menu without UIDropDownMenu is a dialog with panel buttons", C.MenuMode() == "panel" and pm:IsShown()
+        and pm.backdrop and pm.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border"
+        and pm.follow.template == "UIPanelButtonTemplate" and pm.close.template == "UIPanelCloseButton")
+    pm:Hide()
+    check("look: no flat squares (Style.lua helpers, solid-colour textures, white8x8 backdrops) in the bar, the orders, "
+        .. "the tips, the menu, the window", (function()
+        for _, root in ipairs({ bf, ob, tf, pm, win, C.Chooser(), _G.WrathUnleashedBotFormations }) do
+            local why = root and flat(root)
+            if why then print("  " .. tostring(root.name) .. ": " .. why); return false end
+        end
+        return true end)())
+
+    -- the game's own right-click menu (UIDropDownMenu), when the client has it
+    local added, inited = {}, nil
+    UIDROPDOWNMENU_MENU_VALUE = nil
+    function UIDropDownMenu_Initialize(frame, fn, mode) inited = { frame = frame, fn = fn, mode = mode } end
+    function UIDropDownMenu_AddButton(info, level) added[#added + 1] = { info = info, level = level or 1 } end
+    local toggled
+    function ToggleDropDownMenu(level, value, frame, anchor)
+        toggled = { level = level, frame = frame, anchor = anchor }
+        added = {}
+        UIDROPDOWNMENU_MENU_VALUE = value
+        inited.fn(frame, level)
+    end
+    CANCEL = "Cancel"
+    local b1 = C.bots[1]
+    C.OpenMenu(b1.name)
+    local function item(text) for _, a in ipairs(added) do if a.info.text == text then return a.info end end end
+    local dd = C.Dropdown()
+    check("menu: the game's own UIDropDownMenu at the cursor", C.MenuMode() == "dropdown" and dd and dd.template == "UIDropDownMenuTemplate"
+        and inited.mode == "MENU" and toggled.anchor == "cursor" and toggled.level == 1)
+    check("menu: its title is the bot (class colour, tagged a bot)", added[1].info.isTitle and added[1].info.text:find(b1.name, 1, true)
+        and added[1].info.text:find("bot", 1, true))
+    check("menu: orders, spec, role and gear are in it", item("Follow") and item("Stay") and item("Attack")
+        and (item("Passive") or item("Fight")) and item("Gear up") and item("Send home") and item("Cancel")
+        and item("Spec") and item("Spec").hasArrow and item("Role") and item("Role").hasArrow)
+    ToggleDropDownMenu(2, "spec", dd)
+    local nSpec = 0
+    for _, a in ipairs(added) do if a.level == 2 then nSpec = nSpec + 1 end end
+    check("menu: Spec opens the class's specs, the current one ticked and not clickable", nSpec == #(C.specs[b1.cls] or {}) and nSpec > 0
+        and (function() for _, a in ipairs(added) do if a.info.checked and not a.info.disabled then return false end end return true end)())
+    ToggleDropDownMenu(2, "role", dd)
+    check("menu: Role opens Tank, Healer, Damage", item("Tank") and item("Healer") and item("Damage"))
+    ToggleDropDownMenu(1, nil, dd)
+    local w0 = #player.whispers
+    item("Follow").func()
+    runServer()
+    check("menu: Follow orders that bot only", #player.whispers == w0 + 1 and player.whispers[#player.whispers].text == "follow"
+        and player.whispers[#player.whispers].to.name == b1.name)
+    UIDropDownMenu_Initialize, UIDropDownMenu_AddButton, ToggleDropDownMenu, CANCEL = nil, nil, nil, nil
+
+    -- with Forever UI loaded: its own dialog, panel art, red buttons and close button
+    local fui = {}
+    ForeverUI = { SetPanelArt = function(f) fui.panel = f; f.foreverPanel = true end,
+        Templates = { DialogFrame = function(f) fui.dialog = f end, ThreeSliceButton = function(b, tex) fui.button = tex end,
+            CloseButton = function(b) fui.close = b end } }
+    local d = CreateFrame("Frame", "WULookDialog", UIParent); G.Dialog(d)
+    local p = CreateFrame("Frame", "WULookPanel", UIParent); G.Window(p, "Bots")
+    local pb = G.Button(UIParent, "Next", 80)
+    local pc = G.Close(p)
+    check("Forever UI: its dialog frame, its panel art, its red three-slice button, its close button",
+        fui.dialog == d and d.gameLook == "forever-dialog" and fui.panel == p and p.gameLook == "forever-panel"
+        and fui.button == "128-redbutton" and pb.gameLook == "forever-redbutton" and fui.close == pc)
+    ForeverUI = { Templates = { DialogFrame = function() error("boom") end, ThreeSliceButton = function() error("boom") end } }
+    local d2 = CreateFrame("Frame", "WULookDialog2", UIParent); G.Dialog(d2)
+    local b2 = G.Button(UIParent, "Next", 80)
+    check("Forever UI: a failing call falls back to the stock look", d2.gameLook == "dialog"
+        and d2.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border" and b2.gameLook == "UIPanelButtonTemplate")
+    ForeverUI = nil
+end
 
 -- dismiss
 find(win, "Dismiss all"):Fire("OnClick")

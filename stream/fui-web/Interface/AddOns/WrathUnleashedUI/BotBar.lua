@@ -13,16 +13,20 @@
 --   Tips        three short tips the first time a character of this account has bots; never again after
 --               (/comp tips shows them again).
 -- The icons are the game's own (the pet bar's follow, stay, attack and passive art), by path only.
+-- The look is the game's own too (GameLook.lua; owner 12 Nov: "forever ui elements not leyline squarechunks"): each
+-- slot is a party member frame (Interface\TargetingFrame\UI-PartyFrame round the round portrait, the stock bars),
+-- the header and the tips are tooltip boxes, the orders are dressed as action buttons, the buttons are panel buttons.
 -- /comp bar and /comp orders switch the bars off and on.
 
 local W = WrathUnleashedUI
 local C = W.Companions
 if not C or not C.UI then return end
 local U = C.UI
+local G = W.GameLook
 local B = {}
 C.Bar = B
 
-local SLOT_W, SLOT_H, HEAD_H, MAX_SLOTS = 200, 46, 16, 9
+local SLOT_W, SLOT_H, HEAD_H, MAX_SLOTS = 200, 50, 22, 9
 local ORDER_SIZE, ORDER_GAP = 34, 6
 
 BINDING_HEADER_WUBOTS = "Bots"
@@ -125,30 +129,34 @@ end
 -- ---------------------------------------------------------------- the bot bar
 
 local bar
+-- One slot: the party member frame's own layout (PartyMemberFrameTemplate): the 37 px round portrait at (7, -6) under
+-- the party frame art (128 x 64 at (0, -2)), health and mana bars of 70 x 7 at (47, -12) and (47, -19), the name in
+-- GameFontNormalSmall above them; the role icon on the portrait; what the bot is doing to the right of the art.
 local function buildSlot(i)
     local s = CreateFrame("Button", "WrathUnleashedBotBarSlot" .. i, bar, "SecureUnitButtonTemplate")
     s:SetWidth(SLOT_W); s:SetHeight(SLOT_H - 2)
     s:SetPoint("TOPLEFT", 0, -HEAD_H - (i - 1) * SLOT_H)
     s:RegisterForClicks("AnyUp")
     s:SetAttribute("type1", "target")   -- left-click: the client's own target action
-    U.fill(s, U.BG[1], U.BG[2], U.BG[3], 0.82)
-    s.hover = U.fill(s, U.ACCENT[1], U.ACCENT[2], U.ACCENT[3], 0.12, "ARTWORK"); s.hover:Hide()
-    s.edge = s:CreateTexture(nil, "ARTWORK")
-    s.edge:SetWidth(2); s.edge:SetPoint("TOPLEFT"); s.edge:SetPoint("BOTTOMLEFT")
-    s.portrait = s:CreateTexture(nil, "ARTWORK")
-    s.portrait:SetWidth(38); s.portrait:SetHeight(38)
-    s.portrait:SetPoint("LEFT", 5, 0)
+    s.hover = G.RowHighlight(s)
+    s.portrait = s:CreateTexture(nil, "BORDER")
+    s.portrait:SetWidth(37); s.portrait:SetHeight(37)
+    s.portrait:SetPoint("TOPLEFT", 7, -6)
+    s.art = s:CreateTexture(nil, "ARTWORK")
+    s.art:SetTexture(G.PARTY_FRAME)
+    s.art:SetWidth(128); s.art:SetHeight(64)
+    s.art:SetPoint("TOPLEFT", 0, -2)
     s.role = s:CreateTexture(nil, "OVERLAY")
     s.role:SetWidth(16); s.role:SetHeight(16)
     s.role:SetPoint("BOTTOMLEFT", s.portrait, "BOTTOMLEFT", -3, -3)
     s.role:SetTexture(U.ROLE_ICON)
-    s.name = U.label(s, "", "GameFontNormalSmall", "TOPLEFT", 48, -5)
+    s.hp = U.bar(s, 70, 7, "TOPLEFT", 47, -12)
+    s.hp:SetStatusBarColor(0, 1, 0)   -- the party frame's green
+    s.mp = U.bar(s, 70, 7, "TOPLEFT", 47, -19)
+    s.name = U.label(s, "", "GameFontNormalSmall", "BOTTOMLEFT", s.hp, "TOPLEFT", 2, 1)
     s.name:SetWidth(96)
-    s.activity = U.label(s, "", "GameFontHighlightSmall", "TOPRIGHT", -6, -5)
-    s.activity:SetJustifyH("RIGHT")
-    s.hp = U.bar(s, SLOT_W - 56, 9, "TOPLEFT", 48, -21)
-    s.hp:SetStatusBarColor(0.2, 0.8, 0.3)
-    s.mp = U.bar(s, SLOT_W - 56, 5, "TOPLEFT", 48, -34)
+    s.activity = U.label(s, "", "GameFontHighlightSmall", "TOPLEFT", 124, -13)
+    s.activity:SetWidth(SLOT_W - 126)
     s:SetScript("PostClick", function(self, button)
         if button == "RightButton" and self.botName then C.OpenMenu(self.botName, self) end
     end)
@@ -171,18 +179,20 @@ local function buildBar()
     bar:SetWidth(SLOT_W); bar:SetHeight(HEAD_H + SLOT_H)
     bar:SetFrameStrata("MEDIUM")
     bar.secure = true
-    local head = CreateFrame("Frame", nil, bar)
-    head:SetPoint("TOPLEFT"); head:SetPoint("TOPRIGHT"); head:SetHeight(HEAD_H - 2)
-    U.fill(head, U.BG[1], U.BG[2], U.BG[3], 0.9)
-    local line = head:CreateTexture(nil, "ARTWORK")
-    line:SetTexture(U.ACCENT[1], U.ACCENT[2], U.ACCENT[3], 0.8)
-    line:SetHeight(1); line:SetPoint("BOTTOMLEFT"); line:SetPoint("BOTTOMRIGHT")
-    bar.title = U.label(head, "Bots", "GameFontNormalSmall", "LEFT", 6, 0)
-    bar.title:SetTextColor(U.ACCENT[1], U.ACCENT[2], U.ACCENT[3])
-    bar.count = U.label(head, "", "GameFontDisableSmall", "RIGHT", -22, 0)
-    bar.count:SetJustifyH("RIGHT")
-    local open = U.button(head, "+", 16, function() C.Toggle() end, "RIGHT", -2, 0)
-    open:SetHeight(14)
+    -- the header: a small tooltip box with the title in gold, the count in grey and the game's plus button
+    local head = CreateFrame("Frame", "WrathUnleashedBotBarHeader", bar)
+    head:SetPoint("TOPLEFT"); head:SetPoint("TOPRIGHT", -60, 0); head:SetHeight(HEAD_H)
+    G.Tooltip(head, 0.85)
+    bar.title = U.label(head, "Bots", "GameFontNormalSmall", "LEFT", 8, 0)
+    bar.count = U.label(head, "", "GameFontDisableSmall", "LEFT", bar.title, "RIGHT", 6, 0)
+    local open = CreateFrame("Button", "WrathUnleashedBotBarOpen", head)
+    open:SetWidth(16); open:SetHeight(16)
+    open:SetPoint("RIGHT", -4, 0)
+    if open.SetNormalTexture then
+        open:SetNormalTexture(G.PLUS_UP); open:SetPushedTexture(G.PLUS_DOWN); open:SetHighlightTexture(G.PLUS_HILITE, "ADD")
+    end
+    open:SetScript("OnClick", function() C.Toggle() end)
+    open.gameLook = "UI-PlusButton"
     bar.open = open
     head:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
@@ -229,7 +239,6 @@ function B.Layout()
             s:SetAttribute("unit", unit)
             local r, g, bl = U.classColour(b.cls)
             s.name:SetText(U.hex(r, g, bl) .. b.name .. "|r")
-            s.edge:SetTexture(r, g, bl, 0.9)
             local c = U.ROLE_COORDS[b.role] or U.ROLE_COORDS.dps
             s.role:SetTexCoord(c[1], c[2], c[3], c[4])
             if SetPortraitTexture then pcall(SetPortraitTexture, s.portrait, unit) end
@@ -285,12 +294,9 @@ local function buildOrders()
     orders = CreateFrame("Frame", "WrathUnleashedBotOrders", UIParent)
     orders:SetWidth(14 + #ORDERS * (ORDER_SIZE + ORDER_GAP)); orders:SetHeight(ORDER_SIZE + 10)
     orders:SetFrameStrata("MEDIUM")
-    if W.Style then W.Style.Box(orders, 0.82) else U.fill(orders, U.BG[1], U.BG[2], U.BG[3], 0.82) end
-    local grip = CreateFrame("Frame", nil, orders)
-    grip:SetWidth(10); grip:SetPoint("TOPLEFT", 2, -2); grip:SetPoint("BOTTOMLEFT", 2, 2)
-    local dots = grip:CreateTexture(nil, "ARTWORK")
-    dots:SetTexture(U.ACCENT[1], U.ACCENT[2], U.ACCENT[3], 0.5)
-    dots:SetWidth(2); dots:SetPoint("TOP", 0, -6); dots:SetPoint("BOTTOM", 0, 6)
+    G.Tooltip(orders, 0.85)
+    local grip = CreateFrame("Frame", nil, orders)   -- the box's left edge: drag here
+    grip:SetWidth(12); grip:SetPoint("TOPLEFT", 2, -2); grip:SetPoint("BOTTOMLEFT", 2, 2)
     grip:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
@@ -305,14 +311,11 @@ local function buildOrders()
         local b = CreateFrame("Button", "WrathUnleashedBotOrder" .. o.key, orders)
         b:SetWidth(ORDER_SIZE); b:SetHeight(ORDER_SIZE)
         b:SetPoint("LEFT", 14 + (i - 1) * (ORDER_SIZE + ORDER_GAP), 0)
-        b.icon = b:CreateTexture(nil, "ARTWORK")
+        b.icon = b:CreateTexture(nil, "BACKGROUND")   -- under the action button's ring, as ActionButtonTemplate
         b.icon:SetAllPoints(b)
         b.icon:SetTexture(o.icon)
         b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-        b.on = b:CreateTexture(nil, "OVERLAY")
-        b.on:SetTexture(U.ACCENT[1], U.ACCENT[2], U.ACCENT[3], 0.35)
-        b.on:SetAllPoints(b); b.on:Hide()
-        if b.SetHighlightTexture then b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD") end
+        b.on = G.ActionButton(b, ORDER_SIZE)   -- the action button's ring, pressed ring, highlight; "on" glow
         b.hotkey = U.label(b, "", "NumberFontNormalSmallGray", "TOPRIGHT", -1, -2)
         b.hotkey:SetJustifyH("RIGHT")
         b.order, b.bind = o.key, o.bind
@@ -365,19 +368,21 @@ local TIPS = {
 }
 
 local tips
+-- The tips: a tooltip box (the tooltip's rounded edge and colours), "Tip 1 of 3" in grey, the title in gold, the
+-- text in white, the game's panel buttons.
 local function buildTips()
-    tips = U.panel(UIParent, "WrathUnleashedBotTips", 300, 128)
+    tips = CreateFrame("Frame", "WrathUnleashedBotTips", UIParent)
+    tips:SetWidth(300); tips:SetHeight(128)
+    G.Tooltip(tips, 0.95)
     tips:SetFrameStrata("DIALOG")
     tips:EnableMouse(true)
     tips:SetClampedToScreen(true)
-    tips.head = U.label(tips, "", "GameFontDisableSmall", "TOPLEFT", 16, -12)
-    tips.title = U.label(tips, "", "GameFontNormal", "TOPLEFT", 16, -28)
-    tips.title:SetTextColor(U.ACCENT[1], U.ACCENT[2], U.ACCENT[3])
-    tips.text = U.label(tips, "", "GameFontHighlightSmall", "TOPLEFT", 16, -48)
-    tips.text:SetWidth(268)
-    tips.next = U.button(tips, "Next", 80, function() B.Tip((tips.step or 1) + 1) end, "BOTTOMRIGHT", -12, 10)
-    if W.Style then W.Style.SetKind(tips.next, "primary") end
-    tips.skip = U.button(tips, "Skip tips", 80, function() tips:Hide() end, "BOTTOMLEFT", 12, 10)
+    tips.head = U.label(tips, "", "GameFontDisableSmall", "TOPLEFT", 14, -12)
+    tips.title = U.label(tips, "", "GameFontNormal", "TOPLEFT", 14, -28)
+    tips.text = U.label(tips, "", "GameFontHighlightSmall", "TOPLEFT", 14, -48)
+    tips.text:SetWidth(272)
+    tips.next = U.button(tips, "Next", 80, function() B.Tip((tips.step or 1) + 1) end, "BOTTOMRIGHT", -12, 12)
+    tips.skip = U.button(tips, "Skip tips", 80, function() tips:Hide() end, "BOTTOMLEFT", 12, 12)
     tinsert(UISpecialFrames, "WrathUnleashedBotTips")
     tips:Hide()
 end

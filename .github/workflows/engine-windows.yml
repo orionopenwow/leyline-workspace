@@ -164,6 +164,10 @@ jobs:
           $dlls += Get-ChildItem -Recurse C:\acdist -Filter *.dll | ForEach-Object FullName
           $dlls += 'C:\tools\mysql\current\lib\libmysql.dll'
           $dlls += Get-ChildItem "$env:OPENSSL_ROOT_DIR\bin" -Filter 'lib*-3-x64.dll' | ForEach-Object FullName
+          # OpenSSL's legacy provider: the core asserts at start without legacy.dll beside its programs (OpenSSLCrypto.cpp)
+          $legacy = Get-ChildItem -Recurse "$env:OPENSSL_ROOT_DIR" -Filter 'legacy.dll' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $legacy) { throw "OpenSSL's legacy.dll not found under $env:OPENSSL_ROOT_DIR" }
+          $dlls += $legacy.FullName
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT" -Directory | Sort-Object FullName | Select-Object -Last 1
           if (-not $crt) { throw 'VC++ runtime folder not found' }

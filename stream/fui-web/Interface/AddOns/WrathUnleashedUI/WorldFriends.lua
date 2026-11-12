@@ -370,8 +370,21 @@ function F.HookForever()
     end
     tab:SetScript("OnClick", function() F.Select() end)
     F.fuiTab = tab
+    -- Six tabs can be wider than Forever UI's window: when this one would stick out past its right edge, it moves
+    -- to a second row under the first tab (checked once the window has a size, i.e. on each update).
+    local first = type(S.tabs) == "table" and S.tabs[1] and S.tabs[1].button
+    local function fit()
+        if F.fuiTabRow2 or not first then return end
+        local r, fr = tab.GetRight and tab:GetRight(), S.frame.GetRight and S.frame:GetRight()
+        if r and fr and r > fr + 4 then
+            tab:ClearAllPoints()
+            tab:SetPoint("TOPLEFT", first, "BOTTOMLEFT", 0, 2)
+            F.fuiTabRow2 = true
+        end
+    end
     local function mark()
         pcall(S.selectTab, tab, FriendsFrame.selectedTab == id, true)
+        pcall(fit)
     end
     mark()
     if hooksecurefunc then pcall(hooksecurefunc, S, "update", mark) end

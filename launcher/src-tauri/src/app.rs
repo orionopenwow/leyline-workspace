@@ -507,6 +507,13 @@ fn cover_hide(id: u64) {
     crate::cover::dismiss(id);
 }
 
+/// The cover's page: where its "Show the game" link is (CSS pixels and the page's scale), so the cover takes clicks
+/// there only and lets every other click through to the game (crate::cover::hit).
+#[tauri::command]
+fn cover_link(id: u64, x: f64, y: f64, w: f64, h: f64, scale: f64) {
+    crate::cover::set_link(id, crate::cover::link_from_css(x, y, w, h, scale));
+}
+
 /// Settings › Hide the sign-in behind Leyline's screen.
 #[tauri::command]
 fn set_signin_cover(core: State<Core>, on: bool) -> Result<(), String> {
@@ -1916,7 +1923,7 @@ struct EnginePlay {
 /// Play Single player on the Built-in engine: the account filled in on the login screen and the realm picked after
 /// it (Config.wtf), the client pointed at 127.0.0.1:3724, then started.
 #[tauri::command]
-fn engine_play(core: State<Core>, client: String) -> Result<EnginePlay, String> {
+fn engine_play(app: AppHandle, core: State<Core>, client: String) -> Result<EnginePlay, String> {
     use crate::host::engine;
     let profile = core.client(&client)?;
     if profile.build != clients::Build::V335a {
@@ -1925,7 +1932,7 @@ fn engine_play(core: State<Core>, client: String) -> Result<EnginePlay, String> 
     let _ = profile;
     // a sync command: the Hero Key's login from the id kept last time (no network here)
     let hero = crate::host::oneclick::hero_identity_cached(&core.dir);
-    let r = world_play_now(&core, &client, engine::Kind::Single, None, None, false, hero)?;
+    let r = world_play_now(&core, &client, engine::Kind::Single, None, None, false, hero, Some(&app))?;
     Ok(EnginePlay { message: r.message, account: r.account, password: r.password })
 }
 
@@ -2251,7 +2258,7 @@ struct WorldPlay {
 /// pick when none is given) and straight into the world; with characters, the last one played. With neither `pick`,
 /// `quick` nor `first`: the last character played when it's known, else character select.
 #[tauri::command]
-async fn world_play(core: State<'_, Core>, client: String, kind: String, pick: Option<String>, quick: Option<QuickPick>, first: Option<bool>) -> Result<WorldPlay, String> {
+async fn world_play(app: AppHandle, core: State<'_, Core>, client: String, kind: String, pick: Option<String>, quick: Option<QuickPick>, first: Option<bool>) -> Result<WorldPlay, String> {
     let k = world_kind(&kind)?;
     // signed in: the Hero Key's own login in this world (asks the website who; the id kept last time when offline)
     let hero = if k == crate::host::engine::Kind::BossRush {
@@ -2260,14 +2267,16 @@ async fn world_play(core: State<'_, Core>, client: String, kind: String, pick: O
         let dir = core.dir.clone();
         blocking(move || Ok(crate::host::oneclick::hero_identity(&dir))).await?
     };
-    world_play_now(&core, &client, k, pick, quick, first.unwrap_or(false), hero)
+    world_play_now(&core, &client, k, pick, quick, first.unwrap_or(false), hero, Some(&app))
 }
 
 /// Each Play of a world counts one up: a game closing stops its world only when no Play came after it.
 static WORLD_PLAYS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[allow(clippy::too_many_arguments)]
-fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick: Option<String>, quick: Option<QuickPick>, first: bool, hero: Option<String>) -> Result<WorldPlay, String> {
+/// `app`: the launcher window's app, for the sign-in cover over the game's login screen (crate::cover, Mode::Single;
+/// none from the command line).
+fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick: Option<String>, quick: Option<QuickPick>, first: bool, hero: Option<String>, app: Option<&AppHandle>) -> Result<WorldPlay, String> {
     use crate::host::{bossrush as br, engine as eng, localworld as lw, oneclick::tag};
     let profile = world_client(core, k, client)?;
     let client = profile.id.as_str();
@@ -2355,6 +2364,20 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     let (message, hybrid) = point_and_play_with(core, client, eng::REALM, true, session, true).map_err(|e| tag("other", e))?;
     let mut auto = hybrid.is_ok();
     let mut typed = false;
+    // Leyline's "Logging you in…" cover over the game's own login screen while it is signed in (crate::cover, owner
+    // 12 Nov), from the window opening to the world (or character select); Settings' signin_cover switch, Windows only
+    let cover_for = |pid: u32| match app {
+        Some(a) if k != eng::Kind::BossRush && core.snapshot().signin_cover => cover_start(a, pid, crate::cover::Mode::Single, &user, None),
+        _ => None,
+    };
+    if auto && k != eng::Kind::BossRush {
+        // our login screen code signs in: the cover follows the world's database only, typing nothing
+        let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(sig) = cover_for(pid) {
+            let (wp, wu) = (p.clone(), user.clone());
+            std::thread::spawn(move || crate::host::localclick::follow(&wp, &wu, pid, enter, &sig));
+        }
+    }
     // A game without Leyline's login screen code (a stock game folder): the launcher types the login, Quick start's
     // name on a first entry, and Enter World, as a player would (host/localclick.rs). Boss Rush has its own.
     if !auto && k != eng::Kind::BossRush && crate::host::localclick::can_type() {
@@ -2369,8 +2392,9 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
                 }
             }
             let (wp, wu, wpass, wname) = (p.clone(), user.clone(), pass.clone(), name_to_type);
+            let cover = cover_for(pid);
             std::thread::spawn(move || {
-                let _ = crate::host::localclick::drive(&wp, &wu, &wpass, wname.as_deref(), pid);
+                let _ = crate::host::localclick::drive(&wp, &wu, &wpass, wname.as_deref(), pid, cover.as_deref());
             });
             auto = true;
             typed = true;
@@ -4404,6 +4428,7 @@ pub fn run() {
             set_signin_cover, // the sign-in cover (cover.rs): its switch, its page's state and "Show the game"
             cover_state,
             cover_hide,
+            cover_link,
             hybrid_status,
             deep_link_take,
             pick_mod_file,
@@ -4982,7 +5007,7 @@ pub fn single_play_test_cli(cli: crate::playtest::Cli) -> i32 {
     rep.phase = "entering".into();
     let t = std::time::Instant::now();
     let hero = oc::hero_identity(&core.dir);
-    let played = world_play_now(&core, &client, k, None, None, true, hero);
+    let played = world_play_now(&core, &client, k, None, None, true, hero, None);
     let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
     let play = match played {
         Ok(pl) => pl,
@@ -5178,7 +5203,7 @@ pub fn single_play_test_cli(cli: crate::playtest::Cli) -> i32 {
             }
             // Play again (the last character, no Quick start) and into the world
             let hero = oc::hero_identity(&core.dir);
-            let again = world_play_now(&core, &client, k, None, None, false, hero)?;
+            let again = world_play_now(&core, &client, k, None, None, false, hero, None)?;
             let pid2 = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
             rep.pid = pid2;
             rep.phase = "entering_again".into();

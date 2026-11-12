@@ -2,7 +2,8 @@
 <!-- The sign-in cover (src-tauri/src/cover.rs, app.rs cover_start): Leyline's "Logging you in…" screen, sized exactly
      over the game's window while the launcher types the sign-in at its login screen, gone at character select. Its own
      small window: no launcher script but cover.js, which asks the core what to show (cover_state) and hides it on
-     "Show the game" or Esc (cover_hide). -->
+     "Show the game" or Esc (cover_hide). Single player and Your Den have it too, into the world. Clicks go through
+     it to the game except on "Show the game" (cover_link says where that is). Nothing here reaches the network. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -18,7 +19,8 @@
     <h1 class="cv-title" id="cv-title">Logging you in…</h1>
     <div class="cv-bar" aria-hidden="true"><span class="cv-fill" id="cv-fill"></span></div>
     <ol class="cv-steps" id="cv-steps"></ol>
-    <p class="cv-note">Leyline is signing you in. The game shows up as soon as you're through.</p>
+    <p class="cv-note" id="cv-note">Leyline is logging you in. The game shows up as soon as you're through.</p>
+    <p class="cv-error" id="cv-error" role="alert" hidden></p>
   </div>
   <button type="button" class="cv-show" id="cv-show">Show the game <kbd>Esc</kbd></button>
 </main>

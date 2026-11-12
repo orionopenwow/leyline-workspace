@@ -1916,13 +1916,13 @@ function renderSettings() {
   $("set-hybrid").checked = state.settings.hybrid_login === true;
   $("set-cover").checked = state.settings.signin_cover !== false;
 }
-// Settings › Hide the sign-in behind Leyline's screen (src-tauri/src/cover.rs; on unless turned off)
+// Settings › Hide the login behind Leyline's screen (src-tauri/src/cover.rs; the official realm, Single player, Your Den; on unless turned off)
 $("set-cover").addEventListener("change", async () => {
   const on = $("set-cover").checked;
   try {
     await invoke("set_signin_cover", { on });
     state.settings.signin_cover = on;
-    say("cover-status", on ? "Leyline's screen covers the game while it signs you in." : "You'll see the game's login screen while Leyline signs you in.", "ok");
+    say("cover-status", on ? "Leyline's screen covers the game while it logs you in." : "You'll see the game's login screen while Leyline logs you in.", "ok");
   } catch (e) { $("set-cover").checked = !on; sayErr("cover-status", e); }
 });
 $("set-hybrid").addEventListener("change", async () => {

@@ -55,6 +55,10 @@ body {
 .cv-step.now::before { border-color: var(--cv-accent); background: var(--cv-accent); box-shadow: 0 0 0 4px rgba(91, 141, 239, 0.25); animation: cv-pulse 1.2s ease-in-out infinite; }
 @keyframes cv-pulse { 50% { box-shadow: 0 0 0 7px rgba(91, 141, 239, 0.08); } }
 .cv-note { margin: 2px 0 0; color: var(--cv-muted); font-size: 13px; }
+/* the sign-in didn't get through: one short line, a moment before the game shows */
+.cv-error { margin: 2px 0 0; color: #f0b45b; font-size: 14px; font-weight: 500; }
+.cv-failed .cv-bar::after, .cv-failed .cv-step.now::before { animation: none; }
+.cv-failed .cv-fill { background: #f0b45b; }
 
 .cv-show {
   position: fixed; right: 18px; bottom: 16px; display: inline-flex; align-items: center; gap: 8px;

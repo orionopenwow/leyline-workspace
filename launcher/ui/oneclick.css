@@ -5,7 +5,7 @@
 .oc {
   position: fixed; right: 22px; bottom: 104px; z-index: 90; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 150px); overflow: auto;
   padding: 16px 18px 14px; border-radius: var(--t-radius, 10px);
-  background: var(--t-panel, var(--t-surface)); color: var(--t-text);
+  background: linear-gradient(var(--t-panel, var(--t-surface)), var(--t-panel, var(--t-surface))), var(--t-bg, #14161b); color: var(--t-text);
   border: var(--t-border-w, 1px) solid var(--t-accent); box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
 }
 .oc[hidden] { display: none; }

@@ -279,9 +279,17 @@
       if (!next) { close(); return null; }
       S.flow = null;
       if (next === "repair") return play(kind, Object.assign({}, o, { repair: true, stopOther: false }));
-      if (next === "ports") return play(kind, Object.assign({}, o, { stopOther: true, repair: false }));
+      if (next === "ports") { await stopOthers(kind); S.flow = null; return play(kind, Object.assign({}, o, { stopOther: true, repair: false })); }
       if (next === "folder") { const f = await pickAnother(kind); if (!f) { close(); return null; } S.flow = null; return play(kind, Object.assign({}, o, { client: f, repair: false })); }
       return play(kind, Object.assign({}, o, { repair: false }));
+    }
+  }
+  // [ports]: the other world on these ports stopped (its characters are saved), the existing "Stop it and play" path
+  async function stopOthers(kind) {
+    const w = W();
+    for (const k of Object.keys(w.WORLDS).filter((x) => x !== kind)) {
+      const st = await w.status(k);
+      if (st && st.running) { callerSay(`Stopping ${w.WORLDS[k].title}… Its characters are saved.`); try { await w.stopWorld(k); } catch (_) { /* the play says if it's still in the way */ } }
     }
   }
   // Pick folder after a [folder] error: the chooser (with "Another folder…"), else the picker

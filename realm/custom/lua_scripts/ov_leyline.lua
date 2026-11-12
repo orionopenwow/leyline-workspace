@@ -29,6 +29,15 @@
 --                      N:<realms>:<players>:<bots>                   the network line (online now), before E
 --                      W:<title>:<by>:<line>                         Den of the week (leyline-fetch's den_week, from the
 --                                                                    site's home.json; stream/denweek.py), before E
+--                      V:<n>                                         protocol version (2 since 2026-11-12), before N.
+--                                                                    Version 1 realms send no V line; every line
+--                                                                    below that a window doesn't know it ignores.
+--                      X:<id>:<kind>:<chars|->                       v2, before N: the realm's kind (official,
+--                                                                    community, local = Single player on the
+--                                                                    player's PC, den) and how many characters the
+--                                                                    asking account has there. Sent for "this" only
+--                                                                    (the only realm whose characters this one can
+--                                                                    count); the window remembers it per account.
 --                      E:<count>                                     the list is complete
 --                      U:Realm list unavailable                      the file is missing or unreadable
 --   client -> server   H:<id|wrath>                                  hop there (the window's Join / its home button)
@@ -36,7 +45,11 @@
 --                                                                    CHAT_MSG_ADDON and reloads the game on that
 --                                                                    realm (stream/www-files/wrath-page.js)
 -- One request per player every REQUEST_COOLDOWN seconds. The hook returns false: WULY is never relayed.
--- mod-ale events used: server 30 ADDON_EVENT_ON_MESSAGE, player 4 ON_LOGOUT.
+-- mod-ale events used: server 30 ADDON_EVENT_ON_MESSAGE, player 4 ON_LOGOUT. CharDBQuery and Player:GetAccountId for
+-- the X line's character count (left "-" when either is missing).
+-- This realm's kind: OV_LEYLINE_KIND (official|community|local|den) when set; else local when OV_HOST_INVITE=0 (the
+-- Single player profiles: "this already is one"), community when the host kit lists it (host-realm.dat), official
+-- for the Sample Hangout, the Leyline brand or the default realm name, community otherwise.
 
 local PREFIX = "WULY"
 local WHISPER = 7
@@ -209,6 +222,43 @@ local function here()
     return people, bots
 end
 
+local PROTO = 2
+local KINDS = { official = true, community = true, ["local"] = true, den = true }
+
+local function realmKind()
+    local k = os.getenv("OV_LEYLINE_KIND")
+    if k and KINDS[k] then return k end
+    if os.getenv("OV_HOST_INVITE") == "0" then return "local" end
+    local h = rawget(_G, "OVHostCtl")
+    local ok, doc = false, nil
+    if h and type(h.ReadHost) == "function" then ok, doc = pcall(h.ReadHost) end
+    if ok and type(doc) == "table" and doc.realm_id then return "community" end
+    if os.getenv("OV_SAMPLER") == "1" then return "official" end
+    local m = rawget(_G, "OVMod")
+    if m and type(m.Brand) == "function" then
+        local okb, b = pcall(m.Brand)
+        if okb and type(b) == "table" and b.on then return "official" end
+    end
+    local n = os.getenv("OV_REALM_NAME")
+    if not n or n == "" or n == "WrathUnleashed" then return "official" end
+    return "community"
+end
+
+-- How many characters the asking account has on this realm (deleted ones have account 0 in the core), or nil.
+local function charCount(player)
+    if type(CharDBQuery) ~= "function" or type(player.GetAccountId) ~= "function" then return nil end
+    local ok, acct = pcall(player.GetAccountId, player)
+    acct = ok and tonumber(acct) or nil
+    if not acct or acct <= 0 then return nil end
+    local okq, q = pcall(CharDBQuery, string.format("SELECT COUNT(*) FROM characters WHERE account = %d", math.floor(acct)))
+    if not okq or not q then return nil end
+    local okn, n = pcall(function() return q:GetUInt32(0) end)
+    if not okn then return nil end
+    n = count(n)
+    if n and n > 99 then n = 99 end
+    return n
+end
+
 local function send(player, msg) player:SendAddonMessage(PREFIX, msg, WHISPER, player) end
 
 local function dash(n) return n and tostring(n) or "-" end
@@ -271,6 +321,8 @@ local function sendList(player)
         send(player, meta(r.id, r, isSample))
         if r.live and not (r.sample and isSample) then n, p, b = n + 1, p + (r.players or 0), b + (r.bots or 0) end
     end
+    send(player, "V:" .. PROTO)
+    send(player, string.format("X:this:%s:%s", realmKind(), dash(charCount(player))))
     send(player, string.format("N:%d:%d:%d", n, p, b))
     if den then send(player, "W:" .. den.title .. ":" .. den.by .. ":" .. den.line) end
     send(player, "E:" .. (#list + 1))
@@ -312,4 +364,4 @@ RegisterPlayerEvent(4, onLogout)        -- PLAYER_EVENT_ON_LOGOUT
 
 -- for tests
 OV_LEYLINE_TEST = { officialName = officialName, cleanName = cleanName, readFile = readFile, sendList = sendList, onAddonMessage = onAddonMessage,
-    cache = cache, hopTarget = hopTarget, selfId = selfId }
+    cache = cache, hopTarget = hopTarget, selfId = selfId, realmKind = realmKind, charCount = charCount, PROTO = PROTO }

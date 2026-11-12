@@ -136,8 +136,9 @@ WUUI_LEYLINE_BROWSE = 1
 W.ToggleLeyline()
 local win = L.Window()
 check("opening asks the page for page 1, not the realm", WUUI_LEYLINE_ASK == "list|1||" and #sent == 0)
-check("the browse filters and search show, the realm-list filters don't", win.bfilters.browser:IsVisible() and win.search:IsVisible()
-    and not win.filters.tag:IsVisible() and not win.filters.build:IsVisible())
+local function menuTexts() local t = {} for _, it in ipairs(L.MenuItems(1)) do t[#t + 1] = it.text end return table.concat(t, "|") end
+check("the search shows; the Filters dropdown holds the page's filters, not the realm list's", win.search:IsVisible()
+    and menuTexts() == "Filters|Plays in browser|Own game files|Has players now|Version|Clear filters")
 
 -- the page's answer (wrath-page.js listLua)
 local A, B, C, D = "aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc", "dddddddddddddddd"
@@ -168,12 +169,15 @@ end
 local rows = shown()
 check("four rows from the page, in its order", #rows == 4 and rows[2].realm.id == A and L.realms[3].id == B)
 check("the network line", win.status:GetText() == "3 realms · 14 players online · 10 bots.")
-check("this realm's row: you are here", rows[1].name:GetText():find("you are here") and rows[1].join:GetText() == "You're here")
-check("a row: name, badges; chips line with the version chip, browser, Hero Key, mods", rows[2].name:GetText():find("^Frost Haven")
-    and rows[2].name:GetText():find("Featured") and rows[2].rules:GetText() == "3.3.5a · Plays in browser · Hero Key · 3 mods"
-    and rows[2].players:GetText() == "7 playing" and rows[2].state:GetText():find("99%% up"))
-check("another version's row says own game files", rows[3].rules:GetText() == "1.12.1 · Own game files")
-check("rows open the preview (View), not a hop", rows[2].join:GetText() == "View")
+check("this realm's row: the current realm, picked", rows[1].name:GetText():find("current realm") and L.JoinText(rows[1].realm) == "You're here"
+    and L.selected == rows[1].realm)
+local n2, c2, s2 = L.Texts(rows[2].realm)
+check("a row: name; its tooltip: badges, the version chip, browser, Hero Key, mods", rows[2].name:GetText() == "Frost Haven"
+    and n2:find("Featured") and c2 == "3.3.5a · Plays in browser · Hero Key · 3 mods"
+    and rows[2].players:GetText() == "7 · 0" and s2:find("99%% up") and rows[2].type:GetText() == "In browser")
+check("another version's row says own game files", select(2, L.Texts(rows[3].realm)) == "1.12.1 · Own game files"
+    and rows[3].type:GetText() == "Own files")
+check("rows open the preview (View), not a hop", L.JoinText(rows[2].realm) == "View")
 
 -- search: asked after a short pause, with the words
 win.search:SetText("frost"); win.search:Fire("OnTextChanged")
@@ -182,30 +186,38 @@ check("search waits for the typing to stop", WUUI_LEYLINE_ASK == nil)
 clock = clock + 1; win:Fire("OnUpdate", 0.1)
 check("then asks page 1 with the words", WUUI_LEYLINE_ASK == "list|1||frost")
 win.search:SetText(""); win.search:Fire("OnTextChanged"); clock = clock + 1; win:Fire("OnUpdate", 0.1)
--- filters
-win.bfilters.browser:Fire("OnClick")
-check("Plays in browser", WUUI_LEYLINE_ASK == "list|1|b|" and win.bfilters.browser:GetText() == "In browser: on")
-win.bfilters.players:Fire("OnClick")
-check("and Has players", WUUI_LEYLINE_ASK == "list|1|b,p|")
-win.bfilters.browser:Fire("OnClick"); win.bfilters.players:Fire("OnClick")
-win.bfilters.own:Fire("OnClick")
+-- filters (the dropdown's lines)
+local function pick(text, level, value)
+    for _, it in ipairs(L.MenuItems(level or 1, value)) do if it.text == text and it.func then it.func(); return true end end
+end
+pick("Plays in browser")
+check("Plays in browser", WUUI_LEYLINE_ASK == "list|1|b|" and win.filterBtn:GetText() == "Filters (1)"
+    and L.MenuItems(1)[2].checked == true)
+pick("Has players now")
+check("and Has players", WUUI_LEYLINE_ASK == "list|1|b,p|" and win.filterBtn:GetText() == "Filters (2)")
+pick("Plays in browser"); pick("Has players now")
+pick("Own game files")
 check("Own files", WUUI_LEYLINE_ASK == "list|1|o|")
-win.bfilters.own:Fire("OnClick")
-win.bfilters.build:Fire("OnClick")
-check("Version: the first one listed (a chip, not prose)", WUUI_LEYLINE_ASK == "list|1|v12340|" and win.bfilters.build:GetText() == "Version: 3.3.5a")
-win.bfilters.build:Fire("OnClick")
+pick("Own game files")
+L.BCycle("build")
+check("Version: the first one listed (a chip, not prose)", WUUI_LEYLINE_ASK == "list|1|v12340|" and L.bfilter.build == 12340)
+L.BCycle("build")
 check("Version: the next one", WUUI_LEYLINE_ASK == "list|1|v5875|")
-win.bfilters.build:Fire("OnClick")
+L.BCycle("build")
 check("Version: back to any", WUUI_LEYLINE_ASK == "list|1||")
+pick("1.12.1", 2, "build")
+check("Version from the submenu", WUUI_LEYLINE_ASK == "list|1|v5875|")
+pick("Clear filters")
+check("Clear filters", WUUI_LEYLINE_ASK == "list|1||" and win.filterBtn:GetText() == "Filters")
 
 -- paging
 WUUI_LEYLINE_NET = { page = 1, pages = 3, total = 45, network = { realms = 40, players = 9, bots = 0 }, rows = {} }
 for i = 1, 20 do WUUI_LEYLINE_NET.rows[i] = { id = string.rep("a", 15) .. string.char(96 + (i % 26) + 1), name = "Realm " .. i, live = true, online = i, build = 12340, chip = "3.3.5a", browser = true, mods = 0 } end
 WUUI_LEYLINE_ONNET("list")
-check("20 rows, 7 shown, a page count", #L.realms == 20 and #shown() == 7 and win.count:GetText() == "Page 1 of 3 · 45 realms")
+check("20 rows, 14 shown, a page count", #L.realms == 20 and #shown() == 14 and win.count:GetText() == "Page 1 of 3 · 45 realms")
 WUUI_LEYLINE_ASK = nil
-L.Scroll(1); L.Scroll(1)
-check("Down moves through the rows first", L.offset == 13 and WUUI_LEYLINE_ASK == nil)
+L.Scroll(1)
+check("Down moves through the rows first", L.offset == 6 and WUUI_LEYLINE_ASK == nil)
 L.Scroll(1)
 check("then asks the next page", WUUI_LEYLINE_ASK == "list|2||")
 L.Scroll(-1); L.Scroll(-1); L.Scroll(-1)
@@ -222,7 +234,7 @@ end)
 rows = shown()
 local frost
 for _, r in ipairs(rows) do if r.realm.id == A then frost = r end end
-frost.join:Fire("OnClick")
+frost:Fire("OnClick")
 local panel = win.panel
 check("View opens the preview beside the window and asks the page for the details", panel and panel:IsShown() and WUUI_LEYLINE_ASK == "preview|" .. A
     and panel.title:GetText() == "Frost Haven" and panel.who:GetText() == "Loading...")
@@ -274,11 +286,14 @@ if dumpFile then dump(dumpFile:gsub("%.json$", "") .. "-preview.json") end
 panel.join:Fire("OnClick")
 check("Join from the preview: the hop (the page's fast hop takes it)", WUUI_LEYLINE_HOP == A and panel.info:GetText() == "Going to Frost Haven...")
 WUUI_LEYLINE_HOP, L.hopping = nil, nil
+win.okay:Fire("OnClick")
+check("Okay on a picked realm of the page's list: the same hop, through the preview", WUUI_LEYLINE_HOP == A)
+WUUI_LEYLINE_HOP, L.hopping = nil, nil
 
 -- another game version: never a hop; the launcher
 local old
 for _, r in ipairs(shown()) do if r.realm.id == B then old = r end end
-old.join:Fire("OnClick")
+old:Fire("OnClick")
 WUUI_LEYLINE_PREVIEW = { id = B, name = "Old Days of fun", desc = "", rules = "", live = true, online = 0, who = nil, mods = {}, build = 5875, chip = "1.12.1",
     hk = "unknown", browser = false, own = true, verdict = "launcher", why = "This realm needs a different game version than this one. Open it in the Leyline launcher." }
 WUUI_LEYLINE_ONNET("preview")
@@ -287,15 +302,15 @@ check("another version: says so plainly, Open in launcher", panel.why:GetText():
     and panel.rules:GetText() == "The host hasn't written house rules.")
 if dumpFile then dump(dumpFile:gsub("%.json$", "") .. "-launcher.json") end
 WUUI_LEYLINE_ASK = nil
-panel.join:Fire("OnClick")
-check("its Join hands it to the launcher, never a hop", WUUI_LEYLINE_ASK == "launch|" .. B and WUUI_LEYLINE_HOP == nil
+win.okay:Fire("OnClick")
+check("Okay (as the preview's Join) hands it to the launcher, never a hop", WUUI_LEYLINE_ASK == "launch|" .. B and WUUI_LEYLINE_HOP == nil
     and win.copy:GetText() == "leyline://realm/" .. B and panel.info:GetText():find("Leyline launcher"))
 
 -- offline
 local quiet
 for _, r in ipairs(shown()) do if r.realm.id == C then quiet = r end end
 quiet:Fire("OnClick")
-check("a row click opens the preview too (and puts the link in the box)", panel.title:GetText() == "Quiet Meadow" and win.copy:GetText():find(C))
+check("a row click opens the preview too", panel.title:GetText() == "Quiet Meadow" and L.selected.id == C)
 WUUI_LEYLINE_PREVIEW = { id = C, name = "Quiet Meadow", live = false, mods = {}, build = 12340, chip = "3.3.5a", verdict = "offline", why = "This realm is offline right now." }
 WUUI_LEYLINE_ONNET("preview")
 check("offline: Join is off", panel.join:GetText() == "Offline" and not panel.join:IsEnabled() and panel.players:GetText():find("Offline"))
@@ -316,7 +331,7 @@ L.AskList(1)
 clock = clock + 7
 win:Fire("OnUpdate", 0.1)
 check("the page didn't answer: the realm's own list (WULY L)", sent[#sent] and sent[#sent][2] == "L" and WUUI_LEYLINE_BROWSE == nil)
-check("and the realm-list filters are back", win.filters.tag:IsVisible() and not win.bfilters.browser:IsVisible())
+check("and the realm-list filters are back", menuTexts() == "Filters|Build: any|Rules: any|Region: any|Language: any|Has players now|Clear filters")
 
 -- the desktop client (no page): the preview from the realm's list, and the version check is its own
 WUUI_PAGE, WUUI_LEYLINE_BROWSE = nil, nil

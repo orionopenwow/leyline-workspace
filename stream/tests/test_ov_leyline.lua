@@ -64,7 +64,7 @@ local me = world[1]
 -- the list's B/R/E/U lines (the M and N lines of the network fields are checked on their own below)
 local function msgs(p, all)
     local out = {}
-    for _, m in ipairs(p.sent) do if all or not m[2]:match("^[MN]:") then out[#out + 1] = m[2] end end
+    for _, m in ipairs(p.sent) do if all or not m[2]:match("^[MNVX]:") then out[#out + 1] = m[2] end end
     return out
 end
 local r = serverEvents[30](30, me, 7, "WULY", "L", me)
@@ -101,6 +101,41 @@ check("an M line after every R line", all[2]:match("^R:this:") and all[3]:match(
     and all[4]:match("^R:abcdefghijklmnop:") and all[5]:match("^M:abcdefghijklmnop:"))
 check("M for an old listing: no flags, 3.3.5a, no tags", all[5] == "M:abcdefghijklmnop:-:0:-:12340:-:-:-:")
 check("N: the network line before E (this realm + live ones)", all[#all - 1] == "N:3:12:3" and all[#all] == "E:4")
+check("v2: V:2 and X:this before N (no account / DB here: characters -)", all[#all - 3] == "V:2"
+    and all[#all - 2] == "X:this:official:-")
+
+-- v2: this realm's kind and the asking account's characters there
+envs.OV_LEYLINE_KIND = "den"
+check("kind: OV_LEYLINE_KIND wins", T.realmKind() == "den")
+envs.OV_LEYLINE_KIND = "bogus"
+envs.OV_HOST_INVITE = "0"
+check("kind: a bad OV_LEYLINE_KIND is ignored; OV_HOST_INVITE=0 (Single player) is local", T.realmKind() == "local")
+envs.OV_LEYLINE_KIND, envs.OV_HOST_INVITE = nil, nil
+OVHostCtl = { ReadHost = function() return { realm_id = "cccccccccccccccc" } end }
+check("kind: the host kit's realm is community", T.realmKind() == "community")
+OVHostCtl = nil
+envs.OV_REALM_NAME = "Mira's realm"
+check("kind: another realm name is community", T.realmKind() == "community")
+envs.OV_REALM_NAME = "WrathUnleashed"
+check("kind: the default realm is official", T.realmKind() == "official")
+local queried
+CharDBQuery = function(sql) queried = sql; return { GetUInt32 = function(_, i) return i == 0 and 3 or nil end } end
+local acctP = fakePlayer(21)
+function acctP:GetAccountId() return 42 end
+check("characters: counted for the asking account", T.charCount(acctP) == 3
+    and queried == "SELECT COUNT(*) FROM characters WHERE account = 42")
+check("characters: no account id -> unknown", T.charCount(fakePlayer(22)) == nil)
+CharDBQuery = function() error("db down") end
+check("characters: a failing query -> unknown", T.charCount(acctP) == nil)
+CharDBQuery = function() return { GetUInt32 = function() return 5000 end } end
+check("characters: capped at 99", T.charCount(acctP) == 99)
+CharDBQuery = function() return { GetUInt32 = function() return 2 end } end
+clock = clock + 6
+serverEvents[30](30, acctP, 7, "WULY", "L", acctP)
+local xLine
+for _, m in ipairs(msgs(acctP, true)) do if m:match("^X:") then xLine = m end end
+check("characters: in the X line", xLine == "X:this:official:2")
+CharDBQuery = nil
 
 local function nrec(id, name, extra)
     return string.format('{"name":"%s","state":"live","profile":{"ruleset":"main","build":%s},"tags":%s,'

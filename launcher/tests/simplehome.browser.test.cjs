@@ -93,8 +93,12 @@ test('the switch turns Simple mode on and off, and it is remembered', async () =
   const { page, ctx, errors } = await open({});
   assert.equal(await visible(page, '.nav[data-page="simple"]'), false);
   assert.equal(await visible(page, '.nav[data-page="realms"]'), true);
+  assert.equal(await page.getAttribute('#fold-launcher-head', 'aria-expanded'), 'false', 'the switch is in the Launcher fold, closed at first');
+  await page.click('#fold-launcher-head');
   await page.click('#nav-simple-toggle');
   await page.waitForSelector('#page-simple.on #sh-play-go');
+  assert.equal(await visible(page, '#fold-launcher-head'), false, 'Simple mode: no fold headers, Settings and Help in plain view');
+  assert.equal(await visible(page, '#fold-play'), false);
   assert.equal(await visible(page, '.nav[data-page="simple"]'), true);
   assert.equal(await visible(page, '.nav[data-page="realms"]'), false);
   assert.equal(await visible(page, '.playbar'), false);

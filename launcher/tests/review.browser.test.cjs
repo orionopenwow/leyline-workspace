@@ -389,6 +389,7 @@ test('the Log in dialog stops looking in Downloads after five minutes open, and 
 test('Settings: the parts to jump to, About with the legal line, and it opens at its top every time', async () => {
   const { page, errors } = await open({ signed: true });
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'get_state'));
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.nav[data-page="settings"]');
   await page.waitForSelector('#set-jump .set-jump-b');
   const jumps = await page.$$eval('#set-jump .set-jump-b', (b) => b.map((x) => x.textContent));
@@ -401,6 +402,7 @@ test('Settings: the parts to jump to, About with the legal line, and it opens at
   await page.click('.set-jump-b:text-is("About")');
   await page.waitForFunction(() => document.querySelector('main').scrollTop > 100);
   await page.waitForTimeout(1000);   // the smooth scroll ends
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.nav[data-page="settings"]');
   await page.waitForTimeout(100);
   assert.equal(await page.evaluate(() => document.querySelector('main').scrollTop), 0, 'Settings again: at its top, not on Advanced');

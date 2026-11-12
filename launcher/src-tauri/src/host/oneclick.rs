@@ -275,6 +275,10 @@ pub struct Preflight {
     pub need_gb: f64,
     /// Empty when it fits; else the `[disk]` error setup gives.
     pub message: String,
+    /// The engine's one-time download in MB (0: nothing to download, it's here already), for the "Your world" panel
+    /// (oneclick.js); `download_known`: from the release's .json rather than the estimate.
+    pub download_mb: u64,
+    pub download_known: bool,
 }
 
 /// Fits or not. Free space that can't be told never stops a setup.
@@ -289,8 +293,10 @@ pub fn preflight(free: Option<u64>, need: u64, title: &str) -> Preflight {
                 gb(need),
                 gb(f)
             )),
+            download_mb: 0,
+            download_known: false,
         },
-        f => Preflight { ok: true, free_gb: f.map(gb).unwrap_or(0.0), need_gb: gb(need), message: String::new() },
+        f => Preflight { ok: true, free_gb: f.map(gb).unwrap_or(0.0), need_gb: gb(need), message: String::new(), download_mb: 0, download_known: false },
     }
 }
 

@@ -336,10 +336,32 @@ The Lua reads them with `os.getenv` at each use; "1" on, "0" off.
 
 | Setting (launcher words) | Key | Values | Default (profile) | Notes |
 |---|---|---|---|---|
-| Companions join me by themselves | `OV_COMPANIONS_AUTO` | `1` / `0` | `1` | off: no first-entry party, nothing at login; the Bots window still works |
-| How many follow me | `OV_COMPANIONS_FOLLOW` | `0`-`4` | `2` | clamped to 0..4 and to `OV_COMPANIONS_PER_PLAYER` (4); `0` = none join by themselves |
+| Companions join me by themselves | `OV_COMPANIONS_AUTO` | `1` / `0` | `0` (a new world, owner 12 Nov) | off: no first-entry party, nothing at login; the Bots window still works |
+| How many follow me | `OV_COMPANIONS_FOLLOW` | `0`-`4` | `0` (the script's own default is 2 when AUTO is on and FOLLOW unnamed) | clamped to 0..4 and to `OV_COMPANIONS_PER_PLAYER` (4); `0` = none join by themselves |
 | Dungeon buddies | `OV_COMPANIONS_DUNGEON_AUTO` | `1` / `0` | `1` | fills 5-player dungeons on entry; raids never (the Bots window's Raid fill does) |
-| Roaming bots in the world | `WU_BOTS` | `0`-`500` | Single player `20` (`engine.rs` `BOTS`), original world `0` | the engine turns it into `AC_PLAYERBOTS_MIN/MAX_RANDOM_BOTS` and drops the key. The original world's profile also sets `AC_PLAYERBOTS_RANDOM_BOT_AUTOLOGIN=0`: to give it roaming bots, write `AC_PLAYERBOTS_RANDOM_BOT_AUTOLOGIN=1` too (unverified that 0 keeps them all out; they stay held to 60 by `AC_PLAYERBOTS_RANDOM_BOT_MAX_LEVEL`) |
+| Roaming bots in the world | `WU_BOTS` | `0`-`500` | `0` (a new world; worlds set up before 12 Nov keep Single player's old `20`, `engine.rs` `BOTS`, written into their realm.env once) | the engine turns it into `AC_PLAYERBOTS_MIN/MAX_RANDOM_BOTS` and drops the key. The original world's profile also sets `AC_PLAYERBOTS_RANDOM_BOT_AUTOLOGIN=0`: to give it roaming bots, write `AC_PLAYERBOTS_RANDOM_BOT_AUTOLOGIN=1` too (unverified that 0 keeps them all out; they stay held to 60 by `AC_PLAYERBOTS_RANDOM_BOT_MAX_LEVEL`) |
+
+### Your world: the settings panel (12 Nov, agent `sp-settings`)
+
+Owner, 12 Nov: "lets not start immediately with a party and a filled world, let the user customize those settings in
+the single player option menu before loading their world and give them an overview of what happens". So:
+
+* **A new world starts quiet.** `host/spsettings.rs` `settle` writes the quiet defaults into the world's realm.env
+  once, before its server first reads it (`engine::begin_setup`): companions off (`AUTO=0`, `FOLLOW=0`), dungeon
+  buddies on, `WU_BOTS=0`. A world set up before (its `state.json` `filled`, not `settings_settled`) gets what it
+  had instead (`AUTO=1`, `FOLLOW=2`, dungeon buddies on, Single player `WU_BOTS=20`), only for keys its realm.env
+  doesn't name. The profiles say the same (they reach players with the next engine release).
+* **Commands.** `world_settings_get({kind})` → `{kind, companions_auto, companions_follow, dungeon_auto,
+  roaming_bots, xp_rate, chosen, set_up, running}`; `world_settings_set({kind, companions_auto?, companions_follow?,
+  dungeon_auto?, roaming_bots?, xp_rate?})` → `{settings, restart, message}`: writes only those keys (XP: all four
+  `AC_RATE_XP_*`), keeps every other line, validates (follow 0-4, bots 0-500, XP 0.5-10), makes the state folder when
+  the world isn't set up yet, and records `settings_chosen`. Single player and the original world only.
+* **The panel** (oneclick.js view `world`): the first Play of a world not set up whose settings weren't chosen shows
+  "Your world" before any download: what happens (the engine once, the maps read once, filling the world once, the
+  local login, starting) and why the first time takes 5-20 minutes and later starts take seconds; the settings;
+  Set up my world (saves, then the usual flow) or Cancel. The same settings sit in the Single player page's settings
+  (`#oc-set`), with Restart when the world runs.
+* `world_preflight` also gives `download_mb` (0 when the engine is here) and `download_known` (from the release's .json).
 
 Turning bots off entirely is the existing `OV_COMPANIONS=0` (also hides the Bots window's controls: "Bots are off on
 this realm"). The per-character choice is in the world's characters database, table `mod_companions_auto` (guid, mode

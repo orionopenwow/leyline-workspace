@@ -34,7 +34,7 @@ class SoloEnv(unittest.TestCase):
     def test_solo_env(self):
         v = env_values(SOLO)
         for k in v:
-            self.assertTrue(re.match(r"^(AC|OV)_[A-Z0-9_]+$", k), k)
+            self.assertTrue(re.match(r"^(AC|OV)_[A-Z0-9_]+$", k) or k == "WU_BOTS", k)
         self.assertEqual(v["OV_COMPANIONS"], "1", "helper bots on")
         self.assertEqual(v["AC_PLAYERBOTS_MAX_ADDED_BOTS"], "9", "a 10-player raid: you + 9")
         self.assertLessEqual(int(v["OV_COMPANIONS_PER_PLAYER_RAID"]), int(v["AC_PLAYERBOTS_MAX_ADDED_BOTS"]))
@@ -59,7 +59,9 @@ class SoloEnv(unittest.TestCase):
         """Single player: bots join a new character by themselves, come back at login, fill dungeons (ov_companions.lua
         "single player"); the launcher's Companions settings override these keys in the world's realm.env."""
         v = env_values(SOLO)
-        self.assertEqual((v["OV_COMPANIONS_AUTO"], v["OV_COMPANIONS_FOLLOW"], v["OV_COMPANIONS_DUNGEON_AUTO"]), ("1", "2", "1"))
+        # a new world starts quiet (owner 12 Nov): the player picks companions in the launcher's "Your world" panel
+        self.assertEqual((v["OV_COMPANIONS_AUTO"], v["OV_COMPANIONS_FOLLOW"], v["OV_COMPANIONS_DUNGEON_AUTO"]), ("0", "0", "1"))
+        self.assertEqual(v["WU_BOTS"], "0", "no roaming bots until asked")
         self.assertLessEqual(int(v["OV_COMPANIONS_FOLLOW"]), int(v["OV_COMPANIONS_PER_PLAYER"]))
         lua = open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_companions.lua"), encoding="utf-8").read()
         for k in ("OV_COMPANIONS_AUTO", "OV_COMPANIONS_DUNGEON_AUTO"):

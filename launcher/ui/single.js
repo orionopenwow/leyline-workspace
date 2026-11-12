@@ -294,7 +294,7 @@
     box.append(row);
     let hint;
     if (!ready) hint = folderState() !== "done" ? "Add your game folder first (step 1)." : built ? "The engine first (step 2)." : "Docker first (step 2).";
-    else if (built) hint = "Sets it up once, then takes you in. The first start gets the engine, reads the maps from your game folder and fills the world: 10 to 30 minutes.";
+    else if (built) hint = "Sets it up once, then takes you in. First you choose how your world plays (companions, how busy it is). Then Leyline gets the engine, reads the maps from your game folder and fills the world. First time only: 5–20 minutes; after that, seconds.";
     else if (o && o.profile === "den") hint = `Your PC runs ${o.name || "My Den"} now, and one PC runs one realm at a time. Start asks, then switches it: your Den and characters are kept.`;
     else if (o) hint = `Your PC hosts ${o.name || "a realm"} now, and one PC runs one realm at a time. Stop it on the Host page first.`;
     else hint = "Sets it up once, then takes you in. The first start reads the maps from your game folder and takes 5 to 20 minutes.";
@@ -326,7 +326,17 @@
       d.id = "sp-prog-d";
       box.append(d);
     }
-    if (job.running) box.append(mk("p", "sp-fine", "The first start takes 5 to 20 minutes. You can use the rest of Leyline meanwhile: it plays by itself when it's ready."));
+    // what the step is, in one line (oneclick.js STEPS, matched the way its card does)
+    const OC = window.LeylineOneClick;
+    if (job.running && OC && OC.STEPS && OC.phaseOf) {
+      const s = OC.STEPS[OC.phaseOf(job)];
+      if (s) { const sub = mk("p", "sp-fine sp-prog-sub", s.sub); sub.id = "sp-prog-sub"; box.insertBefore(sub, bar); }
+    }
+    if (job.running) {
+      const fl = mk("p", "sp-line sp-first", OC && OC.FIRST_LINE ? OC.FIRST_LINE : "First time only: 5–20 minutes. After this, your world starts in seconds.");
+      fl.id = "sp-first";
+      box.append(fl, mk("p", "sp-fine", "You can use the rest of Leyline meanwhile: it plays by itself when it's ready."));
+    }
     if (failed) {
       box.append(mk("p", "sp-line", job.problem || "Something went wrong."));
       const r = mk("div", "sp-row");
@@ -372,6 +382,9 @@
   async function startBuiltin(update) {
     const c = chosen();
     if (!c) { say("Add your game folder first.", "warn"); return; }
+    // the first time: "Your world" (what happens, and its settings) before anything is downloaded (oneclick.js)
+    const OC = window.LeylineOneClick;
+    if (!update && OC && OC.askWorld && !(await OC.askWorld("single", c.id))) { say(""); return; }
     busy = true;
     paint();
     try {

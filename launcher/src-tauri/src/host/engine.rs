@@ -867,13 +867,13 @@ impl Step {
     /// What the page shows for it (single.js's progress line).
     pub fn label(self) -> &'static str {
         match self {
-            Step::Download => "Getting the engine (a one-time download)",
-            Step::Unpack => "Checking and unpacking it",
-            Step::Maps => "Reading the maps from your game folder",
-            Step::Database => "Setting up the database",
-            Step::Fill => "Filling the world (the first time takes a few minutes)",
-            Step::Account => "Making your account",
-            Step::Start => "Starting the realm",
+            Step::Download => "Getting the engine (one-time download)",
+            Step::Unpack => "Unpacking the engine (one time)",
+            Step::Maps => "Reading the maps from your game folder (one time)",
+            Step::Database => "Making the world's database (one time)",
+            Step::Fill => "Filling the world: placing creatures, quests and items into its database (one time)",
+            Step::Account => "Creating your local login",
+            Step::Start => "Starting your world",
             Step::Verify => "Checking the engine's files",
             Step::Login => "Setting up your login again",
             Step::Ports => "Checking the world answers",

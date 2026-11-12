@@ -161,6 +161,10 @@
 
   async function go(quick, stopOther) {
     if (busy) return;
+    // the first time: "Your world" (what happens, and its settings) before anything is downloaded (oneclick.js)
+    const OC = window.LeylineOneClick;
+    const f = folder();
+    if (OC && OC.askWorld && f && !(await OC.askWorld(KIND, f.id))) return;
     askOther = null;
     busy = true;
     paint();

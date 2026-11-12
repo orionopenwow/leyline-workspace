@@ -31,6 +31,7 @@ pub mod denclick; // My Den in one click on the desktop game: sign-in keys, the 
 pub mod gfx; // Mods & Addons › Graphics: the client's own graphics settings in Config.wtf (gfx.rs)
 pub mod forum; // the Forum page: reading the website's forum (stream/forum.py)
 pub mod herokey; // Hero Key sign-in to community realms (docs/HERO-KEY-SSO.md; the herokey_sso flag)
+pub mod identity; // this launcher's own peer key (peer.key), signatures and sealed boxes for friends (docs/LEYLINE-FRIENDS.md)
 pub mod hybrid; // the hybrid client: the desktop game signs in and loads like the browser game (docs/HYBRID-CLIENT.md)
 pub mod host;
 pub mod launch;

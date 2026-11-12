@@ -53,7 +53,7 @@ pub const REVOKE_KEEP: u64 = 60 * 86400;
 pub const CODE_TTL: u64 = 24 * 3600;
 pub const CACHE_MAX: u64 = 2 * 1024 * 1024;
 const KINDS: &[&str] = &["request", "accept", "decline", "revoke", "presence", "invite", "card"];
-const WORLD_KINDS: &[&str] = &["single", "original", "den", "realm", "solo", "survivors", "other"];
+const WORLD_KINDS: &[&str] = &["single", "vanilla", "original", "den", "realm", "solo", "survivors", "other"];
 
 fn hex64(v: Option<&Value>) -> Option<&str> {
     v.and_then(Value::as_str).filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))

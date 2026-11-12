@@ -2492,6 +2492,174 @@ async fn world_share_stop(kind: String) -> Result<String, String> {
     .await
 }
 
+// ---- Friends on the Leyline network, no server (p2p/friends.rs, p2p/friendnet.rs, identity.rs; docs/LEYLINE-FRIENDS.md;
+// ui/friends.js). Everything is signed by each player's own peer key and kept in <app>/cache/friends.json.
+
+fn friends_hub() -> Result<std::sync::Arc<crate::p2p::friendnet::Hub>, String> {
+    crate::p2p::friendnet::hub(&settings::app_dir())
+}
+
+/// The Friends page: me, friends (online first), requests both ways, people near, the network's state.
+#[tauri::command]
+async fn friends_state() -> Result<serde_json::Value, String> {
+    blocking(|| {
+        use crate::p2p::friendnet::{now, ONLINE_WINDOW};
+        let h = friends_hub()?;
+        let t = now();
+        let near = h.near_list(t);
+        let mut v = h.book.lock().unwrap().view(&h.me, t, &near, ONLINE_WINDOW);
+        v["net"] = serde_json::to_value(h.state.lock().unwrap().clone()).unwrap_or_default();
+        Ok(v)
+    })
+    .await
+}
+
+/// Friends on: listening on this network, beacons, presence, the mailbox (once; the page calls it when it loads).
+#[tauri::command]
+async fn friends_start() -> Result<crate::p2p::friendnet::NetState, String> {
+    blocking(|| Ok(crate::p2p::friendnet::start(&friends_hub()?))).await
+}
+
+#[tauri::command]
+async fn friends_stop() -> Result<(), String> {
+    blocking(|| {
+        crate::p2p::friendnet::stop(&friends_hub()?);
+        Ok(())
+    })
+    .await
+}
+
+/// Your profile: name, status, sharing what you play, how you're seen on this network, the relay mailbox.
+#[tauri::command]
+async fn friends_profile(name: String, status: String, share_playing: bool, lan: String, mailbox: bool) -> Result<(), String> {
+    blocking(move || {
+        let h = friends_hub()?;
+        {
+            let mut b = h.book.lock().unwrap();
+            let p = &mut b.profile;
+            p.name = name.chars().take(32).collect();
+            p.status = status.chars().take(80).collect();
+            p.share_playing = share_playing;
+            p.lan = if ["off", "friends", "everyone"].contains(&lan.as_str()) { lan } else { "friends".into() };
+            p.mailbox = mailbox;
+            p.seq += 1;
+        }
+        h.save()?;
+        // friends get the new card with the next presence; now, so the name changes at once
+        std::thread::spawn(move || h.presence_all(true));
+        Ok(())
+    })
+    .await
+}
+
+/// A new friend code to give someone (good for a day).
+#[tauri::command]
+async fn friends_code() -> Result<String, String> {
+    blocking(|| {
+        let h = friends_hub()?;
+        let c = h.book.lock().unwrap().new_code(&h.me, crate::p2p::friendnet::now())?;
+        h.save()?;
+        Ok(c)
+    })
+    .await
+}
+
+/// Add a friend by their code: the request goes out (same network, or their relay's mailbox). Returns the way.
+#[tauri::command]
+async fn friends_add(code: String) -> Result<String, String> {
+    blocking(move || {
+        let h = friends_hub()?;
+        let c = crate::p2p::friends::parse_code(&code)?;
+        let m = h.book.lock().unwrap().request(&h.me, &c.pubkey, Some(&c.token), c.relay.as_deref(), crate::p2p::friendnet::now())?;
+        h.save()?;
+        match h.deliver(&identity_hex(&c.pubkey), &m, c.relay.as_deref()) {
+            Ok(way) => Ok(way.to_string()),
+            Err(_) => Ok("waiting".to_string()), // kept, and sent again when Leyline next starts or they come near
+        }
+    })
+    .await
+}
+
+fn identity_hex(k: &[u8; 32]) -> String {
+    crate::identity::hex(k)
+}
+
+/// Ask someone near (on this network, showing their name) to be friends.
+#[tauri::command]
+async fn friends_ask_near(peer_id: String) -> Result<String, String> {
+    blocking(move || {
+        let h = friends_hub()?;
+        let key = h.near_list(crate::p2p::friendnet::now()).into_iter().map(|(k, _)| k).find(|k| crate::identity::unhex(k).map(|b| crate::identity::peer_id(&b)).as_deref() == Some(peer_id.as_str())).ok_or("They aren't on your network any more.")?;
+        let pk = crate::identity::unhex32(&key).ok_or("bad key")?;
+        let m = h.book.lock().unwrap().request(&h.me, &pk, None, None, crate::p2p::friendnet::now())?;
+        h.save()?;
+        h.deliver(&key, &m, None).map(String::from)
+    })
+    .await
+}
+
+/// accept, decline, cancel (my request) or remove (a friend) by peer id.
+#[tauri::command]
+async fn friends_answer(peer_id: String, action: String) -> Result<String, String> {
+    blocking(move || {
+        let h = friends_hub()?;
+        let t = crate::p2p::friendnet::now();
+        let out = {
+            let mut b = h.book.lock().unwrap();
+            match action.as_str() {
+                "accept" => Some(b.accept(&h.me, &peer_id, t)?),
+                "decline" => Some(b.decline(&h.me, &peer_id, t)?),
+                "remove" => Some(b.revoke(&h.me, &peer_id, t)?),
+                "cancel" => {
+                    b.cancel(&peer_id);
+                    None
+                }
+                _ => return Err("[other] Unknown action.".into()),
+            }
+        };
+        h.save()?;
+        let Some((to, m)) = out else { return Ok("done".into()) };
+        let relay = h.book.lock().unwrap().mailbox_of(&h.me, &peer_id);
+        Ok(h.deliver(&to, &m, relay.as_deref()).map(String::from).unwrap_or_else(|_| "here".into()))
+    })
+    .await
+}
+
+/// Invite a friend into a running world of this PC (single or vanilla): the world's invite (world_invite) sent to
+/// them alone, signed and sealed.
+#[tauri::command]
+async fn friends_invite(peer_id: String, kind: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        let h = friends_hub()?;
+        let key = h.book.lock().unwrap().friend_key(&h.me, &peer_id).ok_or("That friend isn't on your list.")?;
+        let inv = world_invite_now(k)?;
+        let body = serde_json::json!({"world": {"kind": k.word(), "name": k.title()}, "link": inv.link});
+        let m = crate::p2p::friends::make_msg(&h.me, &key, "invite", body, crate::p2p::friendnet::now())?;
+        *h.playing.lock().unwrap() = (Some(k.title().to_string()), Some(serde_json::json!({"kind": k.word(), "name": k.title(), "invite_hint": "friends"})));
+        h.deliver(&key, &m, None).map(String::from)
+    })
+    .await
+}
+
+/// A friend's latest invite link (the page then shows the usual Join: solo.js offerJoin).
+#[tauri::command]
+async fn friends_join(peer_id: String) -> Result<String, String> {
+    blocking(move || {
+        let h = friends_hub()?;
+        let b = h.book.lock().unwrap();
+        let mine = h.me.public_hex();
+        let f = b.friends.iter().find(|f| {
+            let d = &f.friendship["doc"];
+            let other = if d["a"].as_str() == Some(mine.as_str()) { &d["b"] } else { &d["a"] };
+            other.as_str().and_then(crate::identity::unhex).map(|k| crate::identity::peer_id(&k)).as_deref() == Some(peer_id.as_str())
+        });
+        let link = f.and_then(|f| f.invite.as_ref()).and_then(|m| m["msg"]["body"]["link"].as_str()).map(String::from);
+        link.ok_or_else(|| "No invite from them yet: ask them to press Invite on your name.".to_string())
+    })
+    .await
+}
+
 // ---- Leyline Solo (host/classic.rs, host/classicsign.rs; docs/LEYLINE-SOLO.md: the contract the Solo app codes
 // against): the first-era world on this PC, its fast sign-in, its characters and companions, Invite a friend.
 
@@ -4001,6 +4169,16 @@ pub fn run() {
             online_characters,
             world_invite,
             world_share_stop,
+            friends_state,
+            friends_start,
+            friends_stop,
+            friends_profile,
+            friends_code,
+            friends_add,
+            friends_ask_near,
+            friends_answer,
+            friends_invite,
+            friends_join,
             classic_status, // Leyline Solo (host/classic.rs, host/classicsign.rs; docs/LEYLINE-SOLO.md)
             classic_setup,
             classic_start,

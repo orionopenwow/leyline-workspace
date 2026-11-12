@@ -657,6 +657,7 @@ mod tests {
                 (Key::Enter, 1) if self.stock => ["world_auth", "char_enum"].iter().for_each(|e| self.log(e)),
                 (Key::Enter, _) => ["player_login", "in_world"].iter().for_each(|e| self.log(e)),
                 (Key::Forward, _) => ["first_move", "walked"].iter().for_each(|e| self.log(e)),
+                (Key::Name, _) => {}
             }
             true
         }

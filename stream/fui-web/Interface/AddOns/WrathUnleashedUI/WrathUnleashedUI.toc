@@ -40,6 +40,7 @@ CompanionsTabs.lua
 BotBar.lua
 BossFights.lua
 Social.lua
+WorldFriends.lua
 Host.lua
 SkinGM.lua
 GMHide.lua

@@ -94,6 +94,15 @@
     const title = W().WORLDS[k].title;
     S.busy = "play"; S.other = null; paint();
     try {
+      // the one-click flow (oneclick.js): the folder found or asked for, room, Quick start, the setup card, errors
+      const OC = window.LeylineOneClick;
+      if (OC) {
+        const r = await OC.play(k, { stopOther: !!stopOther, say: (t, kind) => say(t, kind || ""), job: (p) => { S.job = p; paintLine(); },
+          onOther: (e) => { S.other = e.other; say(`${e.other.title} is running on this PC. Stop it and play ${title}? Its characters are saved.`, "warn"); },
+          onDocker: () => { say("This PC needs one more step for your own world. The Single player page sets it up.", "warn"); nav("single"); } });
+        if (r) store.set("leyline.single.played", String(Date.now()));
+        return;
+      }
       const r = await W().run(k, { stopOther: !!stopOther, say: (t) => say(t, ""), job: (p) => { S.job = p; paintLine(); } });
       store.set("leyline.single.played", String(Date.now()));
       const [t, kind] = W().played(r, title);
@@ -207,7 +216,8 @@
     const ready = !!(st && st.set_up);
 
     // Play
-    const go = btn(S.busy === "play" ? "Starting…" : ready ? "Play" : "Set up and play", "btn primary", () => play(false), "sh-play-go");
+    // Home in Simple mode: "Play single player" (or the original world), one click whatever its state
+    const go = btn(S.busy === "play" ? "Starting…" : k === "single" ? "Play single player" : `Play the ${(w ? w.title : "world").toLowerCase()}`, "btn primary", () => play(false), "sh-play-go");
     go.disabled = !!S.busy;
     const pick = mk("select", "sh-pick");
     pick.id = "sh-world";
@@ -222,7 +232,7 @@
     pick.addEventListener("change", () => { store.set(KEY_WORLD, pick.value); paint(); });
     const playActs = [go, pick];
     if (S.other) playActs.push(btn(`Stop ${S.other.title} and play`, "btn", () => play(true), "sh-stop-other"));
-    const playState = metaLine(st ? (running ? "Running now. Play takes you straight in." : ready ? "Ready. Starts in a minute or two." : "Not set up yet. The first time takes a while; you can leave it running.")
+    const playState = metaLine(st ? (running ? "Running now. Play takes you straight in." : ready ? "Ready. Starts in a minute or two." : "Not set up yet. Play sets it up once (10 to 30 minutes), then takes you in.")
       : (w ? "Checking…" : "Update Leyline to play your own world."), "sh-play-state");
 
     // Host

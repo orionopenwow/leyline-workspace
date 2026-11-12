@@ -1187,17 +1187,28 @@ function worldHint(k) {
   if (w && w.set_up) return { head: "READY TO PLAY", detail: `${title}, on this PC: starts in a minute or two`, warn: false };
   return { head: "PLAY SETS IT UP", detail: `${title}, on this PC: the first time takes a while`, warn: false };
 }
-// PLAY on a picked world
+// PLAY on a picked world: the one-click flow (oneclick.js: the folder found or asked for, room on the disk, Quick start
+// for a first entry, the setup card, errors with their buttons), else LeylineWorlds.run as before
 async function playWorld(k) {
   const W = window.LeylineWorlds;
+  const OC = window.LeylineOneClick;
   const title = WORLD_TITLE[k];
   if (!W) { show("single"); return; }
-  if (!haveBuild(WORLD_BUILD)) { addGameFolder(`${title} plays with your own game folder. Add it, and PLAY goes on from there.`, WORLD_BUILD); return; }
+  if (!OC && !haveBuild(WORLD_BUILD)) { addGameFolder(`${title} plays with your own game folder. Add it, and PLAY goes on from there.`, WORLD_BUILD); return; }
   const stopOther = worldStopOk === k;
   worldStopOk = "";
   $("play-go").disabled = true;
   let played = false;
+  const sayLine = (t, kind) => say("play-status", t, kind === "warn" ? "" : kind);
+  const onOther = (e) => { worldStopOk = k; say("play-status", `${e.other.title} is running on this PC. Press PLAY again to stop it (its characters are saved) and play ${title}.`, "bad"); };
+  const onDocker = () => { show("single"); say("play-status", `${title} needs one more step on this PC: Single player walks you through it.`, "bad"); };
   try {
+    if (OC) {
+      const r = await OC.play(k, { stopOther, say: sayLine, onOther, onDocker,
+        job: (p) => { if (p && p.step) say("play-status", `${p.step}${p.pct != null ? ` (${Math.round(p.pct)}%)` : ""}…`); } });
+      if (r) { statusFor = playKey(); played = true; }
+      return;
+    }
     const r = await W.run(k, {
       stopOther,
       say: (t) => say("play-status", t),
@@ -1209,8 +1220,8 @@ async function playWorld(k) {
     played = true;
   } catch (e) {
     if (e && e.folder) addGameFolder(`${title} plays with your own game folder. Add it, and PLAY goes on from there.`, WORLD_BUILD);
-    else if (e && e.docker) { show("single"); say("play-status", `${title} needs one more step on this PC: Single player walks you through it.`, "bad"); }
-    else if (e && e.other) { worldStopOk = k; say("play-status", `${e.other.title} is running on this PC. Press PLAY again to stop it (its characters are saved) and play ${title}.`, "bad"); }
+    else if (e && e.docker) onDocker();
+    else if (e && e.other) onOther(e);
     else sayErr("play-status", e);
   } finally {
     holdPlay($("play-go"), played);

@@ -57,7 +57,7 @@
     try {
       const r = await w.run(kind, { pick: name || null, stopOther, say: (t, k) => say(t, k), job: (p) => { job = p; paint(); } });
       const [t, k] = w.played(r, w.WORLDS[kind].title);
-      say(name && r && r.auto !== false ? `Started: taking ${name} into ${w.WORLDS[kind].title}.` : t, k);
+      say(name && r && r.auto !== false ? `${r.hero ? "Logged in with your Hero Key. " : ""}Taking ${name} into ${w.WORLDS[kind].title}…` : t, k);
     } catch (e) {
       if (e && e.other) { ask = { kind, name, other: e.other }; say(""); }
       else if (e && e.docker) say("The Built-in engine is made for Windows PCs for now: on this PC, Single player runs in Docker (its page).", "warn");

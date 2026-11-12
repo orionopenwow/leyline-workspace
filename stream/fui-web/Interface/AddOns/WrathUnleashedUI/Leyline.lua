@@ -294,10 +294,27 @@ function L.Request(force)
     return true
 end
 
+-- Text from the realm, safe to show: no escape sequences (a lone "|" starts one: colours, links, textures), no
+-- control characters, at most n bytes and never a cut UTF-8 character at the end.
+local function plain(s, n)
+    s = tostring(s or ""):gsub("|", ""):gsub("[%z\1-\31\127]", " ")
+    if #s > n then
+        s = s:sub(1, n)
+        local lead, tail = s:match("()([\192-\255][\128-\191]*)$")
+        if lead then
+            local b = tail:byte(1)
+            local need = b >= 240 and 4 or b >= 224 and 3 or 2
+            if #tail < need then s = s:sub(1, lead - 1) end
+        end
+    end
+    return s
+end
+L.Plain = plain
+
 local function realmLine(rest)
     local id, live, players, bots, ruleset, name = rest:match("^([%w]+):([01]):([%d%-]+):([%d%-]+):(%a+):(.*)$")
     if not id or not (id == "this" or id:match("^[a-z2-7]+$")) then return nil end
-    name = name:gsub("|", ""):sub(1, 40)
+    name = plain(name, 40)   -- the name is the last field: a ":" in it (an older realm's) stays part of it
     return { id = id, live = live == "1", players = tonumber(players), bots = tonumber(bots),
         ruleset = RULESETS[ruleset] and ruleset or "custom", name = name ~= "" and name or "Unnamed realm" }
 end
@@ -567,7 +584,8 @@ function L.Apply()
     end
     local key, desc = L.sort.key, L.sort.desc
     table.sort(out, function(a, b)
-        local la, lb = a.live and not a.remembered, b.live and not b.remembered
+        -- plain booleans: a nil beside a false would break the sort's order (table.sort: "invalid order function")
+        local la, lb = (a.live and not a.remembered) and true or false, (b.live and not b.remembered) and true or false
         if la ~= lb then return la end   -- offline last, whatever the sort
         if key then
             local va, vb = sortValue(a, key), sortValue(b, key)
@@ -760,8 +778,8 @@ function L.OnMessage(prefix, msg, channel, sender)
         local n, p, b = rest:match("^(%d+):(%d+):(%d+)$")
         if n then L.network = { realms = tonumber(n), players = tonumber(p), bots = tonumber(b) } end
     elseif kind == "W" and L.incoming then
-        local t, by, line = rest:match("^([^:]+):([^:]+):([^:]*)$")
-        if t then L.denWeek = { title = t:gsub("|", ""):sub(1, 40), by = by:gsub("|", ""):sub(1, 24), line = line:gsub("|", ""):sub(1, 140) } end
+        local t, by, line = rest:match("^([^:]+):([^:]+):(.*)$")   -- the line is last: a ":" in it stays
+        if t then L.denWeek = { title = plain(t, 40), by = plain(by, 24), line = plain(line, 140) } end
     elseif kind == "R" and L.incoming then
         local r = realmLine(rest)
         if r and #L.incoming < 100 then L.incoming[#L.incoming + 1] = r end
@@ -786,7 +804,7 @@ function L.OnMessage(prefix, msg, channel, sender)
         L.incoming, L.waiting, L.failed = nil, nil, true
         L.all = {}
         L.View()
-        setStatus(rest ~= "" and rest:gsub("|", "") or UNAVAILABLE)
+        setStatus(rest ~= "" and plain(rest, 120) or UNAVAILABLE)
         L.Refresh()
     end
 end
@@ -1253,6 +1271,7 @@ end
 
 -- The keyboard while the window is open: Enter = Okay, Esc = Cancel, Up / Down = the selection.
 function L.OnKey(key)
+    if win and not L.keys then return false end
     if key == "ENTER" then L.Okay(); return true end
     if key == "ESCAPE" then if win then win:Hide() end; return true end
     if key == "UP" then L.Move(-1); return true end
@@ -1260,9 +1279,27 @@ function L.OnKey(key)
     return false
 end
 
+-- The window takes the keyboard only while it is the window in use: taken when it opens or is clicked; let go when
+-- it closes (Esc, Cancel, the X, a loading screen), when another panel opens over it (Esc menu, map, character...),
+-- in combat, and when it is hidden any other way (Alt-Z hides the whole interface). A focused box (search, link) lets
+-- go of its focus too: a hidden box with the focus would keep every key, movement included.
+function L.TakeKeys(on)
+    on = on and true or false
+    if on and InCombatLockdown and InCombatLockdown() then on = false end
+    if on and not (win and win:IsVisible()) then on = false end
+    L.keys = on
+    if win and win.EnableKeyboard then win:EnableKeyboard(on) end
+    if not on and win then
+        for _, box in ipairs({ win.search, win.copy }) do
+            if box and box.ClearFocus then box:ClearFocus() end
+        end
+    end
+    return on
+end
+
 -- Typing a letter: it goes to the search box.
 function L.OnChar(text)
-    if not win or type(text) ~= "string" or not text:match("^[%w%s%-]$") then return false end
+    if not win or not L.keys or type(text) ~= "string" or not text:match("^[%w%s%-]$") then return false end
     win.search:SetFocus()
     win.search:SetText((win.search:GetText() or "") .. text)
     L.SetSearch(win.search:GetText())
@@ -1438,7 +1475,8 @@ local function build()
     close:SetPoint("TOPRIGHT", -4, -4)
     close:SetScript("OnClick", function() win:Hide() end)
     tinsert(UISpecialFrames, "WrathUnleashedLeylineFrame")   -- Esc closes it
-    win:EnableKeyboard(true)
+    win:EnableKeyboard(false)   -- taken on show (L.TakeKeys), never left on while hidden
+    on(win, "OnMouseDown", function() L.TakeKeys(true) end)   -- a click on the window takes the keys back
     L.charScript = on(win, "OnChar", function(_, text) L.OnChar(text) end)
     on(win, "OnKeyDown", function(_, key)
         -- without OnChar, a letter key itself goes to the search
@@ -1582,11 +1620,13 @@ local function build()
         if tick >= 1 then tick = 0; win.updated:SetText(L.UpdatedText()) end
     end)
     win:SetScript("OnShow", function()
+        L.TakeKeys(true)
         if PlaySound then pcall(PlaySound, "igCharacterInfoOpen") end
         if L.Browsing() then L.AskList(L.netPage or 1) else L.Request(false) end
         L.Refresh()
     end)
     win:SetScript("OnHide", function()
+        L.TakeKeys(false)
         if win.panel then win.panel:Hide() end
         if CloseDropDownMenus then pcall(CloseDropDownMenus) end
         if PlaySound then pcall(PlaySound, "igCharacterInfoClose") end
@@ -1665,9 +1705,31 @@ function W.ShowRealmList()
     win:Show()
 end
 
+-- Another panel opening over the window takes the keyboard back for the game (it goes through ShowUIPanel, or is
+-- the Esc menu or the map).
+function L.OtherPanel(frame)
+    if win and frame ~= win and win:IsShown() and L.keys then L.TakeKeys(false) end
+end
+if hooksecurefunc and ShowUIPanel then pcall(hooksecurefunc, "ShowUIPanel", function(frame) L.OtherPanel(frame) end) end
+for _, name in ipairs({ "GameMenuFrame", "WorldMapFrame", "InterfaceOptionsFrame", "VideoOptionsFrame", "HelpFrame" }) do
+    local f = rawget(_G, name)
+    if type(f) == "table" and f.HookScript then pcall(f.HookScript, f, "OnShow", function(self) L.OtherPanel(self) end) end
+end
+
 local listener = CreateFrame("Frame")
 listener:RegisterEvent("CHAT_MSG_ADDON")
-listener:SetScript("OnEvent", function(_, _, prefix, msg, channel, sender) L.OnMessage(prefix, msg, channel, sender) end)
+listener:RegisterEvent("PLAYER_LEAVING_WORLD")    -- a loading screen (zoning, a hop, logging out): the window closes
+listener:RegisterEvent("PLAYER_REGEN_DISABLED")   -- combat: the keys go back to the game at once
+listener:SetScript("OnEvent", function(_, event, prefix, msg, channel, sender)
+    if event == "PLAYER_LEAVING_WORLD" then
+        if win and win:IsShown() then win:Hide() end
+        L.TakeKeys(false)
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        L.TakeKeys(false)
+    else
+        L.OnMessage(prefix, msg, channel, sender)
+    end
+end)
 
 SLASH_WULEYLINE1, SLASH_WULEYLINE2 = "/leyline", "/realms"
 SlashCmdList["WULEYLINE"] = function() W.ToggleLeyline() end

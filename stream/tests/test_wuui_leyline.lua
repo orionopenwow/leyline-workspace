@@ -44,6 +44,8 @@ function Frame:SetText(t) self.text = t end
 function Frame:SetBackdrop(b) self.backdrop = b end
 function Frame:SetTexture(t) self.tex = t end
 function Frame:SetTextColor(r, g, b) self.color = { r, g, b } end
+function Frame:HookScript(n, fn) local old = self.scripts[n]; self.scripts[n] = function(...) if old then old(...) end fn(...) end end
+function Frame:EnableKeyboard(on) self.kb = on end
 function Frame:SetFocus() self.focus = true end
 function Frame:ClearFocus() self.focus = false end
 function Frame:GetText() return self.text end
@@ -93,6 +95,11 @@ local realmName = "WrathUnleashed"
 function GetRealmName() return realmName end
 function PlaySound() end
 function HideUIPanel(f) f:Hide() end
+function ShowUIPanel(f) f:Show() end
+function hooksecurefunc(name, fn)
+    local old = _G[name]
+    _G[name] = function(...) local r = old and old(...); fn(...); return r end
+end
 local clock = 100
 function GetTime() return clock end
 
@@ -156,6 +163,7 @@ GameMenuFrame:Show()
 realmBtn:Fire("OnClick")
 local win = L.Window()
 check("Realm List opens the Leyline window and closes the game menu", win and win:IsShown() and not GameMenuFrame:IsShown())
+check("open: the window has the keyboard", win.kb == true and L.keys == true)
 realmBtn:Fire("OnClick")
 check("Realm List again keeps it open (it shows, never toggles off)", win:IsShown())
 check("Esc closes it", UISpecialFrames[#UISpecialFrames] == "WrathUnleashedLeylineFrame")
@@ -324,10 +332,45 @@ win.search:SetText(""); win.search:Fire("OnTextChanged")
 check("clearing the search shows every realm again", #L.realms == 3)
 win:Fire("OnKeyDown", "ESCAPE")
 check("Esc = Cancel", not win:IsShown())
+check("closed: the keyboard goes back to the game", win.kb == false and not L.keys)
 win:Show()
 win.cancel:Fire("OnClick")
-check("Cancel closes it", not win:IsShown())
+check("Cancel closes it", not win:IsShown() and win.kb == false)
 win:Show()
+
+-- the keyboard never stays trapped: a focused box lets go when the window goes, another panel takes the keys back
+win:Fire("OnChar", "x")
+check("typing focused the search box", win.search.focus == true)
+win.copy:SetFocus()
+win:Hide()
+check("hidden: no box keeps the focus (it would keep every key, movement too)", not win.search.focus and not win.copy.focus
+    and win.kb == false)
+win.search:SetText(""); win.search:Fire("OnTextChanged")
+win:Show()
+local other = CreateFrame("Frame", "CharacterFrame", UIParent); other:Hide()
+ShowUIPanel(other)
+check("another panel opens over it: the keys go back to the game", win:IsShown() and win.kb == false and not L.keys)
+check("then Enter, the arrows and letters are the game's again", L.OnKey("ENTER") == false and L.OnChar("w") == false
+    and (win.search:GetText() or "") == "")
+win:Fire("OnMouseDown", "LeftButton")
+check("a click on the window takes them back", win.kb == true and L.keys)
+GameMenuFrame:Hide(); GameMenuFrame:Show()
+check("the Esc menu over it: keys back to the game", win.kb == false)
+GameMenuFrame:Hide()
+win:Fire("OnMouseDown", "LeftButton")
+listener:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
+check("combat: keys back to the game at once", win.kb == false and win:IsShown())
+win:Fire("OnMouseDown", "LeftButton")
+local realLockdown = InCombatLockdown
+InCombatLockdown = function() return true end
+win:Fire("OnMouseDown", "LeftButton")
+check("in combat a click doesn't take them", win.kb == false)
+InCombatLockdown = realLockdown
+win:Fire("OnMouseDown", "LeftButton")
+listener:Fire("OnEvent", "PLAYER_LEAVING_WORLD")
+check("a loading screen (zone, hop, logout): the window closes and lets go", not win:IsShown() and win.kb == false)
+win:Show()
+check("open again: keys again", win.kb == true)
 
 -- missing file on the realm: Realm list unavailable
 os.remove(datFile)
@@ -590,6 +633,21 @@ check("the realm's S line wins: only that id is this realm (a same-name realm el
     #L.realms == 2 and L.realms[1].relayId == "mmmmmmmmmmmmmmmm" and L.realms[2].id == "kkkkkkkkkkkkkkkk")
 check("names match without case, spaces or punctuation", L.SameName("Dalaran  hangout!", "dalaran hangout")
     and not L.SameName("Dalaran", "Wrath Unleashed") and not L.SameName("", ""))
+
+-- the WULY separators in names: the realm cleans them; a name (or Den line) with ":" from an older realm still parses
+check("realm: a name with ':' and '|' (colour codes, links) goes out plain", (function()
+    local n = OV_LEYLINE_TEST.cleanName("Bad:Name|cffff0000Red|r|Hitem:1|h")
+    return not n:find(":") and not n:find("|") end)())
+list({ "B:2:0", "R:this:1:4:0:main:Home", "R:eeeeeeeeeeeeeeee:1:2:0:main:Old: realm|cffff0000 red|r",
+    "M:eeeeeeeeeeeeeeee:-:10:-:12340:-:-:-:", "W:Tower:Ann:Come see: the top", "E:2" })
+check("a ':' in the last field stays part of the name; no '|' reaches the screen", (function()
+    for _, r in ipairs(L.all) do if r.id == "eeeeeeeeeeeeeeee" then return r.name == "Old: realmcffff0000 redr" end end
+    return false end)())
+check("a ':' in the Den of the week's line keeps it", L.denWeek and L.denWeek.line == "Come see: the top")
+check("a long UTF-8 name is cut whole: never half a character", (function()
+    local name = string.rep("a", 39) .. "\195\169" .. "b"            -- 39 + 2 bytes: e-acute would be cut
+    local keep = string.rep("a", 38) .. "\195\169"                   -- 38 + 2 bytes = 40: kept whole
+    return L.Plain(name, 40) == string.rep("a", 39) and L.Plain(keep .. "zz", 40) == keep end)())
 
 -- nothing the window shows names the game or its maker
 local bad

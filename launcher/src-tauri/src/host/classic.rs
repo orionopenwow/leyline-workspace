@@ -2125,13 +2125,17 @@ mod tests {
 
     #[test]
     fn the_tools_run_on_the_players_folder_as_phase_0_does() {
+        // paths as this OS writes them (Windows joins with a backslash)
         let p = Paths::new(Path::new("/app"));
         let g = Path::new("/games/first");
-        assert_eq!(tool_args(&p, g, "ad"), ["-i", "/games/first", "-o", "/app/engine-classic/data"]);
-        assert_eq!(tool_args(&p, g, "vmap_extractor"), ["-d", "/games/first/Data", "-o", "/app/engine-classic/data"]);
-        assert_eq!(tool_args(&p, g, "vmap_assembler"), ["/app/engine-classic/data/Buildings", "/app/engine-classic/data/vmaps"]);
+        let s = |x: &Path| x.display().to_string();
+        let data = s(&p.data);
+        assert!(data.ends_with("data") && data.contains("engine-classic"));
+        assert_eq!(tool_args(&p, g, "ad"), ["-i".to_string(), s(g), "-o".into(), data.clone()]);
+        assert_eq!(tool_args(&p, g, "vmap_extractor"), ["-d".to_string(), s(&g.join("Data")), "-o".into(), data.clone()]);
+        assert_eq!(tool_args(&p, g, "vmap_assembler"), [s(&p.data.join("Buildings")), s(&p.data.join("vmaps"))]);
         let m = tool_args(&p, g, "MoveMapGen");
-        assert!(m.contains(&"--buildGameObjects".to_string()) && m.contains(&"/app/engine-classic/data/".to_string()));
+        assert!(m.contains(&"--buildGameObjects".to_string()) && m.contains(&format!("{data}{}", std::path::MAIN_SEPARATOR)));
     }
 
     #[test]

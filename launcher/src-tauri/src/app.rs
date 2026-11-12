@@ -1915,13 +1915,19 @@ async fn world_status(kind: String) -> Result<crate::host::engine::EngineStatus,
 /// when the drive is short of space. Errors start with their code (docs/SINGLE-PLAYER-ONE-CLICK.md §contract).
 #[tauri::command]
 async fn world_setup(core: State<'_, Core>, client: String, kind: String) -> Result<String, String> {
-    use crate::host::{engine as eng, oneclick::tag};
     let k = world_kind(&kind)?;
     let profile = world_client(&core, k, &client)?;
+    blocking(move || world_setup_with(k, &profile)).await
+}
+
+/// world_setup once its game folder is known (blocking: the disk check may ask the release for its sizes); the
+/// single player playtest (single_play_test_cli) calls this too.
+fn world_setup_with(k: crate::host::engine::Kind, profile: &ClientProfile) -> Result<String, String> {
+    use crate::host::{engine as eng, oneclick::tag};
     let p = world_paths(k);
     let set_up = eng::set_up(&eng::have(&p, &eng::load_state(&p), false));
     if !set_up {
-        let pf = blocking(move || Ok(eng::preflight(&world_paths(k)))).await?;
+        let pf = eng::preflight(&p);
         if !pf.ok {
             return Err(pf.message);
         }
@@ -1986,30 +1992,52 @@ struct FolderFind {
 /// same as adding it by hand). Exactly one fitting: `picked`.
 #[tauri::command]
 async fn world_find_folder(core: State<'_, Core>, kind: String) -> Result<FolderFind, String> {
-    use crate::host::oneclick as oc;
     let k = world_kind(&kind)?;
     let want = world_build(k);
-    let snap = core.snapshot();
-    let row = |c: &ClientProfile, added: bool| FoundFolder { id: c.id.clone(), name: c.name.clone(), path: c.path.display().to_string(), build: c.build, added };
-    let mut found: Vec<FoundFolder> = snap.clients.iter().filter(|c| c.build == want && c.path.is_dir()).map(|c| row(c, false)).collect();
+    let mut found = folders_known(&core, want);
     if found.is_empty() {
-        let known: Vec<PathBuf> = snap.clients.iter().map(|c| c.path.clone()).collect();
-        let hits = blocking(move || {
-            Ok(oc::scan_games(&oc::usual_roots(), 3, 20_000)
-                .into_iter()
-                .filter(|p| !known.contains(p))
-                .filter_map(|p| clients::detect(&p).ok().filter(|d| d.build == want && d.complete).map(|d| (p, d)))
-                .collect::<Vec<_>>())
-        })
-        .await?;
-        for (path, det) in hits {
-            if let Ok(a) = add_profile(&core, path, det) {
-                found.push(row(&a.profile, true));
-            }
-        }
+        let known: Vec<PathBuf> = core.snapshot().clients.iter().map(|c| c.path.clone()).collect();
+        let hits = blocking(move || Ok(folders_scan(&known, want))).await?;
+        found = folders_add(&core, hits);
     }
     let picked = (found.len() == 1).then(|| found[0].id.clone());
     Ok(FolderFind { picked, found })
+}
+
+fn found_row(c: &ClientProfile, added: bool) -> FoundFolder {
+    FoundFolder { id: c.id.clone(), name: c.name.clone(), path: c.path.display().to_string(), build: c.build, added }
+}
+
+/// world_find_folder's first look: the game folders already added that fit.
+fn folders_known(core: &Core, want: clients::Build) -> Vec<FoundFolder> {
+    core.snapshot().clients.iter().filter(|c| c.build == want && c.path.is_dir()).map(|c| found_row(c, false)).collect()
+}
+
+/// world_find_folder's second: the PC's usual places looked through (blocking) for complete folders of `want`.
+fn folders_scan(known: &[PathBuf], want: clients::Build) -> Vec<(PathBuf, Detection)> {
+    use crate::host::oneclick as oc;
+    oc::scan_games(&oc::usual_roots(), 3, 20_000)
+        .into_iter()
+        .filter(|p| !known.contains(p))
+        .filter_map(|p| clients::detect(&p).ok().filter(|d| d.build == want && d.complete).map(|d| (p, d)))
+        .collect()
+}
+
+/// Each folder found added as a game folder, exactly as adding one by hand.
+fn folders_add(core: &Core, hits: Vec<(PathBuf, Detection)>) -> Vec<FoundFolder> {
+    hits.into_iter().filter_map(|(path, det)| add_profile(core, path, det).ok().map(|a| found_row(&a.profile, true))).collect()
+}
+
+/// world_find_folder without the async runtime (the single player playtest).
+fn find_folder_now(core: &Core, k: crate::host::engine::Kind) -> FolderFind {
+    let want = world_build(k);
+    let mut found = folders_known(core, want);
+    if found.is_empty() {
+        let known: Vec<PathBuf> = core.snapshot().clients.iter().map(|c| c.path.clone()).collect();
+        found = folders_add(core, folders_scan(&known, want));
+    }
+    let picked = (found.len() == 1).then(|| found[0].id.clone());
+    FolderFind { picked, found }
 }
 
 /// The disk check before setup: `{ok, free_gb, need_gb, message}` (message: the `[disk]` error, empty when it fits).
@@ -2032,8 +2060,11 @@ fn world_resume_pending() -> Option<String> {
 /// sign-in in this game folder gets another chance. The saves are never touched.
 #[tauri::command]
 fn world_repair(core: State<Core>, kind: String, client: String) -> Result<String, String> {
-    let k = world_kind(&kind)?;
-    let profile = world_client(&core, k, &client)?;
+    world_repair_now(&core, world_kind(&kind)?, &client)
+}
+
+fn world_repair_now(core: &Core, k: crate::host::engine::Kind, client: &str) -> Result<String, String> {
+    let profile = world_client(core, k, client)?;
     crate::hybrid::clear_refused(&profile.path);
     crate::host::engine::begin_repair(&settings::app_dir(), k, Some(profile.path))
 }
@@ -4150,4 +4181,495 @@ mod solo_tests {
         // the game closed: the session is taken out again
         assert!(crate::hybrid::scrub(d.path()).unwrap() && !crate::hybrid::has_session(d.path()));
     }
+}
+
+// ---- single player's playtest (crate::sptest; tools/first-run/sp_playtest.py, Control: sp-playtest): the one-click
+// flow through the same functions the Single player page uses, then the checks, with nobody at the keyboard.
+
+/// The playtest's lines: stdout (the test tool keeps it) and `<data>/sp-play-test.log`.
+fn sp_say(dir: &Path, line: &str) {
+    use std::io::Write;
+    let stamp = crate::host::engine::stamp(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
+    let text = format!("{stamp} {line}\n");
+    let _ = std::io::stdout().write_all(text.as_bytes());
+    let _ = std::io::stdout().flush();
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join(crate::sptest::LOG)) {
+        let _ = f.write_all(text.as_bytes());
+    }
+}
+
+/// Follow a setup or repair job on engine_progress to its end (`max_s` at most), its steps said as they come.
+/// `started`: the job was running right after it began (a world with nothing to do starts no job).
+fn sp_follow_job(dir: &Path, what: &str, max_s: u64) -> Result<(), String> {
+    use crate::host::engine as eng;
+    let until = std::time::Instant::now() + Duration::from_secs(max_s);
+    let mut last = (String::new(), 0usize, 255u8);
+    let mut said_at = std::time::Instant::now();
+    loop {
+        let j = eng::progress();
+        let pct = j.pct.unwrap_or(255);
+        let moved = j.step != last.0 || j.n != last.1 || (pct != 255 && (last.2 == 255 || pct >= last.2.saturating_add(10)));
+        if moved || said_at.elapsed() > Duration::from_secs(120) {
+            let p = j.pct.map(|p| format!(" {p}%")).unwrap_or_default();
+            let detail = if j.detail.is_empty() { String::new() } else { format!(" ({})", j.detail.chars().take(120).collect::<String>()) };
+            sp_say(dir, &format!("{what}: step {}/{} {}{p}{detail}", j.n, j.of, j.step));
+            last = (j.step.clone(), j.n, pct);
+            said_at = std::time::Instant::now();
+        }
+        if !j.running {
+            return match j.problem {
+                Some(p) => Err(p),
+                None => Ok(()),
+            };
+        }
+        if std::time::Instant::now() > until {
+            return Err(format!("[other] {what} took longer than {} minutes", max_s / 60));
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+/// The character of `user` in this world now (online first), read from its database.
+fn sp_char(p: &crate::host::engine::Paths, user: &str) -> Option<crate::sptest::Char> {
+    let sql = crate::sptest::in_world_sql(user).ok()?;
+    crate::sptest::parse_char(&crate::host::engine::query(p, "acore_characters", &sql).ok()?)
+}
+
+/// The worldserver's logs say this character entered the world.
+fn sp_log_says(p: &crate::host::engine::Paths, name: &str) -> bool {
+    std::fs::read_dir(&p.logs)
+        .map(|rd| {
+            rd.flatten().filter(|e| e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("log"))).any(|e| {
+                std::fs::read(e.path()).map(|b| crate::sptest::log_in_world(&String::from_utf8_lossy(&b), name)).unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
+/// Wait for `user`'s character to be in the world (characters.online = 1; the worldserver log's login line is said
+/// beside it) while the game `pid` runs. Ok(character, how it was seen), Err(why).
+fn sp_wait_in_world(p: &crate::host::engine::Paths, user: &str, pid: u32, max_s: u64) -> Result<(crate::sptest::Char, &'static str), String> {
+    use crate::denclick::{Game, Process};
+    let until = std::time::Instant::now() + Duration::from_secs(max_s);
+    let mut last: Option<crate::sptest::Char> = None;
+    while std::time::Instant::now() < until {
+        if let Some(c) = sp_char(p, user) {
+            if c.online {
+                let how = if sp_log_says(p, &c.name) { "online in the world's database; its log has the login line" } else { "online in the world's database" };
+                return Ok((c, how));
+            }
+            last = Some(c);
+        }
+        if pid != 0 && !Process(pid).alive() {
+            return Err(format!("the game closed before the world{}", last.map(|c| format!(" ({} made, level {})", c.name, c.level)).unwrap_or_default()));
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    Err(match last {
+        Some(c) if sp_log_says(p, &c.name) => format!("{} is in the world's log but not online in its database after {max_s} s", c.name),
+        Some(c) => format!("{} was made but never entered the world in {max_s} s", c.name),
+        None => format!("no character on this login after {max_s} s (Quick start didn't make one)"),
+    })
+}
+
+/// Close every game this run started (kill, then wait).
+fn sp_close_games(core: &Core) {
+    if let Ok(mut g) = core.games.lock() {
+        for c in g.iter_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+        g.clear();
+    }
+}
+
+fn sp_ports_closed() -> bool {
+    use crate::host::engine as eng;
+    !eng::port_answers(eng::LOGIN_PORT) && !eng::port_answers(eng::WORLD_PORT) && !eng::port_answers(eng::DB_PORT)
+}
+
+/// The world's environment as its server gets it (the profile, modules.env, realm.env), for the companions' count.
+fn sp_world_env(p: &crate::host::engine::Paths) -> Vec<(String, String)> {
+    use crate::host::engine as eng;
+    let read = |f: PathBuf| std::fs::read_to_string(f).unwrap_or_default();
+    let realm = std::fs::read_to_string(p.realm_env()).ok();
+    eng::world_env(p, &eng::load_state(p), &read(p.profile_env(p.kind.profile())), &read(p.modules_env()), realm.as_deref())
+}
+
+/// `Leyline play-test --single <single|vanilla> [--fresh] [--game <folder>] [--hold <s>] [--level <n>] [--checks …]`
+/// (crate::sptest): single player in one click with nobody at the keyboard, through the page's own functions:
+/// world_find_folder → world_preflight → world_setup (its progress on stdout) → world_play with `first` (a random Quick
+/// start) → in the world; then the checks. Writes `<data>/sp-play-test.json` (no password, no key). Exit 0 only when
+/// every step passed.
+pub fn single_play_test_cli(cli: crate::playtest::Cli) -> i32 {
+    use crate::host::{engine as eng, oneclick as oc};
+    use crate::sptest::{self as sp, Check};
+    std::hint::black_box(sp::SP_MARK.as_ptr());
+    let dir = settings::app_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let Some(k) = cli.single.as_deref().and_then(eng::Kind::from_word).filter(|k| *k != eng::Kind::BossRush) else {
+        eprintln!("--single takes single or vanilla");
+        return 2;
+    };
+    let now = crate::denclick::now_ms;
+    let mut rep = sp::Report::new(k.word(), &cli.sp_checks, now());
+    let report_path = dir.join(sp::REPORT);
+    let save = |rep: &sp::Report| {
+        let _ = settings::write_atomic(&report_path, serde_json::to_string_pretty(rep).unwrap_or_default().as_bytes());
+    };
+    let say = |l: &str| sp_say(&dir, l);
+    let end = |mut rep: sp::Report| -> i32 {
+        rep.finish(now());
+        let _ = settings::write_atomic(&dir.join(sp::REPORT), serde_json::to_string_pretty(&rep).unwrap_or_default().as_bytes());
+        sp_say(&dir, &format!("{}\n{}", rep.table(), if rep.passed { "PASS" } else { "FAIL" }));
+        if rep.passed { 0 } else { 1 }
+    };
+    let want = |c: Check| cli.sp_checks.contains(&c);
+    say(&format!("single player playtest: {} ({}), checks: {}", k.title(), k.word(), cli.sp_checks.iter().map(|c| c.word()).collect::<Vec<_>>().join(",")));
+    // --fresh: main.rs pointed the data folder at an empty one; a launcher's settings in it means it isn't
+    let had = dir.join(settings::FILE_NAME).exists();
+    rep.extra["fresh"] = serde_json::json!({ "asked": cli.fresh, "empty": !had, "dir": dir });
+    if cli.fresh && had {
+        rep.step("fresh data folder", Some(false), 0, "--fresh needs an empty data folder: this one already has a launcher's settings");
+        return end(rep);
+    }
+    if !eng::supported() {
+        rep.step("setup", Some(false), 0, "the Built-in engine is made for Windows PCs: run this on the PC");
+        return end(rep);
+    }
+    let core = Core {
+        settings: Mutex::new(settings::load(&dir)),
+        dir: dir.clone(),
+        known_urls: Mutex::new(HashSet::new()),
+        mods_lock: Arc::new(Mutex::new(())),
+        games: Mutex::new(Vec::new()),
+        upd: Mutex::new(UpdState::default()),
+        deep_link: Mutex::new(None),
+    };
+    let p = world_paths(k);
+    // the test Hero Key (the first-run tool's test account), only from the environment: signed in, then forgotten
+    let t = std::time::Instant::now();
+    match std::env::var_os(crate::playtest::KEY_ENV) {
+        Some(key) => {
+            std::env::remove_var(crate::playtest::KEY_ENV);
+            let r = crate::social::sign_in_key(&dir, &key.to_string_lossy());
+            drop(key);
+            match r {
+                Ok(_) => rep.step("Hero Key", Some(true), t.elapsed().as_millis() as u64, "signed in with the test Hero Key: the world plays on the Hero Key's own login"),
+                Err(e) => rep.step("Hero Key", Some(false), t.elapsed().as_millis() as u64, format!("the test Hero Key didn't sign in: {e}")),
+            }
+        }
+        None => rep.step("Hero Key", None, 0, "no test Hero Key: the world's own login (as offline)"),
+    }
+    save(&rep);
+    // 1. the game folder: --game added as Find your game files does, then world_find_folder's pick
+    let t = std::time::Instant::now();
+    if let Some(g) = &cli.game {
+        let same = |a: &Path| a.to_string_lossy().trim_end_matches(['\\', '/']).eq_ignore_ascii_case(g.to_string_lossy().trim_end_matches(['\\', '/']));
+        if !core.snapshot().clients.iter().any(|c| same(&c.path)) {
+            if let Err(e) = clients::detect(g).map_err(|e| e.to_string()).and_then(|det| add_profile(&core, g.clone(), det)) {
+                rep.step("game folder", Some(false), t.elapsed().as_millis() as u64, format!("couldn't add the game folder: {e}"));
+                return end(rep);
+            }
+        }
+    }
+    let found = find_folder_now(&core, k);
+    let Some(client) = found.picked.clone() else {
+        rep.step("game folder", Some(false), t.elapsed().as_millis() as u64, format!("world_find_folder picked none ({} found)", found.found.len()));
+        return end(rep);
+    };
+    let profile = match world_client(&core, k, &client) {
+        Ok(pr) => pr,
+        Err(e) => {
+            rep.step("game folder", Some(false), t.elapsed().as_millis() as u64, e);
+            return end(rep);
+        }
+    };
+    rep.step("game folder", Some(true), t.elapsed().as_millis() as u64, format!("{} ({})", profile.name, profile.path.display()));
+    // 2. the disk check
+    let t = std::time::Instant::now();
+    let pf = eng::preflight(&p);
+    rep.step("preflight", Some(pf.ok), t.elapsed().as_millis() as u64, if pf.ok { format!("{:.1} GB free, {:.1} GB needed", pf.free_gb, pf.need_gb) } else { pf.message.clone() });
+    save(&rep);
+    if !pf.ok {
+        return end(rep);
+    }
+    // 3. setup (the engine, the maps from the game folder, the database, the login) and the start
+    rep.phase = "setup".into();
+    save(&rep);
+    let t = std::time::Instant::now();
+    let setup = world_setup_with(k, &profile).and_then(|line| {
+        say(&format!("setup: {line}"));
+        sp_follow_job(&dir, "setup", 200 * 60)
+    });
+    let st = eng::status(&p);
+    let ok = setup.is_ok() && st.running;
+    rep.step(
+        "setup",
+        Some(ok),
+        t.elapsed().as_millis() as u64,
+        match &setup {
+            Err(e) => e.clone(),
+            Ok(()) if !st.running => format!("set up {} but not running (database {}, login {}, world {})", st.set_up, st.db_up, st.auth_up, st.world_up),
+            Ok(()) => format!("engine {}, set up and running", if st.version.is_empty() { "?".to_string() } else { st.version.clone() }),
+        },
+    );
+    save(&rep);
+    if !ok {
+        return end(rep);
+    }
+    // 4. Play, as the card's first Play: a random Quick start, straight into the world
+    rep.phase = "entering".into();
+    let t = std::time::Instant::now();
+    let hero = oc::hero_identity(&core.dir);
+    let played = world_play_now(&core, &client, k, None, None, true, hero);
+    let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
+    let play = match played {
+        Ok(pl) => pl,
+        Err(e) => {
+            rep.step("play", Some(false), t.elapsed().as_millis() as u64, e);
+            return end(sp_stop_all(&core, &profile, k, rep));
+        }
+    };
+    rep.pid = pid;
+    rep.account = play.account.clone();
+    rep.hero = play.hero;
+    rep.step("play", Some(pid != 0), t.elapsed().as_millis() as u64, format!("the game started (pid {pid}), Quick start: {}", if play.made.is_empty() { "-".to_string() } else { play.made.clone() }));
+    rep.step("signed in by itself", Some(play.auto), 0, if play.auto { "the login screen got the world's login" } else { "the game was left at its login screen" });
+    save(&rep);
+    // 5. in the world
+    let t = std::time::Instant::now();
+    let me = match sp_wait_in_world(&p, &play.account, pid, sp::IN_WORLD_S) {
+        Ok((c, how)) => {
+            rep.step("in the world", Some(true), t.elapsed().as_millis() as u64, format!("{} level {} ({how})", c.name, c.level));
+            rep.character = Some(c.clone());
+            c
+        }
+        Err(e) => {
+            rep.step("in the world", Some(false), t.elapsed().as_millis() as u64, e);
+            return end(sp_stop_all(&core, &profile, k, rep));
+        }
+    };
+    let in_world_at = std::time::Instant::now();
+    let hold = Duration::from_secs(cli.hold.clamp(8, crate::playtest::HOLD_MAX));
+    rep.phase = "in_world".into();
+    save(&rep);
+    // 6. companions: in the group and online within 30 s of entering
+    let expected = sp::expected_companions(&sp_world_env(&p));
+    rep.extra["companions_expected"] = expected.into();
+    if want(Check::Companions) {
+        if expected == 0 {
+            rep.step("companions", None, 0, "this world's settings have no companions joining by themselves");
+        } else {
+            let mut seen_at: Option<u64> = None;
+            let mut rows = Vec::new();
+            let mut why = String::new();
+            while in_world_at.elapsed() < Duration::from_secs(sp::COMPANIONS_WATCH_S) {
+                match eng::query(&p, "acore_characters", &sp::companions_sql(me.guid)) {
+                    Ok(r) => rows = sp::parse_companions(&r),
+                    Err(e) => why = e,
+                }
+                if sp::with_player(&rows).len() as u32 >= expected {
+                    seen_at = Some(in_world_at.elapsed().as_secs());
+                    break;
+                }
+                std::thread::sleep(Duration::from_secs(2));
+            }
+            let with = sp::with_player(&rows);
+            let names = with.iter().map(|c| format!("{} ({}, level {})", c.name, c.role, c.level)).collect::<Vec<_>>().join(", ");
+            let ok = seen_at.is_some_and(|s| s <= sp::COMPANIONS_WITHIN_S);
+            let line = match seen_at {
+                Some(s) => format!("{}/{expected} in the group and online after {s} s: {names}", with.len()),
+                None if !why.is_empty() => format!("{}/{expected} after {} s; the database: {why}", with.len(), sp::COMPANIONS_WATCH_S),
+                None => format!("{}/{expected} after {} s: {}", with.len(), sp::COMPANIONS_WATCH_S, if names.is_empty() { "none".to_string() } else { names }),
+            };
+            rep.step("companions", Some(ok), in_world_at.elapsed().as_millis() as u64, line);
+            rep.companions = rows.clone();
+        }
+        save(&rep);
+    }
+    // the game stays in the world `--hold` seconds from entering (the screenshots)
+    if let Some(rest) = hold.checked_sub(in_world_at.elapsed()) {
+        std::thread::sleep(rest);
+    }
+    // 7. levelup: server-driven, on this local world only (SOAP 127.0.0.1), each level read back from the database
+    if want(Check::Levelup) {
+        let t = std::time::Instant::now();
+        let mut level = me.level;
+        let mut why = String::new();
+        rep.levels.push(level);
+        while level < cli.level_to && why.is_empty() {
+            let next = level + 1;
+            let r = sp::levelup_command(&me.name, 1).and_then(|c| eng::console(&p, &c));
+            if let Err(e) = r {
+                why = format!("level {next}: the world's console said no: {e}");
+                break;
+            }
+            // saved, then read back (a few tries: the save is queued)
+            let mut got = 0u8;
+            for _ in 0..8 {
+                std::thread::sleep(Duration::from_secs(2));
+                let _ = eng::console(&p, ".saveall");
+                std::thread::sleep(Duration::from_secs(1));
+                got = eng::query(&p, "acore_characters", &sp::level_sql(me.guid)).ok().and_then(|r| r.trim().parse().ok()).unwrap_or(0);
+                if got >= next {
+                    break;
+                }
+            }
+            if got != next {
+                why = format!("asked for level {next}, the saved character is level {got}");
+                break;
+            }
+            level = got;
+            rep.levels.push(level);
+            say(&format!("levelup: {} is level {level} (saved)", me.name));
+            save(&rep);
+            std::thread::sleep(Duration::from_secs(2));
+        }
+        let mut line = if why.is_empty() { format!("{} {} to {level}, each level saved and read back ({})", me.name, me.level, sp::LEVEL_NOTE) } else { why.clone() };
+        let mut ok = why.is_empty();
+        // the companions keep to the player's level (the script re-levels them on the level change)
+        if ok && expected > 0 {
+            let mut with: Vec<(String, u8)> = Vec::new();
+            let until = std::time::Instant::now() + Duration::from_secs(120);
+            while std::time::Instant::now() < until {
+                let _ = eng::console(&p, ".saveall");
+                std::thread::sleep(Duration::from_secs(2));
+                let rows = eng::query(&p, "acore_characters", &sp::companions_sql(me.guid)).map(|r| sp::parse_companions(&r)).unwrap_or_default();
+                with = sp::with_player(&rows).iter().map(|c| (c.name.clone(), c.level)).collect();
+                if sp::follow_level(&with, level) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            let follow = sp::follow_level(&with, level);
+            line.push_str(&format!(
+                "; companions {}: {}",
+                if follow { "followed" } else { "did NOT follow" },
+                if with.is_empty() { "none with the player".to_string() } else { with.iter().map(|(n, l)| format!("{n} {l}")).collect::<Vec<_>>().join(", ") }
+            ));
+            ok &= follow;
+        }
+        rep.step("levelup", Some(ok), t.elapsed().as_millis() as u64, line);
+        if let Some(c) = sp_char(&p, &play.account) {
+            rep.character = Some(c);
+        }
+        rep.phase = "levelled".into();
+        save(&rep);
+        std::thread::sleep(Duration::from_secs(8));
+    }
+    // 8. stop on exit: the game closed, the world stops by itself (the watcher world_play started)
+    if want(Check::StopOnExit) {
+        let setting = settings::load(&dir).world_stop_on_exit;
+        rep.phase = "closing".into();
+        save(&rep);
+        sp_close_games(&core);
+        let t = std::time::Instant::now();
+        let mut stopped_at = None;
+        while t.elapsed() < Duration::from_secs(sp::STOP_WITHIN_S) {
+            std::thread::sleep(Duration::from_secs(3));
+            if sp_ports_closed() {
+                stopped_at = Some(t.elapsed().as_secs());
+                break;
+            }
+        }
+        let ok = setting && stopped_at.is_some();
+        rep.step(
+            "stoponexit",
+            Some(ok),
+            t.elapsed().as_millis() as u64,
+            match stopped_at {
+                Some(s) => format!("the world stopped {s} s after the game closed (setting on: {setting})"),
+                None => format!("the world still answers {} s after the game closed (setting on: {setting})", sp::STOP_WITHIN_S),
+            },
+        );
+        save(&rep);
+    }
+    // 9. repair: a non-critical engine file deleted, Repair, the file back, the world up, Play into the world again
+    if want(Check::Repair) {
+        sp_close_games(&core);
+        let t = std::time::Instant::now();
+        let manifest = oc::read_manifest(&p.dist);
+        let all = sp::files_under(&p.dist);
+        let victim = match &manifest {
+            Some(m) => sp::pick_victim(m.keys().map(String::as_str)),
+            None => sp::pick_victim(all.iter().map(String::as_str)),
+        };
+        let r: Result<String, String> = (|| {
+            let v = victim.ok_or("no file in the engine the world can do without (no .txt, .sql, .dist or .lua)")?;
+            let f = sp::rel_path(&p.dist, &v);
+            let before = std::fs::metadata(&f).map(|m| m.len()).map_err(|e| format!("{v}: {e}"))?;
+            std::fs::remove_file(&f).map_err(|e| format!("couldn't delete {v}: {e}"))?;
+            say(&format!("repair: deleted {v} ({before} bytes)"));
+            let line = world_repair_now(&core, k, &client)?;
+            say(&format!("repair: {line}"));
+            sp_follow_job(&dir, "repair", 90 * 60)?;
+            let back = std::fs::metadata(&f).map(|m| m.len()).unwrap_or(0);
+            if back != before {
+                return Err(format!("{v} isn't back after Repair ({back} bytes, was {before})"));
+            }
+            if let Some(m) = &manifest {
+                if !oc::manifest_bad(&p.dist, m).is_empty() {
+                    return Err(format!("Repair finished but engine files still differ from engine.json: {}", oc::manifest_bad(&p.dist, m).join(", ")));
+                }
+            }
+            if !eng::status(&p).running {
+                return Err("Repair finished but the world isn't running".into());
+            }
+            // Play again (the last character, no Quick start) and into the world
+            let hero = oc::hero_identity(&core.dir);
+            let again = world_play_now(&core, &client, k, None, None, false, hero)?;
+            let pid2 = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
+            rep.pid = pid2;
+            rep.phase = "entering_again".into();
+            save(&rep);
+            let (c, _) = sp_wait_in_world(&p, &again.account, pid2, sp::IN_WORLD_S)?;
+            Ok(format!("{v} deleted and put back by Repair ({}), the world up, Play again: {} in the world", if manifest.is_some() { "checked against engine.json" } else { "engine without a file list" }, c.name))
+        })();
+        let ok = r.is_ok();
+        rep.step("repair", Some(ok), t.elapsed().as_millis() as u64, r.unwrap_or_else(|e| e));
+        if ok {
+            rep.phase = "repaired_in_world".into();
+            save(&rep);
+            std::thread::sleep(Duration::from_secs(8));
+        }
+        save(&rep);
+    }
+    end(sp_stop_all(&core, &profile, k, rep))
+}
+
+/// The end of a playtest, always: the game closed, the one-time login out of its archive, the world saved and
+/// stopped, the Hero Key's sign-in forgotten.
+fn sp_stop_all(core: &Core, profile: &ClientProfile, k: crate::host::engine::Kind, mut rep: crate::sptest::Report) -> crate::sptest::Report {
+    use crate::host::engine as eng;
+    rep.phase = "stopping".into();
+    let t = std::time::Instant::now();
+    sp_close_games(core);
+    let mut scrubbed = false;
+    for _ in 0..40 {
+        if crate::hybrid::scrub(&profile.path).is_ok() {
+            scrubbed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let p = world_paths(k);
+    world_share_off(k);
+    let stop = if eng::status(&p).running || !sp_ports_closed() { eng::stop(&p).map(|_| ()) } else { Ok(()) };
+    let mut closed = sp_ports_closed();
+    for _ in 0..30 {
+        if closed {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(2));
+        closed = sp_ports_closed();
+    }
+    crate::social::sign_out(&core.dir);
+    rep.step(
+        "clean up",
+        Some(closed && scrubbed),
+        t.elapsed().as_millis() as u64,
+        format!("game closed, one-time login out of the game folder: {scrubbed}, world stopped: {closed}{}", stop.err().map(|e| format!(" ({e})")).unwrap_or_default()),
+    );
+    rep
 }

@@ -22,6 +22,10 @@ fn main() {
                 let _ = std::fs::create_dir_all(&d);
                 std::env::set_var(leyline_lib::settings::APP_DIR_ENV, &d);
             }
+            // --single: single player's playtest on a local world (sptest.rs), else PLAY on the official realm
+            if cli.single.is_some() {
+                std::process::exit(leyline_lib::single_play_test_cli(cli))
+            }
             std::process::exit(leyline_lib::play_test_cli(cli))
         }
         Some(Err(e)) => {

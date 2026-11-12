@@ -469,9 +469,18 @@
   <section class="page" id="page-single">
     <div class="panel wide sv-panel" id="sv"></div>
     <div class="panel wide sp" id="sp"></div>
-    <div class="panel wide pf" id="pf" aria-label="Play with a friend"></div><!-- oneclick.js: Invite a friend, the link, how a friend joins, who's in -->
-    <div class="panel wide oc-set" id="oc-set" aria-label="Single player settings"></div><!-- oneclick.js: Stop the world when the game closes -->
-    <div class="panel wide lf-panel" id="lf" data-leyline-friends aria-label="Friends"></div><!-- friends.js: friends on the Leyline network, no server (LeylineFriends.mount) -->
+    <div class="panel wide oc-set" id="oc-set" aria-label="Single player settings"></div><!-- oneclick.js: Stop the world when the game closes, Your world's settings -->
+    <!-- The one Friends area: invite to your world, who keeps a character on it, the worlds you joined, your friends list -->
+    <div class="panel wide spf" id="spf" role="region" aria-labelledby="spf-title">
+      <div class="spf-head">
+        <h2 class="spf-title" id="spf-title">Friends</h2>
+        <p class="spf-lede">Play together on your own worlds. A friend who joins keeps their character on your world, and you keep yours on theirs. No account and no server of ours: your friendships are signed by you and your friends and kept on your PCs.</p>
+      </div>
+      <div class="pf" id="pf" aria-label="Invite a friend to your world"></div><!-- oneclick.js: Invite a friend, the link, how a friend joins, who's in -->
+      <div class="wf" id="wf" aria-label="Friends with a character on your world"></div><!-- worldfriends.js: their characters, trust, remove -->
+      <div class="wf fw" id="fw" aria-label="Your friends' worlds" hidden></div><!-- worldfriends.js: Join again -->
+      <div class="lf-panel" id="lf" data-leyline-friends aria-label="Your friends list"></div><!-- friends.js: friends on the Leyline network, no server (LeylineFriends.mount) -->
+    </div>
   </section>
 
   <!-- CHARACTERS (characters.js): On this PC (each local world's characters) and Online (the official realm) -->
@@ -965,6 +974,7 @@
 <script src="den.js"></script><!-- Your Den: the one Den page and the Home entry (window.LeylineDen; after app.js and hostconsole.js) -->
 <script src="hostfriends.js"></script><!-- Play with friends: Invite a friend in one step, Ready for friends?, the friend's steps (window.LeylineHostFriends; after solo.js and den.js) -->
 <script src="friends.js"></script><!-- Friends on the Leyline network: signed by each other, no server (window.LeylineFriends; after solo.js) -->
+<script src="worldfriends.js"></script><!-- Friends with a character on your world, and Join your friend again (window.LeylineWorldFriends; after friends.js) -->
 <script src="denmarket.js"></script><!-- Mods & Addons › Dens: shared Dens and stamps, Share (window.LeylineDenMarket; after app.js and den.js) -->
 <script src="single.js"></script><!-- Single player: its page, three steps, then Manage (window.LeylineSingle; after app.js, den.js and solo.js) -->
 <script src="vanilla.js"></script><!-- the original world in one click, and window.LeylineWorlds: every local world's play path (after single.js) -->

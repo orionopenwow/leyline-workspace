@@ -608,6 +608,7 @@
   const FRIEND_LINES = [
     "Your friend needs Leyline and their own game folder, the same version as yours.",
     "Press Invite a friend while your world runs, and send them the link. They open it, and Leyline takes them in.",
+    "Their character stays on your world: next time they press Join again, with no new link.",
     "On the same network they connect straight to your PC; from anywhere else, through the Leyline relay.",
     "In the game, the Social panel's Leyline tab invites a friend without leaving the world.",
   ];
@@ -859,10 +860,13 @@
     return "none";
   }
   async function readFriends() {
+    const was = friendState();
     PF.kind = await runningWorld();
     try { PF.net = await call("den_net_state"); } catch (_) { PF.net = null; }
     if (!PF.kind && PF.link) { PF.link = ""; PF.ways = []; }
     paintFriends();
+    // a friend came in (or left): who keeps a character here, read again
+    if (friendState() !== was && window.LeylineWorldFriends) window.LeylineWorldFriends.refresh();
   }
   function watchFriends() {
     if (PF.timer) { clearTimeout(PF.timer); PF.timer = null; }
@@ -891,6 +895,7 @@
     try { PF.net = await call("den_net_state"); } catch (_) { /* as it was */ }
     PF.busy = false;
     paintFriends();
+    if (window.LeylineWorldFriends) window.LeylineWorldFriends.refresh();
   }
   const STATE_TEXT = { none: "No friend invited yet", invited: "Invited: waiting for your friend", connected: "Your friend is in" };
   function paintFriends() {
@@ -901,7 +906,7 @@
       fs === "connected" && PF.net && Number(PF.net.streams) > 1 ? `${STATE_TEXT.connected} (${PF.net.streams} connections)` : STATE_TEXT[fs]);
     chip.id = "pf-status";
     chip.dataset.state = fs;
-    h.append(mk("h3", "oc-set-h", "Play with a friend"), chip);
+    h.append(mk("h3", "oc-set-h", "Invite a friend to your world"), chip);
     const nodes = [h, friendLines()];
     const go = btn(PF.busy ? "Making the link…" : PF.link ? "New link" : "Invite a friend", "btn primary", inviteFriend, "pf-invite");
     go.disabled = PF.busy;

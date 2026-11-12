@@ -369,3 +369,38 @@ test('the i button: a bubble for every top-level page, Learn more opens its docs
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('one Friends area on the Single player page: invite, friends on your world, your friends list; its own i bubble', async () => {
+  const { page, ctx, errors } = await open({ worlds: { single: WS({ set_up: true, installed: true, running: true }), vanilla: WS({}), bossrush: WS({}) } });
+  await page.evaluate(() => window.LeylineNav.show('single'));
+  await page.waitForSelector('#pf-invite');
+  // the parts in one panel, in reading order, after the settings
+  const order = await page.evaluate(() => [...document.querySelectorAll('#page-single > .panel')].map((p) => p.id));
+  assert.deepEqual(order.slice(-2), ['oc-set', 'spf']);
+  assert.deepEqual(await page.evaluate(() => [...document.getElementById('spf').children].map((c) => c.id || c.className)), ['spf-head', 'pf', 'wf', 'fw', 'lf']);
+  assert.equal(await page.textContent('#spf-title'), 'Friends');
+  assert.equal(await page.$$eval('#spf h2', (h) => h.length), 1, 'one heading for the area');
+  assert.match(await page.textContent('#pf'), /Invite a friend to your world/);
+  assert.match(await page.textContent('#pf'), /Their character stays on your world/);
+  // the i button over the Friends area explains it, with both docs
+  await page.$eval('#spf', (e) => e.scrollIntoView({ block: 'start' }));
+  await page.click('#ll-info');
+  await page.waitForSelector('#ll-info-b:not([hidden])');
+  assert.equal(await page.textContent('#ll-info-t'), 'Friends');
+  assert.equal(await page.getAttribute('#ll-info-b', 'data-section'), 'spf');
+  assert.equal(await page.$$eval('#ll-info-b p', (l) => l.length), 4);
+  assert.equal(await page.getAttribute('#ll-info-more', 'data-link'), 'hostfriends');
+  assert.equal(await page.getAttribute('#ll-info-also', 'data-link'), 'docsingle');
+  await noBrand(page);
+  await shot(page, 'friends-area');
+  await page.click('#ll-info-also');
+  assert.deepEqual((await callsOf(page, 'open_link')).pop(), { name: 'docsingle' });
+  // back at the top: the page's own bubble
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.$eval('#sp', (e) => e.scrollIntoView({ block: 'start' }));
+  await page.click('#ll-info');
+  await page.waitForSelector('#ll-info-b:not([hidden])');
+  assert.equal(await page.textContent('#ll-info-t'), 'Single player');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

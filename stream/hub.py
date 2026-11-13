@@ -889,7 +889,7 @@ class Hub:
     # ---------------------------------------------------------------- the launcher feed
     def feed(self) -> bytes:
         """The merged catalog in the all.json shape (mods/all-json.md) plus the hub fields (docs/HUB-INDEX.md)."""
-        host = self.portal("PUBLIC_HOST") or "play.openvanilla.app"
+        host = self.portal("PUBLIC_HOST") or "leylinelauncher.com"
         base = f"https://{host}"
         projects = []
         for i in self.items():
@@ -1287,7 +1287,7 @@ class Hub:
                 "name": HANGOUT_NAME,   # the official realm, sampler or not: one name everywhere at launch
                 "kind": HANGOUT_KIND, "tagline": rec.get("tagline") or HANGOUT_LINE,
                 "temporary": bool(sample.get("temporary")), "featured": False, "new": False, "group": "home",
-                "address": self.portal("PUBLIC_HOST") or "play.openvanilla.app", "mods": self.official_mods()}
+                "address": self.portal("PUBLIC_HOST") or "leylinelauncher.com", "mods": self.official_mods()}
         fits = lambda r: net.matches(r, f) and f.get("client") in (None, client_of(r))   # noqa: E731
         rest = []
         for r in shown:

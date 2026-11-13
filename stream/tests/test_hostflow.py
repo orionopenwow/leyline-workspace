@@ -7,6 +7,7 @@ an older record (a site-made key, seed v1) still working, no banned words.
     python3 -I stream/tests/test_hostflow.py stream/wrath_portal.py
 """
 import base64, http.client, importlib.util, json, os, re, shutil, stat, subprocess, sys, tempfile, threading, urllib.parse
+os.environ.setdefault("LEYLINE_DOMAIN_MOVE", "0")   # this suite checks the names from before the move (the default is the new names since 12 Nov)
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TMP = tempfile.mkdtemp(prefix="wu-hostflow-")

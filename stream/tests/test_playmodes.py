@@ -217,7 +217,7 @@ check("Dungeons and Hangouts are off the page (modes.SHOW)", 'id="dungeons"' not
 check("players text", "2 players" in page and "1-10 players" in page)
 BANNED = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard")
 vis = re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", page, flags=re.S))
-check("no game-brand names in the page", not BANNED.findall(vis))
+check("no game-brand names in the page", not BANNED.findall(vis.replace("not affiliated with or endorsed by Blizzard Entertainment", " ")))   # the legal line (footer) is allowed
 check("no game-brand names in the catalog", not BANNED.findall(json.dumps(base)))
 check("no script on the page", "<script" not in page)
 first = PM.entries()[0]

@@ -454,7 +454,9 @@ ADDRESSES = {   # part: (new, old)
     "game": ("play.leylinelauncher.com", "wrath.openvanilla.app"),
     "relay": ("relay.leylinelauncher.com", "relay.openvanilla.app"),
 }
-DOMAIN_MOVED = os.environ.get("LEYLINE_DOMAIN_MOVE", "0").strip() == "1"
+# The default is the new names (audit 12 Nov: with the line missing from portal.env about 60 visible spots went back to
+# the old name). LEYLINE_DOMAIN_MOVE=0 (tools/domain/domain.sh off writes it) still gives the old names; both answer.
+DOMAIN_MOVED = os.environ.get("LEYLINE_DOMAIN_MOVE", "1").strip() != "0"
 
 
 def address(part: str) -> str:

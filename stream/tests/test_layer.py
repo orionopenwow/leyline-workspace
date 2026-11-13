@@ -9,6 +9,7 @@ stream play, own files and "End my browser pass" drop the lease; only same-origi
 session (not own files, not a hop, not with streaming off); a wrong build is refused; no password in any answer.
 """
 import http.client, json, os, sys, tempfile, threading, importlib.util, time, urllib.parse
+os.environ.setdefault("LEYLINE_DOMAIN_MOVE", "0")   # this suite checks the names from before the move (the default is the new names since 12 Nov)
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from xml.sax.saxutils import escape
 

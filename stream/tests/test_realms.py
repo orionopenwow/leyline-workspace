@@ -4,6 +4,7 @@ Beacons relay listing, escaping, the cache, and a slow or dead relay never slowi
     python3 -I stream/tests/test_realms.py stream/wrath_portal.py
 """
 import http.client, importlib.util, json, os, sys, threading, time
+os.environ.setdefault("LEYLINE_DOMAIN_MOVE", "0")   # this suite checks the names from before the move (the default is the new names since 12 Nov)
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from xml.sax.saxutils import escape
 

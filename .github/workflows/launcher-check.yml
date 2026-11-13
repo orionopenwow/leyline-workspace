@@ -21,6 +21,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lock:
+    # CI-only (feat-fix-launcher): the Cargo.lock with the new plugins (the cloud can't reach crates.io), as an artifact
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - name: cargo metadata (fills Cargo.lock for new dependencies only)
+        working-directory: launcher/src-tauri
+        run: cargo metadata --format-version 1 > /dev/null && git diff --stat
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cargo-lock
+          path: launcher/src-tauri/Cargo.lock
+
   check:
     runs-on: ubuntu-22.04
     timeout-minutes: 45

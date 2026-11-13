@@ -7,7 +7,7 @@
 local W = WrathUnleashedUI
 local G = { page = 1 }
 local MOD = "wuden"
-local WIN_W, WIN_H, LIST_W, PAD = 640, 400, 168, 14
+local WIN_W, WIN_H, LIST_W, PAD = 640, 460, 168, 14   -- 460: twelve pages in the list, the Keys page whole
 
 -- { key, the page's name in the list, its icon, its heading, its lines }
 G.PAGES = {
@@ -77,10 +77,15 @@ G.PAGES = {
         "G: grid on or off, Shift+G its size. R: the turn step. Shift+R: scatter (random turn and size).",
         "L: lie on the slope. Shift+L: upright. F: frame the selection.",
         "Far view: W A S D fly, Space and X up and down, Shift fast. Right mouse and wheel: the speed.",
-        "Home: back to you. Ctrl+1, 2, 3 keep a view. Shift+1, 2, 3 go back to it.",
-        "Numpad 8, 2, 4, 6 (or Ctrl and the arrows): nudge the selection. 9 and 3: up and down. 7 and 1: turn. Alt: fine. Shift: big.",
-        "Alt and drag: a circle. Drag one of several selected props and they all move together.",
-        "M: the magnet (snaps edge to edge). Ctrl+L: follow the slope. Hold Alt with a prop in hand: the precise spot.",
+        "Home: back to you. Ctrl+1, 2, 3 keep a view. Shift+1, 2, 3 go back to it." } },
+    -- the builder's comforts (12 Nov; DenKeys.lua, Den Lite qol.rs)
+    { "morekeys", "More keys", "nudge", "More keys: the builder's comforts", {
+        "Numpad 8, 2, 4, 6 (or Ctrl and the arrows): nudge the selection away, back, left, right. 9 and 3: up and down. 7 and 1: turn.",
+        "Hold Alt for a fine nudge (a tenth of a yard, one degree). Hold Shift for a big one.",
+        "Drag one of several selected props and they all move together. Alt and drag draws a circle: what is inside is selected.",
+        "Hold Alt with a prop in hand for the exact spot: no grid, no magnet. Alt and Q or E turn by one degree.",
+        "M: the magnet. Near another of its kind, a prop snaps edge to edge: walls and fences in a line.",
+        "Ctrl+L: follow the slope. What you place or move lies on the ground. Tools has Fill gap and Fill box.",
         "/dentour: your first build, step by step." } },
     { "files", "Saving", "files", "Saving and opening", {
         "Your Den saves by itself every few seconds.",

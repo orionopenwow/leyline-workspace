@@ -109,8 +109,8 @@ local function build()
     local st = S()
     card = CreateFrame("Frame", "LeylineDenCoach", UIParent)
     card:SetFrameStrata("HIGH")
-    card:SetWidth(310); card:SetHeight(170)
-    card:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -24, -160)
+    card:SetWidth(310); card:SetHeight(196)
+    card:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -24, -236)   -- under the minimap
     card:EnableMouse(true)
     if st and st.EdPanel then st.EdPanel(card, 0.92, st.ED.panel2); if st.EdEdge then st.EdEdge(card, st.ED.gold) end end
     card.icon = card:CreateTexture(nil, "ARTWORK")

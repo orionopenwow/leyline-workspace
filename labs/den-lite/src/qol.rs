@@ -340,9 +340,10 @@ mod tests {
     fn dragging_one_of_a_selection_carries_them_all_in_one_undo() {
         let (mut d, here) = den();
         let (mut sel, mut a) = (Sel::default(), Aids::default());
-        let table = d.spawn(2413, here.x + 6.0, here.y, here.z, 0.0).unwrap();
-        let chair = d.spawn(2413, here.x + 8.0, here.y, here.z, 0.0).unwrap();
-        let stool = d.spawn(2413, here.x + 6.0, here.y + 3.0, here.z, 0.0).unwrap();
+        // the chair nearest the camera (nothing in front of it on the cursor's ray), the others 2 yards beyond it
+        let chair = d.spawn(2413, here.x + 5.0, here.y, here.z, 0.0).unwrap();
+        let table = d.spawn(2413, here.x + 7.0, here.y, here.z, 0.0).unwrap();
+        let stool = d.spawn(2413, here.x + 7.0, here.y + 3.0, here.z, 0.0).unwrap();
         cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
         sel.guid = Some(table.guid);
         sel.more = vec![chair.guid, stool.guid];
@@ -368,13 +369,13 @@ mod tests {
         }
         let c = at(&d, chair.guid);
         assert!((c.x - chair.x).abs() < 0.02 && (c.y - (chair.y + 3.0)).abs() < 0.02);
-        // the table was 2 yards west of the chair: turned a quarter left with it, it is 2 yards south of it now
+        // the table was 2 yards east of the chair: turned a quarter left with it, it is 2 yards north of it now
         let t = at(&d, table.guid);
-        assert!((t.x - c.x).abs() < 0.02 && (t.y - (c.y - 2.0)).abs() < 0.02, "{t:?} {c:?}");
+        assert!((t.x - c.x).abs() < 0.02 && (t.y - (c.y + 2.0)).abs() < 0.02, "{t:?} {c:?}");
         assert!((t.o - std::f32::consts::FRAC_PI_2).abs() < 0.01, "turned with it");
-        // the stool was 2 west and 3 north: now 3 west and 2 south
+        // the stool was 2 east and 3 north: now 3 west and 2 north
         let s = at(&d, stool.guid);
-        assert!((s.x - (c.x - 3.0)).abs() < 0.02 && (s.y - (c.y - 2.0)).abs() < 0.02, "{s:?}");
+        assert!((s.x - (c.x - 3.0)).abs() < 0.02 && (s.y - (c.y + 2.0)).abs() < 0.02, "{s:?}");
         assert!(sel.guid == Some(chair.guid) && sel.more.len() == 2, "still all selected");
         // one undo puts all three back
         d.undo();

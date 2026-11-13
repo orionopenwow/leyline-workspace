@@ -1,5 +1,5 @@
 // Leyline Launcher: Your Den (docs/DEN.md "Your Den"). One click, from the side menu, the play bar's realm picker or Home's
-// banner (all go()), into your own white room to build in; one page for everything about it: Play, Invite friends and
+// banner (all go()), into your own quiet green world to build in; one page for everything about it: Play, Invite friends and
 // Ask Claude to edit it on top, each thing one click with a one-line hint.
 //
 // Where the Den runs (host/yourden.rs, host/lite.rs):

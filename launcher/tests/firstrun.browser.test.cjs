@@ -267,17 +267,17 @@ test('a brand-new player, start to end: tour, game folders, realms, PLAY, Your D
     assert.equal(await page.textContent('#pb-client-name'), 'No game folder');
   });
 
-  // 2. the tour: four steps (Find your game files is the last, with no game folder), then Done
+  // 2. the tour: six steps (Single player first; Find your game files with no game folder; the i button last), then Done
   const titles = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     titles.push(await page.textContent('#gd-tour-title'));
     await step(page, errors, `tour-${i + 1}`, i === 0 ? LARGE : SMALL, async () => {
       await page.waitForTimeout(280);
-      assert.equal(await page.textContent('#gd-tour-n'), `${i + 1} of 4`);
+      assert.equal(await page.textContent('#gd-tour-n'), `${i + 1} of 6`);
     });
     await page.click('#gd-tour-next');
   }
-  assert.equal(titles[3], 'Find your game files');
+  assert.deepEqual(titles, ['Single player', 'Play Wrath Unleashed', 'Your Den', 'Host a server', 'Find your game files', 'Ask about any page']);
   assert.equal(await page.locator('#gd-tour').count(), 0, 'Done closes the tour');
   await page.setViewportSize(SMALL);
 

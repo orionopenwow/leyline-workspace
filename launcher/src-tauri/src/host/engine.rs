@@ -997,7 +997,7 @@ pub struct EngineStatus {
     pub world_up: bool,
     /// A setup or start job is going.
     pub busy: bool,
-    /// The player's login, once made.
+    /// The player's login, once made. `password` is always empty here (app.rs world_password, on request).
     pub account: String,
     pub password: String,
     pub realm: String,
@@ -1037,7 +1037,8 @@ pub fn status(p: &Paths) -> EngineStatus {
         world_up: su && world_up,
         busy: progress().running,
         account: if h.account { s.account.clone() } else { String::new() },
-        password: if h.account { s.password.clone() } else { String::new() },
+        // never in the status the pages poll: world_password gives it when the player asks (Show, Copy)
+        password: String::new(),
         realm: REALM.into(),
         root: p.root.display().to_string(),
         backups: list_backups(p).len(),

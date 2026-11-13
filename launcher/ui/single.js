@@ -475,9 +475,20 @@
     catch (e) { say(oops(e, "The back-up didn't work. Try again."), "bad"); }
     paint();
   }
+  // the world's own login password: an older core puts it in the status; a newer one gives it only when asked
+  let shownPw = "";
+  async function password() {
+    if (es && es.password) return es.password;
+    if (shownPw) return shownPw;
+    try { shownPw = String(await call("world_password", { kind: "single" }) || ""); } catch (e) { say(oops(e, "The password couldn't be read. Try again."), "bad"); }
+    return shownPw;
+  }
+  async function showPassword() { await password(); paint(); }
   async function copyLogin() {
-    try { await navigator.clipboard.writeText(es.password); say("Password copied. Paste it on the login screen.", "ok"); }
-    catch (_) { say(`Your password: ${es.password}`); }
+    const pw = await password();
+    if (!pw) return;
+    try { await navigator.clipboard.writeText(pw); say("Password copied. Paste it on the login screen.", "ok"); }
+    catch (_) { say(`Your password: ${pw}`); }
   }
   async function showLogs(force) {
     if (logs !== null && !force) { logs = null; paint(); return; }
@@ -528,7 +539,11 @@
       // the login made for them (host/engine.rs: generated, kept on this PC): the name is filled in on the login screen
       const lr = mk("p", "sp-line sp-login");
       lr.id = "sp-login";
-      lr.append(mk("span", "", "Your login: "), mk("b", "", es.account), mk("span", "", " · password "), mk("code", "", es.password), mk("span", "", " "));
+      const pw = es.password || shownPw;
+      lr.append(mk("span", "", "Your login: "), mk("b", "", es.account), mk("span", "", " · password "));
+      if (pw) lr.append(mk("code", "", pw));
+      else { const sh = btn("Show", "link-s", showPassword); sh.id = "sp-login-show"; lr.append(sh); }
+      lr.append(mk("span", "", " "));
       const cp = btn("Copy", "link-s", copyLogin); cp.id = "sp-login-copy";
       lr.append(cp);
       card.append(lr);

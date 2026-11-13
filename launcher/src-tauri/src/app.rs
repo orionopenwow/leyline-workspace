@@ -2413,6 +2413,22 @@ async fn world_gather_chars(core: State<'_, Core>, kind: String) -> Result<Strin
     .await
 }
 
+/// The world's own login password, when the player asks for it (Show, Copy on the Manage card): never in the status
+/// the pages poll.
+#[tauri::command]
+async fn world_password(kind: String) -> Result<String, String> {
+    use crate::host::engine as eng;
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        let s = eng::load_state(&world_paths(k));
+        if !s.account_made {
+            return Err(format!("Set {} up first.", k.title()));
+        }
+        Ok(s.password)
+    })
+    .await
+}
+
 /// A world's back-ups, newest first (when, why), for its Restore list.
 #[tauri::command]
 async fn world_backups(kind: String) -> Result<Vec<crate::host::engine::BackupInfo>, String> {
@@ -5106,6 +5122,7 @@ pub fn run() {
             world_backups,
             world_restore,
             world_gather_chars,
+            world_password,
             world_update_check,
             world_update,
             world_choices,

@@ -32,7 +32,11 @@ class BossRushProfile(unittest.TestCase):
         self.assertEqual(self.e["AC_LEYLINE_BOSSFIGHT_ENABLE"], "1")
         self.assertEqual(self.e["AC_LEYLINE_BOSSFIGHT_BOTS"], "1")
         self.assertEqual(self.e["AC_PLAYERBOTS_ENABLED"], "1")
-        self.assertEqual(self.e["AC_PLAYERBOTS_MAX_ADDED_BOTS"], "9")
+        self.assertEqual(self.e["AC_PLAYERBOTS_MAX_ADDED_BOTS"], "24")   # a 25-player raid: you and 24 (start anywhere)
+
+    def test_friends_wait_then_companions(self):
+        self.assertEqual(self.e["AC_LEYLINE_BOSSFIGHT_LOBBY_WAIT_SEC"], "600")
+        self.assertEqual(self.e["AC_ALLOW_TWO_SIDE_INTERACTION_GROUP"], "1")
 
     def test_nothing_but_the_fights(self):
         self.assertEqual(self.e["WU_BOTS"], "0")

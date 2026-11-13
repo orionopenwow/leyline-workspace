@@ -186,7 +186,7 @@ class InStep(unittest.TestCase):
         self.assertEqual(set(re.findall(r'\["([a-z0-9-]+)"\] = "', go.split("local BOSSFIGHTS = ")[1].split("\n")[0])), set(ex.BOSSES))
 
     def test_no_brand_words_in_player_text(self):
-        for path in [os.path.join(MOD, "src", f) for f in ("Bossfights.cpp", "BossfightsLogic.h", "BossfightHeroes.cpp",
+        for path in [os.path.join(MOD, "src", f) for f in ("Bossfights.cpp", "BossfightsLogic.h", "BossfightsStarts.h", "BossfightHeroes.cpp",
                                                            "BossfightHeroes.h", "BossfightsHeroLogic.h", "BossfightsHeroData.h")]:
             src = open(path, encoding="utf-8").read()
             strings = re.findall(r'"((?:[^"\\]|\\.)*)"', src)

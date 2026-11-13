@@ -7,8 +7,8 @@ CREATE TABLE IF NOT EXISTS `leyline_bf_hero_accounts` (
   `last_spec` VARCHAR(12) NOT NULL DEFAULT '',
   `last_spec2` VARCHAR(12) NOT NULL DEFAULT '',
   `last_faction` TINYINT NOT NULL DEFAULT -1,
-  `last_go` VARCHAR(40) NOT NULL DEFAULT 'bf:frozen-throne:normal:bots',
-  `pending_go` VARCHAR(40) NOT NULL DEFAULT '',
+  `last_go` VARCHAR(64) NOT NULL DEFAULT 'bf:frozen-throne:normal:bots',
+  `pending_go` VARCHAR(64) NOT NULL DEFAULT '',
   `pending_until` INT UNSIGNED NOT NULL DEFAULT 0,
   UNIQUE KEY `main` (`main_account_id`)
 );

@@ -2045,6 +2045,37 @@ async fn world_settings_get(kind: String) -> Result<crate::host::spsettings::Wor
     .await
 }
 
+/// The mods in a single player world (host/worldmods.rs): the engine's own modules as its server gets them at its next
+/// start, read from disk (no network). The Single player page's "Mods in this world" lists them beside the game folder's.
+#[tauri::command]
+async fn world_mods_get(kind: String) -> Result<crate::host::worldmods::WorldMods, String> {
+    use crate::host::{engine as eng, worldmods as wm};
+    let k = world_kind(&kind)?;
+    if !wm::supports(k) {
+        return Err(tag_other(format!("{} has no world mods.", k.title())));
+    }
+    blocking(move || {
+        let p = world_paths(k);
+        let st = eng::status(&p);
+        Ok(wm::WorldMods { kind: k.word().into(), mods: wm::list(&p), set_up: st.set_up, running: st.running })
+    })
+    .await
+}
+
+/// Turn one of a world's optional modules off or on (its realm.env); a running world takes it at its next start
+/// (`restart`: the page offers Restart now).
+#[tauri::command]
+async fn world_mods_set(kind: String, id: String, on: bool) -> Result<crate::host::worldmods::Saved, String> {
+    use crate::host::{engine as eng, worldmods as wm};
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        let p = world_paths(k);
+        let running = eng::status(&p).running;
+        wm::set(&p, &id, on, running).map_err(tag_other)
+    })
+    .await
+}
+
 /// Change a world's settings (only the ones given), written into its realm.env; the world needn't be set up yet. A
 /// running world takes them at its next start (`restart`: the page offers Restart).
 /// The page sends the keys as written here (companions_auto, ...), not in camelCase.
@@ -4576,6 +4607,8 @@ pub fn run() {
             world_choices,
             world_settings_get, // Single player's world settings before the first load and later (host/spsettings.rs)
             world_settings_set,
+            world_mods_get, // Single player's "Mods in this world": the engine's own modules, off or on (host/worldmods.rs)
+            world_mods_set,
             world_play,
             world_find_folder, // one click (docs/SINGLE-PLAYER-ONE-CLICK.md §contract): the folder, the disk, resume, Repair
             world_preflight,

@@ -589,6 +589,10 @@ pub fn world_env(p: &Paths, s: &State, profile: &str, modules: &str, realm: Opti
     put(&mut v, &env_name("SOAP.IP"), ADDRESS);
     put(&mut v, &env_name("SOAP.Port"), SOAP_PORT.to_string());
     put(&mut v, &env_name("PidFile"), fwd(&p.pid("world")));
+    // the bots module's command server (Playerbots.CommandServerPort, 8888 by default) listens on every address of
+    // the PC: off here (0 turns it off upstream), so no bot command socket on the network and no firewall prompt for
+    // a world that serves nobody else
+    put(&mut v, &env_name("Playerbots.CommandServerPort"), "0");
     v.retain(|(k, _)| k != "WU_BOTS");
     v
 }
@@ -2700,8 +2704,10 @@ mod tests {
         assert_eq!(get(&v, "WU_BOTS"), None, "the kit's own variable isn't passed on");
         assert_eq!(get(&v, "AC_VMAP_ENABLE_LOS"), Some("1"));
         // but never the databases, the address or the console
-        let v = world_env(&p, &st(), "", "", Some("AC_BIND_IP=0.0.0.0\nAC_LOGIN_DATABASE_INFO=x\nAC_CONSOLE_ENABLE=1\nWU_BOTS=lots\n"));
+        let v = world_env(&p, &st(), "", "", Some("AC_BIND_IP=0.0.0.0\nAC_LOGIN_DATABASE_INFO=x\nAC_CONSOLE_ENABLE=1\nWU_BOTS=lots\nAC_PLAYERBOTS_COMMAND_SERVER_PORT=8888\n"));
         assert_eq!(get(&v, "AC_BIND_IP"), Some("127.0.0.1"));
+        assert_eq!(env_name("Playerbots.CommandServerPort"), "AC_PLAYERBOTS_COMMAND_SERVER_PORT");
+        assert_eq!(get(&v, "AC_PLAYERBOTS_COMMAND_SERVER_PORT"), Some("0"), "the bots' command server is off on this PC");
         assert!(get(&v, "AC_LOGIN_DATABASE_INFO").unwrap().starts_with("127.0.0.1;13306;root;"));
         assert_eq!(get(&v, "AC_CONSOLE_ENABLE"), Some("0"));
         assert_eq!(get(&v, "AC_PLAYERBOTS_MIN_RANDOM_BOTS"), Some("0"), "not a number: the quiet default");

@@ -40,7 +40,8 @@ What it is not (honest limits, also in the player guide):
 2. **Play the original world (level 60) with companions.**
    * First time: the progress line under the card (its own `engine_progress` kind `vanilla`): the engine (skipped
      if Single player or Boss Rush got it already), the maps (skipped if Single player read them: the original world
-     shares Single player's `data/`), the database, the login, the start. 10 to 30 minutes.
+     shares Single player's `data/`), the database, the login, the start. 5 to 20 minutes (measured on the owner's PC:
+     about 7.5, of which filling the world is 5; see "Setup speed" below).
    * Then the game starts on 127.0.0.1:3724, signed in by itself, the realm "Original world" picked, character
      select (or character creation when there are none).
 3. Optional **Quick start** (race, class, male / female, name): the same, then the new character is made and entered.
@@ -263,7 +264,12 @@ Leyline Solo has no realm scripts: its friends keep their characters, invited fr
 | `world_find_folder`, `world_preflight`, `world_resume_pending`, `world_repair`, `set_world_stop_on_exit` | one click's holes (§contract) |
 | `local_characters`, `online_characters` | the Characters page |
 | `world_invite {kind}`, `world_share_stop {kind}` | Invite a friend from a world |
-| `world_friends {kind}` (`single`, `vanilla`, `solo`), `world_friend {kind, user, action}` | the friends with a lasting login and their characters; `trust`, `untrust`, `remove` (characters kept), `delete` |
+| `world_friends {kind}` (`single`, `vanilla`, `solo`), `world_friend {kind, user, action}` | the friends with a lasting login and their characters; `trust`, `untrust`, `remove` (characters kept), `delete`, `give:<login>` (the friend's characters to another friend's login, backed up first) |
+| `world_update_check {kind, force?}`, `world_update {kind}` | the release looked at for a newer engine (12 h cache, 5 s at most); the update (backed up first, saves and settings kept) |
+| `world_backups {kind}`, `world_restore {kind, name}` | the back-ups (newest first, when and why); Restore (the world as it is now backed up first) |
+| `world_gather_chars {kind}`, `world_password {kind}` | Move my characters to the login Play uses now (backed up first); the world's own password on request (never in the status) |
+| `set_world_stop_on_close`, `close_leyline {stop}` | Stop the world when Leyline closes; the page's answer when friends are in it |
+| `peer_key_export`, `peer_key_import` | Settings › Your Leyline network key: save it to a file, bring a saved one back |
 | `friend_worlds`, `join_friend_again {client, realmId}` | the friend's side: the worlds this PC joined, and joining one again with no new link |
 
 `engine_play` (Single player's Play) now goes through `world_play`: it signs in by itself too.
@@ -359,6 +365,34 @@ world (and its sharing) when: the setting is on, no Play came since, no other ga
 world is still up (and no setup or repair is going), and no friend is in it: online characters on friends' logins
 (`G` + 9, `engine::FRIENDS_SQL`). A world that can't be asked stays up.
 
+### Stop the world when Leyline closes (setting `world_stop_on_close`, on by default)
+
+Closing Leyline's main window with a local world running (any of Single player, the original world, Boss Rush): no
+friend in it, the window goes, the world is saved and stopped (its sharing with it), friends see Leyline offline, then
+Leyline exits. With friends in it (`engine::friends_online`), the close waits and the page asks (`leyline:close-world`):
+**Stop it and close Leyline**, **Keep it running and close** (friends who came through Leyline lose their way in), or
+**Cancel**. The setting off: the world keeps running after Leyline closes, as before. In-game asks (Invite a friend)
+that nobody ran in two minutes are answered by the realm script and the launcher, so the game never waits forever on
+a closed launcher.
+
+### Engine updates (`world_update_check`, `world_update`)
+
+The engine (and with it the realm scripts and profiles) is shared by every world: Single player's `state.json` keeps
+the installed and the release's sha256 for all of them (`engine::engine_shas`). The Single player page and the
+original world's card look at the release when they open and after a cold start (at most every 12 hours, 5 s at
+most, in the background) and offer **Update your world engine**. The update downloads and checks the new engine,
+stops the world (everyone saved), swaps the engine and starts it again; maps, saves, settings and back-ups stay. Each
+world's saves are backed up before its first start on an engine it hasn't run on (`State::ran_sha`), so the other
+worlds are covered when they next start. Den Lite updates itself the same way: Play solo asks its release in the
+background (12 hours), and a checked newer program is swapped in at the next start.
+
+### Back-ups and Restore
+
+Automatic back-ups (each zip's `about.json` says why): once a day on a clean stop, before a world's first start on a
+new engine, before Repair, before characters are moved, before a restore; the newest 10 are kept. **Back-ups and
+Restore** on a world's card lists them; **Restore** (asked twice) backs up the world as it is now, stops it, loads the
+chosen back-up's saves (accounts, characters, the bots) and leaves it stopped for Play.
+
 ### The Hero Key's login in a local world
 
 Signed in on Home (the social session), each Play of Single player or the original world (Boss Rush keeps its hero
@@ -367,9 +401,9 @@ login) uses a login of the Hero Key's own in that world, the same on every Play 
 `HK` + the first 14 characters of base32( HMAC-SHA256( local secret, "leyline-local-world:" + the website's address
 + ":" + the account's id ) ): 16 characters, A-Z and 2-7.
 
-* The account's id is `me.pid` from the website (asked once per Play, 8 s at most; kept in `<app data>/local-hero.json`
-  so an offline Play keeps the same login; a revoked session forgets it). `engine_play` (a command that can't wait)
-  uses the kept id only.
+* The account's id is `me.pid` from the website (asked at most every 30 minutes, 8 s at most in all, on its own
+  thread; kept in `<app data>/local-hero.json` so an offline or slow Play keeps the same login; a revoked session
+  forgets it). `engine_play` (a command that can't wait) uses the kept id only.
 * The local secret is 32 random bytes in `<app data>/local-hero.key`, made once, never sent anywhere: another PC
   makes other names for the same account, and the name doesn't give the account away.
 * The login is made or updated with a fresh password for this Play only (`engine::hero_login`: never stored, never
@@ -378,7 +412,11 @@ login) uses a login of the Hero Key's own in that world, the same on every Play 
   flags) move to it (`engine::move_sql`: updates only, nothing deleted), inside a back-up taken first; if the back-up
   fails, nothing moves and Play says `[db]`. `state.json` keeps `hero_moved_to` and `hero_accounts` (the Characters
   page lists the characters of the world's own login and every Hero Key login that played here).
-* Signed out: the world's own login, as before.
+* Characters never vanish with the sign-in: whatever login Play asks for (the Hero Key's, or the world's own when
+  signed out, the session dropped, or another Hero Key signed in on this PC), it goes in on the one of the player's
+  own logins here that holds the characters (a picked character's own login first; `engine::pick_login`), with a
+  password for that Play set over local SQL. The page then offers **Move them to the login I use now**
+  (`world_gather_chars`: every character of the player's other logins here moved onto one, inside a back-up).
 
 ### First entry and the last character
 
@@ -564,6 +602,9 @@ release"). Nobody clicks anything:
 * **Playing with friends** across two PCs: the claim through the real relay and the same-network forwarder, the
   engine's and Solo's console answers to `account set password`, the friend's game signing in with the claimed login,
   the Leyline tab inside the real Friends window (and with Forever UI loaded, which also restyles that window).
+* **The close confirm, Restore and the engine update** on a real PC (the browser tests use a fake core).
+* **The bots module's command server off** (`Playerbots.CommandServerPort=0`): the module skips it at 0 by its own
+  source; not seen in a world log yet.
 * **Character select order:** `pick` selects by name, so the order doesn't matter; the Characters page lists them in
   the database's order (oldest first).
 
@@ -625,3 +666,37 @@ and the source links in the zip, as the Built-in engine does today: `LICENSES/`)
 Recommendation: ship the original world on the Wrath client now (built here), and take the CMaNGOS Classic engine as
 its own project once the Built-in engine has been proven on real Windows PCs, starting from the Host kit's
 `cmangos-1.12.1` profile (the source pins and the extraction are already done there).
+
+## Setup speed: a pre-filled world database (plan, not built)
+
+Measured on the owner's PC (12 Nov, 02:35 run): download 10 s, unpack 12 s, maps 38 s, database 3 s, **fill 4 min
+54 s**, account 1 s, first start 1 min 34 s: about 7.5 min, two thirds of it `dbimport` rebuilding `acore_world`
+from SQL. The original world and Boss Rush each fill their own again. The plan, in order of payoff:
+
+1. **Ship the filled world database with the engine.** The engine-windows workflow already runs dbimport to build;
+   add a step that starts the bundled MySQL on a scratch datadir, runs dbimport (all four databases), applies each
+   kind's `profile_sql`, stops MySQL cleanly (`innodb_fast_shutdown=0`), and zips the datadir per kind
+   (`prefilled-<kind>.zip`, about 150-250 MB compressed; published beside the engine zip with its own `.sha256` and
+   listed in engine.json with the core commit it was made from). The launcher's plan gets a `Prefilled` step in place
+   of `Database` + `Fill` when the release has one for this engine's sha: download (with the engine), check, unzip
+   into `db/`, then `Account` as today. The core's `Updates.AutoSetup` still applies any later SQL on first start.
+   Saves nothing of the player's; a world already set up is never touched. Risk: MySQL datadirs are tied to the
+   MySQL build (the same one ships in the engine, so fine) and the password: the root password is set after unpack
+   with `ALTER USER` on a `--skip-grant-tables` first start, or the zip is made with a fixed root password that the
+   first start changes to the world's own (`state.db_password`).
+2. **Copy a clean `acore_world` between kinds.** After the first fill on this PC, snapshot the clean world database
+   (`mysqldump acore_world` before any player touches it, kept in `engine/state/world-clean.sql.zst`); the next kind
+   (original world, Boss Rush) loads it instead of running dbimport for the world database, then applies its own
+   profile SQL. Saves ~4 min on each later kind. Needs care: each kind's profile SQL must apply cleanly on top.
+3. **Maps in parallel with Database + Fill** (the extractor reads the game folder while dbimport runs): ~40 s.
+4. **Boss Rush copies its maps from Single player's `data/`** when they are there, as the original world shares them.
+
+With (1), a first setup is about 2.5 min (download, unpack, maps, unzip, first start). Effort: (1) M-L (workflow,
+release assets, a step and its tests, a fallback to today's fill), (2) M, (3) S, (4) S. Needs a Windows CI run and a
+playtest on the owner's PC to prove.
+
+## Playtest checks still to add (`sp-playtest`)
+
+`--companions-on` (AUTO=1 for the run), `--both` (the original world too), `--offline` (block the site and relay hosts
+for the run; expect Play in under 5 s), a Den play, a Restore round trip, and an engine update from an older engine
+(an older `engine-latest` sha pinned by `LEYLINE_ENGINE_URL`).

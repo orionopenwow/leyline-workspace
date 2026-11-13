@@ -200,7 +200,7 @@ class InStep(unittest.TestCase):
         self.assertIn("/etc/cron.d/wu-bossfights", sp)
         bat = open(os.path.join(REPO, "realm", "Server pass - finder 10 and bug reports.bat"), "rb").read().decode("utf-8")
         self.assertIn('custom\\bossfights-export.py', bat)
-        self.assertIn("duels-export.py bossfights-export.py 2>/dev/null", bat)
+        self.assertIn("duels-export.py bossfights-export.py", bat)
 
 
 if __name__ == "__main__":

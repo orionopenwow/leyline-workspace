@@ -390,6 +390,11 @@ if duels is not None:
 bossfights = _load_module("wu_bossfights", "bossfights.py")
 if bossfights is not None:
     bossfights.bind(lambda name: globals()[name])
+# /wrath/boards and /wrath/api/boards/...: the signed leaderboards for Boss Rush and Duels (stream/boards.py,
+# docs/LEADERBOARDS.md); every row checked against the signature of the realm that recorded it
+boards = _load_module("wu_boards", "boards.py")
+if boards is not None:
+    boards.bind(lambda name: globals()[name])
 
 
 def same_site(h) -> bool:
@@ -4576,6 +4581,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if admin is not None and admin.match(path):   # POST /wrath/admin/act: the Admin Console (stream/admin.py)
             admin.post(self, path)
             return
+        if boards is not None and boards.match(path):   # POST a community realm's signed board, a local run (stream/boards.py)
+            boards.post(self, path)
+            return
         if network is not None and network.match(path):   # POST /wrath/realms/report (stream/network.py)
             network.post(self, path)
             return
@@ -4669,6 +4677,9 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if bossfights is not None and bossfights.match(path):   # boss fights, duels and arena, their JSON (stream/bossfights.py)
             bossfights.get(self, path, query)
+            return
+        if boards is not None and boards.match(path):   # the signed leaderboards and their JSON (stream/boards.py)
+            boards.get(self, path, query)
             return
         if forum is not None and forum.match(path):   # the forum and its JSON (stream/forum.py)
             forum.get(self, path, query)

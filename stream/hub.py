@@ -1340,7 +1340,12 @@ class Hub:
 
     def mod_names(self) -> dict:
         """id -> the name players see, for every mod a realm can list (Leyline Modes, Workshop, upstream addons)."""
-        names = {"mode:" + m["id"]: m.get("title") or m["id"] for m in self._modes() if isinstance(m, dict) and m.get("id")}
+        pm = self.portal("playmodes")
+        try:   # every mode a realm may name, the hidden ones too (a realm that runs Minigolf still says so)
+            every = pm.all_entries() if pm is not None and hasattr(pm, "all_entries") else self._modes()
+        except Exception:   # noqa: BLE001
+            every = self._modes()
+        names = {"mode:" + m["id"]: m.get("title") or m["id"] for m in every if isinstance(m, dict) and m.get("id")}
         for p in self.workshop():
             names[p["id"]] = clean_line(p.get("name"), 64) or p["id"]
         for u in self.upstream():
@@ -1420,7 +1425,7 @@ class Hub:
                 f'<div class="hb-ho-t"><p class="hb-eyebrow">{e(HANGOUT_NAME)} · {e(HANGOUT_KIND)}{now}</p>'
                 f'<h2 id="hb-ho-h">{e(HANGOUT_NAME)} is open</h2>'
                 '<!-- TODO(owner): the Hangout line, his words -->'
-                '<p class="hb-ho-l">Everyone meets in Dalaran: say hello, try minigolf and the game modes, then head out together. '
+                '<p class="hb-ho-l">Everyone meets in Dalaran: say hello, try a duel or Boss Rush, then head out together. '
                 'Nothing to install.</p></div>'
                 '<p class="hb-ho-a"><a class="hb-cta sm" href="/wrath">Play in your browser</a></p></section>')
 
@@ -1641,7 +1646,7 @@ class Hub:
             live = [neutral(m["title"]) for m in (pm.entries() if pm is not None else []) if m["status"] == "live"][:3]
         except Exception:   # noqa: BLE001
             live = []
-        modes_line = (", ".join(live) + " and more, one click each") if live else "Minigames and game modes, one click each"
+        modes_line = (" and ".join(live) + " now, more modes coming") if live else "More modes coming"
         rk = self.portal("hub_rank")
         discord = self.portal("DISCORD_URL") or ""
         dl = self._download()
@@ -1695,12 +1700,16 @@ class Hub:
               "Hero Key sign-in across community realms (coming)"],
              [(BASE + "/realms", "See the realms", False)], (self.realm_list_art(got) if got else
                                                             shot("realms", "The launcher's Realms page: every realm on the network with its players, uptime and badges."))),
-            ("modes", "Minigolf & game modes", "Minigolf, and more modes in one click",
-             "Tee off on a course players built, right on our realm. " + modes_line
-             + ". PLAY signs you in and starts the game once your character is in the world.",
-             ["Minigolf: courses built by players", "Made by players, checked by a GM", "Host a mode as a whole realm type",
-              "The same list in the launcher"],
-             [("/wrath?go=mode:minigolf", "Play Minigolf", False), (BASE + "/modes", "Every mode", False)], self.modes_art(shot)),
+            # Duels and Boss Rush only (owner 12 Nov). The Minigolf feature and its loop (self.modes_art) are kept for
+            # when the minigames come back: "Minigolf & game modes", Play Minigolf (/wrath?go=mode:minigolf).
+            # TODO(owner): the words for this section
+            ("modes", "Duels & Boss Rush", "Duels and Boss Rush, one click each",
+             "Fight the next player in the 1v1 queue, or go straight onto a raid's final fight with companions. " + modes_line
+             + ". PLAY signs you in and starts once your character is in the world.",
+             ["Duels: the 1v1 queue at level 80, or /duel anyone in Dalaran", "Boss Rush: The Frozen Throne first, companions fill the raid",
+              "Your best time and rank on the boards", "The same list in the launcher"],
+             [("/wrath?go=bf:frozen-throne:normal:bots", "Play Boss Rush", False), (BASE + "/modes", "Every mode", False)],
+             shot("modes", "The launcher's Modes page: Duels and Boss Rush, each with how to start and one PLAY button.")),
             ("mods", "Mods", "Hot, rising and top picks",
              "Addons, realm scripts, tools and themes, sorted by what players install and rate. Install in one click with "
              "the launcher; open projects from anywhere are linked with credit to their authors.",
@@ -2463,13 +2472,20 @@ class Hub:
                 art_ok = False
             pic = (f'<img class="hb-mode-art" src="/wrath/art/{e(art[0])}" alt="{e(art[3])}" width="{art[1]}" height="{art[2]}" '
                    'loading="lazy" decoding="async">') if art_ok else ""
+            d = getattr(pm, "DETAILS", {}).get(m["id"], {})
+            how = ('<ol class="hb-how">' + "".join(f"<li>{e(neutral(x))}</li>" for x in d["how"]) + "</ol>") if d.get("how") else ""
+            board = pm.board_mount(d["board"]) if d.get("board") and hasattr(pm, "board_mount") else ""
+            if href and m["id"] in getattr(pm, "PLAY_LABEL", {}):
+                act = act.replace(">Play</a>", f'>{e(pm.PLAY_LABEL[m["id"]])}</a>')
             cards.append(f'<article class="hb-mode{" art" if pic else ""}" id="mode-{e(m["id"])}">{pic}<h2>{e(neutral(m["title"]))}</h2><p>{e(neutral(m["line"]))}</p>'
-                         f'<p>{"".join(f"<span class=hb-tag>{e(x)}</span>" for x in tags if x)}</p>{credit}{act}</article>')
-        body = ('<section class="hb-head"><h1>Modes</h1><p>Minigames and game modes. Play signs you in and starts the game '
-                'in your browser once your character is in the world. The launcher lists the same games on its Modes page.</p></section>'
+                         f'<p>{"".join(f"<span class=hb-tag>{e(x)}</span>" for x in tags if x)}</p>{how}{credit}{board}{act}</article>')
+        more = getattr(pm, "MORE_COMING", "") if pm is not None else ""
+        body = ('<section class="hb-head"><h1>Modes</h1><p>Duels and Boss Rush. Play signs you in and starts the game '
+                'in your browser once your character is in the world. The launcher lists the same modes on its Modes page.</p></section>'
                 + (f'<div class="hb-modes">{"".join(cards)}</div>' if cards else
                    '<p class="hb-empty">No modes are listed right now. <a href="/wrath/modes">The modes page</a></p>')
-                + '<p class="hb-fine">Duels, boss fights, dungeons and hangouts are on <a href="/wrath/modes">the full modes page</a>. '
+                + (f'<p class="hb-fine" id="hb-more-coming">{e(more)}</p>' if more else "")
+                + '<p class="hb-fine">Every boss fight and the arena are on <a href="/wrath/modes">the full modes page</a>. '
                   'Duel points and ratings: <a href="/wrath/leaderboards">the leaderboards</a>.</p>')
         return self._shell("Modes · Leyline", body, BASE + "/modes")
 
@@ -2516,10 +2532,10 @@ class Hub:
                   f'<div class="hb-grid hb-big">{"".join(self.game_card(g, realms) for g in games)}</div></section>') if games else ""
         body = (f'<section class="hb-pg hb-cat" data-shelf="gamemodes" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
                 f'<h1 id="hb-pg-h">Game modes</h1>{self.mods_tabs("gamemodes")}</div></header><div class="hb-pg-b">'
-                '<p class="hb-lede hb-shelf-line">Minigames and modes that change how you play: on our realm, in your browser, '
+                '<p class="hb-lede hb-shelf-line">Modes and mods that change how you play: on our realm, in your browser, '
                 'or on your own PC.</p>'
                 f'<div class="hb-modes">{"".join(cards)}</div>{self.modes_strip()}{mods_s}'
-                f'<p class="hb-fine">Every mode with its rules: <a href="{BASE}/modes">Modes</a>. Duels, dungeons and hangouts: '
+                f'<p class="hb-fine">Every mode with its rules: <a href="{BASE}/modes">Modes</a>. Duels and Boss Rush in full: '
                 '<a href="/wrath/modes">the full modes page</a>.</p></div></section>')
         return self._shell("Game modes · Leyline", body, BASE + "/game-modes", active="mods")
 
@@ -3897,6 +3913,9 @@ box-shadow:0 8px 24px rgba(0,0,0,.28),0 0 0 1px rgba(91,141,239,.35),0 0 26px rg
 .hb-mode{display:grid;gap:6px;align-content:start;padding:16px;background:var(--lk-surface);border:1px solid var(--lk-border);border-radius:var(--lk-r)}
 .hb-mode h2{margin:0;font-size:17px}.hb-mode p{margin:0;color:var(--lk-text-2);font-size:14px}
 .hb-mode .hb-act{margin-top:6px}
+.hb-how{margin:4px 0 0;padding-left:1.2rem;color:var(--lk-text-2);font-size:14px}.hb-how li{margin:2px 0}
+.hb-mode .md-board{border:1px dashed var(--lk-border);border-radius:var(--lk-r);padding:8px 10px;margin-top:4px}
+.hb-mode .md-board .md-hint{margin:0;font-size:13px;color:var(--lk-text-2)}
 .hb-news{display:grid;gap:12px}.hb-news article{padding:16px;background:var(--lk-surface);border:1px solid var(--lk-border);border-radius:var(--lk-r)}
 .hb-news small{color:var(--lk-accent-2);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:11px}
 .hb-news h2{margin:4px 0 6px;font-size:18px}.hb-news ul{margin:0;padding-left:20px;color:var(--lk-text-2)}

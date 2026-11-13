@@ -108,7 +108,17 @@ check("Leyline look (its css, nav and title font)", "body.ly" in page and 'class
       and "/wrath/art/leyline-bg.webp" in page)
 check("link card", 'property="og:url" content="https://play.example/wrath/modes"' in page and "twitter:card" in page)
 check("title", "<title>Modes · WrathUnleashed</title>" in page)
-for seg, hid in (("Duels", "duels"), ("Boss fights", "bosses"), ("Dungeons", "dungeons"), ("Hangouts", "hangouts")):
+# Duels and Boss Rush only (owner 12 Nov): Dungeons and Hangouts are off the page (modes.SHOW), their links still work
+check("Duels and Boss Rush only: no Dungeons or Hangouts", 'id="dungeons"' not in page and 'id="hangouts"' not in page
+      and 'href="#dungeons"' not in page and 'href="#hangouts"' not in page and M.SHOW == {"dungeons": False, "hangouts": False})
+check("Boss Rush: the instant fight first, the raids' doors folded under it", page.index('id="md-bf-frozen-throne"')
+      < page.index('<details class="md-all">') and 'href="/wrath/b/icc-frozen-throne"' in page)
+check("the hero line says Duels and Boss Rush", "Duels and Boss Rush on WrathUnleashed" in page)
+check("hidden sections' share links still answer", get("/wrath/q/deadmines")[0] == 200 and get("/wrath/h/goldshire-inn")[0] == 200)
+M.SHOW.update(dungeons=True, hangouts=True)   # the rest of this file: the whole page, as when they come back
+st, h, b = get("/wrath/modes", ip="10.7.0.9")
+page = b.decode()
+for seg, hid in (("Duels", "duels"), ("Boss Rush", "bosses"), ("Dungeons", "dungeons"), ("Hangouts", "hangouts")):
     check(f"segment {seg}", f'id="{hid}"' in page and f">{seg}</h2>" in page and f'href="#{hid}"' in page)
 check("duels: how it works today (/duel, .wu)", "<code>/duel</code>" in page and "<code>.wu</code>" in page)
 check("duels: one Go duel link", page.count(">Go duel<") == 1 and 'href="/wrath/h/duels"' in page)
@@ -176,6 +186,8 @@ check("present shot: shown", '<img src="/wrath/art/leyline-shot-city.webp"' in p
 st, h3, _ = get("/wrath/art/leyline-shot-city.webp")
 check("present shot: served as webp", st == 200 and h3.get("content-type") == "image/webp")
 check("art route still refuses other names", get("/wrath/art/leyline-shot-x.webp")[0] == 404)
+
+M.SHOW.update(dungeons=False, hangouts=False)
 
 # --- rate limit -------------------------------------------------------------------------------------------------
 codes = [get("/wrath/modes", ip="10.7.9.9", method="HEAD")[0] for _ in range(601)]

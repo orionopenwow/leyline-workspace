@@ -69,7 +69,10 @@ async function open(o = {}) {
   await page.addInitScript(FAKE, opts);
   await page.goto('about:blank');
   await page.setContent('<!doctype html><html><body><div class="spf" id="spf"><div class="wf" id="wf"></div><div class="wf fw" id="fw" hidden></div></div></body></html>');
+  if (o.size) await page.setViewportSize(o.size);
+  await page.addStyleTag({ path: path.join(UI, 'listkit.css') });
   await page.addStyleTag({ path: path.join(UI, 'friends.css') });
+  await page.addScriptTag({ path: path.join(UI, 'listkit.js') });
   await page.addScriptTag({ path: path.join(UI, 'worldfriends.js') });
   await page.evaluate(() => window.LeylineWorldFriends.refresh());
   return { browser, page, errors };
@@ -80,14 +83,14 @@ const line = (page, id) => page.textContent(id);
 test("the host's list: names, characters, whether they can come back, no brand words", async () => {
   const { browser, page, errors } = await open();
   try {
-    await page.waitForSelector('#wf-list');
+    await page.waitForSelector('#wf-list .wf-friend');
     const names = await page.$$eval('#wf-list .wf-name', (e) => e.map((x) => x.textContent));
     assert.deepEqual(names, ['Bo', 'Hero CCCC', 'An earlier friend (GOLD234567)']);
     const chips = await page.$$eval('#wf-list .wf-state', (e) => e.map((x) => x.textContent));
     assert.deepEqual(chips, ['Invited', 'Can come back any time', 'Needs a new invite']);
-    assert.match(await page.textContent('#wf-list li:nth-child(1) .wf-chars'), /Brakka \(level 12, in the world now\), Odo \(level 3\)/);
-    assert.match(await page.textContent('#wf-list li:nth-child(1)'), /On your friends list, online/);
-    assert.equal(await page.textContent('#wf-list li:nth-child(2) .wf-trust'), 'Stop trusting');
+    assert.match(await page.textContent('#wf-list .wf-friend:nth-child(1) .wf-chars'), /Brakka \(level 12, in the world now\), Odo \(level 3\)/);
+    assert.match(await page.textContent('#wf-list .wf-friend:nth-child(1)'), /On your friends list, online/);
+    assert.equal(await page.textContent('#wf-list .wf-friend:nth-child(2) .wf-trust'), 'Stop trusting');
     assert.deepEqual(await calls(page, 'world_friends'), [{ kind: 'single' }]);
     assert.ok(await page.isHidden('#fw') === false, 'the friend side shows: this PC joined worlds');
     assert.doesNotMatch(await page.textContent('body'), BRANDS);
@@ -98,26 +101,26 @@ test("the host's list: names, characters, whether they can come back, no brand w
 test('Trust, Remove (keeps characters) and Remove and delete characters (asks in plain words first)', async () => {
   const { browser, page } = await open();
   try {
-    await page.waitForSelector('#wf-list');
-    await page.click('#wf-list li:nth-child(1) .wf-trust');
+    await page.waitForSelector('#wf-list .wf-friend');
+    await page.click('#wf-list .wf-friend:nth-child(1) .wf-trust');
     await page.waitForFunction(() => /Trusted/.test(document.getElementById('wf-line').textContent));
     assert.deepEqual((await calls(page, 'world_friend')).pop(), { kind: 'single', user: 'GAAAAAAAAAAAAAAA', action: 'trust' });
-    assert.equal(await page.textContent('#wf-list li:nth-child(1) .wf-state'), 'Can come back any time');
+    assert.equal(await page.textContent('#wf-list .wf-friend:nth-child(1) .wf-state'), 'Can come back any time');
     // delete asks first, on the row, naming what goes; Keep them changes nothing
-    await page.click('#wf-list li:nth-child(1) .wf-delete');
+    await page.click('#wf-list .wf-friend:nth-child(1) .wf-delete');
     await page.waitForSelector('#wf-list .wf-confirm.bad');
     assert.match(await page.textContent('#wf-list .wf-confirm'), /Delete Bo's login and all 2 of their characters on your world for good\? This can't be undone\./);
     assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.textContent), 'Keep them', 'the safe choice has focus');
     await page.click('#wf-list .wf-no');
     await page.waitForSelector('#wf-list .wf-confirm', { state: 'detached' });
     assert.equal((await calls(page, 'world_friend')).length, 1, 'nothing deleted');
-    await page.click('#wf-list li:nth-child(1) .wf-delete');
+    await page.click('#wf-list .wf-friend:nth-child(1) .wf-delete');
     await page.click('#wf-list .wf-yes');
     await page.waitForFunction(() => /deleted/.test(document.getElementById('wf-line').textContent));
     assert.deepEqual((await calls(page, 'world_friend')).pop(), { kind: 'single', user: 'GAAAAAAAAAAAAAAA', action: 'delete' });
-    assert.equal(await page.$$eval('#wf-list li', (l) => l.length), 2);
+    assert.equal(await page.$$eval('#wf-list .wf-friend', (l) => l.length), 2);
     // remove keeps characters, and says so before and after
-    await page.click('#wf-list li:nth-child(1) .wf-remove');
+    await page.click('#wf-list .wf-friend:nth-child(1) .wf-remove');
     assert.match(await page.textContent('#wf-list .wf-confirm'), /their characters stay here: invite them again and they get them back/);
     await page.click('#wf-list .wf-yes');
     await page.waitForFunction(() => /Their characters stay/.test(document.getElementById('wf-line').textContent));
@@ -128,10 +131,10 @@ test('Trust, Remove (keeps characters) and Remove and delete characters (asks in
 test('the world not running: Remove waits for it; the other world is read on its own; an empty world says what happens', async () => {
   const { browser, page } = await open({ running: {} });
   try {
-    await page.waitForSelector('#wf-list');
-    assert.ok(await page.isDisabled('#wf-list li:nth-child(1) .wf-remove'));
-    assert.ok(await page.isDisabled('#wf-list li:nth-child(1) .wf-delete'));
-    assert.ok(!(await page.isDisabled('#wf-list li:nth-child(1) .wf-trust')), 'trust needs no running world');
+    await page.waitForSelector('#wf-list .wf-friend');
+    assert.ok(await page.isDisabled('#wf-list .wf-friend:nth-child(1) .wf-remove'));
+    assert.ok(await page.isDisabled('#wf-list .wf-friend:nth-child(1) .wf-delete'));
+    assert.ok(!(await page.isDisabled('#wf-list .wf-friend:nth-child(1) .wf-trust')), 'trust needs no running world');
     assert.match(await page.textContent('#wf'), /Start Single player to remove a friend/);
     await page.selectOption('#wf-kind', 'vanilla');
     await page.waitForSelector('#wf .wf-empty');
@@ -143,16 +146,16 @@ test('the world not running: Remove waits for it; the other world is read on its
 test("the friend's side: Join again with this PC's folder, Forget, hidden when there's nothing", async () => {
   const { browser, page, errors } = await open();
   try {
-    await page.waitForSelector('#fw-list');
+    await page.waitForSelector('#fw-list .fw-world');
     assert.deepEqual(await page.$$eval('#fw-list .wf-name', (e) => e.map((x) => x.textContent)), ["Bo's world", "Your friend's world"]);
-    assert.match(await page.textContent('#fw-list li:nth-child(1)'), /joined 2 hours ago/);
-    await page.click('#fw-list li:nth-child(1) .fw-join');
+    assert.match(await page.textContent('#fw-list .fw-world:nth-child(1)'), /joined 2 hours ago/);
+    await page.click('#fw-list .fw-world:nth-child(1) .fw-join');
     await page.waitForFunction(() => /signs you in by itself/.test(document.getElementById('fw-line').textContent));
     assert.deepEqual(await calls(page, 'join_friend_again'), [{ client: 'c1', realmId: 'kzdvvj2umnduyauf' }]);
-    await page.click('#fw-list li:nth-child(2) .fw-forget');
-    await page.waitForFunction(() => document.querySelectorAll('#fw-list li').length === 1);
+    await page.click('#fw-list .fw-world:nth-child(2) .fw-forget');
+    await page.waitForFunction(() => document.querySelectorAll('#fw-list .fw-world').length === 1);
     assert.deepEqual(await calls(page, 'friend_world_forget'), [{ realmId: 'aaaaaaaaaaaaaaaa' }]);
-    await page.click('#fw-list li:nth-child(1) .fw-forget');
+    await page.click('#fw-list .fw-world:nth-child(1) .fw-forget');
     await page.waitForSelector('#fw', { state: 'hidden' });
     assert.deepEqual(errors, []);
   } finally { await browser.close(); }
@@ -161,17 +164,17 @@ test("the friend's side: Join again with this PC's folder, Forget, hidden when t
 test('Join again with no game folder, or refused by the friend: said in plain words', async () => {
   const { browser, page } = await open({ clients: [] });
   try {
-    await page.waitForSelector('#fw-list');
-    await page.click('#fw-list li:nth-child(1) .fw-join');
+    await page.waitForSelector('#fw-list .fw-world');
+    await page.click('#fw-list .fw-world:nth-child(1) .fw-join');
     await page.waitForFunction(() => /add it under Settings › Game folders/.test(document.getElementById('fw-line').textContent));
     assert.equal((await calls(page, 'join_friend_again')).length, 0);
   } finally { await browser.close(); }
   const b = await open({ fail: { join_friend_again: "Your friend's world: Your friend's world isn't open to you right now: ask them to invite you again." } });
   try {
-    await b.page.waitForSelector('#fw-list');
-    await b.page.click('#fw-list li:nth-child(1) .fw-join');
+    await b.page.waitForSelector('#fw-list .fw-world');
+    await b.page.click('#fw-list .fw-world:nth-child(1) .fw-join');
     await b.page.waitForFunction(() => /invite you again/.test(document.getElementById('fw-line').textContent));
-    assert.ok(!(await b.page.isDisabled('#fw-list li:nth-child(1) .fw-join')), 'can try again');
+    assert.ok(!(await b.page.isDisabled('#fw-list .fw-world:nth-child(1) .fw-join')), 'can try again');
   } finally { await b.browser.close(); }
 });
 
@@ -182,5 +185,103 @@ test('an older core without these commands: both parts hidden, no errors', async
     await page.waitForSelector('#wf', { state: 'hidden' });
     assert.ok(await page.isHidden('#fw'));
     assert.deepEqual(errors, []);
+  } finally { await browser.close(); }
+});
+
+// ---------------------------------------------------------------- the list kit
+const SHOTS = process.env.LISTS_SHOTS || '/mnt/user-data/outputs/gallery';
+async function shot(page, name, sel) {
+  try {
+    require('node:fs').mkdirSync(SHOTS, { recursive: true });
+    await page.addStyleTag({ path: path.join(UI, 'style.css') }).catch(() => {});
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.body.style.padding = '16px'; document.body.style.font = '14px var(--t-font, system-ui)'; document.body.style.color = 'var(--t-text)'; document.body.style.background = 'var(--t-bg, #111)'; document.getElementById('spf').style.maxWidth = '760px'; });
+    await (await page.$(sel)).screenshot({ path: path.join(SHOTS, `lists-friends-${name}.png`) });
+  } catch (_) { /* screenshots are a nicety */ }
+}
+const wfNames = (page) => page.$$eval('#wf-list .wf-friend .wf-name', (e) => e.map((x) => x.textContent));
+
+test('the kit on your world: search by name or character, the status filter with counts, sort, no match', async () => {
+  const { browser, page, errors } = await open({ size: { width: 900, height: 900 } });
+  try {
+    await page.waitForSelector('#wf-list .wf-friend');
+    const q = '#wf-list .lk-search input';
+    await page.fill(q, 'brakka');
+    assert.deepEqual(await wfNames(page), ['Bo'], 'a character name finds its owner');
+    assert.equal(await page.textContent('#wf-list mark.lk-hl'), 'Brakka');
+    await page.press(q, 'Escape');
+    assert.equal((await wfNames(page)).length, 3);
+    // the status chips: All, Invited, Can come back, Needs a new invite, with how many each holds
+    const chips = await page.$$eval('#wf-list .lk-chip', (b) => b.map((x) => x.textContent));
+    assert.deepEqual(chips, ['All', 'Invited · 1', 'Can come back · 1', 'Needs a new invite · 1']);
+    await page.click('#wf-list .lk-chip[data-lk-value="new"]');
+    assert.deepEqual(await wfNames(page), ['An earlier friend (GOLD234567)']);
+    await page.click('#wf-list .lk-chip[data-lk-value="back"]');
+    assert.deepEqual(await wfNames(page), ['Hero CCCC']);
+    await shot(page, 'world-filter', '#wf');
+    await page.fill(q, 'bo');
+    assert.match(await page.textContent('#wf-list .wf-empty'), /No friends match “bo” in these filters|No friends match “bo”/);
+    await page.click('#wf-list .wf-empty button >> text=Reset');
+    assert.equal((await wfNames(page)).length, 3);
+    await page.selectOption('#wf-list .lk-sort-s', 'name');
+    assert.deepEqual(await wfNames(page), ['An earlier friend (GOLD234567)', 'Bo', 'Hero CCCC']);
+    await page.selectOption('#wf-list .lk-sort-s', 'seen');
+    assert.deepEqual(await wfNames(page), ['Bo', 'Hero CCCC', 'An earlier friend (GOLD234567)'], 'online first, then the latest');
+    await page.selectOption('#wf-list .lk-sort-s', '');
+    await shot(page, 'world', '#spf');
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); }
+});
+
+test('the kit on your world: the question on a row survives a read; Escape keeps them; the filter stays across reads', async () => {
+  const { browser, page } = await open();
+  try {
+    await page.waitForSelector('#wf-list .wf-friend');
+    await page.click('#wf-list .wf-friend:nth-child(1) .wf-delete');
+    await page.waitForSelector('#wf-list .wf-confirm.bad');
+    await page.evaluate(() => window.LeylineWorldFriends.refresh());
+    assert.equal(await page.$$eval('#wf-list .wf-confirm', (l) => l.length), 1, 'still asking after a read');
+    await shot(page, 'world-delete', '#wf');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#wf-list .wf-confirm', { state: 'detached' });
+    assert.equal((await calls(page, 'world_friend')).length, 0);
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.user), 'GAAAAAAAAAAAAAAA', 'back on the row');
+    await page.click('#wf-list .lk-chip[data-lk-value="invited"]');
+    await page.evaluate(() => window.LeylineWorldFriends.refresh());
+    assert.deepEqual(await wfNames(page), ['Bo']);
+    // the keys: Down moves between rows
+    await page.click('#wf-list .lk-chip[data-lk-value=""]');
+    await page.focus('#wf-list .wf-friend:nth-child(1)');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.user), 'GCCCCCCCCCCCCCCC');
+  } finally { await browser.close(); }
+});
+
+test("the kit on your friends' worlds: search, sort by when you joined, Enter is Join again", async () => {
+  const { browser, page } = await open();
+  try {
+    await page.waitForSelector('#fw-list .fw-world');
+    const names = () => page.$$eval('#fw-list .fw-world .wf-name', (e) => e.map((x) => x.textContent));
+    await page.fill('#fw-list .lk-search input', "bo's");
+    assert.deepEqual(await names(), ["Bo's world"]);
+    await page.press('#fw-list .lk-search input', 'Escape');
+    await page.selectOption('#fw-list .lk-sort-s', 'joined');
+    assert.deepEqual(await names(), ["Bo's world", "Your friend's world"]);
+    await page.selectOption('#fw-list .lk-sort-s', 'name');
+    assert.deepEqual(await names(), ["Bo's world", "Your friend's world"], 'an unnamed world sorts by the name it shows');
+    await page.selectOption('#fw-list .lk-sort-s', 'joined');
+    await page.focus('#fw-list .fw-world[data-realm="kzdvvj2umnduyauf"]');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => /signs you in by itself/.test(document.getElementById('fw-line').textContent));
+    assert.deepEqual(await calls(page, 'join_friend_again'), [{ client: 'c1', realmId: 'kzdvvj2umnduyauf' }]);
+    await shot(page, 'worlds', '#fw');
+  } finally { await browser.close(); }
+});
+
+test('the kit on your world: loading, then the empty words; nothing to search before the first friend', async () => {
+  const { browser, page } = await open({ friends: { single: [], vanilla: [] } });
+  try {
+    await page.waitForSelector('#wf .wf-empty');
+    assert.match(await page.textContent('#wf .wf-empty'), /No friend has a character here yet/);
+    assert.equal(await page.isHidden('#wf-list .lk-bar'), true);
   } finally { await browser.close(); }
 });

@@ -570,6 +570,12 @@ list({ "U:Realm list unavailable" })
 check("Your Den: one row, this world, a Den", #L.realms == 1 and L.realms[1].name == "Your Den" and shown()[1].type:GetText() == "Den"
     and L.Kind(L.realms[1]) == "den")
 realmName = "WrathUnleashed"
+-- a world on the player's own PC (its hello named its kind): no online list there, said plainly
+W.RealmKind = "single"
+list({ "U:Realm list unavailable" })
+check("a local world: the online list isn't here, the launcher has it, own worlds under Mine",
+    win.status:GetText():find("runs on your PC", 1, true) and win.status:GetText():find("Mine", 1, true))
+W.RealmKind = nil
 list({ "B:1:0", "R:this:1:3:0:main:WrathUnleashed", "E:1" })
 L.SetTab("mine")
 local mine = {}

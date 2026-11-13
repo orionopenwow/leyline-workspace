@@ -1279,7 +1279,12 @@ fn den_lite_up(game: &Path) -> Result<bool, String> {
     if !l.available() {
         lite::install(&app)?; // first use: the release's program, its sha256 checked (host/lite.rs)
         l = lite::Binary::find(&app);
+    } else if !l.status().running && lite::swap_in_next(&app) {
+        // a newer Den Lite downloaded in the background since the last start: in place now, before it starts
+        l = lite::Binary::find(&app);
     }
+    // the release asked for a newer one (at most every 12 hours, in the background): it is used at the next start
+    lite::update_in_background(&app);
     let l = l.with_client(game);
     let was = l.status().running;
     l.start()?;

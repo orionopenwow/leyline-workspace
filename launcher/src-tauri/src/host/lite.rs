@@ -107,6 +107,131 @@ pub fn install(app_dir: &Path) -> Result<PathBuf, String> {
     place(app_dir, &file, &got, &want)
 }
 
+// ------------------------------------------------------------------------------------------------ updates
+
+/// How often the release is asked for a newer Den Lite (at most).
+pub const CHECK_EVERY_SECS: u64 = 12 * 3600;
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// The installed program's sha256, as `den-lite.json` beside it says (written by [`place`]).
+pub fn installed_sha(app_dir: &Path) -> Option<String> {
+    let t = std::fs::read_to_string(root(app_dir).join("bin").join("den-lite.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&t).ok()?;
+    v.get("sha256")?.as_str().map(|x| x.to_ascii_lowercase())
+}
+
+/// A newer program downloaded and checked, waiting for the next start: `bin/den-lite.next` (+ `.next.json`).
+fn next_paths(app_dir: &Path) -> (PathBuf, PathBuf) {
+    let bin = root(app_dir).join("bin");
+    (bin.join(format!("{}.next", exe_name())), bin.join("den-lite.next.json"))
+}
+
+/// Whether a release check is due: none in the last [`CHECK_EVERY_SECS`] (`bin/den-lite.checked`).
+pub fn check_due(last: Option<u64>, now: u64) -> bool {
+    match last {
+        None => true,
+        Some(l) => now < l || now - l >= CHECK_EVERY_SECS,
+    }
+}
+
+/// The update waiting since the last check (downloaded and checked) put in place, while Den Lite isn't running: the
+/// old program goes only once the new one is there. True when it was swapped in.
+pub fn swap_in_next(app_dir: &Path) -> bool {
+    let (next, meta) = next_paths(app_dir);
+    if !next.is_file() {
+        return false;
+    }
+    let want = std::fs::read_to_string(&meta).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("sha256").and_then(|x| x.as_str()).map(|x| x.to_ascii_lowercase()));
+    let got = crate::net::sha256_file(&next).ok().map(|x| x.to_ascii_lowercase());
+    if want.is_none() || want != got {
+        // half a download, or changed since: never used
+        let _ = std::fs::remove_file(&next);
+        let _ = std::fs::remove_file(&meta);
+        return false;
+    }
+    let bin = root(app_dir).join("bin");
+    let exe = bin.join(exe_name());
+    let old = bin.join(format!("{}.old", exe_name()));
+    let _ = std::fs::remove_file(&old);
+    if exe.exists() && std::fs::rename(&exe, &old).is_err() {
+        return false; // still in use: next time
+    }
+    if std::fs::rename(&next, &exe).is_err() {
+        let _ = std::fs::rename(&old, &exe);
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755));
+    }
+    let _ = std::fs::rename(&meta, bin.join("den-lite.json"));
+    let _ = std::fs::remove_file(&old);
+    true
+}
+
+/// Ask the release for its checksum (at most every [`CHECK_EVERY_SECS`]) and, when it isn't the installed one,
+/// download the new program, check it, and keep it as `den-lite.next` for the next start ([`swap_in_next`]). Only
+/// for the program Leyline installed (`<app dir>/den-lite/bin`). True when an update is waiting.
+pub fn stage_update(app_dir: &Path) -> Result<bool, String> {
+    let Some(name) = asset() else { return Ok(false) };
+    let bin = root(app_dir).join("bin");
+    if !bin.join(exe_name()).is_file() {
+        return Ok(false);
+    }
+    let (next, meta) = next_paths(app_dir);
+    let stamp = bin.join("den-lite.checked");
+    let last = std::fs::read_to_string(&stamp).ok().and_then(|t| t.trim().parse::<u64>().ok());
+    if !check_due(last, now_secs()) {
+        return Ok(next.is_file());
+    }
+    let scratch = app_dir.join("tmp");
+    std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
+    let shaf = scratch.join(format!("{name}.sha256"));
+    crate::upstream::download(&format!("{RELEASE}{name}.sha256"), &shaf, 4096).map_err(|e| format!("Couldn't look for a newer Den Lite: {e}"))?;
+    let want_text = std::fs::read_to_string(&shaf).unwrap_or_default();
+    let _ = std::fs::remove_file(&shaf);
+    let want = crate::host::forge::sha_in(&want_text).ok_or("Den Lite's checksum file doesn't look right.")?;
+    let _ = std::fs::write(&stamp, now_secs().to_string());
+    if installed_sha(app_dir).as_deref() == Some(want.as_str()) {
+        let _ = std::fs::remove_file(&next);
+        let _ = std::fs::remove_file(&meta);
+        return Ok(false);
+    }
+    let file = scratch.join(format!("{name}.next"));
+    let (_, got) = crate::upstream::download(&format!("{RELEASE}{name}"), &file, EXE_MAX).map_err(|e| {
+        let _ = std::fs::remove_file(&file);
+        format!("The newer Den Lite didn't download: {e}")
+    })?;
+    if got.to_ascii_lowercase() != want {
+        let _ = std::fs::remove_file(&file);
+        return Err("The newer Den Lite doesn't match its checksum, so it wasn't kept.".into());
+    }
+    std::fs::rename(&file, &next).or_else(|_| std::fs::copy(&file, &next).map(|_| ()).and_then(|_| std::fs::remove_file(&file))).map_err(|e| e.to_string())?;
+    let m = serde_json::json!({ "sha256": want, "from": format!("{RELEASE}{name}") });
+    std::fs::write(&meta, serde_json::to_string_pretty(&m).unwrap_or_default()).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+static STAGING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// [`stage_update`] in the background (one at a time): never in the way of a Play.
+pub fn update_in_background(app_dir: &Path) {
+    use std::sync::atomic::Ordering;
+    if STAGING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app_dir.to_path_buf();
+    std::thread::spawn(move || {
+        let _ = stage_update(&app);
+        STAGING.store(false, Ordering::SeqCst);
+    });
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct LiteStatus {
     /// The program is on this PC.
@@ -486,6 +611,44 @@ pub fn invite_secret(root: &Path) -> Result<String, String> {
     std::fs::create_dir_all(root.join("state")).map_err(|e| e.to_string())?;
     crate::settings::write_atomic(&p, serde_json::json!({ "secret": s }).to_string().as_bytes()).map_err(|e| e.to_string())?;
     Ok(s)
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+
+    #[test]
+    fn a_check_at_most_every_twelve_hours() {
+        assert!(check_due(None, 100));
+        assert!(!check_due(Some(100), 100 + 3600));
+        assert!(check_due(Some(100), 100 + CHECK_EVERY_SECS));
+        assert!(check_due(Some(100 + 50), 100), "a clock set back asks again");
+    }
+
+    #[test]
+    fn a_checked_update_is_swapped_in_and_a_bad_one_never() {
+        let d = tempfile::tempdir().unwrap();
+        let bin = root(d.path()).join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join(exe_name()), b"old").unwrap();
+        std::fs::write(bin.join("den-lite.json"), r#"{"sha256":"aa"}"#).unwrap();
+        assert!(!swap_in_next(d.path()), "nothing waiting");
+        let (next, meta) = next_paths(d.path());
+        // a waiting file that doesn't match its checksum: removed, the old program stays
+        std::fs::write(&next, b"new").unwrap();
+        std::fs::write(&meta, r#"{"sha256":"00"}"#).unwrap();
+        assert!(!swap_in_next(d.path()));
+        assert!(!next.exists());
+        assert_eq!(std::fs::read(bin.join(exe_name())).unwrap(), b"old");
+        // a good one: in place, its checksum kept beside it
+        std::fs::write(&next, b"new").unwrap();
+        let sha = crate::net::sha256_file(&next).unwrap();
+        std::fs::write(&meta, format!(r#"{{"sha256":"{sha}"}}"#)).unwrap();
+        assert!(swap_in_next(d.path()));
+        assert_eq!(std::fs::read(bin.join(exe_name())).unwrap(), b"new");
+        assert_eq!(installed_sha(d.path()).as_deref(), Some(sha.to_ascii_lowercase().as_str()));
+        assert!(!next.exists() && !meta.exists());
+    }
 }
 
 #[cfg(test)]

@@ -339,7 +339,7 @@
     }
   }
 
-  function scan() { document.querySelectorAll("[data-board]").forEach((el) => mount(el)); }
+  function scan() { document.querySelectorAll("#md-boards, #br-boards, [data-board][data-lb-mount]").forEach((el) => mount(el)); } // not the Modes cards' own .md-board stat boxes
   window.LeylineBoards = { mount, load, share, scan, rank, clock, name: () => store.get(NAME_KEY, ""), data: () => data, views: () => [...views] };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", scan); else scan();
 })();

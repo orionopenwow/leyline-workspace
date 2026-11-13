@@ -53,7 +53,7 @@
         "Rated games: type .q1v1 rated in the game."] },
     "frozen-throne": { kick: "Raid finale · Companions fill", play: "Fight now", board: "bossrush", local: true,
       how: ["Fight now logs you in and takes your hero straight onto the platform; companions fill the raid of 10.",
-        "Or pick any fight, any raid, on this PC: Boss Rush below, with your own clock and board.",
+        "Or pick any fight of any raid and play it here: Boss Rush on this PC, with your own clock and board.",
         "In the game, /bf opens the Boss fights window: Heroic, or queue with players."] },
   };
   // TODO(owner): the line under the two modes, your words
@@ -116,6 +116,7 @@
 
   // ---------------------------------------------------------------- the list
   let modes = [];
+  let every = [];   // the list as it came, hidden modes too (their names, for a realm that still lists one)
   let loaded = false;
 
   async function load() {
@@ -125,7 +126,8 @@
     let l;
     try { l = await invoke("modes_list"); }
     catch (e) { loaded = false; $("md-net").textContent = ""; say(oops(e), "bad"); return; }   // opening the page tries again
-    modes = (Array.isArray(l.modes) ? l.modes : []).filter(listed).sort(byOrder);
+    every = Array.isArray(l.modes) ? l.modes : [];
+    modes = every.filter(listed).sort(byOrder);
     const live = modes.filter((m) => m.status === "live").length;
     let line = `${live} to play` + (modes.length - live ? ` · ${modes.length - live} coming soon` : "");
     if (l.builtin) line += " · offline: the list built into Leyline";
@@ -331,6 +333,6 @@
 
   // boards(): the leaderboard mounts on the page now ([data-board] duels | bossrush; docs/MODES.md)
   const boards = () => Array.from(document.querySelectorAll("#md-list .md-board[data-board]"));
-  window.LeylineModes = { load, ensure, modes: () => modes, show, open: openPage, play, ART, FEATURED, artImg, KIND, playersText,
+  window.LeylineModes = { load, ensure, modes: () => modes, all: () => every, show, open: openPage, play, ART, FEATURED, artImg, KIND, playersText,
     listed, HIDDEN, DETAILS, boards };
 })();

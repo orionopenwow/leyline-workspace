@@ -229,9 +229,9 @@ for (const [old, want] of [['mymods', ['page-mods', 'pane-installed']], ['discov
   });
 }
 
-test('the backdrop: behind the content area only, under the wash; plain when it fails or is off', async () => {
+test('the backdrop: behind the content area only, under the wash; the picture that ships with the app until it loads and when it fails; plain when off', async () => {
   let { page, ctx, errors } = await open();
-  await page.waitForFunction(() => document.getElementById('backdrop').classList.contains('has-pic'));
+  await page.waitForFunction(() => document.getElementById('backdrop').dataset.loaded === '1');
   const r = await page.evaluate(() => {
     const b = document.getElementById('backdrop'), m = document.querySelector('main'), s = document.querySelector('.side');
     const cs = getComputedStyle(b);
@@ -262,7 +262,7 @@ test('the backdrop: behind the content area only, under the wash; plain when it 
 
   ({ page, ctx, errors } = await open({}, 'fail'));
   await page.waitForFunction(() => document.getElementById('backdrop').dataset.loaded === '0');
-  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('backdrop')).backgroundColor), 'rgb(18, 21, 27)', 'the plain colour');
+  assert.match(await page.evaluate(() => getComputedStyle(document.getElementById('backdrop')).backgroundImage), /art\/leyline-bg\.webp/, 'offline: the picture that ships with the app');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

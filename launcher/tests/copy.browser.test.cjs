@@ -133,7 +133,13 @@ test('Help: four steps, level 1 or boost to 80, browser play, the way to Find yo
   assert.match(help, /Level 1 or boost to 80/i);
   assert.match(help, /Play in your browser/);
   assert.match(help, /Lost files or need help\? Ask on the Discord/);
-  assert.equal(await page.locator('#page-help [data-link="discord"]').count(), 0, 'no second Discord button: the title bar has it');
+  assert.equal(await page.locator('#page-help [data-link="discord"]').count(), 0, 'no second Discord button: the side menu has it');
+  assert.match(help, /Join the Discord, in the side menu under News/, 'where the button really is (audit 12 Nov)');
+  assert.doesNotMatch(help, /Discord button at the top/);
+  // the newer parts (audit 12 Nov): Single player, Your Den, Modes and Boss Rush, Friends, playing offline
+  const heads = await page.$$eval('#page-help h3', (h) => h.map((x) => x.textContent));
+  for (const h of ['Single player', 'Your Den', 'Modes and Boss Rush', 'Friends', 'Playing offline']) assert.ok(heads.includes(h), h);
+  for (const p of ['single', 'den', 'modes', 'bossrush']) assert.ok(await page.locator(`#page-help [data-page-go="${p}"]`).count() >= 1, p);
   assert.equal(await page.locator('#page-help [data-link="gettingstarted"]').count(), 1, 'the player guide');
   assert.doesNotMatch(help, BANNED);
   await page.click("#page-help button:has-text(\"Can't find your files? ›\")");
@@ -191,7 +197,7 @@ test('Settings: Privacy in one line about the account; no Wine on Windows; Wine 
 test('one wording: Log in, realms, the official name, original rules, Host pack; no money link', async () => {
   const { page, ctx, errors } = await open();
   assert.equal(await page.getAttribute('#tb-account', 'title'), 'Your account lives on the website: log in, or manage it');
-  assert.equal(await page.textContent('#page-forum .fm-fine'), 'Reading here; Log In (in the title bar) to post from the launcher. Plain text and links only.');
+  assert.equal(await page.textContent('#page-forum .fm-fine'), 'Reading here; Log in (in the title bar) to post from the launcher. Plain text and links only.');
   assert.equal((await page.textContent('.realm-add')).trim(), '+Add a realm');
   assert.equal(await page.textContent('#play-realm option[value="official"]'), 'Wrath Unleashed (the official realm)');
   assert.equal(await page.locator('[data-link="support"]').count(), 0, 'no support link at all');

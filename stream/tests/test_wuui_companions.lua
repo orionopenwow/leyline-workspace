@@ -185,7 +185,13 @@ local function unit(o)
     function u:RegisterEvent(fn, delay, rep) self.queue[#self.queue + 1] = { fn = fn, delay = delay, rep = rep } end
     function u:SendBroadcastMessage(m) serverChat[#serverChat + 1] = m end
     function u:SendAddonMessage(prefix, msg) fireClient(prefix, msg, "WHISPER", "Tester") end
-    function u:GetEquippedItemBySlot(slot) if self.bot then return { GetItemLevel = function() return 187 end } end end
+    function u:GetEquippedItemBySlot(slot)
+        if not self.bot then return nil end
+        return { GetItemLevel = function() return 187 end, GetEntry = function() return 40000 + slot end,
+            GetQuality = function() return 3 end, GetName = function() return "Worn Thing " .. slot end }
+    end
+    -- bags (the gear window's upgrades): self.bags["<bag>:<slot>"]
+    function u:GetItemByPos(bag, slot) return self.bags and self.bags[bag .. ":" .. slot] end
     function u:GetBotAI()
         if not self.bot then return nil end
         local me = self
@@ -460,8 +466,8 @@ Bar.Layout()
 
 -- ---------------------------------------------------------------- the orders bar
 local ob = Bar.Orders()
-check("orders bar: shown with bots, five orders with the game's own icons", ob and ob:IsShown() and #ob.btns == 5
-    and ob.btns.follow and ob.btns.stay and ob.btns.attack and ob.btns.passive and ob.btns.pull
+check("orders bar: shown with bots, seven orders with the game's own icons", ob and ob:IsShown() and #ob.btns == 7
+    and ob.btns.follow and ob.btns.stay and ob.btns.attack and ob.btns.passive and ob.btns.pull and ob.btns.regroup and ob.btns.flee
     and ob.btns.stay.icon:GetTexture():find("^Interface\\Icons\\"))
 check("key bindings: a header and a name for each order", BINDING_HEADER_WUBOTS == "Bots" and BINDING_NAME_WUBOTS_FOLLOW
     and BINDING_NAME_WUBOTS_PULL and BINDING_NAME_WUBOTS_WINDOW)
@@ -515,10 +521,10 @@ check("/comp tips shows them again", tipsF:IsShown() and tipsF.step == 1)
 tipsF:Hide()
 
 -- ---------------------------------------------------------------- the tabs
-check("tabs: Your bots, Party, Raid, Your alts, Buddy, Dungeons", (function()
-    local want = { "bots", "party", "raid", "alts", "buddy", "dungeons" }
+check("tabs: Your bots, Party, Raid, Your alts, Buddy, Dungeons, Tactics", (function()
+    local want = { "bots", "party", "raid", "alts", "buddy", "dungeons", "tactics" }
     for i, k in ipairs(want) do if not (win.tabs[i] and win.tabs[i].key == k) then return false end end
-    return #win.tabs == 6 end)())
+    return #win.tabs == 7 end)())
 local party = C.ShowTab("party")
 check("Party tab: shown alone, the roster page hidden", party:IsShown() and not win.page:IsShown() and C.Tab() == "party")
 check("Party tab: 4 slots (tank, healer, damage, damage), every slot Any", #party.slots == 4 and party.slots[1].slotRole == "tank"
@@ -612,6 +618,179 @@ check("Hide bot chatter off: achievements show", filters.CHAT_MSG_ACHIEVEMENT(ni
 win.quiet:SetChecked(true); win.quiet:Fire("OnClick")
 check("on again", filters.CHAT_MSG_ACHIEVEMENT(nil, "CHAT_MSG_ACHIEVEMENT", "x", bots[2].name) == true)
 
+-- ---------------------------------------------------------------- more: rows, orders, tactics, gear, ready, saved parties
+do
+    -- every button on Your bots says what it does
+    check("Your bots: every order has a tooltip", (function()
+        for _, b in ipairs(win.needBots) do if not (b.tipTitle and b.tipText and b:GetScript("OnEnter")) then return false end end
+        return win.tactics.tipText ~= nil and win.ready.tipText ~= nil and #win.needBots >= 11 end)())
+    -- rows: the bot's face, and a word when it needs you
+    local rr
+    for _, r in ipairs(win.rows) do if r.bot and r.bot.name == bots[2].name then rr = r end end
+    C.Refresh()
+    check("rows: each bot's portrait (SetPortraitTexture on its party unit)", rr.portrait.portraitOf ~= nil
+        and rr.portrait.portraitOf:find("^party%d$"))
+    bots[2].hp = 200
+    C.UpdateBars()
+    check("rows: a hurt bot says so (its order word stays)", rr.mood:GetText() == "Hurt" and rr.state:GetText() ~= "Hurt")
+    bots[2].hp = 1000; bots[2].mp = 50
+    C.UpdateBars()
+    check("rows: low on mana", rr.mood:GetText() == "Low on mana")
+    bots[2].mp = 500
+    function UnitInRange(u) return u ~= rr.portrait.portraitOf and 1 or nil end
+    function CheckInteractDistance() return false end
+    C.UpdateBars()
+    check("rows: far away says Regroup", rr.mood:GetText() == "Far away: Regroup")
+    UnitInRange, CheckInteractDistance = nil, nil
+    C.UpdateBars()
+    check("rows: nothing to say when all is well", rr.mood:GetText() == "")
+
+    -- Regroup, Flee and Drink from the window, through the realm
+    serverClock = serverClock + 5
+    win.regroup:Fire("OnClick")
+    check("Regroup: the realm tells every bot to follow", player.whispers[#player.whispers].text == "follow"
+        and win.status:GetText() == "Regrouping on you.")
+    win.flee:Fire("OnClick")
+    check("Flee: mod-playerbots' flee; they turn passive (the button says Fight)", player.whispers[#player.whispers].text == "flee"
+        and win.passive:GetText() == "Fight")
+    win.passive:Fire("OnClick")
+    win.drink:Fire("OnClick")
+    check("Drink", player.whispers[#player.whispers].text == "drink" and win.status:GetText():find("drink up"))
+
+    -- the orders bar's new orders and keys
+    local ob = Bar.Orders()
+    ob.btns.regroup:Fire("OnClick")
+    check("orders bar: Regroup", sent[#sent][2] == "wucomp\torder\t1/1\tregroup all")
+    C.Key("flee")
+    check("key: Flee", sent[#sent][2] == "wucomp\torder\t1/1\tflee all")
+    C.Key("passive")
+    C.Key("drink")
+    check("key: Drink", sent[#sent][2] == "wucomp\torder\t1/1\tdrink all")
+    local bx = assert(io.open(dir .. "/Bindings.xml")):read("*a")
+    check("Bindings.xml and names for the new keys", (function()
+        for _, k in ipairs({ "REGROUP", "FLEE", "DRINK", "READY", "GEAR", "TACTICS" }) do
+            if not (bx:find('name="WUBOTS_' .. k .. '"', 1, true) and _G["BINDING_NAME_WUBOTS_" .. k]) then return false end
+        end
+        return true end)())
+
+    -- Tactics tab
+    local tt = C.ShowTab("tactics")
+    check("Tactics tab: the switches, each in the game's option box with a check box and a line", #tt.toggles == 7
+        and tt.toggles.waitpull.check.template == "UICheckButtonTemplate" and tt.toggles.waitpull.backdrop
+        and tt.toggles.healtank.text:GetText():find("tank alive first"))
+    tt.toggles.waitpull.check:SetChecked(true); tt.toggles.waitpull.check:Fire("OnClick")
+    check("Tank pulls first: on for every bot, ticked and gold-edged from the realm's roster", sent[#sent][2] == "wucomp\torder\t1/1\twaitpull all"
+        and C.waitPull == true and tt.toggles.waitpull.check:GetChecked() == true and tt.toggles.waitpull.gameOn == true)
+    tt.toggles.healtank.check:SetChecked(true); tt.toggles.healtank.check:Fire("OnClick")
+    check("Heal the tank first: the healer bot told to focus the tank", C.healTank == true and (function()
+        for _, w in ipairs(player.whispers) do if w.text:find("^focus heal ") then return true end end
+        return false end)())
+    tt.toggles.aoe.check:SetChecked(true); tt.toggles.aoe.check:Fire("OnClick")
+    tt.toggles.aoe.check:SetChecked(false); tt.toggles.aoe.check:Fire("OnClick")
+    check("Spread damage on, then off", sent[#sent][2] == "wucomp\torder\t1/1\tnoaoe all" and C.aoe == false
+        and tt.toggles.aoe.check:GetChecked() == false)
+    tt.toggles.waitpull.check:SetChecked(false); tt.toggles.waitpull.check:Fire("OnClick")
+    check("Tank pulls first off", C.waitPull == false)
+    check("Tactics: each formation explained, the current one picked", #tt.formations == 8 and tt.formations[1].tipText ~= nil)
+    tt.formations[8]:Fire("OnClick")
+    check("Tactics: Single file", player.whispers[#player.whispers].text == "formation queue" and tt.formations[8].gameSelected == true)
+    check("Tactics: loot explained", find(tt, "Loot") ~= nil)
+
+    -- the gear window: what it wears, upgrades in its bags, Equip
+    local gb = bots[3]
+    gb.bags = { ["255:23"] = { GetEntry = function() return 50001 end, GetItemLevel = function() return 200 end,
+        GetInventoryType = function() return 1 end, GetQuality = function() return 4 end, GetName = function() return "Shiny Helm" end } }
+    function GetItemIcon(id) return "Interface\\Icons\\Item" .. id end
+    ITEM_QUALITY_COLORS = { [3] = { hex = "|cff0070dd" }, [4] = { hex = "|cffa335ee" } }
+    local gw = C.OpenGear(gb.name)
+    check("gear window: asks the realm, shows its answer", sent[#sent][2] == "wucomp\tinspect\t1/1\t" .. gb.name and gw:IsShown()
+        and C.gear and C.gear.name == gb.name and gw.title:GetText() == gb.name .. "'s gear")
+    check("gear window: 17 slots, each item's icon, quality colour, item level", #gw.slots == 17
+        and gw.slots[1].icon:GetTexture() == "Interface\\Icons\\Item40000" and gw.slots[1].name:GetText() == "|cff0070ddWorn Thing 0|r"
+        and gw.slots[1].lvl:GetText() == "Head, item level 187" and gw.sub:GetText():find("item level 187"))
+    check("gear window: the upgrade in its bags, with Equip", gw.ups[1]:IsShown() and gw.ups[1].name:GetText():find("Shiny Helm")
+        and gw.ups[1].lvl:GetText() == "Head: item level 200, now 187 (+13)" and not gw.ups[2]:IsShown() and gw.all.enabled == true)
+    gw.ups[1].equip:Fire("OnClick")
+    check("Equip: the bot is told to wear it; the answer in the gear window", player.whispers[#player.whispers].text == "e |Hitem:50001:0|h"
+        and gw.status:GetText():find("puts on Shiny Helm"))
+    gb.bags = nil
+    gw.refresh:Fire("OnClick")
+    check("Refresh: nothing better now", not gw.ups[1]:IsShown() and gw.noUps:GetText():find("Nothing better") and gw.all.enabled == false)
+    check("gear window: the game's dialog, slot rings, panel buttons", gw.backdrop and gw.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border"
+        and gw.slots[1].normalTex == "Interface\\Buttons\\UI-Quickslot2" and gw.trade.template == "UIPanelButtonTemplate"
+        and UISpecialFrames[#UISpecialFrames] == "WrathUnleashedBotGear")
+    gw:Hide()
+    C.Dispatch("gear", "G\tNobody\t1\t80\t1\tbot\nI\t0\t1\t1\t1\tx")
+    check("gear: an answer for a bot not in the window changes nothing on screen", not gw:IsShown())
+    check("gear: odd lines ignored", C.ParseGear("I\t0\t1") == false and C.ParseGear("G\t\t1") == false)
+    check("bot menu: Gear and upgrades", (function()
+        for _, it in ipairs(C.MenuItems(C.bots[1], 1)) do if it.text == "Gear and upgrades" then return true end end
+        return false end)())
+    C.Slash = C.Slash
+    SlashCmdList.WUCOMPANIONS("gear " .. bots[2].name:lower())
+    check("/comp gear <name>", gw:IsShown() and gw.botName == bots[2].name)
+    gw:Hide()
+
+    -- Ready?
+    local function checks() local out = {}; for _, c in ipairs(C.ReadyChecks()) do out[c.key] = c end; return out end
+    C.preparedAt = nil   -- Prepare for raid was pressed earlier in this test
+    local ck = checks()
+    check("Ready?: you (damage) and your bots make tank, healer and damage", ck.roles.ok == true and ck.roles.detail:find("you: damage"))
+    check("Ready?: not prepared until you press Prepare", ck.prepared.ok == false)
+    check("Ready?: what the client can't tell waits (no repair or bag functions here)", ck.repair.ok == nil and ck.food.ok == nil)
+    bots[1].dead = true
+    ck = checks()
+    check("Ready?: a dead bot named", ck.alive.ok == false and ck.alive.detail:find(bots[1].name))
+    bots[1].dead = false
+    function GetInventoryItemDurability(slot) if slot == 5 then return 10, 100 end return 90, 100 end
+    function GetContainerNumSlots(bag) return bag == 0 and 2 or 0 end
+    function GetContainerItemLink(bag, slot) return slot == 1 and "|Hitem:1|h" or nil end
+    function GetItemInfo() return "Bread", nil, 1, 5, 1, "Consumable", "Food & Drink" end
+    function GetLFGRoles() return true, true, false, false end
+    ck = checks()
+    check("Ready?: your worn gear named with its durability", ck.repair.ok == false and ck.repair.detail:find("10%%"))
+    check("Ready?: food found in your bags", ck.food.ok == true)
+    check("Ready?: you as tank (the role check) count", ck.roles.detail:find("you: tank") and ck.roles.detail:find("^2 tank"))
+    local rw = C.OpenReady()
+    check("Ready? window: right-click on the minimap button opens it too", (function()
+        rw:Hide()
+        _G.WrathUnleashedBotsMinimapButton:Fire("OnClick", "RightButton")
+        return rw:IsShown() end)())
+    check("Ready? window: the raid frames' ready marks", rw.rows[1].mark:GetTexture() == "Interface\\RaidFrame\\ReadyCheck-Ready"
+        and (function() for _, r in ipairs(rw.rows) do if r.mark:GetTexture() == "Interface\\RaidFrame\\ReadyCheck-NotReady" then return true end end end)())
+    serverClock = serverClock + 400
+    rw.prepare:Fire("OnClick")
+    check("Ready? Prepare bots: asks the realm, then counts as prepared", sent[#sent][2] == "wucomp\tprepare\t1/1\t"
+        and checks().prepared.ok == true and rw.status:GetText() ~= "")
+    check("Ready? the game's ready check waits for a group leader", rw.check.enabled == false)
+    rw:Hide()
+    GetInventoryItemDurability, GetContainerNumSlots, GetContainerItemLink, GetItemInfo, GetLFGRoles = nil, nil, nil, nil, nil
+
+    -- saved parties
+    local pt = C.ShowTab("party")
+    C.SetPick(1, "warrior", "prot pve"); C.SetPick(3, "mage")
+    pt.presets[2].save:Fire("OnClick")
+    check("saved party: kept per character, shown with class and spec", WrathUnleashedUIChar.botPresets[2]
+        and pt.presets[2].text:GetText():find("Warrior") and pt.presets[2].text:GetText():find("%(Prot") and pt.presets[1].text:GetText():find("Empty")
+        and pt.presets[1].bring.enabled == false and pt.presets[2].bring.enabled == true)
+    C.ResetPicks()
+    serverClock = serverClock + 31
+    pt.presets[2].bring:Fire("OnClick")
+    check("saved party: Bring puts the picks back and fills with them", sent[#sent][2] == "wucomp\tfill\t1/1\tparty\ttank=warrior:prot pve,healer=any,dps=mage,dps=any"
+        and C.GetPicks()[1].word == "warrior")
+    C.ResetPicks()
+    C.ShowTab("bots")
+
+    -- chat: "Hide everything your bots say"
+    check("bot party chat shows by default", filters.CHAT_MSG_PARTY(nil, "CHAT_MSG_PARTY", "Need mana", bots[2].name) == false)
+    win.mute:SetChecked(true); win.mute:Fire("OnClick")
+    check("mute: their whispers and party chat hidden, friends still shown", filters.CHAT_MSG_PARTY(nil, "CHAT_MSG_PARTY", "Need mana", bots[2].name) == true
+        and filters.CHAT_MSG_WHISPER(nil, "CHAT_MSG_WHISPER", "Hi", bots[2].name) == true
+        and filters.CHAT_MSG_PARTY(nil, "CHAT_MSG_PARTY", "hi", "Friend") == false and WrathUnleashedUIDB.botsMute == true)
+    win.mute:SetChecked(false); win.mute:Fire("OnClick")
+    check("mute off", filters.CHAT_MSG_PARTY(nil, "CHAT_MSG_PARTY", "Need mana", bots[2].name) == false)
+end
+
 -- ---------------------------------------------------------------- the game's own look (owner 12 Nov: "forever ui
 -- elements not leyline squarechunks"): templates, backdrops and textures by the client's own names
 do
@@ -643,7 +822,7 @@ do
         for i, t in ipairs(win.tabs) do
             if t.btn.template ~= "CharacterFrameTabButtonTemplate" or t.btn:GetName() ~= "WrathUnleashedBotsFrameTab" .. i then return false end
         end
-        return win.numTabs == 6 end)())
+        return win.numTabs == 7 end)())
     check("look: the window's buttons are UIPanelButtonTemplate", find(win, "Fill party").template == "UIPanelButtonTemplate"
         and win.passive.template == "UIPanelButtonTemplate" and win.rows[1].hp.barTex == "Interface\\TargetingFrame\\UI-StatusBar")
     check("look: roster rows hover with the game's list highlight", win.rows[1].hover.tex == "Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -679,7 +858,7 @@ do
     pm:Hide()
     check("look: no flat squares (Style.lua helpers, solid-colour textures, white8x8 backdrops) in the bar, the orders, "
         .. "the tips, the menu, the window", (function()
-        for _, root in ipairs({ bf, ob, tf, pm, win, C.Chooser(), _G.WrathUnleashedBotFormations }) do
+        for _, root in ipairs({ bf, ob, tf, pm, win, C.Chooser(), _G.WrathUnleashedBotFormations, C.GearWindow(), C.ReadyWindow() }) do
             local why = root and flat(root)
             if why then print("  " .. tostring(root.name) .. ": " .. why); return false end
         end

@@ -38,6 +38,7 @@ Workshop.lua
 CompanionsData.lua
 Companions.lua
 CompanionsTabs.lua
+CompanionsMore.lua
 BotBar.lua
 BossFights.lua
 Social.lua

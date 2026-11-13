@@ -1,11 +1,18 @@
 <Bindings>
-	<!-- The orders bar's keys (BotBar.lua): Esc > Key Bindings > Bots. Unbound until the player sets them. -->
+	<!-- The orders bar's keys and the bots' windows (BotBar.lua, CompanionsMore.lua): Esc > Key Bindings > Bots. Unbound
+	     until the player sets them (the window's key is offered Ctrl-B once, Companions.lua). -->
 	<Binding name="WUBOTS_FOLLOW" header="WUBOTS">WrathUnleashedUI.Companions.Key("follow")</Binding>
 	<Binding name="WUBOTS_STAY">WrathUnleashedUI.Companions.Key("stay")</Binding>
 	<Binding name="WUBOTS_ATTACK">WrathUnleashedUI.Companions.Key("attack")</Binding>
 	<Binding name="WUBOTS_PASSIVE">WrathUnleashedUI.Companions.Key("passive")</Binding>
 	<Binding name="WUBOTS_PULL">WrathUnleashedUI.Companions.Key("pull")</Binding>
+	<Binding name="WUBOTS_REGROUP">WrathUnleashedUI.Companions.Key("regroup")</Binding>
+	<Binding name="WUBOTS_FLEE">WrathUnleashedUI.Companions.Key("flee")</Binding>
+	<Binding name="WUBOTS_DRINK">WrathUnleashedUI.Companions.Key("drink")</Binding>
 	<Binding name="WUBOTS_WINDOW">WrathUnleashedUI.Companions.Key("window")</Binding>
+	<Binding name="WUBOTS_READY">WrathUnleashedUI.Companions.Key("ready")</Binding>
+	<Binding name="WUBOTS_GEAR">WrathUnleashedUI.Companions.Key("gear")</Binding>
+	<Binding name="WUBOTS_TACTICS">WrathUnleashedUI.Companions.Key("tactics")</Binding>
 	<!-- Leyline travel (Teleports.lua): Back to my Den is Shift-Home in Your Den until the player sets a key of their own. -->
 	<Binding name="LEYLINE_DENHOME" header="LEYLINETRAVEL">WrathUnleashedUI.Teleports.Home()</Binding>
 	<Binding name="LEYLINE_BACK">WrathUnleashedUI.Teleports.Back()</Binding>

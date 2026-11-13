@@ -388,7 +388,7 @@
     busy = true;
     paint();
     try {
-      say(update ? "Getting the new engine…" : "Starting Single player…");
+      say(update ? "Updating your world's engine… Your world is backed up first; your characters and settings stay." : "Starting Single player…");
       await call("engine_setup", update ? { client: c.id, update: true } : { client: c.id });
       job = ENGINE_JOB();
       say("");
@@ -517,11 +517,6 @@
       const bk = btn("Back up", "btn small", (ev) => backUp(ev.currentTarget)); bk.id = "sp-backup";
       bk.title = "A copy of your characters and their bots, kept in Leyline's folder";
       acts.append(bk);
-      if (es.update) {
-        const u = btn("Update the engine", "btn small", () => startBuiltin(true)); u.id = "sp-update";
-        u.disabled = starting;
-        acts.append(u);
-      }
     } else {
       const se = btn("Settings", "btn small", settings); se.id = "sp-settings";
       se.title = "The Host page, with Single player picked";
@@ -537,6 +532,19 @@
       const cp = btn("Copy", "link-s", copyLogin); cp.id = "sp-login-copy";
       lr.append(cp);
       card.append(lr);
+    }
+    const W = window.LeylineWorlds;
+    if (built && W && W.updateNode) {
+      // a newer world engine (vanilla.js checkUpdate): offered here, backed up first, the saves and settings kept
+      if (es.update) {
+        const n = W.updateNode("single", { busy: starting || busy, onUpdate: () => startBuiltin(true) });
+        const u = n.querySelector("button");
+        if (u) u.id = "sp-update";
+        card.append(n);
+      }
+      const ch = W.charsNode("single", { say: (t, k) => say(t, k), after: () => readEngine().then(paint) });
+      if (ch) card.append(ch);
+      card.append(W.backupsNode("single", { say: (t, k) => say(t, k), after: () => readEngine().then(paint) }));
     }
     if (window.LeylineSingleUpdate) card.append(window.LeylineSingleUpdate.node((t, k) => say(t, k)));   // the bots (singleupdate.js)
     if (job && !job.idle && (job.running || job.code !== 0)) card.append(progress());
@@ -610,6 +618,11 @@
     if (L && L.readKit) await L.readKit();
     await Promise.all([checkDocker(false), readConsole(), readEngine()]);
     paint();
+    // a newer world engine looked for (twice a day at most, 5 s at most, in the background): offered on the card
+    const W = window.LeylineWorlds;
+    if (managed() === "builtin" && es && es.set_up && !es.update && W && W.checkUpdate) {
+      W.checkUpdate("single").then((n) => { if (n && n.update) { es = n; if (isOn()) paint(); } });
+    }
     // a start still running (begun here, or on the Host page for Docker): followed here too
     if (!jobTimer) {
       // only Single player's own line (the original world and Boss Rush have theirs: vanilla.js, bossrush.js)

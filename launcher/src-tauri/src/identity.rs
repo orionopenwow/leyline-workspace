@@ -215,7 +215,6 @@ pub const EXPORT_HEAD: &str = "# Leyline network key: whoever has this file is y
 pub fn export_text(app: &Path) -> Result<String, String> {
     load_or_create(app)?;
     let seed = unhex32(std::fs::read_to_string(key_path(app)).map_err(|e| e.to_string())?.trim()).ok_or("Your Leyline network key doesn't look right.")?;
-    let _ = me;
     Ok(format!("{EXPORT_HEAD}\n{}\n", hex(&seed)))
 }
 

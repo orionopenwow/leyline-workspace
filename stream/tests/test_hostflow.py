@@ -112,6 +112,7 @@ BANNED = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard"
 
 
 def visible(page):
+    page = (page.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(page, str) else page.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     page = page.decode() if isinstance(page, bytes) else page
     return re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", page, flags=re.S))
 

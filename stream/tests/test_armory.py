@@ -170,6 +170,7 @@ json.dump(dict(art, money=987654321, account="SECRETACCT", bags=[{"name": "BAGIT
           open(os.path.join(OUT, "c", "Arthas.json"), "w"))
 
 def visible(b):
+    b = (b.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(b, str) else b.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     return re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", b, flags=re.S))
 BRANDS = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard")
 

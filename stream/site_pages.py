@@ -831,7 +831,7 @@ def press_body() -> str:
                '<p class="lp-dim" style="margin-top:10px">Please keep the mark as it is: no new colours, no stretching.</p></section>'
                if logos else "")
             + f'<section class="lp-sec" aria-labelledby="pr-shots"><h2 id="pr-shots">Screenshots</h2><div class="lp-gal">{shots}</div></section>'
-            f'<p class="lp-legal">{_e(LEGAL)} Game names belong to their owners.</p></div>')
+            '</div>')   # the legal line is in the site's footer on every page now (audit 12 Nov)
 
 
 def press_page() -> bytes:

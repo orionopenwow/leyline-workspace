@@ -112,6 +112,7 @@ def req(method, path, body=None, headers=None, ip="203.0.113.5"):
     return res_.status, dict(res_.getheaders()), res_.read()
 
 def visible(b):
+    b = (b.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(b, str) else b.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     return re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>|<script.*?</script>", " ", b, flags=re.S))
 BRANDS = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard")
 VERS = re.compile(r"3\.3\.5|12340|1\.12|2\.4\.3")

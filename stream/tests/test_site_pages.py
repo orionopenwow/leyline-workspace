@@ -143,7 +143,7 @@ check("single player: six companion slots", page.count('data-slot="slots/sp-') =
 check("single player: the slots say a picture is coming (no broken image)", page.count("Picture coming soon") >= 6)
 check("single player: no <video> without its file (poster only, marked as coming)", "<video" not in page and 'data-video="soon"' in page)
 check("single player: the marketing lines are left for the owner", "TODO(owner)" in open(os.path.join(STREAM, "site_pages.py")).read())
-check("single player: no brand words", not BANNED.findall(v))
+check("single player: no brand words", not BANNED.findall(v.replace(LEGAL, " ")))   # the legal line is in the footer now
 check("single player: no version numbers", not VERSION.findall(v), VERSION.findall(v))
 check("flag on: the shelf has five cards", sp.shelf().count('class="lp-mode"') == 5)
 check("flag on: /wrath/modes/single-player answers", get("/wrath/modes/single-player")[0] == 200)

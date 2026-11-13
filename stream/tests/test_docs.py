@@ -30,6 +30,7 @@ def check(name, ok, extra=""):
 
 BANNED = re.compile(r"(?i)world\s+of\s+warcraft|\bwow\b|warcraft|lich\s+king|blizzard")
 def visible(page):
+    page = (page.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(page, str) else page.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     return html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", page, flags=re.S)))
 
 CSS = "/*LEYLINE-CSS*/"

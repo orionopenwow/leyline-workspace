@@ -367,6 +367,7 @@ check("pages: 600 a minute", codes.count(200) == 600 and codes[-1] == 429, (code
 srv.shutdown()
 
 def visible(p):
+    p = (p.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(p, str) else p.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     return re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", p, flags=re.S))
 allp = lp + dp + page("/wrath/mods/emote-wheel")[1] + page("/wrath/mods/dalaran-dice")[1] + page("/wrath/mods/nope")[1] + sp \
     + "".join(page("/wrath/mods/c/" + i)[1] for i in CAT_IDS) + page("/wrath/mods/c/nope")[1]

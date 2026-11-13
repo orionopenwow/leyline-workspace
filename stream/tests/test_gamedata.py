@@ -226,7 +226,7 @@ st, _, b = get("/wrath/play?mini=mini", cookie="wr_session=good")
 check("off, own files not set up: a plain page, no stream", st == 200 and b"needs your own game folder" in b)
 os.environ["WU_OWNFILES"] = "1"
 for word in (b"World of Warcraft", b"Warcraft", b"Blizzard", b"Lich King"):
-    check(f"off: no {word.decode()} in the player pages", word not in b and word not in wp.GAMEDATA_GONE)
+    check(f"off: no {word.decode()} in the player pages", word not in b.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b" ") and word not in wp.GAMEDATA_GONE)
 check("off: no WoW in the 410 body", not re.search(rb"\bWoW\b", wp.GAMEDATA_GONE))
 os.remove(FLAG)
 with open(FLAG, "w") as f:

@@ -27,6 +27,7 @@ def check(name, ok, extra=""):
 
 BANNED = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard")
 def visible(p):
+    p = (p.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(p, str) else p.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     p = re.sub(r"<style.*?</style>", " ", p, flags=re.S)
     attrs = " ".join(re.findall(r'(?:alt|title|content|aria-label|placeholder)="([^"]*)"', p))
     return re.sub(r"<[^>]+>", " ", p) + " " + attrs
@@ -398,6 +399,7 @@ check("share_box escapes", "&lt;" in wp.share_box("/wrath/<x>") and "<x>" not in
 # ---------------------------------------------------------------- 7. no game-brand names in the new code's strings
 for f in ("wrath_portal.py", "modes.py", "armory.py"):
     src = open(os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), f), encoding="utf-8").read()
+    src = src.replace("not affiliated with or endorsed by Blizzard Entertainment", " ")   # the legal line, the one allowed mention (LEGAL_LINE, in every footer)
     check(f"no game-brand names in {f}", not BANNED.findall(src), BANNED.findall(src)[:3])
 
 # ---------------------------------------------------------------- 8. the hub's frame (front door on): one product
@@ -521,6 +523,12 @@ check("pages: gzip when the browser takes it, Vary set, still no-store", h_h.get
       and b"<html" in _gz.decompress(b_h) and "Accept-Encoding" in h_h.get("vary", "") and h_h.get("cache-control") == "no-store")
 st_n, h_n, b_n = raw("/wrath/docs")
 check("pages: no gzip unless asked", "content-encoding" not in h_n and b_n.startswith(b"<!doctype html"))
+LEGAL = "not affiliated with or endorsed by Blizzard Entertainment"
+for p in ("/wrath/leyline", "/wrath/docs", "/wrath/docs/play", "/wrath/start", "/wrath/guides", "/wrath/download",
+          "/wrath/leyline/realms", "/wrath/leyline/catalog", "/wrath/nope"):
+    st_l, _, pg = get(p)
+    check(f"legal line: in the footer of {p}, once", pg.count(LEGAL) == 1 and pg.index(LEGAL) > pg.index('class="hb-foot"'), (st_l, pg.count(LEGAL)))
+check("legal line: in the older pages' footer too (site_footer)", LEGAL in wp.site_footer() and "ly-legal" in wp.site_footer())
 check("site.css: the same version on every page (one download for the whole site)", len({tuple(v) for v in links.values()}) == 1)
 check("site.css: brand words stay off it too", not BANNED.search(css_b.decode()))
 

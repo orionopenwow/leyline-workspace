@@ -163,7 +163,7 @@ check("queue page: its script runs under the page's nonce, may only fetch this s
       and "connect-src 'self'" in csp, csp)
 check("queue page: a reload without script", b'<noscript><meta http-equiv="refresh" content="30;url=/wrath/play?mini=mini">' in b)
 check("queue page: no password, no game login", PASSWORD.encode() not in b and b"WRQ00003" not in b)
-check("queue page: no game-brand names", not BRANDS.search(b), BRANDS.findall(b))
+check("queue page: no game-brand names", not BRANDS.search(b.replace(b"not affiliated with or endorsed by Blizzard Entertainment", b" ")), BRANDS.findall(b))
 check("queue page: no money links", not re.search(rb"donat|patreon|ko-fi|paypal|tip jar", b, re.I))
 
 st, h, b = play(3, "10.8.0.3", q3)

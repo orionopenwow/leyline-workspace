@@ -232,7 +232,7 @@ T2 = tid_of(r)
 b2 = req("GET", f"/wrath/leyline/forum/t/{T2}")[2]
 check("brand words in a post replaced (links untouched), the word filter starred out",
       r[0] == 303 and "A mod for the game and the Wrath" in b2 and "https://x.example/wow-ui" in b2 and "**** yes" in b2
-      and not BRAND.search(re.sub(r"https://x\.example/wow-ui", "", re.sub(r"<style>.*?</style>", "", b2, flags=re.S))), b2[-1500:])
+      and not BRAND.search(re.sub(r"https://x\.example/wow-ui", "", re.sub(r"<style>.*?</style>", "", b2, flags=re.S)).replace("not affiliated with or endorsed by Blizzard Entertainment", " ")), b2[-1500:])
 
 # rate limits: carol is new to the forum
 NOW[0] += 4000
@@ -377,7 +377,7 @@ check("front page: no friends features", not re.search(r"(?i)\bfriends? list|add
 for path in ("/wrath/leyline/forum", f"/wrath/leyline/forum/t/{T1}", "/wrath/leyline/forum/c/help", "/wrath/leyline/forum/new",
              f"/wrath/leyline/forum/t/{T1}/reply"):
     st, _, b = req("GET", path, "alice")
-    vis = re.sub(r"<style>.*?</style>|https?://\S+", "", b, flags=re.S)
+    vis = re.sub(r"<style>.*?</style>|https?://\S+", "", b, flags=re.S).replace("not affiliated with or endorsed by Blizzard Entertainment", " ")   # the legal line (footer)
     check(f"no game or company names on {path}", st == 200 and not BRAND.search(vis), BRAND.findall(vis))
 
 # ---------------------------------------------------------------- the deploy step (signin)

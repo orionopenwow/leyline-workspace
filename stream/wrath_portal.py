@@ -2767,6 +2767,7 @@ a.ly-next-go:hover{box-shadow:0 0 22px rgba(95,227,255,.5)}
 .ly-foot nav{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;margin-bottom:8px}
 .ly-foot a{color:#cfd6ff;text-decoration:none;padding:4px 0}.ly-foot a:hover{color:#fff;text-decoration:underline}
 .ly-foot p{margin:0}
+.ly-foot p.ly-legal{margin-top:8px;font-size:12px;opacity:.85}
 body:has(>.ly-nav):not(.ly){justify-content:flex-start;padding-top:0;padding-bottom:0}
 body:has(>.ly-nav):not(.ly)>.ly-nav{width:calc(100% + 32px);margin:0 -16px 28px}
 body:has(>.ly-nav):not(.ly)>main{margin-bottom:auto}
@@ -2883,6 +2884,11 @@ def site_nav(current: str = "", signed_in: bool = False) -> str:
             + (f'<div class="ly-end">{end}</div>' if end else "") + '</nav>')
 
 
+# The legal line in the site's footer on every page (audit 12 Nov); the hub's frame has the same (stream/hub.py LEGAL_LINE)
+LEGAL_LINE = ("Leyline is an independent fan project, not affiliated with or endorsed by Blizzard Entertainment. "
+              "Game names belong to their owners.")
+
+
 def site_footer() -> str:
     e = html.escape
     return ('<footer class="ly-foot"><nav aria-label="About Leyline">'
@@ -2890,7 +2896,8 @@ def site_footer() -> str:
             f'<a href="{e(DISCORD_URL)}" rel="noopener noreferrer">Discord</a>'
             f'<a href="{e(BUG_URL)}" rel="noopener noreferrer">Report a bug</a>'
             '<a href="/wrath/leyline">About Leyline</a></nav>'
-            '<p>No shop. Bots are labelled.</p></footer>')
+            '<p>No shop. Bots are labelled.</p>'
+            f'<p class="ly-legal">{e(LEGAL_LINE)}</p></footer>')
 
 
 def next_block(kind: str = "play") -> str:

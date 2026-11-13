@@ -130,7 +130,7 @@ check("env.js: the hero is seated (char), marked as a boss fight", '"char":"Kali
 code = wp.sessions.create("WR000123", "pw", "mini", 3, char="<script>")
 env = wp.env_js(wp.sessions.get(wp.sessions.redeem(code))).decode()
 check("env.js: no char for an odd name, none for a normal session", '"char"' not in env)
-page = html.unescape(wp.bf_not_live_page().decode())
+page = html.unescape(wp.bf_not_live_page().decode()).replace("not affiliated with or endorsed by Blizzard Entertainment", " ")   # the legal line in the footer: the one allowed mention
 check("not-live page: plain words, nothing about brands or versions", "aren't open on the realm yet" in page
       and not BANNED.search(re.sub(r"<[^>]+>", " ", page)) and "3.3" not in re.sub(r"<[^>]+>", " ", page))
 

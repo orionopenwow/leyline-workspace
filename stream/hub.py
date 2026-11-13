@@ -72,6 +72,10 @@ import threading
 import time
 import urllib.parse
 
+# The legal line, at the foot of every page in the hub's frame (audit 12 Nov: it was only on the press, Solo and phone
+# pages). The one place the game's maker is named; the same words as stream/site_pages.py LEGAL.
+LEGAL_LINE = ("Leyline is an independent fan project, not affiliated with or endorsed by Blizzard Entertainment. "
+              "Game names belong to their owners.")
 BASE = "/wrath/leyline-preview"
 FEED = "/wrath/leyline/catalog.json"
 FRONT = "/wrath/leyline"
@@ -1109,7 +1113,7 @@ class Hub:
                 '<p class="hb-foot-fine">Open source. No shop, nothing to buy. Bots are labelled.</p>'
                 '<nav class="hb-social" aria-label="Elsewhere">' + self.discord_btn()
                 + "".join(f'<a href="{e(h)}" rel="noopener noreferrer">{e(t)}</a>' for t, h in social)
-                + '</nav></div></div></footer>')
+                + f'</nav></div><p class="hb-foot-legal">{e(LEGAL_LINE)}</p></div></footer>')
         robots = "" if front_on() else '<meta name="robots" content="noindex">'
         meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
                 'with mods, addons, realm scripts and tools.">')
@@ -3681,6 +3685,7 @@ text-decoration:none;color:var(--lk-text-2)!important}
 .hb-foot-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 24px}
 .hb-brand.small .ly-spin{--ly-spin-size:32px!important}.hb-brand.small .hb-word b{font-size:16px}.hb-brand.small .hb-word i{font-size:12px}
 .hb-foot-fine{margin:0;color:var(--lk-muted);font-size:13px;flex:1 1 220px}
+.hb-foot-legal{margin:14px 0 0;color:var(--lk-muted);font-size:12px;line-height:1.5}
 .hb-social{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
 /* Join the Discord (the footer, the Hangout band, the Forum and Discord section) */
 .hb-dc{display:inline-flex;align-items:center;gap:8px}.hb-dc svg{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;

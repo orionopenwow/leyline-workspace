@@ -53,11 +53,39 @@ TOP_LEVEL_OK = {"mod.json", "ui", "realm", "assets", "tests", "README.md", "READ
                 "LICENSE", "LICENSE.txt", "LICENSE.md", "CHANGELOG.md", ".gitignore"}
 IGNORED_NAMES = {".git", "__pycache__", ".DS_Store", "Thumbs.db", "desktop.ini", ".gitignore"}
 
-# Blizzard game-data formats. Never allowed anywhere in a package, whatever the name says.
+# The game client's data formats. Never allowed anywhere in a package, whatever the name says.
 BLOCKED_EXT = {".mpq": "MPQ archive", ".blp": "BLP texture", ".m2": "M2 model", ".wmo": "WMO world model",
                ".adt": "ADT terrain tile", ".dbc": "DBC client database", ".skin": "M2 skin file",
                ".anim": "M2 animation file", ".wdt": "WDT map file", ".wdl": "WDL map file",
-               ".db2": "DB2 client database", ".bls": "BLS shader"}
+               ".db2": "DB2 client database", ".bls": "BLS shader", ".mdx": "MDX model", ".phys": "M2 physics file",
+               ".bone": "M2 bone file", ".lit": "light file", ".wlw": "liquid file", ".wlq": "liquid file",
+               ".wlm": "liquid file", ".zmp": "zone map file", ".vmtree": "server map data (vmaps)",
+               ".vmtile": "server map data (vmaps)", ".mmap": "server map data (mmaps)",
+               ".mmtile": "server map data (mmaps)"}
+# Folders and names that only exist inside a game install or in server data extracted from one.
+GAME_PATH_RE = re.compile(
+    r"(^|/)(?i:DBFilesClient|World/Maps|World/wmo|Interface/(?:Glues|Icons|FrameXML|GlueXML)|vmaps|mmaps)(/|$)"
+    r"|(^|/)(?i:data)/(?:enUS|enGB|deDE|frFR|esES|esMX|ruRU|koKR|zhCN|zhTW|ptBR|itIT)(/|$)"
+    r"|(^|/)(?i:(?:common(?:-\d)?|expansion|lichking|locale-[a-z]{4}|speech-[a-z]{4}|patch(?:-[a-z0-9]+)*)\.mpq)$"
+    r"|(^|/)\d{7}\.map$")
+
+# Words that never reach players (Leyline's brand rule; the same list as tools/leyline-repo/export.py BANNED). The one
+# allowed line is the legal one ("not affiliated with or endorsed by ..."); the client's own addon and frame names
+# (Blizzard_CombatLog, BlizzardOptionsPanel_...) are code, not words a player reads.
+BRAND_WORDS = ("World of Warcraft", "Warcraft", "WoW", "Lich King", "Blizzard")
+BRAND_RE = re.compile(r"(?i:world\s*of\s*warcraft|warcraft|lich\s*king|blizzard)|\bWoW\b")
+BRAND_CODE_NAME_RE = re.compile(r"\bBlizzard(?:_|[A-Z])\w*")
+LEGAL_LINE_RE = re.compile(r"(?i)not\s+(?:affiliated|endorsed|associated)")
+# Money: Leyline carries no donation, tip, support or shop links.
+MONEY_HOST_RE = re.compile(
+    r"(?i)\b(?:patreon\.com|ko-?fi\.com|buymeacoffee\.com|buymeacoff\.ee|paypal\.(?:me|com)|liberapay\.com"
+    r"|opencollective\.com|github\.com/sponsors|boosty\.to|donorbox\.org|gofundme\.com|subscribestar\.\w+"
+    r"|streamelements\.com/\S+/tip|streamlabs\.com/\S+/tip|cash\.app|venmo\.com|tipeee\.com|fourthwall\.com"
+    r"|gumroad\.com|itch\.io/\S*(?:purchase|donate))")
+MONEY_WORD_RE = re.compile(
+    r"(?i)\b(?:donat(?:e|es|ed|ing|ion|ions)|tip\s*jar|buy\s+me\s+an?\s+(?:coffee|beer|pizza)"
+    r"|support\s+(?:me|us|the\s+dev\w*|my\s+work)\s+on|become\s+a\s+(?:patron|sponsor))\b")
+LICENCE_FILES = ("LICENSE", "LICENSE.txt", "LICENSE.md")
 BLOCKED_MAGIC = [(b"MPQ\x1a", "MPQ archive"), (b"MPQ\x1b", "MPQ archive"), (b"BLP1", "BLP texture"),
                  (b"BLP2", "BLP texture"), (b"MD20", "M2 model"), (b"MD21", "M2 model"),
                  (b"WDBC", "DBC client database"), (b"REVM", "WMO/ADT/WDT chunk file")]
@@ -159,6 +187,10 @@ DEFAULT_FIX = {
     "layout-size": "remove large or generated files; keep packages under 50 MB",
     "zip": "rebuild the zip with `wu-mod.py pack <folder>`",
     "input": "pass the mod folder (the one with mod.json) or a .zip made by `wu-mod.py pack`",
+    "brand-word": "players never see the game's or its maker's names: rename it in your own words "
+                  "(the legal line \"not affiliated with or endorsed by ...\" is the one exception)",
+    "money-link": "remove it: Leyline lists no donation, tip, support or shop links",
+    "licence-file": "add a LICENSE file at the top of the package with the full text of the licence in mod.json",
 }
 
 
@@ -911,7 +943,7 @@ def check_blocked_files(root, files, report):
         total += size
         ext = os.path.splitext(rel)[1].lower()
         if ext in BLOCKED_EXT:
-            report.error("asset-blocked", rel, "%s files are Blizzard game data and cannot be in a mod"
+            report.error("asset-blocked", rel, "%s files are the game's own data and cannot be in a mod"
                          % BLOCKED_EXT[ext],
                          "remove it; ship your own art (.tga for textures in ui/, .png/.ogg in assets/)")
             continue
@@ -919,7 +951,7 @@ def check_blocked_files(root, files, report):
             head = f.read(4)
         for magic, what in BLOCKED_MAGIC:
             if head == magic:
-                report.error("asset-blocked", rel, "this file is a %s (renamed); Blizzard game data cannot be "
+                report.error("asset-blocked", rel, "this file is a %s (renamed); the game's own data cannot be "
                              "in a mod" % what, "remove it")
                 break
         if size > MAX_FILE_BYTES:
@@ -929,6 +961,75 @@ def check_blocked_files(root, files, report):
         report.error("layout-size", None, "package is larger than %d MB" % (MAX_PACKAGE_BYTES // 2 ** 20))
     if len(files) > MAX_FILES:
         report.error("layout-size", None, "package has more than %d files" % MAX_FILES)
+
+
+def _lua_strings(src):
+    """(line, text) of every string literal in a Lua file; [] when it doesn't tokenize (the syntax check reports that)."""
+    try:
+        return [(t.line, t.value) for t in tokenize(src) if t.kind == "str"]
+    except Exception:
+        return []
+
+
+def _read_text(path):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def check_hard_lines(root, files, manifest, report):
+    """Leyline's hard lines (CONTRIBUTING.md): no game asset paths, no brand words where players read them, no money
+    links, and a LICENSE file."""
+    for rel in files:
+        if GAME_PATH_RE.search(rel):
+            report.error("asset-blocked", rel, "this path is copied from a game install or from server data made "
+                         "from one", "remove it; a mod ships only files you made or may share")
+
+    texts = []   # (where, text, words too): words are checked where text is prose, hosts everywhere
+    if isinstance(manifest, dict):
+        for f in ("name", "description"):
+            if isinstance(manifest.get(f), str):
+                texts.append(("mod.json \"%s\"" % f, manifest[f], True))
+        for ln in manifest.get("links") or [] if isinstance(manifest.get("links"), list) else []:
+            if isinstance(ln, dict):
+                for k in ("label", "url"):
+                    if isinstance(ln.get(k), str):
+                        texts.append(("mod.json links", ln[k], True))
+            elif isinstance(ln, str):
+                texts.append(("mod.json links", ln, True))
+    for rel in files:
+        low = rel.lower()
+        full = os.path.join(root, rel)
+        if "/" not in rel and low in ("readme.md", "readme.txt", "changelog.md"):
+            for i, line in enumerate(_read_text(full).splitlines(), 1):
+                texts.append(("%s:%d" % (rel, i), line, True))
+        elif low.endswith(".toc"):
+            for i, line in enumerate(_read_text(full).splitlines(), 1):
+                if line.startswith("##"):
+                    texts.append(("%s:%d" % (rel, i), line, True))
+        elif low.endswith(".xml"):
+            for i, line in enumerate(_read_text(full).splitlines(), 1):
+                for m in re.finditer(r"\b(?:text|title)\s*=\s*\"([^\"]*)\"", line, re.I):
+                    texts.append(("%s:%d" % (rel, i), m.group(1), False))
+        elif low.endswith(".lua") and not low.startswith("tests/"):
+            for line, val in _lua_strings(_read_text(full)):
+                texts.append(("%s:%d" % (rel, line), BRAND_CODE_NAME_RE.sub("", val), False))
+    brand_seen, money_seen = set(), set()
+    for where, text, words in texts:
+        if not LEGAL_LINE_RE.search(text):
+            m = BRAND_RE.search(text)
+            if m and where not in brand_seen:
+                brand_seen.add(where)
+                report.error("brand-word", where, "\"%s\" is a name players must never see in Leyline" % m.group(0))
+        m = MONEY_HOST_RE.search(text) or (MONEY_WORD_RE.search(text) if words else None)
+        if m and where not in money_seen:
+            money_seen.add(where)
+            report.error("money-link", where, "\"%s\" asks for money" % m.group(0))
+
+    if not any(f in files for f in LICENCE_FILES):
+        report.error("licence-file", None, "no LICENSE file at the top of the package")
 
 
 def check_layout(root, files, manifest, report):
@@ -1114,6 +1215,7 @@ def check_package(path):
         files = walk_files(root, report)
         manifest = load_manifest(root, report)
         check_blocked_files(root, files, report)
+        check_hard_lines(root, files, manifest, report)
         check_layout(root, files, manifest, report)
         check_ui(root, files, report, luac)
         check_realm(root, files, manifest, report, luac)

@@ -124,6 +124,11 @@ class Config:
         self.mesh_fanout = _env_int("RELAY_MESH_FANOUT", 3)
         # the release log's public key (wunet/release-log.json, the same key as launcher/branding.json): empty = no chain
         self.release_log_key = e("RELAY_RELEASE_LOG_KEY", "")
+        # The capability document (docs/COMMONHOLD-V1.md): who to report abuse to (a Leyline peer id, 16 letters/digits;
+        # TODO(owner): ours), this relay's rules page (https only) and the languages its operator answers in (en,de...).
+        self.admin_peer = e("RELAY_ADMIN_PEER", "")
+        self.rules_url = e("RELAY_RULES_URL", "")
+        self.languages = e("RELAY_LANGUAGES", "en")
         self.volunteer = e("RELAY_VOLUNTEER", "0") == "1"
         # Friends' mailbox (wurelay/mailbox.py, docs/LEYLINE-FRIENDS.md), off by default: sealed friend messages between
         # launchers that aren't on the same network, kept in memory until fetched by the key's owner (24 h at most).
@@ -1124,6 +1129,8 @@ class Relay:
             return await self.listing.route(req, parts[2:])
         if parts[:2] == ["api", "mesh"] and self.mesh:
             return await self.mesh.route(req, parts[2:])
+        if parts == [".well-known", "leyline"] and self.mesh and m == "GET":
+            return await self.mesh.route(req, ["info"])   # the capability document's well-known name
         if parts[:2] == ["api", "mailbox"] and self.mailbox is not None:
             return await self.mailbox.route(req, parts[2:])
         if parts[:2] == ["api", "nodes"] and self.nodes is not None:

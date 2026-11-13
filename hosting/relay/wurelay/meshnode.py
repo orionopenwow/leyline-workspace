@@ -9,7 +9,10 @@ What it does:
     round it compares bucket summaries with one random peer and pulls the buckets that differ (anti-entropy);
   * finds peers from the bootstrap list (RELAY_MESH_BOOTSTRAP), its peers cache (mesh-peers.json next to the state
     file) and the relay records it learns (any node with "mesh": true);
-  * serves, under /api/mesh/: node, peers, summary, records (?since=<cursor>&epoch= or ?buckets=0a,ff), snapshot,
+  * publishes its capability document (an `info` record, Commonhold v1 F3: what this relay supports, its protocol
+    levels, limits, rules and abuse contact) beside its relay record, and serves it at /api/mesh/info and
+    /.well-known/leyline; a host's own info document, sent with its heartbeat, is passed on too;
+  * serves, under /api/mesh/: node, info, peers, summary, records (?since=<cursor>&epoch= or ?buckets=0a,ff), snapshot,
     realms.json (the same shape as /api/listing/realms.json, built only from verified records), and push (POST);
   * keeps a copy of the Leyline release log (wunet/releaselog.py, "the chain": every release, Host pack and pinned
     server source, hash-chained and signed with the release key) in release-log.json next to the state file, serves
@@ -40,6 +43,8 @@ PUSH_BYTES = 14_000          # under httpd.MAX_BODY
 PEERS_MAX = 64
 PUSH_PER_IP_MIN = 120        # records a single address may push per minute
 UA = "wu-relay-mesh/1"
+SOFTWARE = "wurelay"
+SOFTWARE_VERSION = "2026.11"
 
 
 def _http(method, url, body=None, timeout=5.0):
@@ -114,6 +119,7 @@ class MeshNode:
             seed = releaselog.shipped_chain(rk)
             if seed:
                 self.chain.offer(seed)
+        self.info_seq = 0
         self.publish_self()
 
     # ---------------------------------------------------------------- peers
@@ -173,7 +179,55 @@ class MeshNode:
                                 volunteer=bool(getattr(self.cfg, "volunteer", False)), ws=True, mesh=True,
                                 caps=self.caps(), load=self.load())
         self.accept([rec], now, local=True)
+        self.publish_info(now)
         return rec
+
+    def supported(self):
+        """The capability ids this relay serves (docs/COMMONHOLD-V1.md, "Capabilities")."""
+        c, r = self.cfg, self.relay
+        out = {"mesh", "ws-bridge"}
+        if getattr(c, "listing", False):
+            out.add("listing")
+        if self.chain is not None:
+            out.add("chain")
+        if (r is not None and getattr(r, "mailbox", None) is not None) or getattr(c, "friends_mailbox", False):
+            out.add("mailbox")
+        if r is not None and getattr(r, "nodes", None) is not None:
+            out.add("node-registry")
+        if getattr(c, "advertise_direct", False):
+            out.add("direct")
+        return sorted(out)
+
+    def info_doc(self, now):
+        c = self.cfg
+        lim = dict(self.caps(), record_bytes=mesh.MAX_RECORD_BYTES, push_per_min=PUSH_PER_IP_MIN,
+                   ws=int(getattr(c, "max_ws_total", 0) or 0), realm_streams=int(getattr(c, "max_streams", 0) or 0))
+        langs = [x.strip() for x in (getattr(c, "languages", "") or "").split(",") if x.strip()]
+        admin = getattr(c, "admin_peer", "") or ""
+        rules = getattr(c, "rules_url", "") or ""
+        self.info_seq = max(self.info_seq + 1, int(now) * 1000)
+        return mesh.info_record(self.secret, "relay", self.info_seq, int(now), supported=self.supported(), limits=lim,
+                                admin=admin if mesh.PEER_RE.match(admin) else "", software=SOFTWARE,
+                                version=SOFTWARE_VERSION, region=getattr(c, "region", "") or "", languages=langs,
+                                rules_url=rules if rules.startswith("https://") and len(rules) <= 200 else "",
+                                restricted=["invite"] if getattr(c, "allow_file", "") else [])
+
+    def publish_info(self, now=None):
+        now = int(self.clock() if now is None else now)
+        rec = self.info_doc(now)
+        ok, why = self.accept([rec], now, local=True)
+        if not ok:
+            log.info("mesh did not take our info document: %s", why)
+        return rec
+
+    def host_info(self, beat: dict, info, now=None):
+        """A host's own capability document, sent beside its heartbeat: passed on when its key is the realm's."""
+        if not (isinstance(info, dict) and info.get("kind") == "info" and isinstance(info.get("info"), dict)):
+            return False
+        d = info["info"]
+        if d.get("pubkey") != beat.get("pubkey") or d.get("role") != "host":
+            return False
+        return self.accept([info], now, local=True)[0]
 
     def local_beat(self, beat: dict, sig: str, now=None):
         """The listing took this signed beat from a realm with a tunnel here: publish it with our endpoint, when it
@@ -225,6 +279,8 @@ class MeshNode:
                 self.metrics["accepted_local" if local else "accepted"] += 1
             elif why.startswith("refused"):
                 self.metrics["refused"] += 1
+            elif why.startswith("ignored"):
+                self.metrics["ignored"] += 1   # a kind or version from a newer spec: not ours to judge
         return any_ok, why
 
     # ---------------------------------------------------------------- gossip
@@ -351,6 +407,8 @@ class MeshNode:
         seeds = {h for h, n in relays.items() if not n.get("volunteer")}
         out = []
         for r in self.store.realms():
+            if not mesh.speaks(r["beat"].get("record")):
+                continue   # a realm that needs a newer protocol than this list is shown with: kept and passed on, not shown
             ep = mesh.choose_endpoint(r, relays, {}, volunteers=False, seeds=seeds) or \
                 mesh.choose_endpoint(r, relays, {}, volunteers=True, seeds=seeds)
             out.append(record_view(r, ep, now))
@@ -377,6 +435,10 @@ class MeshNode:
         if rest == ["node"] and req.method == "GET":
             mine = self.store.recs.get(self.id) or self.publish_self(now)
             return httpd.response(200, {"node": mine, "epoch": self.epoch}, headers=pub)
+        if rest == ["info"] and req.method == "GET":
+            mine = self.store.recs.get("i-" + self.id[2:]) or self.publish_info(now)
+            return httpd.response(200, {"info": mine, "proto": [mesh.PROTO_MIN, mesh.PROTO]},
+                                  headers=dict(pub, **{"Cache-Control": "public, max-age=60"}))
         if rest == ["peers"] and req.method == "GET":
             rel = self.store.relays()
             random.shuffle(rel)

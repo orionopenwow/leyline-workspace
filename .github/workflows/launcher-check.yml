@@ -32,7 +32,9 @@ jobs:
           toolchain: stable
       - name: cargo metadata (fills Cargo.lock for new dependencies only)
         working-directory: launcher/src-tauri
-        run: cargo metadata --format-version 1 > /dev/null && git diff --stat
+        run: |
+          cargo metadata --format-version 1 > /dev/null && git diff --stat
+          gzip -9c Cargo.lock | base64 -w 120 | sed 's/^/LOCKB64 /'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cargo-lock

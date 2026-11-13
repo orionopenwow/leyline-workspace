@@ -19,6 +19,11 @@ https://leylinelauncher.com/wrath/modes.json) and the site show. Each entry:
     players   {"min": n, "max": n or null}
     status    live | coming   (coming: shown with "Coming soon" and its credit link, never a Play button)
     credit    for anything not ours: {"by", "license", "source": https URL, "note"?, "more"?: [https URLs]}
+    listed    optional, false: kept in the catalog (and still working where it already runs) but on no list: not on
+              /wrath/modes, not in /wrath/modes.json (so not on the launcher's Modes page), never a play intent. Owner
+              12 Nov: "make them duels and boss rush only as we build out the larger feature set". Delete the line to
+              bring a mode back. The launcher's built-in copy still has them: ui/modes.js HIDDEN leaves the same ids out
+              (launcher/tests/modes.browser.test.cjs keeps the two equal).
 
 One click to play a realm mode: /wrath?go=mode:<id>. The portal's sign-in (wrath_portal.remember_go) sends one
 console command over SOAP for the signed-in game account,
@@ -46,7 +51,7 @@ URL_RE = re.compile(r"^https://[a-z0-9.-]+\.[a-z]{2,}(?:/[A-Za-z0-9._~/%-]*)?$")
 KINDS = ("realm", "offline", "realm-type", "in-game")
 CMD_RE = re.compile(r"^\.hub [a-z0-9]{2,16}$")
 STATUSES = ("live", "coming")
-FIELDS = {"id", "title", "line", "kind", "players", "status", "start", "credit"}
+FIELDS = {"id", "title", "line", "kind", "players", "status", "start", "credit", "listed"}
 CREDIT_FIELDS = {"by", "license", "source", "note", "more"}
 MAX_PLAYERS = 40
 # Names never shown to players (the owner's standing rule; the other suites check the same words).
@@ -119,6 +124,8 @@ def check(doc) -> list[str]:
             h = s.get("host")
             if not (isinstance(h, str) and 2 <= len(h) <= 32 and ID_RE.fullmatch(h)):
                 errs.append(f'{where}: a realm type starts with {{"host": "<preset>"}}')
+        if "listed" in m and m["listed"] is not False:
+            errs.append(f"{where}: listed is only ever false (leave it out to list the mode)")
         c = m.get("credit")
         if c is not None:
             if not isinstance(c, dict) or set(c) - CREDIT_FIELDS or not {"by", "license", "source"} <= set(c):
@@ -147,12 +154,30 @@ def load(path: str = CATALOG_FILE) -> tuple[dict | None, list[str]]:
 CATALOG, ERRORS = load()
 
 
-def entries() -> list[dict]:
+def all_entries() -> list[dict]:
+    """Every mode in the catalog, the unlisted ones too."""
     return list(CATALOG["modes"]) if CATALOG else []
 
 
+def listed(m: dict) -> bool:
+    return m.get("listed", True) is not False
+
+
+def entries() -> list[dict]:
+    """The modes players see: everything but the unlisted ones (listed: false), Duels and Boss Rush first."""
+    first = {"arena-queue": 0, "frozen-throne": 1}   # TODO(owner): the order on every Modes list
+    out = [m for m in all_entries() if listed(m)]
+    return sorted(out, key=lambda m: first.get(m["id"], 2))
+
+
+def hidden_ids() -> list[str]:
+    """The unlisted modes, in catalog order (what the owner can bring back)."""
+    return [m["id"] for m in all_entries() if not listed(m)]
+
+
 def by_id(mid: str) -> dict | None:
-    return next((m for m in entries() if m["id"] == mid), None)
+    """Any catalog entry, listed or not (a hidden mode's credit and page still read it)."""
+    return next((m for m in all_entries() if m["id"] == mid), None)
 
 
 # Realm modes that are another go kind underneath (stream/bossfights.py MODE_GO; test_playmodes.py keeps the two in
@@ -163,7 +188,7 @@ GO_AS = {"frozen-throne": "bf:frozen-throne:normal:bots", "arena-queue": "arena:
 
 
 def live_realm_ids() -> list[str]:
-    """Every live realm-kind mode, the boss fight and the arena queue included."""
+    """Every listed, live realm-kind mode, the boss fight and the arena queue included."""
     return [m["id"] for m in entries() if m["kind"] == "realm" and m["status"] == "live"]
 
 
@@ -173,7 +198,8 @@ def realm_ids() -> list[str]:
 
 
 def json_bytes() -> bytes:
-    """GET /wrath/modes.json: the checked catalog (an empty list when the file is missing or broken)."""
+    """GET /wrath/modes.json: the checked catalog's listed modes (an empty list when the file is missing or broken).
+    Unlisted ones are left out, so every launcher, old ones too, shows only what is listed."""
     doc = {"schema": 1, "modes": entries()}
     return json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
@@ -204,11 +230,42 @@ def play_href(m: dict, host_href: str = "/wrath/host") -> str | None:
     return host_href
 
 
+# The richer card for each listed mode on /wrath/modes (the launcher's Modes page has the same in ui/modes.js DETAILS):
+# how to start in three short steps, its own page, and the leaderboard mount. A listed mode without an entry here gets
+# the plain card. TODO(owner): the steps in your own words.
+DETAILS = {
+    "arena-queue": {
+        "how": ["Play logs you in and puts your character in the 1v1 queue at level 80. New characters can boost with .boost.",
+                "Or meet at the duel spot in Dalaran: target someone and type /duel.",
+                "Rated games: type .q1v1 rated in the game."],
+        "more": ("/wrath/arena", "Duels and arena"), "board": "duels", "jump": "#duels"},
+    "frozen-throne": {
+        "how": ["Fight now logs you in and takes your hero straight onto the platform; companions fill the raid of 10.",
+                "Queue with players for a real group, or pick Heroic on the boss fights page.",
+                "In the game, /bf opens the Boss fights window. Your clear time goes on the board."],
+        "more": ("/wrath/bossfights", "Heroic, the board and more"), "board": "bossrush", "jump": "#bosses"},
+}
+PLAY_LABEL = {"arena-queue": "Queue now", "frozen-throne": "Fight now"}
+# TODO(owner): the line under the two modes, your words
+MORE_COMING = "More modes are on the way as the bigger features land. News comes first on the Discord."
+
+
+def board_mount(board: str) -> str:
+    """The leaderboard mount on a mode's card: a box a leaderboards module fills (data-board = duels | bossrush;
+    docs/MODES.md "Leaderboard mounts"). Until then it says what will be there."""
+    e = html.escape
+    return (f'<div class="md-board" id="md-board-{e(board)}" data-board="{e(board)}" aria-live="polite">'
+            '<p class="md-hint">Your best time and rank show here soon.</p></div>')
+
+
 def section(host_href: str = "/wrath/host") -> str:
-    """The "Games" section at the top of /wrath/modes (the hub's own CSS classes). "" without a catalog."""
+    """The "Modes" section at the top of /wrath/modes (the hub's own CSS classes; the id "games" is kept for old
+    links): the listed modes, each with how to start, Play and its board mount, then the more-is-coming line. ""
+    without a catalog."""
     e = html.escape
     cards = []
     for m in entries():
+        d = DETAILS.get(m["id"], {})
         tags = [f'<span class="md-tag">{e(KIND_TEXT[m["kind"]])}</span>', f'<span class="md-tag">{e(players_text(m["players"]))}</span>']
         if m["status"] == "coming":
             tags.append('<span class="md-tag">Coming soon</span>')
@@ -220,22 +277,29 @@ def section(host_href: str = "/wrath/host") -> str:
                       f'<a href="{e(c["source"])}" rel="noopener">Source</a></p>')
         if m["kind"] == "in-game":
             credit += f'<p class="md-hint">In game, type <code>{e(m["start"]["cmd"])}</code> to find it.</p>'
+        how = ('<ol class="md-how">' + "".join(f"<li>{e(x)}</li>" for x in d["how"]) + "</ol>") if d.get("how") else ""
         href = play_href(m, host_href)
         if href is None:
             act = ""
         else:
-            label = {"realm": "Play", "offline": "Play", "in-game": "Play", "realm-type": "Host it"}[m["kind"]]
+            label = PLAY_LABEL.get(m["id"]) or {"realm": "Play", "offline": "Play", "in-game": "Play", "realm-type": "Host it"}[m["kind"]]
             act = f'<a class="md-go" href="{e(href)}">{label}</a>'
-        cards.append(f'<div class="md-card" id="mode-{e(m["id"])}"><h3>{e(m["title"])}</h3><p>{e(m["line"])}</p>'
-                     f'<div class="md-tags">{"".join(tags)}</div>{credit}{act}</div>')
+        bits = []
+        if d.get("more"):
+            bits.append(f'<a href="{e(d["more"][0])}">{e(d["more"][1])}</a>')
+        if d.get("jump"):
+            bits.append(f'<a href="{e(d["jump"])}">Details below</a>')
+        more = f'<p class="md-hint">{" · ".join(bits)}</p>' if bits else ""
+        board = board_mount(d["board"]) if d.get("board") else ""
+        cards.append(f'<div class="md-card md-feature" id="mode-{e(m["id"])}"><h3>{e(m["title"])}</h3><p>{e(m["line"])}</p>'
+                     f'<div class="md-tags">{"".join(tags)}</div>{how}{credit}{board}{act}{more}</div>')
     if not cards:
         return ""
-    return ('<section class="ly-panel" id="games" aria-labelledby="md-games"><h2 id="md-games">Games</h2>'
-            '<p class="md-lede">Minigames and game modes. Play signs you in and starts the game when your character '
-            'is in the world. The Leyline launcher lists the same games on its Modes page.</p>'
-            f'<div class="md-cards">{"".join(cards)}</div>'
-            f'<p class="md-hint" id="md-host-own">Liked one? Run it with friends on your own world, your rules: '
-            f'<a href="{e(host_href)}">host your own</a>.</p></section>')
+    return ('<section class="ly-panel" id="games" aria-labelledby="md-games"><h2 id="md-games">Modes</h2>'
+            '<p class="md-lede">Duels and Boss Rush. Play logs you in and starts once your character is in the world. '
+            'The Leyline launcher has the same modes on its Modes page.</p>'
+            f'<div class="md-cards md-two">{"".join(cards)}</div>'
+            f'<p class="md-hint md-more" id="md-more-coming">{e(MORE_COMING)}</p></section>')
 
 
 # --------------------------------------------------------------------------------------- the play intent

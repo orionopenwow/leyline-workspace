@@ -1,0 +1,14 @@
+{
+ "format": 1,
+ "about": "Leyline weekly v0 (stream/weekly.py): one featured pick per game mode, shown on the launcher's Home and the site's front page until featured_until (UTC). TODO(owner): these first picks are placeholders from the mode list; staff choose each week's.",
+ "items": [
+  {"mode": "minigolf", "title": "Course of the week", "line": "A course players built. Play it alone or with your party.",
+   "visit": "", "featured_from": "2026-11-09", "featured_until": "2026-11-16T00:00:00Z"},
+  {"mode": "keystones", "title": "This week's twist", "line": "Timed dungeons with a key that gets harder at every level.",
+   "visit": "", "featured_from": "2026-11-09", "featured_until": "2026-11-16T00:00:00Z"},
+  {"mode": "community", "title": "Community pick", "line": "A minigame another player made, checked by a GM. Host it for friends.",
+   "visit": "", "featured_from": "2026-11-09", "featured_until": "2026-11-16T00:00:00Z"},
+  {"mode": "brawl", "title": "Brawl night", "line": "Everyone starts at 80 in Dalaran with their class spells.",
+   "visit": "", "featured_from": "2026-11-09", "featured_until": "2026-11-16T00:00:00Z"}
+ ]
+}

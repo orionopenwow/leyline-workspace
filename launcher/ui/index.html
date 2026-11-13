@@ -265,6 +265,11 @@
         <!-- TODO(owner): Home's loadouts line in your own voice -->
         <p class="hint hm-lo" id="hm-lo">Make it yours: save the mods you like as a loadout and switch in one click. Clean is always one click away. <button type="button" class="link" data-hm-go="installed">Loadouts ›</button></p>
       </section>
+      <!-- Leyline weekly (stream/weekly.py, through the site's home.json): one featured pick per mode, each until its end -->
+      <section class="hm-sec" id="hm-week" aria-labelledby="hm-week-h" hidden>
+        <div class="card-head hm-head"><span id="hm-week-h">THIS WEEK</span><button type="button" class="link" data-hm-go="modes">All modes ›</button></div>
+        <div class="hm-row" id="hm-week-row"></div>
+      </section>
       <section class="hm-sec" id="hm-modes" aria-labelledby="hm-modes-h" hidden>
         <div class="card-head hm-head"><span id="hm-modes-h">GAME MODES</span><button type="button" class="link" data-hm-go="modes">See all ›</button></div>
         <div class="hm-row" id="hm-modes-row"></div>

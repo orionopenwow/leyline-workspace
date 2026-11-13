@@ -167,6 +167,24 @@ def banned(text: str) -> bool:
     return bool(BANNED_RE.search(text or ""))
 
 
+def this_week_html() -> str:
+    """The front page's "This week" strip (stream/weekly.py: one featured pick per mode), or "" when none is live."""
+    m = sys.modules.get("wu_weekly")
+    if m is None:
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wu_weekly", os.path.join(os.path.dirname(os.path.abspath(__file__)), "weekly.py"))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_weekly"] = m
+        except Exception:   # noqa: BLE001
+            return ""
+    try:
+        return m.section_html()
+    except Exception:   # noqa: BLE001
+        return ""
+
+
 def den_week_html() -> str:
     """The front page's Den of the week card (stream/denweek.py: staff pick it in HQ), or "" when none is picked."""
     m = sys.modules.get("wu_denweek")
@@ -2314,6 +2332,7 @@ class Hub:
             # Key line and Mods in play repeated what is already above them (their methods stay, off the page, to bring back).
             + self.realm_section(got) + self.how_strip() + den_week_html() + self.featured_mod(items)
             + self.site_sections()   # Ways to play and (flag on) Single player, after the featured mod (stream/site_pages.py)
+            + this_week_html()       # Leyline weekly: one featured pick per mode (stream/weekly.py)
            
             + self.features(got) + self.community(items) + status +
             '<p class="hb-fine">Community projects are links: nothing of theirs is hosted here. Each belongs to its '

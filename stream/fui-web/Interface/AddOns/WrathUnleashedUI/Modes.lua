@@ -1212,6 +1212,34 @@ end
 -- The mode editor (write, Play, Play Here, Stop, Save, Publish, the error console) is ModeScript.lua: M.Editor.
 
 -- ---------------------------------------------------------------- the window
+-- /modes lists Leyline's modes: Duels and Boss Rush (owner 12 Nov: "remove the silly modes from modes and make them duels
+-- and boss rush only as we build out the larger feature set"; stream/playmodes.json lists the same two). The realm's
+-- scripted minigames (Bumper Balls, Coin Dash, the published ones) keep working, with their lobby and invites, but
+-- their list and Host here / Play solo / Mode editor buttons are off the window while M.SHOW_MINIGAMES is false; the
+-- creator commands (/modes edit, /modes bumper and the rest) are unchanged. Set it true to bring the list back.
+M.SHOW_MINIGAMES = false
+-- Each row's buttons type one realm command as chat (never run here), as BossFights.lua does. TODO(owner): the lines.
+M.FEATURED = {
+    { key = "duels", title = "Duels", line = "One on one at level 80: the next player in line, or /duel anyone.",
+      buttons = { { "Queue 1v1", function() M.Chat(".q1v1 unrated") end }, { "Rated", function() M.Chat(".q1v1 rated") end } } },
+    { key = "bossrush", title = "Boss Rush", line = "Straight onto The Frozen Throne. Companions fill the raid.",
+      buttons = { { "Fight now", function() M.BossRush(true) end }, { "Boss fights", function() M.BossRush(false) end } } },
+}
+M.MORE = "More modes are on the way."   -- TODO(owner): your words
+function M.Chat(cmd)
+    if type(SendChatMessage) ~= "function" then return false end
+    pcall(SendChatMessage, cmd, "SAY")
+    status("Asked the realm: " .. cmd)
+    return true
+end
+-- Boss Rush: now = the featured fight with companions (BossFights.lua BF.Join), else the Boss fights window (/bf)
+function M.BossRush(now)
+    local BF = W.BossFights
+    if not BF then return M.Chat(now and ".bossfight join frozen-throne normal bots" or ".bossfight status") end
+    if win then win:Hide() end
+    if now and BF.Join then return BF.Join("frozen-throne", "normal", "bots") end
+    if BF.Show then return BF.Show(true) end
+end
 
 function M.Ask()
     M.askedAt, M.waiting = now(), true
@@ -1222,7 +1250,7 @@ end
 function M.Refresh()
     if not win then return end
     for i, row in ipairs(win.rows) do
-        local m = M.modes[i]
+        local m = M.SHOW_MINIGAMES and M.modes[i] or nil
         row.mode = m
         if m then
             row.text:SetText(string.format("%s%s  |cffa0a0a0by %s, %d-%d players|r", m.key == M.pick and "|cff40ff40> |r" or "", m.title, m.author, m.min, m.max))
@@ -1242,6 +1270,13 @@ function M.Refresh()
     else
         win.lobby:SetText(""); win.join:Hide(); win.go:Hide()
     end
+    -- a minigame you are in (or invited to) still shows its lobby and Leave, even with the list off; the window is the
+    -- two modes alone, or tall enough for the minigames' list and lobby under them
+    local busy = M.invite or (l and M.state == "lobby") or M.state ~= "idle"
+    win:SetHeight((M.SHOW_MINIGAMES or busy) and 460 or 236)
+    if M.SHOW_MINIGAMES or busy then win.leave:Show() else win.leave:Hide() end
+    for _, b in ipairs(win.mini) do if M.SHOW_MINIGAMES then b:Show() else b:Hide() end end
+    if not M.SHOW_MINIGAMES then return end
     if has() then win.solo:Enable(); win.host:Enable() else win.solo:Disable(); win.host:Disable()
         status("Modes need the Leyline browser client (20261025k or newer).") end
 end
@@ -1266,7 +1301,7 @@ end
 
 local function build()
     win = CreateFrame("Frame", "LeylineModesFrame", UIParent)
-    win:SetWidth(460); win:SetHeight(340)
+    win:SetWidth(460); win:SetHeight(236)
     win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
     win:EnableMouse(true)
@@ -1289,12 +1324,29 @@ local function build()
     local close = (W.Style and W.Style.Close(win) or CreateFrame("Button", nil, win, "UIPanelCloseButton"))
     close:SetPoint("TOPRIGHT", -6, -6)
     tinsert(UISpecialFrames, "LeylineModesFrame")
-    label(win, "Modes on this realm", "GameFontNormal", "TOPLEFT", 22, -48)
+    -- Duels and Boss Rush, one row each: the name, a line, its buttons
+    win.featured = {}
+    for i, f in ipairs(M.FEATURED) do
+        local y = -44 - (i - 1) * 56
+        local row = { key = f.key }
+        row.title = label(win, f.title, "GameFontNormalLarge", "TOPLEFT", 22, y)
+        row.line = label(win, f.line, "GameFontHighlightSmall", "TOPLEFT", 22, y - 20)
+        row.line:SetWidth(250)
+        row.buttons = {}
+        for j, b in ipairs(f.buttons) do
+            row.buttons[j] = button(win, b[1], 82, b[2], "TOPLEFT", 270 + (j - 1) * 86, y - 6)
+        end
+        win.featured[i] = row
+    end
+    win.more = label(win, M.MORE, "GameFontDisableSmall", "TOPLEFT", 22, -44 - #M.FEATURED * 56)
+    -- the minigames (off while M.SHOW_MINIGAMES is false): their list, then Host here / Play solo / Refresh / Mode editor
+    win.mini = {}
+    win.mini[#win.mini + 1] = label(win, "Minigames on this realm", "GameFontNormal", "TOPLEFT", 22, -168)
     win.rows = {}
     for i = 1, 6 do
         local row = CreateFrame("Button", nil, win)
         row:SetWidth(416); row:SetHeight(20)
-        row:SetPoint("TOPLEFT", 22, -66 - (i - 1) * 21)
+        row:SetPoint("TOPLEFT", 22, -186 - (i - 1) * 21)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
         row.text = label(row, "", "GameFontHighlight", "LEFT", 4, 0)
         row:SetScript("OnClick", function(self) if self.mode then M.pick = self.mode.key; M.Refresh() end end)
@@ -1303,26 +1355,31 @@ local function build()
     win.host = button(win, "Host here", 100, function()
         if not M.pick then status("Pick a mode first."); return end
         send("host", M.pick); status("Opening a game...")
-    end, "TOPLEFT", 22, -200)
+    end, "TOPLEFT", 22, -320)
     win.solo = button(win, "Play solo", 100, function()
         if M.pick then send("solo", M.pick); status("Fetching the mode...") else M.Solo(M.BUILTIN) end
-    end, "TOPLEFT", 126, -200)
-    button(win, "Refresh", 80, function() M.Ask() end, "TOPLEFT", 230, -200)
-    button(win, "Mode editor", 100, function() win:Hide(); M.Editor() end, "TOPLEFT", 314, -200)
-    win.lobby = label(win, "", "GameFontHighlight", "TOPLEFT", 22, -232)
+    end, "TOPLEFT", 126, -320)
+    win.refresh = button(win, "Refresh", 80, function() M.Ask() end, "TOPLEFT", 230, -320)
+    win.editor = button(win, "Mode editor", 100, function() win:Hide(); M.Editor() end, "TOPLEFT", 314, -320)
+    for _, b in ipairs({ win.host, win.solo, win.refresh, win.editor }) do win.mini[#win.mini + 1] = b end
+    win.lobby = label(win, "", "GameFontHighlight", "TOPLEFT", 22, -352)
     win.lobby:SetWidth(416)
-    win.join = button(win, "Join", 90, function() if M.invite then send("join", tostring(M.invite.id)) end end, "TOPLEFT", 22, -268)
-    win.go = button(win, "Start", 90, function() send("go", "") end, "TOPLEFT", 22, -268)
-    button(win, "Leave", 80, function() M.Leave() end, "TOPLEFT", 118, -268)
+    win.join = button(win, "Join", 90, function() if M.invite then send("join", tostring(M.invite.id)) end end, "TOPLEFT", 22, -388)
+    win.go = button(win, "Start", 90, function() send("go", "") end, "TOPLEFT", 22, -388)
+    win.leave = button(win, "Leave", 80, function() M.Leave() end, "TOPLEFT", 118, -388)
     win.status = label(win, M.status or "", "GameFontHighlightSmall", "BOTTOMLEFT", 22, 22)
     win.status:SetWidth(416)
     win:SetScript("OnUpdate", function()
         if M.waiting and M.askedAt and now() - M.askedAt > 6 then
             M.waiting = nil
-            status("This realm doesn't run modes yet. Play solo works anywhere (Bumper Balls).")
+            status(M.SHOW_MINIGAMES and "This realm doesn't run modes yet. Play solo works anywhere (Bumper Balls)." or "")
         end
     end)
-    win:SetScript("OnShow", function() sound("igCharacterInfoOpen"); if #M.modes == 0 then M.Ask() end; M.Refresh() end)
+    win:SetScript("OnShow", function()
+        sound("igCharacterInfoOpen")
+        if M.SHOW_MINIGAMES and #M.modes == 0 then M.Ask() end
+        M.Refresh()
+    end)
     win:Hide()
 end
 

@@ -59,7 +59,7 @@
     // named link. TODO(owner): the kicker and the line, his words.
     if (App.playHangout) {
       out.push({ key: "hangout", kicker: "Open now · " + App.HANGOUT.kind, title: "Join " + App.HANGOUT.name,
-        line: "Start at level 1 or boost to 80. Say hello, then try /golf and /modes.",
+        line: "Start at level 1 or boost to 80. Say hello, then try a duel or Boss Rush.",
         chips: hangoutChips, photo: true, side: hangoutSide, cta: "Play now", run: () => App.playHangout(),
         cta2: "Join the Discord", run2: () => App.openLink("discord") });
     }
@@ -223,7 +223,8 @@
     if (a.credit) s.append(el("small", "hs-credit", a.credit));
   }
 
-  const SLASH = { minigolf: "/golf" };   // the rest start from /modes (the Hangout's line); TODO(owner): each mode's own command
+  // each mode's own way in, in the game (the rest: /modes); TODO(owner): each mode's own command
+  const SLASH = { minigolf: "/golf", "frozen-throne": "/bf", "arena-queue": ".q1v1" };
 
   // a mode tile's picture: its screenshot from the site (home.json "mode-<id>"), else its colour and initial
   function modePic(m) {

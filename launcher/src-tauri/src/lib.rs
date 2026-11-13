@@ -17,6 +17,7 @@
 pub mod addresses; // the public names: site, game, relay, new first with the old ones as fallback (docs/DOMAIN-MOVE.md)
 pub mod agents; // the Agents page and `Leyline mcp`: the player's own AI assistant, read / ask / never tiers (agents.rs)
 pub mod addons; // the Leyline addons: our own in-game addons for a 3.3.5a client (ui/addons.js)
+pub mod boards; // Leaderboards: Boss Rush and Duels boards signed by the realms, checked here; local runs apart (boards.rs)
 pub mod bugs; // Help › Report a bug: one report to the website's bug list as the signed-in player (bugs.rs)
 pub mod branding; // launcher/branding.json: name, look, update sources, release-log key (docs/FORKING.md)
 pub mod catalog;

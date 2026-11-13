@@ -450,6 +450,22 @@ fn crc32(b: &[u8]) -> u32 {
 }
 
 /// No game brand word in anything the tile shows (the rules: the legal line is the only exception, and it isn't here).
+/// Monday 5 Jan 1970 00:00 UTC: weeks count from here (the boards' week, realm/custom/boards-export.py WEEK0).
+pub const WEEK0: u64 = 4 * 86_400;
+pub const WEEK: u64 = 7 * 86_400;
+
+/// This week's featured fight: the catalog in turn, one a week from Monday 00:00 UTC (the same rule as
+/// boards-export.py `featured` and ov_boards.lua `B.featured`; docs/LEADERBOARDS.md).
+pub fn featured_fight(now: u64) -> &'static Fight {
+    let n = now.saturating_sub(WEEK0) / WEEK;
+    &FIGHTS[(n % FIGHTS.len() as u64) as usize]
+}
+
+/// Monday 00:00 UTC of `now`'s week.
+pub fn week_start(now: u64) -> u64 {
+    WEEK0 + now.saturating_sub(WEEK0) / WEEK * WEEK
+}
+
 pub fn brand_free(s: &str) -> bool {
     let l = s.to_ascii_lowercase();
     !["warcraft", "lich king", "blizzard"].iter().any(|w| l.contains(w))
@@ -593,6 +609,20 @@ mod tests {
         assert_eq!((v[1].0, v[1].1.heroic, v[1].1.cleared, v[1].1.class.as_str()), (44, true, false, "-"));
         let t = add_run("", &v[1].1);
         assert_eq!(read_board(&t)[0].class, "-", "the board keeps an unknown class");
+    }
+
+    #[test]
+    fn the_featured_fight_turns_once_a_week() {
+        // Thursday 12 Nov 2026 19:00 UTC; the week began Monday 9 Nov (1794182400)
+        let now = 1_794_510_000;
+        assert_eq!(week_start(now), 1_794_182_400);
+        assert_eq!(week_start(1_794_182_400), 1_794_182_400);
+        assert_eq!(week_start(1_794_182_399), 1_794_182_400 - WEEK);
+        // the same as boards-export.py featured(1794510000) over the whole catalog (boards-vector.json)
+        assert_eq!(featured_fight(now).key, "cult-mistress");
+        assert_eq!(featured_fight(1_794_182_400).key, featured_fight(1_794_182_400 + WEEK - 1).key);
+        assert_ne!(featured_fight(now).key, featured_fight(now + WEEK).key);
+        assert_eq!(featured_fight(now).key, featured_fight(now + WEEK * FIGHTS.len() as u64).key);
     }
 
     #[test]

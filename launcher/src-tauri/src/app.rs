@@ -3711,6 +3711,28 @@ async fn bossrush_record(fight: String, diff: String, class: String, spec: Strin
     .await
 }
 
+/// The Leaderboards view (ui/boards.js): the realms' signed boards from the website, every signature checked here
+/// (boards.rs), and the separate local-run board; the last view this PC saw when the site can't be reached.
+#[tauri::command]
+async fn boards_get() -> Result<serde_json::Value, String> {
+    blocking(|| Ok(crate::boards::load(&settings::app_dir()))).await
+}
+
+/// Share a run from this PC on the website's local-run board (only when the player presses Share): signed with this
+/// launcher's own key, sent as the signed-in player. It never goes on a realm's signed board.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+async fn boards_share_local(fight: String, diff: String, engine: String, name: String, class: String, spec: String, ms: u64, at: u64) -> Result<String, String> {
+    blocking(move || {
+        let me = crate::identity::peer_identity()?;
+        let body = crate::boards::local_record(&me, &fight, &diff, &engine, &name, &class, &spec, ms, at)?;
+        let url = format!("{}{}", crate::boards::site(), crate::boards::LOCAL_PATH);
+        let reply = crate::social::post_as_player(&settings::app_dir(), &url, &body)?;
+        Ok(reply.get("message").and_then(serde_json::Value::as_str).unwrap_or("Shared on the local-run board.").chars().take(200).collect())
+    })
+    .await
+}
+
 /// A fight code a friend shared, read back as a pick (nothing in it runs).
 #[tauri::command]
 fn bossrush_code(code: String) -> Result<serde_json::Value, String> {
@@ -4627,6 +4649,8 @@ pub fn run() {
             bossrush_board,
             bossrush_record,
             bossrush_code,
+            boards_get, // Leaderboards: signed boards checked here, local runs shared by choice (boards.rs, ui/boards.js)
+            boards_share_local,
             forge_state, // Forge, the Den's terrain editor (host/forge.rs, ui/den.js "Open in Forge")
             forge_install,
             forge_open,

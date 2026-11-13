@@ -161,6 +161,16 @@ only Den keys are F7 / F8 (DenBar.lua) to come back.
 | Wheel | Zoom; past the game's limit, the far view | |
 | Ctrl+1..3 / Shift+1..3 | Keep where the view is / go back to it (kept between sessions) | Build mode |
 | J (or K, F9, F10) | Snap out: the overview | Build mode |
+| Numpad 8 / 2 / 4 / 6, Ctrl+arrows | Nudge the selection away / back / left / right of the view, on the grid's axes (`nudge`, qol.rs); the grid's step, else half a yard | Something selected |
+| Numpad 9 / 3, Ctrl+PgUp / PgDn | Nudge it up / down | Something selected |
+| Numpad 7 / 1 | Turn it left / right by the turn step | Something selected |
+| Alt / Shift with a nudge | Fine (a tenth of a yard, 1°) / big (five steps, 90°) | |
+| Alt held | With something in hand: no grid and no magnet (`hover ... free`); Q / E turn by 1° | In hand |
+| Alt+drag, Alt+Shift+drag | Circle select / add (`selcircle`) | |
+| Drag one of several | The whole selection moves with it, turned with it, each at its own height over the ground; one undo | |
+| M | The magnet: near another of its kind, what is in hand snaps edge to edge (`gizmo magnet`) | Build mode |
+| Ctrl+L | Follow the slope: what is placed or moved lies on the ground (`gizmo slope`) | Build mode |
+| /dentour | The first build's tour (DenCoach.lua); `/dentour off` ends it | |
 
 The status line's left part (Gizmo.lua's tag) says the tool and its keys ("Move (1): click a prop to carry it ...",
 "Turn (2): drag a prop left or right ..."), the flight's speed in the far view, and what a drag is doing. The Den
@@ -171,6 +181,11 @@ flying, so the tools are 1 / 2 / 3; view marks would have liked 1..3 too, so the
 the game's action-bar page keys in build mode only).
 
 ## Den Lite's verbs (over `wubuild cmd`)
+
+The builder's comforts (qol.rs, 12 Nov; docs/DEN-NEXT.md): `nudge <fwd> <right> <up> [<turn>]`, `selcircle <u0> <v0>
+<u1> <v1> <aspect> [<zoom>] [add]`, `fill gap`, `fill box [<step>]`, `gizmo slope on|off`, `gizmo magnet on|off`, `hover
+... free`; answers `nudged`, `snapped 1|0`, `slope`, `magnet`; caps `groupmove,slopefollow,magnet,nudge,selcircle,fillgap,
+fillbox,free`.
 
 The editor's conveniences (noggit.rs, 5 Nov): `dupby <dx> <dy> <dz>` (the selection copied by the offset, one undo,
 the copies selected), `selnear <yards>`, `slope` (on the ground and tilted to its slope, one undo for the selection),

@@ -32,6 +32,8 @@ pub struct Post {
 pub struct NewsList {
     pub posts: Vec<Post>,
     pub from_cache: bool,
+    /// When the copy shown was fetched (unix seconds): the News page's "as of" line offline.
+    pub saved_at: Option<u64>,
 }
 
 /// One line of plain text: control characters dropped, spaces folded, at most `max` characters.
@@ -70,10 +72,10 @@ fn check(v: &Value) -> Result<(), String> {
 /// The feed, or the cached copy offline. Empty when there is neither (the UI then keeps its built-in posts).
 pub fn fetch(dir: &Path) -> NewsList {
     match net::fetch_json(URL, &dir.join(CACHE_FILE), TIMEOUT, check) {
-        Ok(f) => NewsList { posts: posts(&f.value), from_cache: f.from_cache },
+        Ok(f) => NewsList { posts: posts(&f.value), from_cache: f.from_cache, saved_at: f.saved_at },
         Err(e) => {
             eprintln!("news: {e}");
-            NewsList { posts: Vec::new(), from_cache: false }
+            NewsList { posts: Vec::new(), from_cache: false, saved_at: None }
         }
     }
 }

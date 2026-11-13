@@ -4762,9 +4762,11 @@ class PageHandler(BaseHTTPRequestHandler):
                 return
             self.send(200, site_chrome(modes.page(leyline_css(), art_url, art_present, card_meta, REALM_NAME,
                                                   public_host=PUBLIC_HOST,
-                                                  games=(site_pages.shelf() if site_pages is not None else "")   # the Modes shelf first (owner 4 Nov)
-                                                  + (playmodes.section() if playmodes is not None else "")
-                                                  + (modepacks.section() if modepacks is not None else "")), path))
+                                                  # Duels and Boss Rush only (owner 12 Nov). Left off this page, to put
+                                                  # back here: the Ways to play shelf (site_pages.shelf(), still on the
+                                                  # front page) and Host a mode (modepacks.section(); its pages,
+                                                  # /wrath/modes/<template> and /wrath/modes/jam, keep working).
+                                                  games=(playmodes.section() if playmodes is not None else "")), path))
             return
         if survivors is not None and survivors.match(path):   # Azeroth Survivors' page and Play (stream/survivors.py)
             survivors.get(self, path, query)

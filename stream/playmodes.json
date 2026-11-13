@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "about": "Leyline game modes: what the launcher's Modes page and /wrath/modes list. Checked by stream/playmodes.py (python3 -I stream/playmodes.py --check). Served at /wrath/modes.json.",
+  "about": "Leyline game modes: what the launcher's Modes page and /wrath/modes list. Checked by stream/playmodes.py (python3 -I stream/playmodes.py --check). Served at /wrath/modes.json. \"listed\": false keeps a mode here, and working, but off every list (owner 12 Nov: Duels and Boss Rush only while the larger feature set is built); delete that line to bring a mode back.",
   "modes": [
     {
       "id": "minigolf",
@@ -9,7 +9,8 @@
       "kind": "realm",
       "players": { "min": 1, "max": 8 },
       "status": "live",
-      "start": { "go": "mode:minigolf" }
+      "start": { "go": "mode:minigolf" },
+      "listed": false
     },
     {
       "id": "bumper-balls",
@@ -18,7 +19,8 @@
       "kind": "realm",
       "players": { "min": 1, "max": 8 },
       "status": "live",
-      "start": { "go": "mode:bumper-balls" }
+      "start": { "go": "mode:bumper-balls" },
+      "listed": false
     },
     {
       "id": "coin-dash",
@@ -27,7 +29,8 @@
       "kind": "realm",
       "players": { "min": 1, "max": 8 },
       "status": "live",
-      "start": { "go": "mode:coin-dash" }
+      "start": { "go": "mode:coin-dash" },
+      "listed": false
     },
     {
       "id": "community",
@@ -36,7 +39,8 @@
       "kind": "realm",
       "players": { "min": 1, "max": 8 },
       "status": "live",
-      "start": { "go": "mode:community" }
+      "start": { "go": "mode:community" },
+      "listed": false
     },
     {
       "id": "brawl",
@@ -45,7 +49,8 @@
       "kind": "realm-type",
       "players": { "min": 1, "max": null },
       "status": "live",
-      "start": { "host": "brawl" }
+      "start": { "host": "brawl" },
+      "listed": false
     },
     {
       "id": "azeroth-survivors",
@@ -60,7 +65,8 @@
         "note": "Open rebuild by OutThisLife",
         "license": "MIT or Apache-2.0",
         "source": "https://github.com/OutThisLife/azeroth-survivors-re"
-      }
+      },
+      "listed": false
     },
     {
       "id": "hordes-of-azeroth",
@@ -74,8 +80,11 @@
         "by": "jonhaldors",
         "license": "GPL-3.0 (client), GPL-2.0 (server)",
         "source": "https://github.com/jonhaldors/hordes-of-azeroth",
-        "more": ["https://github.com/jonhaldors/hordes-of-azeroth-server"]
-      }
+        "more": [
+          "https://github.com/jonhaldors/hordes-of-azeroth-server"
+        ]
+      },
+      "listed": false
     },
     {
       "id": "arena-1v1",
@@ -84,7 +93,8 @@
       "kind": "in-game",
       "players": { "min": 2, "max": 2 },
       "status": "live",
-      "start": { "cmd": ".hub arena" }
+      "start": { "cmd": ".hub arena" },
+      "listed": false
     },
     {
       "id": "keystones",
@@ -93,7 +103,8 @@
       "kind": "in-game",
       "players": { "min": 1, "max": 5 },
       "status": "live",
-      "start": { "cmd": ".hub keys" }
+      "start": { "cmd": ".hub keys" },
+      "listed": false
     },
     {
       "id": "transmog",
@@ -102,7 +113,8 @@
       "kind": "in-game",
       "players": { "min": 1, "max": 1 },
       "status": "live",
-      "start": { "cmd": ".hub transmog" }
+      "start": { "cmd": ".hub transmog" },
+      "listed": false
     },
     {
       "id": "hardcore",
@@ -111,12 +123,13 @@
       "kind": "in-game",
       "players": { "min": 1, "max": 1 },
       "status": "live",
-      "start": { "cmd": ".hub hardcore" }
+      "start": { "cmd": ".hub hardcore" },
+      "listed": false
     },
     {
       "id": "frozen-throne",
-      "title": "Boss fights: The Frozen Throne",
-      "line": "Straight to the final fight of the citadel. Go now with companions, or queue for a raid of 10.",
+      "title": "Boss Rush",
+      "line": "Straight onto a raid's final fight, The Frozen Throne first. Go now with companions, or queue for a raid of 10.",
       "kind": "realm",
       "players": { "min": 1, "max": 10 },
       "status": "live",
@@ -124,8 +137,8 @@
     },
     {
       "id": "arena-queue",
-      "title": "1v1 arena queue",
-      "line": "Join the one-on-one arena queue at level 80 and fight the next player in line.",
+      "title": "Duels",
+      "line": "One on one at level 80: join the 1v1 queue and fight the next player in line, or challenge anyone in Dalaran.",
       "kind": "realm",
       "players": { "min": 2, "max": 2 },
       "status": "live",

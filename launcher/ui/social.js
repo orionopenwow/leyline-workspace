@@ -498,7 +498,7 @@
       const t = el("div", "hf-me-t");
       // owner 2 Nov 23:14: the launcher opens without a sign-in screen; here, top right, the invitation to log in
       t.append(el("b", "hf-me-name", "Log in"), el("span", "hf-me-st hf-nudge", "Play online, keep your progress"));
-      const b = el("button", "hf-signin"); b.append(el("span", "", "Log In")); b.type = "button"; b.id = "hf-signin";   // the PLAY stone (owner 31 Oct 21:59)
+      const b = el("button", "hf-signin"); b.append(el("span", "", "Log in")); b.type = "button"; b.id = "hf-signin";   // the PLAY stone (owner 31 Oct 21:59)
       b.title = "Log in or sign up: free, one click";
       b.setAttribute("aria-haspopup", "dialog");
       b.onclick = () => {

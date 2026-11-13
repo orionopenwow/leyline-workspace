@@ -35,7 +35,7 @@ const FAKE = (opts) => {
     json: JSON.stringify({ mcpServers: { leyline: { command: exe, args: ['mcp'] } } }, null, 2),
     claude_code: { state: opts.ccState || 'no', path: 'C:\\Users\\pat\\.claude.json' },
     desktop: { state: 'missing', path: 'C:\\Users\\pat\\AppData\\Roaming\\Claude\\claude_desktop_config.json' },
-    never: ['Sign in, see or change a password, a Hero Key or your account', 'Anything with money', 'Delete files, remove a game client, wipe a realm',
+    never: ['Log in as you, see or change a password, a Hero Key or your account', 'Anything with money', 'Delete files, remove a game client, wipe a realm',
       'Make your realm public, open its sign-up, or make invites', 'Kick, ban or unban players, or change who may join',
       "Change your realm list address, or your launcher's updates", "Use the website's staff tools"],
     now,

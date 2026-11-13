@@ -441,7 +441,7 @@ test('Manage account: Play on another PC: the same account moves with the key fi
   await page.click('#ac-otherpc summary');
   const t = await page.textContent('#ac-otherpc');
   assert.match(t, /Downloads folder and open Leyline\. It logs you in by itself/);
-  assert.match(t, /Log In there with \S+#\d{4} and your password/);
+  assert.match(t, /Log in there with \S+#\d{4} and your password/);
   assert.match(t, /characters are on the realm/);
   assert.match(t, /yours alone/);
   assert.doesNotMatch(t, /Sign in|world of warcraft|\bwow\b|warcraft|(?<!endorsed by )blizzard/i);

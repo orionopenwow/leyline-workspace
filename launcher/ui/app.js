@@ -2132,11 +2132,11 @@ let ranked = null;
 let linkedId = "";            // a project a leyline:// link asked for: shown highlighted
 async function loadRanks(refresh) {
   try {
-    ranked = await invoke("mods_ranked", { sort: catFilter.sort, kind: catFilter.kind, client: null, refresh: !!refresh });
+    ranked = await invoke("mods_ranked", { sort: catFilter.sort === "name" ? "hot" : catFilter.sort, kind: catFilter.kind, client: null, refresh: !!refresh });
   } catch (_) { ranked = null; }
 }
 // Mods and Addons are Discover's tabs (shelf.js), each with its own chips (simple.js); themes are Discover › Themes.
-const SORTS = ["hot", "rising", "top", "installs", "installs30", "new", "updated"];
+const SORTS = ["hot", "rising", "top", "installs", "installs30", "new", "updated", "name"];
 if (!SORTS.includes(catFilter.sort)) catFilter.sort = "hot";
 function renderSorts() {
   $("cat-sort").value = catFilter.sort;
@@ -2144,7 +2144,8 @@ function renderSorts() {
 $("cat-sort").addEventListener("change", async () => {
   catFilter.sort = $("cat-sort").value;
   try { localStorage.setItem("leyline.catSort", catFilter.sort); } catch (_) { /* fine */ }
-  await loadRanks(false);
+  if (catList) catList.setSort(catFilter.sort === "name" ? "name" : null);
+  if (catFilter.sort !== "name") await loadRanks(false);   // Name is the list's own A to Z: the hub's order stays as it was
   renderCatalog();
 });
 let catFailed = false;   // the Workshop could not be read and there is nothing to show: the status line says so, alone
@@ -2178,49 +2179,165 @@ async function loadCatalog(quiet) {
   renderCatalog();
 }
 
+// Discover's full list on the list kit (listkit.js, docs/LAUNCHER-LISTS.md): the search (#cat-q), the tab's category chips
+// (simple.js, market.js: the page's own filters), the kit's chips (Works with this game folder, Installed, Updates,
+// Favourites, the game), the Sort menu (#cat-sort: the hub's order from the core, or Name), the count, the stars,
+// keys and the empty / loading words. Mods or Addons is the tab (themes.js); the rows are that tab's entries.
+const ERA = { "1.12": "Vanilla", "2.4.3": "TBC", "3.3.5a": "Wrath" };
+let catList = null;
+let justInstalled = "";   // the key of what was just installed (noteInstalled): its card is lit on Discover and Installed
+let catFit = true;   // Works with this game folder (on by default; remembered)
+try { catFit = localStorage.getItem("leyline.catFit") !== "0"; } catch (_) { /* fine */ }
+const catShelf = () => (window.LeylineSimple ? window.LeylineSimple.shelf() : "mods");
+const haveMod = (id) => installed.find((x) => x.key === id) || null;
+// the words search looks at: name, author, description, tags, category, and the addon's own words (market.js)
+function catWords(p) {
+  const S = window.LeylineShelf;
+  const cat = catalog.categories.find((k) => k.id === p.category);
+  return [p.name, p.author, p.description, (p.tags || []).join(" "), p.category, cat ? cat.name : "",
+    S && S.group(p) ? S.groupName(S.group(p)) : "", window.LeylineMarket ? window.LeylineMarket.words(p) : ""];
+}
+function catPageFilters() {
+  const tab = catShelf();
+  const mk = window.LeylineMarket ? window.LeylineMarket.state : { sub: "", works: false };
+  return (catFilter.cat ? 1 : 0) + (tab === "mods" && catFilter.group ? 1 : 0) + (tab === "addons" ? (mk.sub ? 1 : 0) + (mk.works ? 1 : 0) : 0);
+}
+function catMatch(p) {
+  const S = window.LeylineShelf;
+  const tab = catShelf();
+  if (catFilter.cat && p.category !== catFilter.cat) return false;
+  if (tab === "mods" && catFilter.group && S && S.group(p) !== catFilter.group) return false;
+  if (tab === "addons" && window.LeylineMarket && !window.LeylineMarket.keep(p)) return false;   // the addon chips (market.js)
+  return true;
+}
+function catReset() {
+  catFilter.cat = "";
+  catFilter.group = "";
+  if (window.LeylineMarket) {
+    window.LeylineMarket.state.sub = "";
+    window.LeylineMarket.state.works = false;
+    try { localStorage.setItem("leyline.mkSub", ""); localStorage.setItem("leyline.mkWorks", "0"); } catch (_) { /* fine */ }
+  }
+  if (window.LeylineSimple) window.LeylineSimple.render();   // the category chips, off
+}
+// Mods › Game modes: the Leyline Modes above the list's own game modes (gamemods.js), when nothing is searched
+function catGameBox(q) {
+  const gm = $("game-discover");
+  const on = !!(gm && window.LeylineGameMods && catShelf() === "mods" && catFilter.group === "game" && window.LeylineSimple && window.LeylineSimple.view() === "all" && !q);
+  if (gm) { const was = !gm.hidden; gm.hidden = !on; if (on && !was) window.LeylineGameMods.show(); }
+  return on;
+}
+// One mark on every card (Discover's full list, its Simple rows, Game modes): Installed, or an update ready, and the
+// card of what was just installed lit (owner's UX finding: after an install you stay where you were, on its card).
+function decorateCard(card, p) {
+  if (!card || !p) return card;
+  const m = haveMod(p.id);
+  const thumb = card.querySelector(".dc-thumb");
+  if (m && thumb && !thumb.querySelector(".dc-have")) {
+    const t = el("span", "dc-have" + (m.update ? " upd" : ""), m.update ? "Update ready" : "Installed");
+    t.title = m.update ? `An update is ready: ${m.update}` : "In your game folder";
+    thumb.append(t);
+  }
+  card.classList.toggle("is-installed", !!m);
+  card.classList.toggle("just", !!justInstalled && p.id === justInstalled);
+  return card;
+}
+function catListMake() {
+  if (catList || !window.LeylineList || !$("cat-grid")) return catList;
+  const word = () => (catShelf() === "addons" ? ["addon", "addons"] : ["mod", "mods"]);
+  catList = window.LeylineList.create($("cat-grid"), {
+    id: "mods-discover",
+    key: (p) => p.id,
+    label: "Mods",
+    noun: (n, total) => { const [one, many] = word(); return n === total ? `${n} ${n === 1 ? one : many}` : `${n} of ${total} ${total === 1 ? one : many}`; },
+    render: (p, ctx) => {
+      const card = projectCard(p, pickedClient());
+      const thumb = card.querySelector(".dc-thumb");
+      const star = ctx.star();
+      star.classList.add("dc-star");
+      if (thumb) thumb.append(star); else card.prepend(star);
+      if (ctx.query) for (const n of card.querySelectorAll(".dc-body .name, .dc-body .desc, .mk-credit")) window.LeylineList.mark(n, ctx.query);
+      return card;
+    },
+    search: { input: $("cat-q"), fields: catWords },
+    filters: [
+      { id: "fit", label: "Works with this game folder", test: (p) => { const c = pickedClient(); return !c || fitsClient(p, c); } },
+      { id: "have", label: "Installed", test: (p) => !!haveMod(p.id) },
+      { id: "upd", label: "Updates", test: (p) => { const m = haveMod(p.id); return !!(m && m.update); } },
+      { id: "fav", label: "Favourites", test: (p) => !!(catList && catList.isFav(p)) },
+      // the game each one is for: only when the list has more than one (a lone "All" chip is hidden: modlists.css)
+      { id: "era", label: "Game", all: "Any game", options: (rows) => {
+        const tags = new Set();
+        for (const p of rows) for (const b of p.builds || []) if (b !== "any") tags.add(b);
+        return tags.size < 2 ? [] : [...tags].sort().map((b) => ({ value: b, label: ERA[b] || b }));
+      }, test: (p, v) => !(p.builds || []).length || p.builds.includes("any") || p.builds.includes(v) },
+    ],
+    filtersLabel: "Show",
+    match: catMatch,
+    filtersOn: catPageFilters,
+    onReset: catReset,
+    sort: { options: [{ id: "name", label: "Name", compare: (a, b) => String(a.name).localeCompare(String(b.name)) }], menu: false, storageKey: false },
+    favourites: { id: "mods", label: "Favourites" },
+    primary: (p, node) => {
+      const b = node.querySelector(".acts .btn.primary:not([disabled])");
+      if (b) { b.click(); return; }
+      const n = node.querySelector(".dc-body .name");
+      if (n && n.tagName === "BUTTON") n.click();
+    },
+    empty: (info) => {
+      const tab = catShelf();
+      if (info.reason === "loading") return tab === "addons" ? "Loading the addons…" : "Loading the mods…";
+      if (catFailed) return false;   // "Can't load the mods. Try again." is already the one line
+      if (catGameBox(info.query)) return false;   // the Leyline Modes above are the Game modes
+      if (info.reason === "none") return tab === "addons" ? "The addons list is not here yet." : "The mods list is not here yet.";
+      const S = window.LeylineShelf;
+      const gname = tab === "mods" && catFilter.group && S ? S.groupName(catFilter.group) : "";
+      if (gname && !info.query && !catalog.projects.some((p) => S.group(p) === catFilter.group)) {
+        return { text: `No mods in ${gname} yet. Make the first one: see Make a mod.`, actions: [{ label: "All mods", run: () => { catFilter.group = ""; renderCatalog(); } }] };
+      }
+      return null;   // the kit's words: Clear search, Clear filters, Reset
+    },
+    classes: { body: "mod-grid dc-grid", empty: "dc-empty" },
+    bar: $("dc-kbar"),
+    onChange: (view) => {
+      catGameBox(view.query);
+      const f = !!(catList ? catList.filters().fit : catFit);
+      if (f !== catFit) { catFit = f; try { localStorage.setItem("leyline.catFit", f ? "1" : "0"); } catch (_) { /* fine */ } }
+      if ($("pane-discover")) $("pane-discover").classList.toggle("fit-off", !f);
+    },
+  });
+  if (catFit) catList.setFilter("fit", true);
+  if (catFilter.sort === "name") catList.setSort("name");
+  // the Sort menu sits in the kit's bar, before the count
+  const sortBox = $("cat-sort") ? $("cat-sort").closest("label") : null;
+  const count = $("dc-kbar") ? $("dc-kbar").querySelector(".lk-count") : null;
+  if (sortBox && count) count.before(sortBox);
+  return catList;
+}
+
 function renderCatalog() {
   if (window.LeylineSimple) window.LeylineSimple.render();   // the Simple view's rows, or the full view's chips (simple.js)
-  const c = pickedClient();
-  const q = $("cat-q").value.trim().toLowerCase();
-  const fitOnly = $("cat-fit").checked;
-  $("pane-discover").classList.toggle("fit-off", !fitOnly);
   renderSorts();
-  const grid = $("cat-grid");
-  grid.replaceChildren();
+  const list = catListMake();
+  if (!list) return;
+  if (list.query() !== $("cat-q").value) list.setQuery($("cat-q").value);
   // Discover's tab: Mods or Addons, never both on one tab (shelf.js: one rule, docs/WORDS.md)
   const S = window.LeylineShelf;
-  const tab = window.LeylineSimple ? window.LeylineSimple.shelf() : "mods";
-  const onTab = (p) => !S || S.of(p) === tab;
-  // Mods › Game modes: the Leyline Modes above the list's own game modes (gamemods.js)
-  const gm = $("game-discover");
-  const gmOn = !!(gm && window.LeylineGameMods && tab === "mods" && catFilter.group === "game" && window.LeylineSimple && window.LeylineSimple.view() === "all" && !q);
-  if (gm) { gm.hidden = !gmOn; if (gmOn) window.LeylineGameMods.show(); }
+  const tab = catShelf();
   let ordered = catalog.projects;
   if (ranked && ranked.ids) {
     const byId = new Map(catalog.projects.map((p) => [p.id, p]));
     ordered = ranked.ids.map((id) => byId.get(id)).filter(Boolean);
   }
-  const list = ordered.filter((p) => {
-    if (!onTab(p)) return false;
-    if (catFilter.cat && p.category !== catFilter.cat) return false;
-    if (tab === "mods" && catFilter.group && S && S.group(p) !== catFilter.group) return false;
-    if (fitOnly && c && !fitsClient(p, c)) return false;
-    if (tab === "addons" && window.LeylineMarket && !window.LeylineMarket.keep(p)) return false;   // the addon chips (market.js)
-    if (q && !(`${p.name} ${p.description} ${p.author} ${p.category} ${window.LeylineMarket ? window.LeylineMarket.words(p) : ""}`.toLowerCase().includes(q))) return false;
-    return true;
-  });
-  if (!list.length) {
-    if (catFailed) return;   // "Can't reach the Workshop. Try again." is already the one line
-    if (gmOn) return;        // the Leyline Modes above are the Game modes
-    const gname = tab === "mods" && catFilter.group && S ? S.groupName(catFilter.group) : "";
-    const none = gname && !catalog.projects.some((p) => S.group(p) === catFilter.group);
-    grid.append(el("p", "hint dc-empty", catalog.projects.length
-      ? (none ? `No mods in ${gname} yet. Make the first one: see Make a mod.` : "Nothing matches.")
-      : tab === "addons" ? "The addons list is not here yet." : "The mods list is not here yet."));
-    return;
+  list.setLoading(!catalogIn);
+  list.update(ordered.filter((p) => !S || S.of(p) === tab));
+  // what was just installed: its card, lit and in reach (the player stays on this tab)
+  if (justInstalled && catJustFocus && currentPage === "mods" && currentTab === "discover") {
+    catJustFocus = false;
+    if (list.visible().some((p) => p.id === justInstalled)) list.focusRow(justInstalled);
   }
-  for (const p of list) grid.append(projectCard(p, c));
 }
+let catJustFocus = false;
 
 // Rating stars on a card's picture (shown on hover and focus). Rating needs the Leyline sign-in on Home (the
 // same website sign-in).
@@ -2332,7 +2449,8 @@ function firstLine(text) {
 }
 const shortNum = (n) => (n >= 10000 ? Math.round(n / 1000) + "k" : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n));
 
-function projectCard(p, c) {
+function projectCard(p, c) { return decorateCard(projectCardOf(p, c), p); }
+function projectCardOf(p, c) {
   if (p.source === "upstream" && window.LeylineMarket) return window.LeylineMarket.card(p, c);   // from the author (market.js)
   const card = el("article", "mod-card dc-card" + (p.id === linkedId ? " linked" : ""));
   card.dataset.id = p.id;
@@ -2451,6 +2569,7 @@ async function installProject(p, btn) {
     const m = await withNativeOk(() => invoke("mod_install", { client: c.id, project: p.id }));
     say("cat-status", installedText(was ? "Updated" : "Installed", m, c), m.warnings.length ? "warn" : "ok");
     noteInstalled(m.key || p.id, window.LeylineShelf ? window.LeylineShelf.of(p) : "");
+    catJustFocus = true;   // Discover stays on this tab with its card lit (renderCatalog)
     if (!was && window.LeylineGuide) window.LeylineGuide.moment("mod");   // the first mod: one line, once (guide.js)
   } catch (e) {
     sayErr("cat-status", e);
@@ -2501,7 +2620,12 @@ async function handleDeepLink() {
   if (window.LeylineThemes && window.LeylineShelf && window.LeylineShelf.of(p) !== "themes") window.LeylineThemes.showTab(window.LeylineShelf.of(p));   // its tab
   $("cat-q").value = "";
   const c = pickedClient();
-  if (c && !fitsClient(p, c)) $("cat-fit").checked = false;
+  const list = catListMake();
+  if (list) {
+    list.setQuery("");
+    for (const f of ["have", "upd", "fav", "era"]) list.setFilter(f, null);   // nothing of the player's may hide it
+    if (c && !fitsClient(p, c)) list.setFilter("fit", null);
+  }
   await loadRanks(false);
   if (window.LeylineSimple && window.LeylineSimple.view() !== "all") window.LeylineSimple.setView("all", true);   // the card is in the full catalog
   renderCatalog();
@@ -2597,8 +2721,7 @@ async function showLinkedRealm(id) {
   else say("rl-status", `From the website: ${r.name}. Press PLAY to join.`, "ok");
 }
 
-$("cat-q").addEventListener("input", renderCatalog);
-$("cat-fit").addEventListener("change", renderCatalog);
+// #cat-q is the list kit's search box (catListMake): it repaints the list itself
 
 // The three mod tiles (owner 2026-10-30: taken off Home; kept for a page that brings the box back).
 function renderModTiles() {
@@ -2685,17 +2808,19 @@ async function updateMod(c, m) {
 // What was just installed (owner's UX finding, 2 Nov: after an addon install Installed opened on the Mods tab): Installed
 // opens on its tab (Mods or Addons) with its card marked, wherever it was installed from (Discover, Game modes, a drop,
 // the Leyline addons, a loadout).
-let justInstalled = "";
 function noteInstalled(key, shelf) {
   justInstalled = key || "";
   if (shelf === "mods" || shelf === "addons") {
     instShelf = shelf;
     try { localStorage.setItem("leyline.instShelf", instShelf); } catch (_) { /* fine */ }
+    if (instList && instList.tab() !== instShelf) instList.setTab(instShelf);
   }
 }
 
 // Installed › Mods | Addons (owner 31 Oct 19:22): the same rule as Discover (shelf.js installed(): the mods list's entry,
-// else an addon is one that only adds addon folders). The Leyline addons are under Addons (addons.js).
+// else an addon is one that only adds addon folders). The Leyline addons are under Addons (addons.js). The list is the
+// list kit's (listkit.js): the two tabs (#inst-tabs), a search, chips (Updates, Turned off, Favourites), Sort, the count,
+// the stars (the same favourites as Discover), keys, and Enter for Update or the mod's page.
 let instShelf = "mods";
 try { if (localStorage.getItem("leyline.instShelf") === "addons") instShelf = "addons"; } catch (_) { /* fine */ }
 const INST_LINE = {
@@ -2704,18 +2829,146 @@ const INST_LINE = {
 };
 const shelfOfInstalled = (m) => (window.LeylineShelf ? window.LeylineShelf.installed(m, catalog.projects) : "mods");
 function setInstShelf(sh) {
-  instShelf = sh === "addons" ? "addons" : "mods";
+  sh = sh === "addons" ? "addons" : "mods";
+  if (instList && instList.tab() !== sh) { instList.setTab(sh); return; }   // its onChange draws the rest
+  instShelf = sh;
   try { localStorage.setItem("leyline.instShelf", instShelf); } catch (_) { /* fine */ }
   renderInstalled();
 }
-document.querySelectorAll("#inst-tabs .ly-tab").forEach((b) => b.addEventListener("click", () => setInstShelf(b.dataset.shelf)));
 // Find mods / Find addons: Discover on the same tab
 if ($("mods-find")) $("mods-find").addEventListener("click", () => { if (window.LeylineThemes) window.LeylineThemes.showTab(instShelf); });
+const instPage = (m) => { const p = catalog.projects.find((x) => x.id === m.key); return p ? p.page || p.repo || "" : ""; };
+function instWords(m) {
+  const p = catalog.projects.find((x) => x.id === m.key);
+  return [m.name, (m.addons || []).join(" "), (m.patches || []).join(" "), (m.natives || []).join(" "), m.credits,
+    m.source === "catalog" ? "Workshop" : "From your PC", p ? p.author : "", p ? p.description : "", p ? (p.tags || []).join(" ") : ""];
+}
+let instList = null;
+function instListMake() {
+  if (instList || !window.LeylineList || !$("mods-list")) return instList;
+  const tabsEl = $("inst-tabs");
+  const badges = { mods: $("inst-n-mods"), addons: $("inst-n-addons") };   // kept: the kit's tab buttons get them back
+  instList = window.LeylineList.create($("mods-list"), {
+    id: "mods-installed",
+    key: (m) => m.key,
+    label: "Installed",
+    noun: (n, total) => { const w = instShelf === "addons" ? ["addon", "addons"] : ["mod", "mods"]; return n === total ? `${n} ${n === 1 ? w[0] : w[1]}` : `${n} of ${total} ${total === 1 ? w[0] : w[1]}`; },
+    render: instCard,
+    search: { placeholder: "Search what you installed", label: "Search installed mods and addons", fields: instWords },
+    tabs: { items: [{ id: "mods", label: "Mods", long: "Mods", filter: (m) => shelfOfInstalled(m) === "mods" },
+      { id: "addons", label: "Addons", long: "Addons", filter: (m) => shelfOfInstalled(m) === "addons" }],
+    value: instShelf, el: tabsEl, idPrefix: "inst-tab-", buttonClass: "ly-tab", storageKey: "leyline.instShelf", label: "Installed",
+    panel: $("pane-installed"),
+    onChange: (t) => { instShelf = t; renderInstalled(); } },
+    filters: [
+      { id: "upd", label: "Updates", test: (m) => !!m.update },
+      { id: "off", label: "Turned off", test: (m) => !m.enabled },
+      { id: "fav", label: "Favourites", test: (m) => !!(instList && instList.isFav(m)) },
+    ],
+    filtersLabel: "Show",
+    sort: { options: [{ id: "name", label: "Name", compare: (a, b) => String(a.name).localeCompare(String(b.name)) },
+      { id: "upd", label: "Updates first", compare: (a, b) => (b.update ? 1 : 0) - (a.update ? 1 : 0) }], none: "As installed", label: "Sort" },
+    favourites: { id: "mods", label: "Favourites" },
+    primary: (m, node) => {
+      const up = node.querySelector(".inst-upd:not([disabled])");
+      if (up) { up.click(); return; }
+      const page = instPage(m);
+      if (page) openUrl(page);
+    },
+    empty: (info) => {
+      const c = pickedClient();
+      if (!c) return "Add your game client first.";
+      if (buildTag(c.build) === "other" && !installed.length) return "Leyline does not know this client's build, so it installs no mods or addons here. Realms work.";
+      if (info.reason === "none" || info.reason === "tab") {
+        const word = instShelf === "addons" ? "addons" : "mods";
+        return { text: `No ${word} in this client yet. Find some in Discover › ${instShelf === "addons" ? "Addons" : "Mods"}, or drop one above.`,
+          actions: [{ label: instShelf === "addons" ? "Find addons" : "Find mods", primary: true, run: () => { show("mods", false, "discover"); if (window.LeylineThemes) window.LeylineThemes.showTab(instShelf); } }] };
+      }
+      return null;
+    },
+    classes: { body: "cards mods-grid", empty: "inst-empty" },
+  });
+  instShelf = instList.tab();
+  for (const [k, b] of Object.entries(badges)) {
+    const btn = $("inst-tab-" + k);
+    if (!btn) continue;
+    btn.dataset.shelf = k;   // the old selector (#inst-tabs .ly-tab[data-shelf])
+    if (b) btn.append(b);
+  }
+  return instList;
+}
+// One installed mod or addon: its card (name, version badge, where from, Update ready, what it put in), its star, and
+// Turn off / Update / Remove.
+function instCard(m, ctx) {
+  const c = pickedClient();
+  const card = el("div", "card" + (m.enabled ? "" : " off") + (m.update ? " has-update" : "") + (m.key === justInstalled ? " just" : ""));
+  card.dataset.key = m.key;
+  const top = el("div", "top");
+  const name = el("span", "name");
+  name.append(ctx.hl(m.name));
+  const star = ctx.star();
+  star.classList.add("inst-star");
+  top.append(name, el("span", "build", m.version ? "v" + m.version : (m.source === "catalog" ? "Workshop" : "Local")), star);
+  const tags = el("div", "tags");
+  tags.append(el("span", "tag", m.source === "catalog" ? "Workshop" : "From your PC"));
+  if (m.update) tags.append(el("span", "tag gold", `v${m.update} ready`));
+  if (m.native_code) tags.append(el("span", "tag warn", "Native code"));
+  if (!m.enabled) tags.append(el("span", "tag", "Turned off"));
+  const meta = el("div", "meta");
+  const what = [];
+  if (m.addons.length) what.push("Addons: " + m.addons.join(", "));
+  if (m.patches.length) what.push("Patch: " + m.patches.join(", "));
+  if (m.natives && m.natives.length) what.push("Native: " + m.natives.join(", "));
+  meta.append(el("span", "", what.join(" · ")));
+  if (m.credits) meta.append(el("span", "", m.credits));
+  if (m.update) meta.append(el("span", "ok", `Update available: v${m.update}`));
+  else if (m.source === "catalog" && !m.in_catalog) meta.append(el("span", "warn", "No longer in the mods list for this game"));
+  for (const w of m.warnings || []) meta.append(el("span", "warn", w));
+  if (ctx.query) window.LeylineList.mark(meta, ctx.query);
+  const acts = el("div", "acts");
+  const tog = el("button", "btn small", m.enabled ? "Turn off" : "Turn on");
+  tog.addEventListener("click", () => modAction("mod_set_enabled", { client: c.id, key: m.key, on: !m.enabled }, m.enabled ? `Turned off ${m.name}.` : `Turned on ${m.name}.`));
+  acts.append(tog);
+  if (m.update) {
+    const up = el("button", "btn small primary inst-upd", "Update");
+    up.addEventListener("click", async () => {
+      up.disabled = true;
+      up.textContent = "Updating…";
+      say("mods-status", `Downloading ${m.name} v${m.update}…`);
+      try { say("mods-status", await updateMod(c, m), "ok"); }
+      catch (e) { sayErr("mods-status", e); }
+      await loadInstalled();
+      renderCatalog();
+    });
+    acts.append(up);
+  }
+  // One click: removal takes out only the files Leyline put in and you have not changed, so nothing of yours goes.
+  const rm = el("button", "btn small danger", "Remove");
+  rm.addEventListener("click", async () => {
+    rm.disabled = true;
+    rm.textContent = "Removing…";
+    try {
+      const r = await invoke("mod_uninstall", { client: c.id, key: m.key });
+      let t = `Removed ${m.name}: ${r.removed_files} files.`;
+      if (r.changed && r.changed.length) t += ` Left the files you changed: ${r.changed.join(", ")}.`;
+      if (r.kept.length) t += ` Kept files Leyline did not put there: ${r.kept.join(", ")}.`;
+      if (m.source === "catalog") t += " Install it again any time from Mods & Addons › Discover.";
+      say("mods-status", t, r.changed && r.changed.length ? "warn" : "ok");
+    } catch (e) { sayErr("mods-status", e); }
+    await loadInstalled();
+    renderCatalog();
+  });
+  acts.append(rm);
+  card.append(top, tags, meta, acts);
+  return card;
+}
 function renderInstalled() {
   const c = pickedClient();
+  const list = instListMake();
+  if (list && list.tab() !== instShelf) instShelf = list.tab();
   const pane = $("pane-installed");
   if (pane) pane.dataset.shelf = instShelf;   // addons.js shows the Leyline addons only on Addons
-  document.querySelectorAll("#inst-tabs .ly-tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.shelf === instShelf)));
+  if (!list) document.querySelectorAll("#inst-tabs .ly-tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.shelf === instShelf)));
   const n = { mods: 0, addons: 0 };
   for (const m of installed) n[shelfOfInstalled(m)]++;
   for (const k of ["mods", "addons"]) { const b = $("inst-n-" + k); if (b) { b.hidden = !n[k]; b.textContent = String(n[k]); } }
@@ -2726,74 +2979,12 @@ function renderInstalled() {
   if (window.LeylineLoadouts) window.LeylineLoadouts.renderInstalled(c);   // the Loadouts box on top (loadouts.js)
   $("mods-client-note").textContent = c ? (offeredBuild(c.build) ? c.build : "Other build") : "";
   $("mods-client-note").title = c ? `${buildLabel(c.build)} · ${c.path}` : "";
-  const list = $("mods-list");
-  list.replaceChildren();
   const ups = installed.filter((m) => m.update);
   $("mods-update-all").hidden = ups.length < 2;
   $("mods-update-all").textContent = `Update all (${ups.length})`;
-  const word = instShelf === "addons" ? "addons" : "mods";
-  const mine = installed.filter((m) => shelfOfInstalled(m) === instShelf);
-  if (!c) { list.append(el("p", "hint", "Add your game client first.")); return; }
-  if (buildTag(c.build) === "other" && !installed.length) { list.append(el("p", "hint", "Leyline does not know this client's build, so it installs no mods or addons here. Realms work.")); return; }
-  if (!mine.length) { list.append(el("p", "hint", `No ${word} in this client yet. Find some in Discover › ${instShelf === "addons" ? "Addons" : "Mods"}, or drop one above.`)); return; }
-  for (const m of mine) {
-    const card = el("div", "card" + (m.enabled ? "" : " off") + (m.update ? " has-update" : "") + (m.key === justInstalled ? " just" : ""));
-    card.dataset.key = m.key;
-    const top = el("div", "top");
-    top.append(el("span", "name", m.name), el("span", "build", m.version ? "v" + m.version : (m.source === "catalog" ? "Workshop" : "Local")));
-    const tags = el("div", "tags");
-    tags.append(el("span", "tag", m.source === "catalog" ? "Workshop" : "From your PC"));
-    if (m.update) tags.append(el("span", "tag gold", `v${m.update} ready`));
-    if (m.native_code) tags.append(el("span", "tag warn", "Native code"));
-    if (!m.enabled) tags.append(el("span", "tag", "Turned off"));
-    const meta = el("div", "meta");
-    const what = [];
-    if (m.addons.length) what.push("Addons: " + m.addons.join(", "));
-    if (m.patches.length) what.push("Patch: " + m.patches.join(", "));
-    if (m.natives && m.natives.length) what.push("Native: " + m.natives.join(", "));
-    meta.append(el("span", "", what.join(" · ")));
-    if (m.credits) meta.append(el("span", "", m.credits));
-    if (m.update) meta.append(el("span", "ok", `Update available: v${m.update}`));
-    else if (m.source === "catalog" && !m.in_catalog) meta.append(el("span", "warn", "No longer in the mods list for this game"));
-    for (const w of m.warnings || []) meta.append(el("span", "warn", w));
-    const acts = el("div", "acts");
-    const tog = el("button", "btn small", m.enabled ? "Turn off" : "Turn on");
-    tog.addEventListener("click", () => modAction("mod_set_enabled", { client: c.id, key: m.key, on: !m.enabled }, m.enabled ? `Turned off ${m.name}.` : `Turned on ${m.name}.`));
-    acts.append(tog);
-    if (m.update) {
-      const up = el("button", "btn small", "Update");
-      up.addEventListener("click", async () => {
-        up.disabled = true;
-        up.textContent = "Updating…";
-        say("mods-status", `Downloading ${m.name} v${m.update}…`);
-        try { say("mods-status", await updateMod(c, m), "ok"); }
-        catch (e) { sayErr("mods-status", e); }
-        await loadInstalled();
-        renderCatalog();
-      });
-      acts.append(up);
-    }
-    // One click: removal takes out only the files Leyline put in and you have not changed, so nothing of yours goes.
-    const rm = el("button", "btn small danger", "Remove");
-    rm.addEventListener("click", async () => {
-      rm.disabled = true;
-      rm.textContent = "Removing…";
-      try {
-        const r = await invoke("mod_uninstall", { client: c.id, key: m.key });
-        let t = `Removed ${m.name}: ${r.removed_files} files.`;
-        if (r.changed && r.changed.length) t += ` Left the files you changed: ${r.changed.join(", ")}.`;
-        if (r.kept.length) t += ` Kept files Leyline did not put there: ${r.kept.join(", ")}.`;
-        if (m.source === "catalog") t += " Install it again any time from Mods & Addons › Discover.";
-        say("mods-status", t, r.changed && r.changed.length ? "warn" : "ok");
-      } catch (e) { sayErr("mods-status", e); }
-      await loadInstalled();
-      renderCatalog();
-    });
-    acts.append(rm);
-    card.append(top, tags, meta, acts);
-    list.append(card);
-  }
-  const just = list.querySelector(".card.just");
+  if (!list) return;
+  list.update(c ? installed : []);
+  const just = list.body.querySelector(".card.just");
   if (just && currentPage === "mods" && currentTab === "installed" && just.scrollIntoView) just.scrollIntoView({ block: "nearest" });
 }
 

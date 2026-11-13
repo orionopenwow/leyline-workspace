@@ -348,7 +348,7 @@
   function signLine() {
     const fine = document.querySelector("#page-forum .fm-fine");
     if (fine) fine.textContent = signedIn() ? "You post and reply right here, signed in on this launcher. Plain text and links only."
-      : "Reading here; Log In (in the title bar) to post from the launcher. Plain text and links only.";
+      : "Reading here; Log in (in the title bar) to post from the launcher. Plain text and links only.";
     const nb = $("fm-new");
     if (nb) nb.title = signedIn() ? "Start a thread here" : "Opens the website in your browser";
   }

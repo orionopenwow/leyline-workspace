@@ -48,7 +48,7 @@
     "den_status", "den_catalog", "den_recipes", "den_messages"];
   const ASK = ["mod_install", "mod_remove", "realm_start", "realm_stop", "host_plan_propose", "forum_new_thread", "forum_reply",
     "den_place_layout", "den_say", "den_tale_draft", "den_recipe_save"];
-  const NEVER = ["Sign in, see or change a password, a Hero Key or your account", "Anything with money",
+  const NEVER = ["Log in as you, see or change a password, a Hero Key or your account", "Anything with money",
     "Delete files, remove a game client, wipe a realm", "Make your realm public, open its sign-up, or make invites",
     "Kick, ban or unban players, or change who may join", "Change your realm list address, or your launcher's updates",
     "Use the website's staff tools"];

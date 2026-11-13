@@ -92,7 +92,14 @@ const FAKE = (o) => {
         return 'Stopped. Everyone was saved.';
       }
       case 'world_choices': return { races: o.races, first_era: true, name: 'Wren' };
-      case 'world_play': return { message: 'Started My Wrath on 127.0.0.1:3724.', kind: args.kind, auto: true, account: 'ORIGINAL', password: '', made: args.quick ? (args.quick.name || 'Wren') : '' };
+      case 'world_play': return { message: 'Started My Wrath on 127.0.0.1:3724.', kind: args.kind, auto: true, account: 'ORIGINAL', password: '', made: args.quick ? (args.quick.name || 'Wren') : '', elsewhere: !!o.elsewhere };
+      // engine updates, back-ups, characters (app.rs world_update_check, world_update, world_backups, world_restore)
+      case 'world_update_check': { const w = W(args.kind); if (o.update) w.update = true; window.__worlds[args.kind] = w; return w; }
+      case 'world_update': starting(job[args.kind]); o.update = false; window.__worlds[args.kind].update = false; return 'Getting the engine…';
+      case 'world_backups': return JSON.parse(JSON.stringify(window.__backups || []));
+      case 'world_restore': window.__backups = [{ name: 'single-player-now.zip', at: '2026-11-12 22:00:00', why: 'before a restore', kb: 900 }].concat(window.__backups || []);
+        return 'Restored your world to 2026-11-10 08:00:00 (UTC). Press Play to go in.';
+      case 'world_gather_chars': return '2 characters moved: they\'re on the login Play uses now. A back-up was taken first.';
       case 'local_characters': return JSON.parse(JSON.stringify(o.local || []));
       case 'online_characters': return { realm: 'Wrath Unleashed', chars: [{ name: 'Odo', realm: 'Wrath Unleashed' }] };
       case 'play_realm': return 'Started My Wrath on Wrath Unleashed.';
@@ -266,6 +273,53 @@ test('Play with friends: the original world\'s tile, Invite a friend is world_in
   assert.deepEqual(await callsOf(page, 'host_ready'), [{ kind: 'vanilla' }]);
   assert.match(await page.inputValue('#wf-link'), /~~GABCDE2345\./);
   assert.equal((await callsOf(page, 'den_invite')).length, 0, 'not Your Den');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('engine update: offered on the card once the release has one (backed up first, saves kept); back-ups listed with Restore asked once more', async () => {
+  const { page, ctx, errors } = await open({ worlds: { vanilla: ES(READY) }, update: true });
+  await page.evaluate(() => { window.__backups = [
+    { name: 'single-player-2026-11-11-080000.zip', at: '2026-11-11 08:00:00', why: 'daily', kb: 800 },
+    { name: 'single-player-2026-11-10-080000.zip', at: '2026-11-10 08:00:00', why: 'before the engine update', kb: 790 }]; });
+  await page.evaluate(() => window.LeylineNav.show('single'));
+  await page.waitForSelector('#wt-update-vanilla');
+  assert.deepEqual((await callsOf(page, 'world_update_check'))[0], { kind: 'vanilla' }, 'looked at (cached in the core), never forced');
+  assert.match(await page.textContent('#wt-update-vanilla'), /characters, your friends' characters and your settings stay/);
+  await page.click('#wt-update-go-vanilla');
+  await page.waitForFunction(() => /updated and running/.test(document.getElementById('sv-status').textContent));
+  assert.deepEqual(await callsOf(page, 'world_update'), [{ kind: 'vanilla' }]);
+  assert.equal(await page.locator('#wt-update-vanilla').count(), 0, 'gone once updated');
+  // back-ups: newest first with why; Restore asks once more, then world_restore with that back-up's name
+  await page.click('#wt-backups-open-vanilla');
+  await page.waitForSelector('.wt-backup');
+  const rows = await page.$$eval('#wt-backups-vanilla .wt-backup', (l) => l.map((x) => x.textContent));
+  assert.match(rows[0], /2026-11-11 08:00:00.*daily/);
+  assert.match(rows[1], /before the engine update/);
+  await page.locator('#wt-backups-vanilla .wt-backup').nth(1).getByText('Restore').click();
+  await page.waitForSelector('#wt-restore-go-vanilla');
+  assert.match(await page.textContent('#wt-backups-vanilla'), /backed up as it is now first/);
+  assert.equal((await callsOf(page, 'world_restore')).length, 0, 'not before the second press');
+  await page.click('#wt-restore-go-vanilla');
+  await page.waitForFunction(() => /Restored your world/.test(document.getElementById('sv-status').textContent));
+  assert.deepEqual(await callsOf(page, 'world_restore'), [{ kind: 'vanilla', name: 'single-player-2026-11-10-080000.zip' }]);
+  await noBrand(page);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('characters on the earlier login: Play says so, and the card moves them onto the login used now in one press', async () => {
+  const { page, ctx, errors } = await open({ worlds: { vanilla: ES(READY) }, elsewhere: true });
+  await page.evaluate(() => window.LeylineNav.show('single'));
+  await page.waitForSelector('#sv-play:not([disabled])');
+  await page.click('#sv-play');
+  await page.waitForFunction(() => /earlier login/.test(document.getElementById('sv-status').textContent));
+  await page.waitForSelector('#wt-chars-go-vanilla');
+  assert.match(await page.textContent('#wt-chars-vanilla'), /Nothing is lost/);
+  await page.click('#wt-chars-go-vanilla');
+  await page.waitForFunction(() => /characters moved/.test(document.getElementById('sv-status').textContent));
+  assert.deepEqual(await callsOf(page, 'world_gather_chars'), [{ kind: 'vanilla' }]);
+  await page.waitForFunction(() => !document.getElementById('wt-chars-vanilla'));
   assert.deepEqual(errors, []);
   await ctx.close();
 });

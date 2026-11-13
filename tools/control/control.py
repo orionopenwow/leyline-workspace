@@ -173,6 +173,9 @@ STEPS = {
     # single player's playtest (tools/first-run/sp_playtest.py, owner 11 Nov: "do your own playtests on my pc and level
     # up before releasing"): not READ_ONLY (it starts your game and a test world; your game folder is put back after)
     "sp-playtest": ("tools/first-run/Single player playtest.bat", "Single player playtest, nobody at the keyboard: the launcher-test build in an empty data folder, your game folder, setup, Play with Quick start into the world, companions in the group, levelling to 10 by the local world's console (server-driven), the game closed and the world stopping by itself, Repair, Play again; screenshots; all put back (logs\\sp-playtest). Stop your own Single player world first", False),
+    # Boss Rush's playtest (the same tool with --bossrush; owner 12 Nov: "tested by you at least a full boss fight run
+    # through"): not READ_ONLY (it starts your game and a test Boss Rush realm; your game folder is put back after)
+    "sp-playtest-boss": ("tools/first-run/Boss Rush playtest.bat", "Boss Rush playtest, nobody at the keyboard: the launcher-test build in an empty data folder, your game folder, Boss Rush set up, Start in front of the final fight with a full companion raid (checked on the realm), then the whole fight run to its end with the hero on the bots' own AI: its start, its phases, a kill or a wipe as it was, then Retry back in front of the boss; screenshots; all put back (logs\\boss-playtest). Stop your own Single player and Boss Rush first", False),
     # the fresh computer test (docs/FRESH-COMPUTER-TEST.md): every feature on a brand-new launcher; changes nothing of
     # yours but a temp profile (your game folder's files are put back), so not READ_ONLY: it starts your game and
     # makes (and closes) a test account on the website
@@ -397,7 +400,7 @@ STEPS = {
 STEP_TIMEOUT_MIN = {"client-build": 360, "slice": 360, "slice-sampler": 360, "sampler": 240, "sv-record": 180,
                     "sv-export": 240, "client": 120, "ship": 120, "ship-again": 120, "leyline": 120,
                     "leyline-launcher": 120, "leyline-mobile": 120, "leyline-solo": 120, "release-mirror": 180, "audit": 60, "den-test-variants": 120,
-                    "fresh-test": 180, "fresh-sandbox": 180, "first-run-test": 180, "solo-first-run": 240, "sp-playtest": 240, "mods-daily": 180, "thumbs": 120,
+                    "fresh-test": 180, "fresh-sandbox": 180, "first-run-test": 180, "solo-first-run": 240, "sp-playtest": 240, "sp-playtest-boss": 240, "mods-daily": 180, "thumbs": 120,
                     "addons-curate": 120, "ov112-data-remove": 120, "foreverui": 120,
                     # the maps from the game folder and the database import; with --mmaps up to three hours more
                     "solo-setup": 300, "solo-start": 20}

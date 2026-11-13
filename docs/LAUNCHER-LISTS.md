@@ -26,6 +26,8 @@ features with one consistent style everywhere"):
 - the Mods page: Discover, Installed, Looks and Game modes (see "The Mods page" below);
 - the Leaderboards (`boards.js`, on `#md-boards` and `#br-boards`): tabs Boss Rush / Duels / Local runs, an "Only you"
   chip; see docs/LEADERBOARDS.md.
+- Single player's Mods in this world (`spmods.js` #spm-list): tabs All / Game folder / World, chips Updates / Turned off, groups In your game folder / Built into your world;
+- the Mods page: Discover, Installed, Looks and Game modes (see "The Mods page" below).
 
 ## Making a list
 

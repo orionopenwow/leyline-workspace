@@ -265,6 +265,7 @@ Leyline Solo has no realm scripts: its friends keep their characters, invited fr
 | `world_invite {kind}`, `world_share_stop {kind}` | Invite a friend from a world |
 | `world_friends {kind}` (`single`, `vanilla`, `solo`), `world_friend {kind, user, action}` | the friends with a lasting login and their characters; `trust`, `untrust`, `remove` (characters kept), `delete` |
 | `friend_worlds`, `join_friend_again {client, realmId}` | the friend's side: the worlds this PC joined, and joining one again with no new link |
+| `world_mods_get {kind}`, `world_mods_set {kind, id, on}` | Mods in this world: the engine's own modules as the world server gets them, the optional ones off or on in the world's realm.env (§Mods in this world) |
 
 `engine_play` (Single player's Play) now goes through `world_play`: it signs in by itself too.
 
@@ -500,6 +501,36 @@ Not verified in a real game: the Dungeon Finder alone (mod-solo-lfg) group accep
 the dungeon (the fill runs; whether the module lets them into a Dungeon Finder group is from reading); the map change
 event (28) firing for the instance teleport of the Dungeon Finder; Ctrl-B being unbound in the stock key set (the
 add-on checks before taking it); bots following the player out of an instance before the 2.5 s bring-over.
+
+## Mods in this world (12 Nov 2026)
+
+Owner: "make sure it's easy to get mods from the mod store for singleplayer and user has interface for that in the single
+player menu to see what mods they have on".
+
+* **The panel** (`launcher/ui/spmods.js`, `#spm`, after Your world's settings and before Friends): what's on when you
+  play single player, on the list kit (tabs All / Game folder / World, chips Updates / Turned off, search):
+  * *In your game folder*: the game folder the local worlds play with (`LeylineWorlds.folder()`, the one
+    `world_find_folder` picked; not the play bar's): its mods, addons, HD packs and UI looks (`mods_installed`), the look
+    in use (`looks_state`) and the Leyline add-ons (`addons_status`, the last listing). On / Off (`mod_set_enabled`),
+    Update (`mod_install`), Remove (`mod_uninstall`), Stop using (a preset look, `looks_remove`), Page.
+  * *Built into your world*: the engine's own modules (`host/worldmods.rs`). Local worlds take no realm mods from the mods
+    list: a mod's realm half is skipped on install (mods.rs) and runs only on a realm that installs it. The engine has
+    every module built in (`realm/modules.env` with the world's profile); the optional ones (group-size scaling,
+    transmogrification, area loot, solo dungeon finder, challenge modes, dungeon runs, one-on-one arena, keystone
+    dungeons, quest helper data) turn off or on in the world's own `state/realm.env`, layered last at every start.
+    Companions and bots and the Leyline world scripts stay on. A running world says "next start" and offers Restart now
+    (`LeylineOneClick.restart`, the settings panel's own stop-then-start).
+  * Read from disk only; the network is for Update and the store. Nothing yet: "No mods yet" with Browse the mod store.
+* **Get mods for single player** (`app.js` `modsForSingle`): picks single player's game folder (as any client picker
+  does), opens Mods & Addons › Discover with *Works with this game folder* on, and a bar (`#dc-sp`): "Picking mods for
+  single player", then "Added X to single player", with Back to Single player.
+* **Add to single player** (`app.js` `spCardButton`, from `decorateCard`): on a Discover card when the picked folder is
+  not single player's, the project has an Install of its own (packaged with a download, listed with an install, an
+  author's addon; never a realm mod, never a pending item) and fits that folder. It picks that folder and runs the card's
+  own Install (the marketplace's checks included). "In single player ✓" when it is already there.
+* After any install, update or removal (`loadInstalled` sends `leyline:mods-changed`), the panel reads again.
+* Tests: Rust `host/worldmods.rs` (7); `cd launcher && node --test tests/spmods.browser.test.cjs` (8; screenshots
+  `SPMODS_SHOTS=<dir>`, `spmods-*.png`).
 
 ## Tests
 

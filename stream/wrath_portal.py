@@ -3764,20 +3764,28 @@ class SliceMisses:
 slice_misses = SliceMisses(SLICE_MISSES)
 
 
-_health = {"at": 0.0, "ok": False, "kind": ""}
-_health_lock = threading.Lock()
+# The sign-in check (/wrath/healthz, the hub's "Sign-in" pill) and status.json share one SOAP "server info" probe, run
+# in a background thread (_probe_bg, below): a page never waits on SOAP. Audit 12 Nov (and the 4 Nov speed audit's Q3):
+# health() held its lock across its own SOAP call, so a slow worldserver (7 s) stalled every front-page request for
+# ~14.5 s (lock wait + SOAP_TIMEOUT), every 10 s. Now one probe runs at a time, everyone else gets the last answer at
+# once, and only the very first ask after a start waits at most HEALTH_FIRST_WAIT seconds (then "checking", not up).
+HEALTH_TTL = 10.0
+HEALTH_FIRST_WAIT = max(0.0, float(os.environ.get("WU_HEALTH_FIRST_WAIT", "1.5") or 1.5))
+_health = {"at": 0.0, "ok": False, "kind": "checking", "known": False}
+_health_lock = threading.Lock()      # guards _health only; never held across SOAP
+_first_wait = threading.Lock()       # taken (never released) by the one request that waits for the first answer
 
 
 def health() -> tuple[bool, str]:
-    """SOAP check, at most once per 10 seconds (the page is public)."""
+    """SOAP check, at most once per HEALTH_TTL seconds (the page is public), never blocking on SOAP."""
     with _health_lock:
-        if time.monotonic() - _health["at"] > 10:
-            try:
-                ac_soap("server info")
-                _health.update(ok=True, kind="")
-            except SoapError as e:
-                _health.update(ok=False, kind=e.kind)
-            _health["at"] = time.monotonic()
+        stale = not _health["known"] or time.monotonic() - _health["at"] > HEALTH_TTL
+        known = _health["known"]
+    if stale:
+        _probe_kick()
+    if not known:
+        _probe_first_wait(HEALTH_FIRST_WAIT)
+    with _health_lock:
         return _health["ok"], _health["kind"]
 
 
@@ -3838,44 +3846,90 @@ def parse_server_info(text: str) -> dict:
 
 _status: dict = {"at": -1e9, "body": b""}
 _status_lock = threading.Lock()      # guards _status
-_status_refresh = threading.Lock()   # held by the one request that is asking SOAP
+_status_refresh = threading.Lock()   # held while the one background probe is asking SOAP (released by _probe_bg)
+_probe_done = threading.Event()      # set once the first probe has answered
+STATUS_FIRST_WAIT = max(0.0, float(os.environ.get("WU_STATUS_FIRST_WAIT", "1.5") or 1.5))
 
 
-def _status_now() -> bytes:
-    doc = {"realm": REALM_NAME, "online": False, "players": None, "bots": None, "queue": None,
-           "uptime_s": None, "build": STATUS_BUILD, "bots_method": "characters_in_world_minus_connected",
-           "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+def _status_doc() -> dict:
+    return {"realm": REALM_NAME, "online": False, "players": None, "bots": None, "queue": None,
+            "uptime_s": None, "build": STATUS_BUILD, "bots_method": "characters_in_world_minus_connected",
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+
+def _status_now() -> tuple[bytes, bool, str]:
+    """One SOAP "server info": the status document, and the sign-in check's (ok, kind)."""
+    doc = _status_doc()
+    ok, kind = False, "down"
     try:
         doc.update(parse_server_info(ac_soap("server info")))
         doc["online"] = True
+        ok, kind = True, ""
     except SoapError as e:
         # "auth"/"fault": the worldserver answered, so it is up, but we learned no numbers
         doc["online"] = e.kind != "down"
+        kind = e.kind
         if e.kind != "down":
             log.warning("status: soap %s", e.kind)
+    return (json.dumps(doc, separators=(",", ":")) + "\n").encode("utf-8"), ok, kind
+
+
+def _status_checking() -> bytes:
+    """What status.json says before the first SOAP answer is in (a slow worldserver right after a restart)."""
+    doc = _status_doc()
+    doc["checking"] = True
     return (json.dumps(doc, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+def _probe_bg() -> None:
+    try:
+        try:
+            body, ok, kind = _status_now()
+        except Exception as e:   # noqa: BLE001  (the probe must always release its lock)
+            log.warning("status: %s", e)
+            body, ok, kind = b"", False, "down"
+        now = time.monotonic()
+        if body:
+            with _status_lock:
+                _status.update(at=now, body=body)
+        with _health_lock:
+            _health.update(ok=ok, kind=kind, at=now, known=True)
+    finally:
+        _status_refresh.release()
+        _probe_done.set()
+
+
+def _probe_kick() -> None:
+    """Start the background probe unless one is already running."""
+    if _status_refresh.acquire(blocking=False):
+        try:
+            threading.Thread(target=_probe_bg, name="wu-soap-probe", daemon=True).start()
+        except Exception:   # noqa: BLE001
+            _status_refresh.release()
+            raise
+
+
+def _probe_first_wait(limit: float) -> None:
+    # only the start's first ask waits (a page asks several times: each must not wait again)
+    if not _probe_done.is_set() and _first_wait.acquire(blocking=False):
+        _probe_done.wait(limit)
+
+
 def status_json() -> bytes:
-    """The cached status document; SOAP is asked at most once per STATUS_TTL seconds."""
+    """The cached status document; SOAP is asked at most once per STATUS_TTL seconds (and by health(), at most once per
+    HEALTH_TTL), in a background thread, so no request waits on SOAP (audit 12 Nov). Only the very first ask after a
+    start waits at most STATUS_FIRST_WAIT for an answer."""
     with _status_lock:
         fresh = time.monotonic() - _status["at"] < STATUS_TTL
         body = _status["body"]
     if fresh and body:
         return body
-    # One request refreshes; the others keep serving the previous answer meanwhile.
-    if not _status_refresh.acquire(blocking=not body):
+    _probe_kick()
+    if body:
         return body
-    try:
-        with _status_lock:  # someone may have refreshed while we waited
-            if time.monotonic() - _status["at"] < STATUS_TTL and _status["body"]:
-                return _status["body"]
-        body = _status_now()
-        with _status_lock:
-            _status.update(at=time.monotonic(), body=body)
-        return body
-    finally:
-        _status_refresh.release()
+    _probe_first_wait(STATUS_FIRST_WAIT)
+    with _status_lock:
+        return _status["body"] or _status_checking()
 
 
 def status_with_gamedata(body: bytes) -> bytes:

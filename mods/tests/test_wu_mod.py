@@ -280,6 +280,70 @@ class AssetRules(Base):
         self.assertFails("asset-credits")
 
 
+class HardLines(Base):
+    """CONTRIBUTING.md's hard lines: no game asset paths, no brand words where players read them, no money links,
+    a LICENSE file."""
+
+    def test_game_install_paths(self):
+        for rel in ("assets/DBFilesClient/Spell.txt", "assets/World/Maps/x.png", "assets/Data/enUS/readme.txt",
+                    "assets/vmaps/0001.txt", "assets/0001234.map", "assets/patch-enUS-3.MPQ"):
+            self.setUp()
+            self.write(rel, b"x", mode="wb")
+            self.write("assets/CREDITS.txt", "%s - me - MIT - mine\n" % rel.rsplit("/", 1)[-1])
+            self.assertFails("asset-blocked")
+
+    def test_own_folders_with_ordinary_names_pass(self):
+        self.write("assets/data/frogs.png", b"\x89PNG", mode="wb")
+        self.write("assets/CREDITS.txt", "frogs.png - me - MIT - mine\n")
+        self.assertPasses()
+
+    def test_brand_words_in_player_text(self):
+        cases = [
+            lambda: self.manifest(name="Warcraft Dice"),
+            lambda: self.manifest(description="Dice for the Lich King fight."),
+            lambda: self.write("README.md", self.read("README.md") + "\nWorks with WoW.\n"),
+            lambda: self.write("ui/DalaranDice/DalaranDice.toc",
+                               self.read("ui/DalaranDice/DalaranDice.toc").replace("## Notes:", "## Notes: Blizzard-style dice.", 1)),
+            lambda: self.append_realm('local s = "Welcome to World of Warcraft"'),
+        ]
+        for i, make in enumerate(cases):
+            self.setUp()
+            make()
+            self.assertFails("brand-word")
+
+    def test_the_legal_line_and_client_code_names_are_allowed(self):
+        self.write("README.md", self.read("README.md") + "\nNot affiliated with or endorsed by Blizzard Entertainment.\n")
+        self.append_realm('local loaded = "Blizzard_CombatLog"\nlocal t = "BlizzardOptionsPanel_CheckButtonTemplate"\n'
+                          'local cheer = "wow, nice roll"')
+        self.assertPasses()
+
+    def test_money_links(self):
+        cases = [
+            lambda: self.manifest(links=["https://www.patreon.com/someone"]),
+            lambda: self.manifest(links=[{"label": "Donate", "url": "https://example.org/"}]),
+            lambda: self.write("README.md", self.read("README.md") + "\nBuy me a coffee: https://ko-fi.com/me\n"),
+            lambda: self.write("README.md", self.read("README.md") + "\nPlease consider a donation.\n"),
+            lambda: self.append_realm('local url = "paypal.me/someone"'),
+        ]
+        for make in cases:
+            self.setUp()
+            make()
+            self.assertFails("money-link")
+
+    def test_a_licence_file_is_required(self):
+        os.remove(self.path("LICENSE"))
+        self.assertFails("licence-file")
+        self.write("LICENSE.md", "MIT License\n")
+        self.assertPasses()
+
+    def test_no_brand_words_in_the_checkers_own_messages(self):
+        self.write("assets/thing.blp", b"BLP2", mode="wb")
+        self.write("assets/CREDITS.txt", "thing.blp - me - MIT - mine\n")
+        r = self.assertFails("asset-blocked")
+        msgs = " ".join("%s %s" % (i[3], i[4] or "") for i in r.items if i[1] == "asset-blocked")
+        self.assertIsNone(wu.BRAND_RE.search(msgs), msgs)
+
+
 class UiRules(Base):
     TOC = "ui/DalaranDice/DalaranDice.toc"
 

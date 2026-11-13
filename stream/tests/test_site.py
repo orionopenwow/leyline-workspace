@@ -529,6 +529,25 @@ for p in ("/wrath/leyline", "/wrath/docs", "/wrath/docs/play", "/wrath/start", "
     st_l, _, pg = get(p)
     check(f"legal line: in the footer of {p}, once", pg.count(LEGAL) == 1 and pg.index(LEGAL) > pg.index('class="hb-foot"'), (st_l, pg.count(LEGAL)))
 check("legal line: in the older pages' footer too (site_footer)", LEGAL in wp.site_footer() and "ly-legal" in wp.site_footer())
+# Single player and Be a node only where their switches say (audit 12 Nov: honest pages, owner decisions unchanged)
+os.environ["SINGLE_PLAYER_PUBLIC"] = "0"
+_, _, stp = get("/wrath/start")
+_, _, frp = get("/wrath/leyline")
+check("switch off: Start here has no Single player card, the front page no Single player link",
+      'id="st-single"' not in stp and 'aria-label="Four ways in"' in stp and "/wrath/single-player" not in frp)
+os.environ["SINGLE_PLAYER_PUBLIC"] = "1"
+_, _, stp = get("/wrath/start")
+_, _, frp = get("/wrath/leyline")
+check("switch on: Start here's second card is Single player, the front page links it under Start here",
+      'id="st-single" href="/wrath/single-player"' in stp and stp.index('id="st-play"') < stp.index('id="st-single"') < stp.index('id="st-launcher"')
+      and 'aria-label="Five ways in"' in stp and 'Or play on your own: Single player' in frp)
+os.environ["SINGLE_PLAYER_PUBLIC"] = "0"
+check("be_a_node off (no flags file): the queue's Skip the line has no Become a node card", not wp.be_a_node_on()
+      and 'id="q-node"' not in wp.skip_line_cards() and 'id="q-community"' in wp.skip_line_cards())
+_bn = wp.be_a_node_on
+wp.be_a_node_on = lambda: True
+check("be_a_node on: the card is back", 'id="q-node"' in wp.skip_line_cards())
+wp.be_a_node_on = _bn
 check("site.css: the same version on every page (one download for the whole site)", len({tuple(v) for v in links.values()}) == 1)
 check("site.css: brand words stay off it too", not BANNED.search(css_b.decode()))
 

@@ -149,9 +149,10 @@ check("player 3: a place cookie, HttpOnly Secure SameSite=Lax under /wrath", boo
     x in h["set-cookie"] for x in ("HttpOnly", "Secure", "SameSite=Lax", "Path=/wrath")), h.get("set-cookie"))
 check("player 3: no play session cookie", "wu_play" not in h.get("set-cookie", ""))
 check("queue page: You're #1 in line, about N min", b"You're #1 in line" in b and re.search(rb"About \d+ min", b) is not None)
-check("queue page: Skip the line with its four choices", b"Skip the line" in b and all(
-    f'id="{i}"'.encode() in b for i in ("q-pc", "q-host", "q-node", "q-seed")))
-check("queue page: become a node -> the docs page", b'href="/wrath/docs/be-a-node"' in b)
+check("queue page: Skip the line with its choices", b"Skip the line" in b and all(
+    f'id="{i}"'.encode() in b for i in ("q-pc", "q-host", "q-seed")))
+check("queue page: Become a node only while the be_a_node flag is on (off here: audit 12 Nov)",
+      (b'id="q-node"' in b) == wp.be_a_node_on() and (b'href="/wrath/docs/be-a-node"' in b) == wp.be_a_node_on())
 check("queue page: seed a server -> the roadmap's seeded servers", b"#seeded-servers" in b)
 check("queue page: own game folder in the browser needs no seat", b'href="/wrath/play?mode=own"' in b)
 check("queue page: leave the line", b'id="q-leave"' in b)

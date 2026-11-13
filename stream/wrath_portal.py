@@ -1444,6 +1444,24 @@ HEROKEY_DIR = os.environ.get("WU_HEROKEY_DIR", "") or getattr(leyline_net, "DIR"
 herokey_keys = herokey_mod.Keys(HEROKEY_DIR) if herokey_mod is not None else None
 
 
+def be_a_node_on() -> bool:
+    """The owner offers Be a node (the be_a_node flag). Off: no page advertises it (audit 12 Nov)."""
+    if leyline_net is None:
+        return False
+    try:
+        return leyline_net.load().get("flags", {}).get("be_a_node") is True
+    except Exception:   # noqa: BLE001: a broken flags file means off
+        return False
+
+
+def single_on() -> bool:
+    """Single player is public (stream/site_pages.py SINGLE_PLAYER_PUBLIC: dark until the grand release)."""
+    try:
+        return site_pages is not None and bool(site_pages.single_public())
+    except Exception:   # noqa: BLE001
+        return False
+
+
 def herokey_on() -> bool:
     """The owner turned herokey_sso on (the admin console's flags). Read on every use, so turning it off is instant."""
     if herokey_keys is None or leyline_net is None:
@@ -3455,10 +3473,23 @@ a.st-card p{margin:0;flex:1;font-size:14.5px;line-height:1.45;color:var(--lk-tex
 """
 
 
+# Single player's card, only while it is public (SINGLE_PLAYER_PUBLIC, the same switch as its page). TODO(owner): its words
+START_SINGLE = ("single", "Play on your own", "Single player: your own world on your PC, no server and no account. "
+                "Companions fill your party, and a friend can join.", "Single player")
+
+
+def start_cards() -> tuple:
+    """START_CARDS, with Single player second while it is public (its page answers 404 until then)."""
+    if single_on():
+        return START_CARDS[:1] + (START_SINGLE,) + START_CARDS[1:]
+    return START_CARDS
+
+
 def start_links() -> dict:
     """Where each card goes: the real place for each, never a made-up page."""
     host = "/wrath/host" if hub_framed() and hostflow is not None else HOST_URL
-    return {"play": "/wrath", "launcher": download_link() or START_LAUNCHER, "den": START_DEN, "host": host}
+    single = getattr(site_pages, "SINGLE", "/wrath/single-player") if site_pages is not None else "/wrath/single-player"
+    return {"play": "/wrath", "launcher": download_link() or START_LAUNCHER, "den": START_DEN, "host": host, "single": single}
 
 
 
@@ -3519,8 +3550,11 @@ def skip_line_cards(only_pc: bool = False) -> str:
             ("q-host", links["host"], "Host your own realm",
              "Run a realm on your own PC with the Host pack. Your friends join you, and it shows up for everyone.",
              "Host a realm"),
-            ("q-node", "/wrath/docs/be-a-node", "Become a node",
-             "Let your PC carry a little of the network's traffic, so more people can play at once.", "How to help"),
+        ]
+        if be_a_node_on():   # never offered while it isn't open (the be_a_node flag)
+            cards.append(("q-node", "/wrath/docs/be-a-node", "Become a node",
+                          "Let your PC carry a little of the network's traffic, so more people can play at once.", "How to help"))
+        cards += [
             ("q-seed", seed_link(), "Seed a server",
              "Keep a realm's files and world going for others, so new players have somewhere to land.", "Seeding"),
         ]
@@ -3607,13 +3641,14 @@ def start_page() -> bytes:
     e = html.escape
     links = start_links()
     items = []
-    for i, (key, title, line, go) in enumerate(START_CARDS, 1):
+    cards = start_cards()
+    for i, (key, title, line, go) in enumerate(cards, 1):
         href = links[key]
         ext = href.startswith("https://")
         rel = ' rel="noopener noreferrer"' if ext else ""
         items.append(f'<li><a class="st-card" id="st-{key}" href="{e(href)}"{rel}><span class="st-n" aria-hidden="true">{i}</span>'
                      f'<h2>{e(title)}</h2><p>{e(line)}</p><span class="st-go">{e(go)} ›</span></a></li>')
-    grid = f'<ol class="st-grid" aria-label="Four ways in">{"".join(items)}</ol>'
+    grid = f'<ol class="st-grid" aria-label="{"Five" if len(cards) == 5 else "Four"} ways in">{"".join(items)}</ol>'
     # TODO(owner): the heading and the line under it, his voice
     head = '<h1>Start here</h1><p class="sub">New to Leyline? Pick one. Every one is free, and you can do the rest later.</p>'
     fine = ('<p class="fine">Want more? The <a href="/wrath/docs/getting-started">player guide</a> has the details, and the '

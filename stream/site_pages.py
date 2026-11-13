@@ -725,10 +725,23 @@ def GUIDE_LIST() -> list[dict]:   # noqa: N802 (a function: the download link is
     ]
 
 
+def _node_open() -> bool:
+    f = portal("be_a_node_on")
+    try:
+        return bool(f()) if callable(f) else False
+    except Exception:   # noqa: BLE001
+        return False
+
+
 def guides() -> list[dict]:
     out = GUIDE_LIST()
     for n, g in enumerate(out, 1):
         g["n"] = n
+        # Be a node is built but not open while its flag is off: the episode says so first (audit 12 Nov)
+        if g["slug"] == "be-a-node" and not _node_open():
+            g["line"] = "Help carry the network from your own PC. Not open yet: this is how it will work."
+            g["stuck"] = ["Not open yet: the switch on the Host page stays off until it opens for everyone at once."] + [
+                x for x in g["stuck"] if not x.startswith("It says Not open yet")]
     return out
 
 

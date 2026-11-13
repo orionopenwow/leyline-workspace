@@ -180,6 +180,7 @@ shutil.rmtree(os.path.join(ART, "slots"))
 st, _, page = get("/wrath/guides")
 check("guides: no \"Video coming soon\" placeholders, and no promise of videos while there are none",
       "Video coming soon" not in page and "coming soon" not in page.lower() and ("Each has a video" in page) == any(sp._guide_video(g) for g in sp.guides()))
+check("guides: Be a node says Not open yet while its flag is off", "Not open yet" in page.split('href="/wrath/guides/be-a-node"', 1)[1].split("</li>", 1)[0])
 check("guides: every episode linked", all(f'href="/wrath/guides/{s}"' in page for s in EP))
 for g in sp.guides():
     st, _, page = get(f"/wrath/guides/{g['slug']}")

@@ -1,8 +1,8 @@
 // Leyline Launcher: the guide. Two small things for new players, both shown once and kept in the launcher's own
 // settings (src-tauri settings.rs Settings::seen, through the core's guide_seen; never localStorage):
-//   * the first-run tour: 3 or 4 short steps pointing at the real controls (Play Wrath Unleashed, Your Den, Host a
-//     server, and Find your game files when no game folder is added yet). Skippable at every step; Help › Show me
-//     again runs it any time.
+//   * the first-run tour: 5 or 6 short steps pointing at the real controls (Single player, Play Wrath Unleashed, Your
+//     Den, Host a server, Find your game files when no game folder is added yet, and the "i" button with Help).
+//     Skippable at every step; Help › Show me again runs it any time.
 //   * encouragement moments: one short line in a small toast, the first time something good happens (your first
 //     server is live, a friend joins it, your first mod goes in). Each once, never twice. The in-game ones (first
 //     time in your Den, first piece, first save, first grow) are Den Lite's (labs/den-lite/src/cheers.rs).
@@ -14,14 +14,18 @@
   // ---------------------------------------------------------------- the words: one list, the owner edits them here
   // TODO(owner): a voice pass on every line below (the tour and the moments), his words
   const TOUR = [
+    { key: "single", target: "#hm-single-go", fallback: '.side .nav[data-page="single"]', title: "Single player",
+      text: "Your own world on this PC, with companions if you want them: no realm, no queue. Press Start." },
     { key: "play", target: "#play-go", fallback: "#pb-realm-btn", title: "Play Wrath Unleashed",
       text: "The official realm: hang out, level up, meet people. Press PLAY, or pick Play in your browser in the realm list." },
     { key: "den", target: "#pb-realm-btn", title: "Your Den",
-      text: "Your own small white room, on this PC, in the realm list next to PLAY. Build in it, save it, invite a friend." },
+      text: "Your own quiet green world on this PC, in the realm list next to PLAY. Build in it, save it, invite a friend." },
     { key: "host", target: '.side .nav[data-page="host"]', title: "Host a server",
       text: "Run your own realm from a template, in one click. Friends join with your invite link." },
     { key: "files", target: "#pb-client", title: "Find your game files", needsNoClient: true,
       text: "Leyline plays with a game folder you already have. Add it here, or see Find your game files for where it usually is." },
+    { key: "info", target: "#ll-info", title: "Ask about any page",
+      text: "The i button explains the page on screen and links its docs. Help, in the side menu under Launcher, replays this tour." },
   ];
   const MOMENTS = {
     "cheer-hosted": { line: "You're live — share this link and friends can join.", action: "Copy invite link" },

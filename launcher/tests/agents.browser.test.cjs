@@ -166,3 +166,33 @@ test('Help points to Agents', async () => {
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('the Agents check runs only while agents are on or the page is open, and never while the window is hidden', async () => {
+  const { page, errors } = await open({ page: 'play' });
+  const n = async () => (await calls(page, 'agents_state')).length;
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.LeylineAgents.polling()), false, 'agents off, on Home: no tick');
+  const a = await n();
+  await page.waitForTimeout(2600);
+  assert.equal(await n(), a, 'nothing asked');
+  await page.evaluate(() => window.LeylineNav.show('agents'));
+  await page.waitForFunction(() => window.LeylineAgents.polling());
+  await page.evaluate(() => window.LeylineNav.show('play'));
+  await page.waitForTimeout(2300);
+  assert.equal(await page.evaluate(() => window.LeylineAgents.polling()), false, 'left the page with agents off: stops');
+  // agents on: an agent may ask on any page, so it ticks there too
+  await page.evaluate(() => { window.__agents.allow = true; window.LeylineNav.show('agents'); });
+  await page.evaluate(() => window.LeylineNav.show('play'));
+  await page.waitForTimeout(2300);
+  assert.equal(await page.evaluate(() => window.LeylineAgents.polling()), true, 'agents on: ticking on Home');
+  // the window hidden (minimised): stops; back: asks at once
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); });
+  assert.equal(await page.evaluate(() => window.LeylineAgents.polling()), false, 'hidden: no tick');
+  const b = await n();
+  await page.waitForTimeout(2300);
+  assert.equal(await n(), b, 'nothing asked while hidden');
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.waitForFunction((x) => window.__calls.filter(([c]) => c === 'agents_state').length > x, b);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

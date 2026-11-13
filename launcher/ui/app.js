@@ -2037,12 +2037,18 @@ function pickedClient() {
   const all = state.settings.clients;
   return all.find((c) => c.id === state.settings.selected_client) || currentClient() || all[0] || null;
 }
-document.querySelectorAll(".client-pick").forEach((sel) => sel.addEventListener("change", async () => {
-  state.settings.selected_client = sel.value;
-  $("play-client").value = sel.value;
+// one client picked everywhere (a page's picker, Get mods for single player, Add to single player)
+function selectClient(id) {
+  if (!state.settings.clients.some((c) => c.id === id)) return false;
+  state.settings.selected_client = id;
+  $("play-client").value = id;
   renderClientPickers();
   realmChanged();
   saveSelection();
+  return true;
+}
+document.querySelectorAll(".client-pick").forEach((sel) => sel.addEventListener("change", async () => {
+  selectClient(sel.value);
   const page = sel.dataset.for;
   if (page === "mods") loadInstalled();
   if (page === "discover") { await loadInstalled(true); renderCatalog(); }
@@ -2242,8 +2248,68 @@ function decorateCard(card, p) {
   }
   card.classList.toggle("is-installed", !!m);
   card.classList.toggle("just", !!justInstalled && p.id === justInstalled);
+  spCardButton(card, p);
   return card;
 }
+
+// ------------------------------------------------------------------ mods for single player (spmods.js, the Single player page)
+// The single player worlds play with one game folder (vanilla.js LeylineWorlds.folder(): the one world_find_folder
+// picked). "Get mods for single player" opens Discover on that folder with Works with this game folder on; a card for
+// another folder offers "Add to single player", which picks that folder and runs the card's own Install (the same
+// checks: pending items have no Install, so they never get this button either). While picking for single player, a bar
+// on Discover says so, with Back to Single player.
+const spFolder = () => (window.LeylineWorlds && window.LeylineWorlds.folder ? window.LeylineWorlds.folder() : null);
+let spPicking = false;   // Discover was opened for single player (or a card added to it): the bar shows
+let spAdded = "";        // the name of what went in while picking
+const spCanInstall = (p) => p && p.kind !== "realm" && ((p.source === "packaged" && !!p.download) || (p.source === "listed" && !!p.install) || p.source === "upstream");
+function spCardButton(card, p) {
+  const sp = spFolder(), c = pickedClient();
+  const acts = card.querySelector(".acts");
+  const old = card.querySelector(".dc-sp-add");
+  if (old) old.remove();
+  if (!acts || !sp || !c || sp.id === c.id || !spCanInstall(p) || !fitsClient(p, sp)) return;
+  const have = !!(window.LeylineSPMods && window.LeylineSPMods.has(p.id));
+  const b = el("button", "btn small dc-sp-add", have ? "In single player ✓" : "Add to single player");
+  b.type = "button";
+  b.disabled = have;
+  b.title = have ? `Already in ${sp.name}, the game folder single player plays with` : `Put it in ${sp.name}, the game folder single player plays with`;
+  b.addEventListener("click", (ev) => { ev.stopPropagation(); addToSingle(p, b); });
+  acts.append(b);
+}
+async function addToSingle(p, btn) {
+  const sp = spFolder();
+  if (!sp) return;
+  selectClient(sp.id);
+  spPicking = true;
+  await loadInstalled(true);
+  if (haveMod(p.id)) { renderCatalog(); say("cat-status", `${p.name} is already in single player's game folder.`, "ok"); return; }
+  if (p.source === "upstream" && window.LeylineMarket) await window.LeylineMarket.install(p, btn);
+  else await installProject(p, btn);
+}
+function modsForSingle() {
+  const sp = spFolder();
+  if (sp) selectClient(sp.id);
+  spPicking = true;
+  spAdded = "";
+  show("mods", false, "discover");
+  const list = catListMake();
+  if (list && sp) list.setFilter("fit", true);   // Works with this game folder
+  loadInstalled(true).then(renderCatalog);
+}
+function paintSpBar() {
+  const bar = $("dc-sp");
+  if (!bar) return;
+  const sp = spFolder(), c = pickedClient();
+  const on = spPicking && !!sp && !!c && sp.id === c.id;
+  bar.hidden = !on;
+  if (!on) return;
+  $("dc-sp-text").textContent = spAdded ? `Added ${spAdded} to single player. It's on the next time you play.` : `Picking mods for single player: they go into ${sp.name}.`;
+  $("dc-sp-back").classList.toggle("primary", !!spAdded);
+}
+if ($("dc-sp-back")) $("dc-sp-back").addEventListener("click", () => { spPicking = false; spAdded = ""; paintSpBar(); show("single"); });
+document.addEventListener("leyline:page", (e) => { const pg = e.detail && e.detail.page; if (pg && pg !== "mods") { spPicking = false; spAdded = ""; paintSpBar(); } });
+// the single player folder's mods were read again (spmods.js): the cards' Add to single player catch up
+document.addEventListener("leyline:spmods", () => { if (currentPage === "mods" && catList) catList.refresh(); });
 // The kit's no-match words, with this list's own word for its rows ("No addons match “x”."): its noun is a function (the
 // count says mods or addons by the tab), so its own words would say "items".
 function noMatch(info, api, many) {
@@ -2329,6 +2395,7 @@ function catListMake() {
 }
 
 function renderCatalog() {
+  paintSpBar();
   if (window.LeylineSimple) window.LeylineSimple.render();   // the Simple view's rows, or the full view's chips (simple.js)
   renderSorts();
   const list = catListMake();
@@ -2582,6 +2649,7 @@ async function installProject(p, btn) {
     const m = await withNativeOk(() => invoke("mod_install", { client: c.id, project: p.id }));
     say("cat-status", installedText(was ? "Updated" : "Installed", m, c), m.warnings.length ? "warn" : "ok");
     noteInstalled(m.key || p.id, window.LeylineShelf ? window.LeylineShelf.of(p) : "");
+    if (spPicking) { const sp = spFolder(); if (sp && sp.id === c.id) spAdded = p.name; }
     catJustFocus = true;   // Discover stays on this tab with its card lit (renderCatalog)
     if (!was && window.LeylineGuide) window.LeylineGuide.moment("mod");   // the first mod: one line, once (guide.js)
   } catch (e) {
@@ -2788,6 +2856,7 @@ async function loadInstalled(quiet) {
   renderInstalled();
   renderModTiles();
   refreshModUpdates();
+  document.dispatchEvent(new CustomEvent("leyline:mods-changed", { detail: { client: c.id, from: "mods" } }));
 }
 
 // The title bar's pill: Workshop updates for mods in any of your clients.
@@ -4017,6 +4086,7 @@ window.LeylineApp = {
   refresh: () => refresh().then(refreshStatus).catch(() => { /* as it was */ }),   // den.js: after Play solo, the bar shows Your Den
   pickRealm, playRealm, loadRealms, showRealm: showLinkedRealm,   // realmlink.js: paste to add, Live now
   realmTab, setRealmsTab,   // realmlink.js: a pasted community realm opens the Community tab
+  modsForSingle, selectClient,   // spmods.js: Get mods for single player (Discover on its game folder)
 };
 
 // ------------------------------------------------------------------ start

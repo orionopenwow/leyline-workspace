@@ -771,14 +771,18 @@
     PS.busy = false;
     paintSetting();
   }
-  async function restartWorld() {
+  // stop (everyone saved) and start again: the settings' Restart now, and the mods panel's (spmods.js)
+  async function restartKind(kind) {
     const w = W();
+    if (w) await w.stopWorld(kind);
+    await call("world_start", { kind });
+  }
+  async function restartWorld() {
     PS.busy = true;
     PS.line = ["Restarting… Everyone is saved first.", ""];
     paintSetting();
     try {
-      if (w) await w.stopWorld(PS.kind);
-      await call("world_start", { kind: PS.kind });
+      await restartKind(PS.kind);
       PS.restart = false;
       PS.line = ["Restarting with your settings. It's ready in a few seconds.", "ok"];
     } catch (e) { PS.line = [oops(e, "It didn't restart. Press Play to start it."), "bad"]; }
@@ -960,5 +964,5 @@
   paintFriends();
   setTimeout(() => { paintHome(); resume(); }, 300);
 
-  window.LeylineOneClick = { play, resume, askWorld, coded, phaseOf, PHASES, STEPS, FIRST_LINE, cfg, friends: () => ({ state: friendState(), link: PF.link, kind: PF.kind }), state: () => ({ view: S.view, hidden: S.hidden, busy: !!S.flow, kind: S.kind }) };
+  window.LeylineOneClick = { play, resume, askWorld, restart: restartKind, coded, phaseOf, PHASES, STEPS, FIRST_LINE, cfg, friends: () => ({ state: friendState(), link: PF.link, kind: PF.kind }), state: () => ({ view: S.view, hidden: S.hidden, busy: !!S.flow, kind: S.kind }) };
 })();

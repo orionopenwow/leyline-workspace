@@ -37,7 +37,7 @@ CSS = "/*LEYLINE-CSS*/"
 names = [n for n, _ in d.PAGES]
 
 # ---------------------------------------------------------------- 1. the page list and the files
-check("the pages, in a fixed order", names == ["index", "network", "getting-started", "play", "single-player", "solo", "friends", "wrath-unleashed", "commands", "mods", "publishing",
+check("the pages, in a fixed order", names == ["index", "network", "getting-started", "play", "single-player", "solo", "friends", "wrath-unleashed", "commands", "mods", "publishing", "themes",
                                               "hosting", "host-a-realm", "den-invite", "host-for-friends", "always-on", "join-network", "be-a-node", "launcher", "mobile", "den", "agents", "hero-key",
                                               "cross-server", "unite"], names)
 on_disk = sorted(f[:-3] for f in os.listdir(DOCS_DIR) if f.endswith(".md"))

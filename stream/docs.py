@@ -39,6 +39,7 @@ PAGES = (
     ("commands", "Commands"),
     ("mods", "Mod format"),
     ("publishing", "Publishing"),
+    ("themes", "Launcher themes"),   # theme packs (docs/THEMES.md for players; the launcher's Make a theme links it)
     ("hosting", "Hosting"),
     ("host-a-realm", "Host a realm"),   # the launcher's Host page, start to finish (launcher/ui/hostflow.js, host/flow.rs)
     ("den-invite", "Invite a friend to your Den"),   # docs/DEN-INVITE.md, the same text (launcher host/denways.rs)
@@ -61,7 +62,7 @@ GROUPS = (
     ("Start", ("index", "getting-started", "launcher", "hero-key", "mobile", "agents")),
     ("Play", ("play", "single-player", "solo", "friends", "den", "den-invite", "commands", "wrath-unleashed")),
     ("Host", ("host-a-realm", "host-for-friends", "hosting", "always-on", "join-network")),
-    ("Make mods", ("mods", "publishing")),
+    ("Make mods", ("mods", "publishing", "themes")),
     ("Network", ("network", "be-a-node", "cross-server", "unite")),
 )
 GROUP_OF = {n: g for g, names in GROUPS for n in names}

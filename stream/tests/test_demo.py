@@ -186,7 +186,7 @@ _, _, prev = get("/wrath/demo")
 pages = [sec, prev, g.notice("x", "y").decode()] + [get("/wrath?demo=1", ip="203.0.113.9")[2]]
 BRAND = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard|openvanilla|open vanilla|openwow")
 for i, pg in enumerate(pages):
-    visible = re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", pg, flags=re.S))
+    visible = re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", pg, flags=re.S)).replace("not affiliated with or endorsed by Blizzard Entertainment", " ")   # the legal line (footer)
     check(f"page {i}: no game-brand or old names in visible text", not BRAND.findall(visible), BRAND.findall(visible))
 lua_strings = re.findall(r'"([^"\n]*)"', re.sub(r"--[^\n]*", "", lua_src))
 bad = [s for s in lua_strings if BRAND.search(s.replace("play.openvanilla.app", ""))]

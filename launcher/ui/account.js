@@ -382,7 +382,7 @@
     const ol = el("ol", "ac-steps-list");
     ol.append(el("li", "", `Here: Save as text file (${FILE}), or set a password above.`),
       el("li", "", `On the other PC: put ${FILE} in its Downloads folder and open Leyline. It logs you in by itself.`),
-      el("li", "", `No file? Log In there with ${me.tag ? `${me.name}#${me.tag}` : "your name and #tag"} and your password, or with your browser.`));
+      el("li", "", `No file? Log in there with ${me.tag ? `${me.name}#${me.tag}` : "your name and #tag"} and your password, or with your browser.`));
     d.append(ol, el("p", "hint", "Your characters are on the realm, not on this PC: they're there wherever you log in. "
       + "Your key and password are yours alone: to play with someone, add them as a friend or invite them to your Den."));
     return d;

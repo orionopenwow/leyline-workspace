@@ -30,13 +30,14 @@ def check(name, ok, extra=""):
 
 BANNED = re.compile(r"(?i)world\s+of\s+warcraft|\bwow\b|warcraft|lich\s+king|blizzard")
 def visible(page):
+    page = (page.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(page, str) else page.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     return html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", page, flags=re.S)))
 
 CSS = "/*LEYLINE-CSS*/"
 names = [n for n, _ in d.PAGES]
 
 # ---------------------------------------------------------------- 1. the page list and the files
-check("the pages, in a fixed order", names == ["index", "network", "getting-started", "play", "single-player", "solo", "wrath-unleashed", "commands", "mods", "publishing",
+check("the pages, in a fixed order", names == ["index", "network", "getting-started", "play", "single-player", "solo", "friends", "wrath-unleashed", "commands", "mods", "publishing", "themes",
                                               "hosting", "host-a-realm", "den-invite", "host-for-friends", "always-on", "join-network", "be-a-node", "launcher", "mobile", "den", "agents", "hero-key",
                                               "cross-server", "unite"], names)
 on_disk = sorted(f[:-3] for f in os.listdir(DOCS_DIR) if f.endswith(".md"))
@@ -217,7 +218,8 @@ check("docs.py: no game-brand names", not hits, hits)
 
 # ---------------------------------------------------------------- 7. every relative link resolves
 heads_of = {n: {h[1] for h in d.load(n)[1]} for n in names}
-LOCAL_OK = ("/wrath", "/wrath/realms", "/wrath/mods", "/wrath/modes", "/wrath/armory", "/wrath/leyline", "/wrath/docs", "/wrath/start", "/wrath/download", "/wrath/mobile", "/wrath/solo")
+LOCAL_OK = ("/wrath", "/wrath/realms", "/wrath/mods", "/wrath/modes", "/wrath/armory", "/wrath/leyline", "/wrath/docs", "/wrath/start", "/wrath/download", "/wrath/mobile", "/wrath/solo",
+            "/wrath/leaderboards", "/wrath/survivors", "/wrath/key")
 for n in names:
     src = open(os.path.join(DOCS_DIR, n + ".md"), encoding="utf-8").read()
     bad = []
@@ -243,7 +245,7 @@ for n in names:
         if target not in heads_of or (anchor and anchor not in heads_of[target]):
             broken.append(h)
     check(f"{n}: every rendered docs href points at a page and heading", not broken, broken)
-    links_md = len([u for u in d.links_in(src)])
+    links_md = len([u for u in d.links_in(d.gated(src))])   # what the site shows: switched-off blocks dropped
     links_html = len(re.findall(r"<a href=", pages[n].split("<article", 1)[1]))
     check(f"{n}: no link dropped", links_html >= links_md, (links_md, links_html))
 
@@ -295,9 +297,73 @@ try:
           and "leyline-bg.webp" not in p and "leyline host" in p)
     check("portal, hub frame: still no script", "<script" not in p and "script-src 'none'" in h.get("Content-Security-Policy", ""))
     check("portal, hub frame: no game-brand names", not BANNED.search(visible(p)))
+    st, b, h = get("/wrath/docs/search?q=friend+code")
+    p = b.decode()
+    check("portal, search: 200 in the hub frame, its script allowed by nonce, may fetch this site only",
+          st == 200 and "/wrath/docs/friends" in p and re.search(r"script-src 'nonce-[^']+'", h.get("Content-Security-Policy", ""))
+          and "connect-src 'self'" in h.get("Content-Security-Policy", "") and p.count("<script") == 1, (st, h.get("Content-Security-Policy")))
+    st, b, h = get("/wrath/docs/search.json")
+    check("portal, search.json: JSON, public, short cache", st == 200 and h.get("Content-Type", "").startswith("application/json")
+          and "max-age" in h.get("Cache-Control", "") and b'"sections"' in b, (st, h.get("Content-Type")))
     os.environ["WU_HUB_FRONT"] = "0"
 finally:
     srv.shutdown()
+
+# ---------------------------------------------------------------- 8a. groups, the phone toggle, switches, search (audit 12 Nov)
+grouped = [n for _g, ns in d.GROUPS for n in ns]
+check("groups: every page in exactly one group", sorted(grouped) == sorted(names) and len(grouped) == len(set(grouped)),
+      set(names) ^ set(grouped))
+pg = pages["play"]
+check("groups: the contents show the group names in order", [m for m in re.findall(r'<span class="ld-gh">([^<]+)</span>', pg)]
+      == [g for g, _ in d.GROUPS])
+check("phone: the contents fold behind All docs (a checkbox and its label, no script), the current page named",
+      '<input type="checkbox" id="ld-toc-t" class="ld-toc-t"><label for="ld-toc-t" class="ld-toc-b"><span>All docs</span> <b>Play</b></label>' in pg
+      and ".ld-toc-t:checked~.ld-toc-in{display:block}" in d.DOCS_HUB_CSS and ".ld-toc-in{display:none" in d.DOCS_HUB_CSS
+      and ".ld-toc-in{display:none" in d.DOCS_CSS)
+check("search box on every page: a plain GET form to /wrath/docs/search", all(
+      '<form class="ld-find" role="search" action="/wrath/docs/search" method="get">' in pages[n] for n in names))
+os.environ["SINGLE_PLAYER_PUBLIC"] = "0"
+gt = "a\n<!-- if single_player -->\nSP row\n<!-- end if -->\n<!-- if not single_player -->\nnot yet\n<!-- end if -->\nb\n"
+check("switches: a block shows only while its switch is on (markers never shown)", d.gated(gt) == "a\nnot yet\nb\n", d.gated(gt))
+os.environ["SINGLE_PLAYER_PUBLIC"] = "1"
+check("switches: on", d.gated(gt) == "a\nSP row\nb\n", d.gated(gt))
+on_page = d.page("/wrath/docs")[1].decode()
+os.environ["SINGLE_PLAYER_PUBLIC"] = "0"
+off_page = d.page("/wrath/docs")[1].decode()
+check("overview: the Single player row only with SINGLE_PLAYER_PUBLIC=1 (the site_pages switch)",
+      'Single player: your own world' in on_page and 'Single player: your own world' not in off_page and "<!--" not in off_page)
+check("overview: Friends built (not planned), Leyline Solo, Boss Rush, leaderboards, phone, agents rows",
+      all(w in off_page for w in ("Friends: friend codes", "Leyline Solo: the first-era game", "Boss Rush (instant boss fights",
+                                  "Leaderboards for Boss Rush and Duels", "Leyline on your phone", "Agents: your own AI assistant"))
+      and "Friends across realms" not in off_page)
+check("overview: a new player starts at Getting started", '<li>New player: <a href="/wrath/docs/getting-started">Getting started</a>' in off_page)
+os.environ["WU_LEYLINE_DIR"] = tempfile.mkdtemp(prefix="wu-docs-flags-")   # no flags.json: every flag off (the default)
+bn = d.page("/wrath/docs/be-a-node")[1].decode()
+check("be a node: says Not open yet while the be_a_node flag is off", "Not open yet." in bn and "Built, not open yet" in d.page("/wrath/docs")[1].decode())
+check("hero key: What is a Hero Key? and Lost your key?", 'id="what-is-a-hero-key"' in pages["hero-key"] and 'id="lost-your-key"' in pages["hero-key"]
+      and "Make a new key" in pages["hero-key"])
+check("friends: its own page, with the fixes", ">Friends</h1>" in pages["friends"] and 'id="when-something-goes-wrong"' in pages["friends"])
+check("no old name in the docs prose (cross-server's status format, single player's button)",
+      not re.search(r"(?i)openvanilla|open vanilla", visible(pages["cross-server"]) + visible(pages["single-player"])))
+idx = d.search_index()
+check("search index: every page's sections, with title, group, heading, anchor, text", {e["p"] for e in idx} == set(names)
+      and all(set(e) == {"p", "t", "g", "h", "a", "x"} for e in idx) and len(idx) > 100, len(idx))
+hits = d.search("lost key")
+check("search: 'lost key' finds Hero Key's Lost your key? first", hits and hits[0]["url"] == "/wrath/docs/hero-key#lost-your-key", hits[:2])
+hits = d.search("friend code")
+check("search: 'friend code' finds the Friends page", hits and hits[0]["url"].startswith("/wrath/docs/friends"), hits[:2])
+check("search: nothing for nonsense, nothing for an empty query", d.search("zzqqxx") == [] and d.search("") == [] and d.search("  ") == [])
+sp = d.page("/wrath/docs/search", query={"q": ["lost <b>key"]})[1].decode()
+check("search page without script: the results drawn on the server, the query escaped, marked",
+      "<h1>Search the docs</h1>" in sp and 'href="/wrath/docs/hero-key#lost-your-key"' in sp and "<mark>" in sp
+      and "&lt;b&gt;" in sp and "<b>key" not in sp.split("<article", 1)[1].split("ld-hits")[0] and "<script" not in sp)
+sp2 = d.page("/wrath/docs/search", query={"q": ["port"]}, nonce="abc")[1].decode()
+check("search page with a nonce: its one script, under the nonce, building results with textContent only",
+      sp2.count("<script") == 1 and '<script nonce="abc">' in sp2 and "innerHTML" not in d.SEARCH_JS
+      and "/wrath/docs/search.json" in d.SEARCH_JS)
+import json as _j
+sj = _j.loads(d.page("/wrath/docs/search.json")[1])
+check("search.json: the same index", sj.get("format") == 1 and len(sj.get("sections", [])) == len(idx))
 
 # ---------------------------------------------------------------- 8b. no game version in a sentence
 # Owner rule: no client version numbers in prose; a guide that must name the game writes {{v:3.3.5a}}, shown as the

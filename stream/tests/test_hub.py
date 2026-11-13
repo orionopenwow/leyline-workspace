@@ -54,6 +54,7 @@ BANNED = re.compile(r"(?i)world\s*of\s*warcraft|\bwow\b|warcraft|lich\s*king|bli
 
 
 def visible(p):
+    p = (p.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(p, str) else p.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     p = re.sub(r"<style.*?</style>", " ", p, flags=re.S)
     p = re.sub(r"<!--.*?-->", " ", p, flags=re.S)
     attrs = " ".join(re.findall(r'(?:alt|title|content|aria-label|placeholder|value)="([^"]*)"', p))
@@ -69,6 +70,8 @@ check("hub.py loaded beside the portal", HB is not None)
 if HB is None:
     print(f"\n{passed}/{passed + failed} passed"); sys.exit(1)
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sitecss_fold import fold  # noqa: E402
 srv = ThreadingHTTPServer(("127.0.0.1", PAGE_PORT), wp.PageHandler)
 srv.daemon_threads = True
 threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -81,7 +84,13 @@ def req(path, method="GET", body=None, ip="10.9.0.1"):
         hd["Content-Type"] = "application/x-www-form-urlencoded"
     c.request(method, path, body=body, headers=hd)
     r = c.getresponse()
-    return r.status, {k.lower(): v for k, v in r.getheaders()}, r.read()
+    return r.status, {k.lower(): v for k, v in r.getheaders()}, fold(r.read(), _css)
+
+
+def _css(path):
+    c = http.client.HTTPConnection("127.0.0.1", PAGE_PORT, timeout=30)
+    c.request("GET", path)
+    return c.getresponse().read()
 
 
 INDEX = json.load(open(os.path.join(HUBDIR, "community-index.json")))
@@ -641,6 +650,7 @@ NOPE = re.compile(r"(?i)(?<![\w.])v?(?:1\.12(?:\.1)?|2\.4\.3|3\.3\.5a?|4\.3\.4|5
 def shown(p):
     """What a visitor can read: the text, the title, meta content, alt, title, aria-label, placeholder (not values,
     hidden inputs, URLs, the script or the styles)."""
+    p = p.replace("not affiliated with or endorsed by Blizzard Entertainment", " ")   # the legal line (footer): allowed
     p = re.sub(r"<(script|style)\b.*?</\1>", " ", p, flags=re.S)
     p = re.sub(r"<!--.*?-->|<input[^>]*type=\"hidden\"[^>]*>", " ", p, flags=re.S)
     # the realm list's version chip is the one allowed client number (owner 2026-10-30: "list the client version number in
@@ -691,10 +701,10 @@ every = ["", "/realms", "/realms?client=own", "/realms?client=browser&now=1", "/
          "/submit", "/p/mod-bags", "/p/" + e0["id"].replace(":", "-"), "/p/theme-night-sky"]
 for path in every:
     st, _, b = req("/wrath/leyline-preview" + path)
-    found = NOPE.findall(shown(b.decode()))
+    found = NOPE.findall(shown(b.decode().replace("not affiliated with or endorsed by Blizzard Entertainment", " ")))
     check(f"no client numbers or game name: {path or '/'} ({st})", st == 200 and not found, found[:6])
 st, _, b = req("/wrath/leyline-preview/submit", "POST", "repo=https%3A%2F%2Fgithub.com%2Fa%2Fb&build=9.9&category=tools", ip="10.4.4.4")
-check("no client numbers or game name: the submit form's error page", st == 400 and not NOPE.findall(shown(b.decode())))
+check("no client numbers or game name: the submit form's error page", st == 400 and not NOPE.findall(shown(b.decode().replace("not affiliated with or endorsed by Blizzard Entertainment", " "))))
 front = req("/wrath/leyline-preview")[2].decode()
 bags = req("/wrath/leyline-preview/p/mod-bags")[2].decode()
 rl = req("/wrath/leyline-preview/realms")[2].decode()

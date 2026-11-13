@@ -9,6 +9,7 @@ stream play, own files and "End my browser pass" drop the lease; only same-origi
 session (not own files, not a hop, not with streaming off); a wrong build is refused; no password in any answer.
 """
 import http.client, json, os, sys, tempfile, threading, importlib.util, time, urllib.parse
+os.environ.setdefault("LEYLINE_DOMAIN_MOVE", "0")   # this suite checks the names from before the move (the default is the new names since 12 Nov)
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from xml.sax.saxutils import escape
 
@@ -227,7 +228,7 @@ st, h, b = req("GET", "/wrath?list=1", "wr_session=good", ip="10.9.0.7")
 check("account page: drop your game folder, with the help link", b"Drop it on the game page" in b
       and b"/wrath/docs/play#use-your-own-game-folder-to-go-anywhere" in b and b"Where is my game folder?" in b)
 for word in (b"World of Warcraft", b"Warcraft", b"Lich King", b"Blizzard", b"WoW"):
-    if word in b:
+    if word in b.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b" "):   # the legal line in the footer: the one allowed mention
         check(f"no {word.decode()} on the account page", False)
         break
 else:

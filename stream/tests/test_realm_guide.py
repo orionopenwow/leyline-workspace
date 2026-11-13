@@ -38,6 +38,19 @@ style = open(os.path.join(ROOT, "stream", "fui-web", "Interface", "AddOns", "Wra
 icons = set(re.findall(r'"(\w+)"', style[style.index("S.ICONS = {"):style.index("local iconSet")]))
 check("every page's icon is one the addon has", all(p["icon"] in icons for p in d["pages"]))
 
+# the guides of the worlds on the player's own PC (Single player, the original world)
+for name in ("single-player", "original-world"):
+    g = json.load(open(os.path.join(ROOT, "docs", "realm-guide", name + ".json"), encoding="utf-8"))
+    ks = [p["key"] for p in g["pages"]]
+    check(f"{name}: four or more pages with lines, unique keys", len(g["pages"]) >= 4 and all(p["lines"] for p in g["pages"])
+          and len(set(ks)) == len(ks) and "commands" not in ks and "more" not in ks)
+    check(f"{name}: every icon is one the addon has", all(p["icon"] in icons for p in g["pages"]))
+    text = " ".join(" ".join(p["lines"]) + " " + " ".join(c for cw in p["commands"] for c in cw) for p in g["pages"])
+    check(f"{name}: none of the official realm's rules (.hub, 3x, boost to 80, Discord, Death Knights)",
+          not re.search(r"\.hub|\b3x\b|boost to 80|discord|death knight", text, re.I))
+    check(f"{name}: the Bots window, /comp, /together, offline and Restore", all(w in text for w in ("Ctrl-B", "/comp", "/together", "offline", "Restore")))
+    check(f"{name}: a friend needs no Hero Key", "No Hero Key" in text)
+
 text = json.dumps(d).lower()
 check("no brand words", not re.search(r"world of warcraft|warcraft|lich king|blizzard|\bwow\b", text))
 check("no bots: they are off on the official realm", ".recruit" not in text and "/comp" not in text)

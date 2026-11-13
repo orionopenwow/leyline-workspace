@@ -119,7 +119,7 @@ check("page: the source link", 'href="https://github.com/OutThisLife/azeroth-sur
 check("page: the key art, sized, with alt text", re.search(r'<img class="sv-art" src="[^"]*leyline-mode-azeroth-survivors\.webp" '
                                                          r'alt="[^"]{20,}" width="483" height="298"', b.decode()) is not None)
 check("page: no address -> Coming soon, no Play", "Coming soon" in t and 'href="/wrath/survivors/play"' not in b.decode())
-check("page: no brand words a player reads", not BRAND.search(t), BRAND.search(t) and BRAND.search(t).group(0))
+check("page: no brand words a player reads", not BRAND.search(t.replace("not affiliated with or endorsed by Blizzard Entertainment", " ")), BRAND.search(t) and BRAND.search(t).group(0))
 check("page: no client version numbers", not re.search(r"\b(1\.12|3\.3\.5|5875|12340)\b", t))
 check("page: no money or tip links", not re.search(r"patreon|ko-fi|paypal|donat|\btip\b", b.decode(), re.I))
 check("page: Aethus's site address is not printed", "aethus.pl" not in b.decode())

@@ -207,7 +207,7 @@ test('rating stars: saved, or the sign-in note', async () => {
   await page.close();
   ({ page, errors } = await open({ signedOut: true }));
   await card(page, 'mod:bravo').locator('.stars button').first().click();
-  await page.waitForFunction(() => /Log In \(in the title bar\) to rate mods/.test(document.getElementById('cat-status').textContent));
+  await page.waitForFunction(() => /Log in \(in the title bar\) to rate mods/.test(document.getElementById('cat-status').textContent));
   assert.deepEqual(errors, []);
   await page.close();
 });

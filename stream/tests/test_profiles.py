@@ -140,7 +140,7 @@ check("chooser: Hero Key first, then Google; Discord hidden while the website do
       'href="/wrath/signin/go/herokey?next=%2Fwrath%2Fleyline%2Fforum"' in body and "/wrath/signin/go/google?" in body
       and "/wrath/signin/go/discord" not in body and body.index("go/herokey") < body.index("go/google"))
 check("chooser: no script, the hub's look, noindex, never a game or company name", "<script" not in body and 'class="hb-top"' in body
-      and hd.get("X-Robots-Tag", "").startswith("noindex") and not BRAND.search(re.sub(r"<[^>]+>", " ", body)))
+      and hd.get("X-Robots-Tag", "").startswith("noindex") and not BRAND.search(re.sub(r"<[^>]+>", " ", body).replace("not affiliated with or endorsed by Blizzard Entertainment", " ")))
 check("chooser: no link to the old sign-in page; Create a guest account second", 'href="/login' not in body and 'href="/wrath/key?guest=1"' in body
       and body.index("go/herokey") < body.index("/wrath/key?guest=1") < body.index("go/google"))
 LOGIN["html"] += '<a href="/auth/discord/start">Discord</a>'
@@ -338,7 +338,7 @@ st, hd, body, _ = req("GET", "/wrath/profile", "alice")
 check("profile page: who is signed in (picture, name#tag), the form, the ways, sign out", st == 200 and "AliceR" in body
       and "#" + S.profile("WR000001")["tag"] in body and 'action="/logout"' in body and "/wrath/key" in body
       and "/auth/google/start?link=1" in body and "/auth/discord/start" not in body and "/wrath/link" in body and "<script" not in body)
-check("profile page: never a game or company name", not BRAND.search(re.sub(r"<[^>]+>", " ", body)))
+check("profile page: never a game or company name", not BRAND.search(re.sub(r"<[^>]+>", " ", body).replace("not affiliated with or endorsed by Blizzard Entertainment", " ")))
 t = tok("alice", "/wrath/profile")
 st, hd, _, _ = req("POST", "/wrath/profile", "alice", {"t": t, "name": "AliceR", "avatar": "cleric", "bio": "Sunny"})
 check("profile page POST: saved (303 to ?saved=1)", st == 303 and hd.get("Location") == "/wrath/profile?saved=1"

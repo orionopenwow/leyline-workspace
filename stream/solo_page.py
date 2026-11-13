@@ -306,7 +306,7 @@ def body() -> str:
     dl = ('<section class="lp-sec" id="download" aria-labelledby="so-dl"><h2 id="so-dl">Download</h2>'
           + get_block() + '</section>')
     return (f'<div class="lp so">{hero}{who}{start}{companions}{invite}{chars}{notes}{faq}{dl}'
-            f'<p class="lp-legal">{_e(LEGAL)} Game names belong to their owners.</p></div>')
+            '</div>')   # the legal line is in the site's footer on every page now (audit 12 Nov)
 
 
 def page() -> bytes:

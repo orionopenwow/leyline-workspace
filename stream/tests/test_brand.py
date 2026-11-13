@@ -38,6 +38,7 @@ ADDR = re.compile(r"https?://[^\s\"'<>]+|\b[\w.-]+\.openvanilla\.app\b|github\.c
 
 
 def visible(page: str) -> str:
+    page = (page.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(page, str) else page.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     """What a person reads: text, plus the attributes people see (titles, alt text, link cards); never addresses."""
     page = re.sub(r"<style.*?</style>", " ", page, flags=re.S)
     page = re.sub(r"<script.*?</script>", " ", page, flags=re.S)

@@ -48,7 +48,7 @@
     "den_status", "den_catalog", "den_recipes", "den_messages"];
   const ASK = ["mod_install", "mod_remove", "realm_start", "realm_stop", "host_plan_propose", "forum_new_thread", "forum_reply",
     "den_place_layout", "den_say", "den_tale_draft", "den_recipe_save"];
-  const NEVER = ["Sign in, see or change a password, a Hero Key or your account", "Anything with money",
+  const NEVER = ["Log in as you, see or change a password, a Hero Key or your account", "Anything with money",
     "Delete files, remove a game client, wipe a realm", "Make your realm public, open its sign-up, or make invites",
     "Kick, ban or unban players, or change who may join", "Change your realm list address, or your launcher's updates",
     "Use the website's staff tools"];
@@ -210,7 +210,7 @@
     if (allow) allow.addEventListener("change", async () => {
       try { await invoke("agents_set_allow", { on: allow.checked }); say(allow.checked ? "Agents are on." : "Agents are off.", "ok"); }
       catch (e) { allow.checked = !allow.checked; say(oops(e, "That didn't work."), "bad"); }
-      refresh();
+      restart();
     });
     const bind = (id, f) => { const b = $(id); if (b) b.addEventListener("click", f); };
     bind("ag-cc-add", () => connect("claude_code", true));
@@ -218,12 +218,28 @@
     bind("ag-dt-add", () => connect("desktop", true));
     bind("ag-dt-del", () => connect("desktop", false));
     document.querySelectorAll("#page-agents [data-copy]").forEach((b) => b.addEventListener("click", () => copy(b.dataset.copy)));
-    document.addEventListener("leyline:page", (e) => { if (e.detail && e.detail.page === "agents") refresh(); else renderCard(); });
-    // the countdown and new requests: every 2 seconds (a slow tick while nothing can ask)
-    const tick = async () => { await refresh(); timer = setTimeout(tick, state && state.allow ? 2000 : 6000); };
-    tick();
+    document.addEventListener("leyline:page", (e) => {
+      if (e.detail && e.detail.page === "agents") restart(); else renderCard();
+    });
+    // the countdown and new requests: every 2 seconds, only while agents are on (an agent may ask on any page) or the
+    // Agents page is open, and never while the window is hidden or minimised (audit 12 Nov: it ran every 6 seconds all
+    // session long). Coming back to the window asks at once.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) restart(); else stop(); });
+    restart();
   }
 
-  window.LeylineAgents = { refresh, state: () => state };
+  const wanted = () => !document.hidden && (onPage() || !!(state && state.allow));
+  function stop() { if (timer) { clearTimeout(timer); timer = null; } }
+  async function tick() {
+    timer = null;
+    await refresh();
+    stop();
+    if (wanted()) timer = setTimeout(tick, POLL_MS);
+  }
+  // one look now (the first, or after a change), then the tick while it is wanted
+  function restart() { stop(); tick(); }
+  const POLL_MS = 2000;
+
+  window.LeylineAgents = { refresh, state: () => state, polling: () => !!timer };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire); else wire();
 })();

@@ -72,6 +72,10 @@ import threading
 import time
 import urllib.parse
 
+# The legal line, at the foot of every page in the hub's frame (audit 12 Nov: it was only on the press, Solo and phone
+# pages). The one place the game's maker is named; the same words as stream/site_pages.py LEGAL.
+LEGAL_LINE = ("Leyline is an independent fan project, not affiliated with or endorsed by Blizzard Entertainment. "
+              "Game names belong to their owners.")
 BASE = "/wrath/leyline-preview"
 FEED = "/wrath/leyline/catalog.json"
 FRONT = "/wrath/leyline"
@@ -885,7 +889,7 @@ class Hub:
     # ---------------------------------------------------------------- the launcher feed
     def feed(self) -> bytes:
         """The merged catalog in the all.json shape (mods/all-json.md) plus the hub fields (docs/HUB-INDEX.md)."""
-        host = self.portal("PUBLIC_HOST") or "play.openvanilla.app"
+        host = self.portal("PUBLIC_HOST") or "leylinelauncher.com"
         base = f"https://{host}"
         projects = []
         for i in self.items():
@@ -1076,7 +1080,8 @@ class Hub:
                    '<span>Menu</span></label>')
         return '<nav class="hb-tabs" aria-label="Quick links">' + "".join(out) + "</nav>"
 
-    def _shell(self, title: str, body: str, path: str, nonce: str = "", active: str | None = None, css: str = "") -> bytes:
+    def _shell(self, title: str, body: str, path: str, nonce: str = "", active: str | None = None, css: str = "",
+               card: bool = True) -> bytes:
         """The page around body. nonce: the CSP nonce for HUB_JS (the front page and the realm list); "" for no script.
         active: the header item to highlight (default: from path). css: more styles (the forum's, stream/forum.py)."""
         e = html.escape
@@ -1109,15 +1114,32 @@ class Hub:
                 '<p class="hb-foot-fine">Open source. No shop, nothing to buy. Bots are labelled.</p>'
                 '<nav class="hb-social" aria-label="Elsewhere">' + self.discord_btn()
                 + "".join(f'<a href="{e(h)}" rel="noopener noreferrer">{e(t)}</a>' for t, h in social)
-                + '</nav></div></div></footer>')
+                + f'</nav></div><p class="hb-foot-legal">{e(LEGAL_LINE)}</p></div></footer>')
         robots = "" if front_on() else '<meta name="robots" content="noindex">'
-        meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
-                'with mods, addons, realm scripts and tools.">')
-        css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
-               + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + PHONE_CSS + self._backdrop() + self._dl_css() + css)
+        desc = "Leyline: one launcher for your own game clients and every realm, with mods, addons, realm scripts and tools."
+        meta = f'<meta name="description" content="{e(desc)}">'
+        # The canonical address and the link card (audit 12 Nov: the front page had neither, so a link to it on Discord
+        # or Reddit showed no preview). Only at the front door (the hidden preview stays noindex), and not for pages
+        # other modules draw in this frame: they bring their own (card=False, wrath_portal.hub_frame).
+        pc = self.portal("page_card")
+        if card and front_on() and callable(pc):
+            try:
+                pub = path.split("?", 1)[0].split("#", 1)[0]
+                pub = FRONT + pub[len(BASE):] if pub.startswith(BASE) else pub
+                meta += pc(pub.rstrip("/") or FRONT, title, desc)
+            except Exception:   # noqa: BLE001: the page works without a card
+                pass
+        # The frame's shared styles (the same on every page, ~120 KB) are one versioned stylesheet the browser keeps
+        # (/wrath/art/site.css?v=<hash>, served immutable by the portal: audit 12 Nov, every page inlined them and was
+        # sent no-store). The page's own styles and the backdrop (it follows the game data switch) stay inline.
+        # Without the portal's stylesheet route (a test, an old portal) everything is inline as before.
+        link = self.portal("site_css_link")
+        tag = link() if callable(link) else ""
+        shared = "" if tag else self.shared_css()
+        css = shared + self._backdrop() + css
         page = (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
-                f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
+                f'<title>{e(title)}</title>{meta}{robots}{tag}<style>{css}</style></head>'
                 f'<body class="hb"><a class="hb-skip" href="#main">Skip to content</a>{top}{self._turn_hint(path)}'
                 f'<main id="main" class="hb-main{" hb-front" if front else ""}">{flag}{sub}{body}</main>{foot}'
                 + (f'<script nonce="{e(nonce)}">{HUB_JS}</script>' if nonce else "") + '</body></html>').replace(
@@ -1128,6 +1150,14 @@ class Hub:
         if front_on():
             page = page.replace(BASE, FRONT)
         return page.encode("utf-8")
+
+    def shared_css(self) -> str:
+        """The frame's styles that are the same on every page (the portal serves them as /wrath/art/site.css): the look's
+        tokens, the hub, the side menu, the stone look, phones and the download button. As the page would carry them:
+        the light-scheme rules switched off, and the hub's own address at the front door when that is on."""
+        css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
+               + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + PHONE_CSS + self._dl_css()).replace(LIGHT_MQ, LIGHT_OFF)
+        return css.replace(BASE, FRONT) if front_on() else css
 
     def _dl_css(self) -> str:
         dm = self.portal("downloads_mod")
@@ -1257,7 +1287,7 @@ class Hub:
                 "name": HANGOUT_NAME,   # the official realm, sampler or not: one name everywhere at launch
                 "kind": HANGOUT_KIND, "tagline": rec.get("tagline") or HANGOUT_LINE,
                 "temporary": bool(sample.get("temporary")), "featured": False, "new": False, "group": "home",
-                "address": self.portal("PUBLIC_HOST") or "play.openvanilla.app", "mods": self.official_mods()}
+                "address": self.portal("PUBLIC_HOST") or "leylinelauncher.com", "mods": self.official_mods()}
         fits = lambda r: net.matches(r, f) and f.get("client") in (None, client_of(r))   # noqa: E731
         rest = []
         for r in shown:
@@ -2312,6 +2342,13 @@ class Hub:
         return ('<section class="hb-feat-s" aria-labelledby="hb-feat-h"><h2 id="hb-feat-h">Featured</h2><div class="hb-gal strip">'
                 + "".join(self.gallery_tile(t, "", lightbox=False) for t in tiles) + "</div></section>")
 
+    def _single_on(self) -> bool:
+        sp = self.portal("site_pages")
+        try:
+            return sp is not None and bool(sp.single_public())
+        except Exception:   # noqa: BLE001
+            return False
+
     def front_page(self, path: str = BASE, nonce: str = "") -> bytes:
         e = html.escape
         items = self.items()
@@ -2324,7 +2361,10 @@ class Hub:
             '<h1 id="hb-h">Every client, every server</h1>'
             '<p class="hb-sub-h">One launcher for every classic client and every server: your game, your realm, one click.</p>'
             # new here: the one Start here path (wrath_portal.start_page), a quiet link, not a button (owner: no buttons here)
-            '<p class="hb-start"><a href="/wrath/start">New here? Start here ›</a></p>'
+            '<p class="hb-start"><a href="/wrath/start">New here? Start here ›</a>'
+            # Single player, only while it is public (stream/site_pages.py SINGLE_PLAYER_PUBLIC; its page is a 404 until then)
+            + (f' <a href="{e(self.portal("site_pages").SINGLE)}">Or play on your own: Single player ›</a>' if self._single_on() else "")
+            + '</p>'
             # the launcher itself, right under the line (owner 1 Nov 04:50: wider, with the client list open showing every
             # client; tools/art/leyline-ui-shots: the launcher's own UI with sample folders, no game art)
             # phones take the 1280 px copy (59 KB, not 187 KB: the phone sim's throttled front page, 6 Nov)
@@ -3634,6 +3674,7 @@ background:radial-gradient(closest-side,rgba(91,141,239,.34),rgba(139,108,240,.1
 .hb-hero h1{margin:0 0 8px;font-size:clamp(22px,3vw,32px);line-height:1.1;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--lk-text-2)}
 .hb-start{margin:-8px 0 14px;font-size:15px}.hb-start a{color:var(--lk-accent);font-weight:650;text-decoration:none}
 .hb-start a:hover,.hb-start a:focus-visible{text-decoration:underline}
+.hb-start a+a{margin-left:16px}
 .hb-sub-h{max-width:560px;margin:0 auto 18px;color:var(--lk-text-2);font-family:"Arial Rounded MT Bold","Arial Rounded MT",Arial,"Helvetica Neue",Helvetica,sans-serif;font-weight:700;letter-spacing:.005em;font-size:clamp(16px,1.9vw,18px);line-height:1.5}
 .hb-hero-shot{position:relative;margin:6px auto 22px;max-width:1180px;width:100%;border-radius:14px;
   border:1px solid rgba(214,178,94,.35);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.6)}
@@ -3667,6 +3708,7 @@ text-decoration:none;color:var(--lk-text-2)!important}
 .hb-foot-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 24px}
 .hb-brand.small .ly-spin{--ly-spin-size:32px!important}.hb-brand.small .hb-word b{font-size:16px}.hb-brand.small .hb-word i{font-size:12px}
 .hb-foot-fine{margin:0;color:var(--lk-muted);font-size:13px;flex:1 1 220px}
+.hb-foot-legal{margin:14px 0 0;color:var(--lk-muted);font-size:12px;line-height:1.5}
 .hb-social{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
 /* Join the Discord (the footer, the Hangout band, the Forum and Discord section) */
 .hb-dc{display:inline-flex;align-items:center;gap:8px}.hb-dc svg{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;

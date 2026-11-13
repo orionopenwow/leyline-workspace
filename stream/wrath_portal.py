@@ -174,6 +174,7 @@ from __future__ import annotations
 
 import base64
 import collections
+import gzip
 import hashlib
 import hmac
 import html
@@ -453,7 +454,9 @@ ADDRESSES = {   # part: (new, old)
     "game": ("play.leylinelauncher.com", "wrath.openvanilla.app"),
     "relay": ("relay.leylinelauncher.com", "relay.openvanilla.app"),
 }
-DOMAIN_MOVED = os.environ.get("LEYLINE_DOMAIN_MOVE", "0").strip() == "1"
+# The default is the new names (audit 12 Nov: with the line missing from portal.env about 60 visible spots went back to
+# the old name). LEYLINE_DOMAIN_MOVE=0 (tools/domain/domain.sh off writes it) still gives the old names; both answer.
+DOMAIN_MOVED = os.environ.get("LEYLINE_DOMAIN_MOVE", "1").strip() != "0"
 
 
 def address(part: str) -> str:
@@ -1443,6 +1446,24 @@ HEROKEY_DIR = os.environ.get("WU_HEROKEY_DIR", "") or getattr(leyline_net, "DIR"
 herokey_keys = herokey_mod.Keys(HEROKEY_DIR) if herokey_mod is not None else None
 
 
+def be_a_node_on() -> bool:
+    """The owner offers Be a node (the be_a_node flag). Off: no page advertises it (audit 12 Nov)."""
+    if leyline_net is None:
+        return False
+    try:
+        return leyline_net.load().get("flags", {}).get("be_a_node") is True
+    except Exception:   # noqa: BLE001: a broken flags file means off
+        return False
+
+
+def single_on() -> bool:
+    """Single player is public (stream/site_pages.py SINGLE_PLAYER_PUBLIC: dark until the grand release)."""
+    try:
+        return site_pages is not None and bool(site_pages.single_public())
+    except Exception:   # noqa: BLE001
+        return False
+
+
 def herokey_on() -> bool:
     """The owner turned herokey_sso on (the admin console's flags). Read on every use, so turning it off is instant."""
     if herokey_keys is None or leyline_net is None:
@@ -1837,8 +1858,15 @@ CARD_DESCRIPTION = ("Play Wrath in your browser, on the Leyline network. "
 
 def card_meta(path: str, title: str = "") -> str:
     """Link-preview tags (Open Graph and X) for a public page, so a pasted link shows a proper card."""
+    return page_card(path, title, CARD_DESCRIPTION, with_description=True)
+
+
+def page_card(path: str, title: str = "", description: str = "", with_description: bool = False) -> str:
+    """The canonical link and the link-preview tags for path (the hub's own pages pass their own description: the front
+    page had none, so a link to it on Discord or Reddit showed no card; audit 12 Nov)."""
     e = html.escape
     title = title or REALM_NAME
+    desc = description or CARD_DESCRIPTION
     url = f"https://{PUBLIC_HOST}{path}"
     img = f"https://{PUBLIC_HOST}{art_url('wu-card.webp')}"
     card = [("property", "og:image:type", "image/webp"), ("property", "og:image:width", "1200"), ("property", "og:image:height", "630")]
@@ -1846,12 +1874,13 @@ def card_meta(path: str, title: str = "") -> str:
         img = f"https://{PUBLIC_HOST}{art_url('leyline-mark-512.png')}"
         card = [("property", "og:image:type", "image/png"), ("property", "og:image:width", "512"), ("property", "og:image:height", "512")]
     tags = [("property", "og:type", "website"), ("property", "og:site_name", SITE_NAME),
-            ("property", "og:title", title), ("property", "og:description", CARD_DESCRIPTION),
+            ("property", "og:title", title), ("property", "og:description", desc),
             ("property", "og:url", url), ("property", "og:image", img),
             *card, ("property", "og:image:alt", f"{REALM_NAME}: Wrath on the Leyline network"),
             ("name", "twitter:card", "summary" if BRAND else "summary_large_image"), ("name", "twitter:title", title),
-            ("name", "twitter:description", CARD_DESCRIPTION), ("name", "twitter:image", img)]
-    return (f'<meta name="description" content="{e(CARD_DESCRIPTION)}"><link rel="canonical" href="{e(url)}">'
+            ("name", "twitter:description", desc), ("name", "twitter:image", img)]
+    return ((f'<meta name="description" content="{e(desc)}">' if with_description else "")
+            + f'<link rel="canonical" href="{e(url)}">'
             + "".join(f'<meta {k}="{n}" content="{e(v)}">' for k, n, v in tags))
 
 
@@ -2766,6 +2795,7 @@ a.ly-next-go:hover{box-shadow:0 0 22px rgba(95,227,255,.5)}
 .ly-foot nav{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;margin-bottom:8px}
 .ly-foot a{color:#cfd6ff;text-decoration:none;padding:4px 0}.ly-foot a:hover{color:#fff;text-decoration:underline}
 .ly-foot p{margin:0}
+.ly-foot p.ly-legal{margin-top:8px;font-size:12px;opacity:.85}
 body:has(>.ly-nav):not(.ly){justify-content:flex-start;padding-top:0;padding-bottom:0}
 body:has(>.ly-nav):not(.ly)>.ly-nav{width:calc(100% + 32px);margin:0 -16px 28px}
 body:has(>.ly-nav):not(.ly)>main{margin-bottom:auto}
@@ -2882,6 +2912,11 @@ def site_nav(current: str = "", signed_in: bool = False) -> str:
             + (f'<div class="ly-end">{end}</div>' if end else "") + '</nav>')
 
 
+# The legal line in the site's footer on every page (audit 12 Nov); the hub's frame has the same (stream/hub.py LEGAL_LINE)
+LEGAL_LINE = ("Leyline is an independent fan project, not affiliated with or endorsed by Blizzard Entertainment. "
+              "Game names belong to their owners.")
+
+
 def site_footer() -> str:
     e = html.escape
     return ('<footer class="ly-foot"><nav aria-label="About Leyline">'
@@ -2889,7 +2924,8 @@ def site_footer() -> str:
             f'<a href="{e(DISCORD_URL)}" rel="noopener noreferrer">Discord</a>'
             f'<a href="{e(BUG_URL)}" rel="noopener noreferrer">Report a bug</a>'
             '<a href="/wrath/leyline">About Leyline</a></nav>'
-            '<p>No shop. Bots are labelled.</p></footer>')
+            '<p>No shop. Bots are labelled.</p>'
+            f'<p class="ly-legal">{e(LEGAL_LINE)}</p></footer>')
 
 
 def next_block(kind: str = "play") -> str:
@@ -2991,6 +3027,90 @@ HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "m
 _HUB_DESC_RE = re.compile(rb'<meta name="description" content="Leyline: one launcher[^"]*">')
 
 
+# The hub frame's shared styles as one stylesheet (audit 12 Nov: ~120 KB inlined in every page, sent no-store, so
+# nothing was reused between clicks). /wrath/art/site.css?v=<hash of its bytes>: the page names the version it was drawn
+# with, the file is kept a year (immutable), and a new deploy is a new address. The bytes get the same changes a page
+# gets on its way out (the brand switch, a fork's brand file, the names before the move), so nothing reads differently.
+SITE_CSS_PATH = "/wrath/art/site.css"
+_site_css_cache: dict = {}
+_site_css_lock = threading.Lock()
+
+
+def site_css() -> tuple[bytes, str, bytes] | None:
+    """(css bytes, version, gzip bytes) for the hub frame, or None without the hub."""
+    hub = getattr(hub_mod, "hub", None) if hub_mod is not None else None
+    if hub is None or not hasattr(hub, "shared_css"):
+        return None
+    raw = hub.shared_css()
+    with _site_css_lock:
+        hit = _site_css_cache.get(raw)
+    if hit:
+        return hit
+    wrap = ("<style>" + raw + "</style>").encode("utf-8")
+    wrap = brand_body(wrap, "text/html; charset=utf-8")
+    if BRAND_FILE:
+        wrap = _brandfile.apply(BRAND_FILE, wrap, "text/html; charset=utf-8")
+    wrap = legacy_body(wrap, "text/html; charset=utf-8", PUBLIC_HOST)
+    body = wrap[len(b"<style>"):-len(b"</style>")] if wrap.startswith(b"<style>") and wrap.endswith(b"</style>") else raw.encode("utf-8")
+    got = (body, hashlib.sha256(body).hexdigest()[:12], gzip.compress(body, 9, mtime=0))
+    with _site_css_lock:
+        if len(_site_css_cache) > 8:
+            _site_css_cache.clear()
+        _site_css_cache[raw] = got
+    return got
+
+
+def site_css_link() -> str:
+    """The <link> for the hub frame's shared styles ("" without the hub: the frame inlines them then)."""
+    got = site_css()
+    return f'<link rel="stylesheet" href="{SITE_CSS_PATH}?v={got[1]}">' if got else ""
+
+
+# robots.txt and sitemap.xml for the site (audit 12 Nov: both answered 4xx). Served at the site's root by the portal:
+# fastloop.sh adds a Caddy route for these two paths only (the rest of the root stays the website's). The sitemap lists
+# the public pages that always answer, by their address on this name; switched-off pages are left out.
+ROBOTS_DISALLOW = ("/wrath/admin", "/wrath/api/", "/wrath/play", "/wrath/link", "/wrath/key", "/wrath/signin", "/wrath/profile",
+                   "/wrath/leyline-preview", "/wrath/phonelab", "/wrath/bugs", "/wrath/docs/search", "/__gate", "/__auth",
+                   "/auth/", "/account", "/login", "/logout", "/data/")
+
+
+def robots_txt() -> bytes:
+    lines = ["# Leyline: everything public may be read; sign-in, the play session and the APIs are not pages", "User-agent: *"]
+    lines += [f"Disallow: {p}" for p in ROBOTS_DISALLOW]
+    lines += ["", f"Sitemap: https://{PUBLIC_HOST}/sitemap.xml", ""]
+    return "\n".join(lines).encode("utf-8")
+
+
+def sitemap_paths() -> list[str]:
+    paths = ["/wrath/leyline", START_PATH, "/wrath/download", "/wrath/leyline/realms", "/wrath/leyline/catalog",
+             "/wrath/leyline/addons", "/wrath/leyline/gallery", "/wrath/leyline/news",
+             *(["/wrath/leyline/forum"] if forum is not None and getattr(forum, "store", None) is not None else []),
+             "/wrath/modes", "/wrath/looks", "/wrath/leaderboards", "/wrath/bossfights", "/wrath/arena"]
+    if site_pages is not None:
+        paths += [site_pages.GUIDES] + [f"{site_pages.GUIDES}/{g['slug']}" for g in site_pages.guides()] + [site_pages.PRESS]
+        if single_on():
+            paths.append(site_pages.SINGLE)
+    if mobile_page is not None:
+        paths.append(getattr(mobile_page, "PATH", "/wrath/mobile"))
+    if solo_page is not None:
+        paths.append(getattr(solo_page, "PATH", "/wrath/solo"))
+    if docs is not None:
+        paths += [docs.page_url(n) for n, _ in docs.PAGES]
+    seen, out = set(), []
+    for p in paths:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def sitemap_xml() -> bytes:
+    e = html.escape
+    urls = "".join(f"<url><loc>{e(f'https://{PUBLIC_HOST}{p}')}</loc></url>" for p in sitemap_paths())
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            + urls + "</urlset>\n").encode("utf-8")
+
+
 def hub_framed() -> bool:
     return (hub_mod is not None and getattr(hub_mod, "hub", None) is not None
             and hub_mod.hub_on() and hub_mod.front_on())
@@ -3007,7 +3127,7 @@ def hub_frame(title: str, body: str, path: str, current: str = "", nonce: str = 
     try:
         h = getattr(hub_mod._REQ, "handler", None)
         hub_mod._REQ.who = hub_mod._viewer(h) if h is not None else None
-        out = hub_mod.hub._shell(title, body, path, nonce=nonce, active=HUB_ACTIVE.get(current, ""), css=css)
+        out = hub_mod.hub._shell(title, body, path, nonce=nonce, active=HUB_ACTIVE.get(current, ""), css=css, card=False)
         out = out.replace(hub_mod.BASE.encode(), hub_mod.FRONT.encode())   # the hub's links at the front door (as hub._Live)
         out = out.replace(b'<meta name="robots" content="noindex">', b"")
         if 'name="description"' in meta:
@@ -3408,10 +3528,23 @@ a.st-card p{margin:0;flex:1;font-size:14.5px;line-height:1.45;color:var(--lk-tex
 """
 
 
+# Single player's card, only while it is public (SINGLE_PLAYER_PUBLIC, the same switch as its page). TODO(owner): its words
+START_SINGLE = ("single", "Play on your own", "Single player: your own world on your PC, no server and no account. "
+                "Companions fill your party, and a friend can join.", "Single player")
+
+
+def start_cards() -> tuple:
+    """START_CARDS, with Single player second while it is public (its page answers 404 until then)."""
+    if single_on():
+        return START_CARDS[:1] + (START_SINGLE,) + START_CARDS[1:]
+    return START_CARDS
+
+
 def start_links() -> dict:
     """Where each card goes: the real place for each, never a made-up page."""
     host = "/wrath/host" if hub_framed() and hostflow is not None else HOST_URL
-    return {"play": "/wrath", "launcher": download_link() or START_LAUNCHER, "den": START_DEN, "host": host}
+    single = getattr(site_pages, "SINGLE", "/wrath/single-player") if site_pages is not None else "/wrath/single-player"
+    return {"play": "/wrath", "launcher": download_link() or START_LAUNCHER, "den": START_DEN, "host": host, "single": single}
 
 
 
@@ -3472,8 +3605,11 @@ def skip_line_cards(only_pc: bool = False) -> str:
             ("q-host", links["host"], "Host your own realm",
              "Run a realm on your own PC with the Host pack. Your friends join you, and it shows up for everyone.",
              "Host a realm"),
-            ("q-node", "/wrath/docs/be-a-node", "Become a node",
-             "Let your PC carry a little of the network's traffic, so more people can play at once.", "How to help"),
+        ]
+        if be_a_node_on():   # never offered while it isn't open (the be_a_node flag)
+            cards.append(("q-node", "/wrath/docs/be-a-node", "Become a node",
+                          "Let your PC carry a little of the network's traffic, so more people can play at once.", "How to help"))
+        cards += [
             ("q-seed", seed_link(), "Seed a server",
              "Keep a realm's files and world going for others, so new players have somewhere to land.", "Seeding"),
         ]
@@ -3560,13 +3696,14 @@ def start_page() -> bytes:
     e = html.escape
     links = start_links()
     items = []
-    for i, (key, title, line, go) in enumerate(START_CARDS, 1):
+    cards = start_cards()
+    for i, (key, title, line, go) in enumerate(cards, 1):
         href = links[key]
         ext = href.startswith("https://")
         rel = ' rel="noopener noreferrer"' if ext else ""
         items.append(f'<li><a class="st-card" id="st-{key}" href="{e(href)}"{rel}><span class="st-n" aria-hidden="true">{i}</span>'
                      f'<h2>{e(title)}</h2><p>{e(line)}</p><span class="st-go">{e(go)} ›</span></a></li>')
-    grid = f'<ol class="st-grid" aria-label="Four ways in">{"".join(items)}</ol>'
+    grid = f'<ol class="st-grid" aria-label="{"Five" if len(cards) == 5 else "Four"} ways in">{"".join(items)}</ol>'
     # TODO(owner): the heading and the line under it, his voice
     head = '<h1>Start here</h1><p class="sub">New to Leyline? Pick one. Every one is free, and you can do the rest later.</p>'
     fine = ('<p class="fine">Want more? The <a href="/wrath/docs/getting-started">player guide</a> has the details, and the '
@@ -3764,20 +3901,28 @@ class SliceMisses:
 slice_misses = SliceMisses(SLICE_MISSES)
 
 
-_health = {"at": 0.0, "ok": False, "kind": ""}
-_health_lock = threading.Lock()
+# The sign-in check (/wrath/healthz, the hub's "Sign-in" pill) and status.json share one SOAP "server info" probe, run
+# in a background thread (_probe_bg, below): a page never waits on SOAP. Audit 12 Nov (and the 4 Nov speed audit's Q3):
+# health() held its lock across its own SOAP call, so a slow worldserver (7 s) stalled every front-page request for
+# ~14.5 s (lock wait + SOAP_TIMEOUT), every 10 s. Now one probe runs at a time, everyone else gets the last answer at
+# once, and only the very first ask after a start waits at most HEALTH_FIRST_WAIT seconds (then "checking", not up).
+HEALTH_TTL = 10.0
+HEALTH_FIRST_WAIT = max(0.0, float(os.environ.get("WU_HEALTH_FIRST_WAIT", "1.5") or 1.5))
+_health = {"at": 0.0, "ok": False, "kind": "checking", "known": False}
+_health_lock = threading.Lock()      # guards _health only; never held across SOAP
+_first_wait = threading.Lock()       # taken (never released) by the one request that waits for the first answer
 
 
 def health() -> tuple[bool, str]:
-    """SOAP check, at most once per 10 seconds (the page is public)."""
+    """SOAP check, at most once per HEALTH_TTL seconds (the page is public), never blocking on SOAP."""
     with _health_lock:
-        if time.monotonic() - _health["at"] > 10:
-            try:
-                ac_soap("server info")
-                _health.update(ok=True, kind="")
-            except SoapError as e:
-                _health.update(ok=False, kind=e.kind)
-            _health["at"] = time.monotonic()
+        stale = not _health["known"] or time.monotonic() - _health["at"] > HEALTH_TTL
+        known = _health["known"]
+    if stale:
+        _probe_kick()
+    if not known:
+        _probe_first_wait(HEALTH_FIRST_WAIT)
+    with _health_lock:
         return _health["ok"], _health["kind"]
 
 
@@ -3838,44 +3983,90 @@ def parse_server_info(text: str) -> dict:
 
 _status: dict = {"at": -1e9, "body": b""}
 _status_lock = threading.Lock()      # guards _status
-_status_refresh = threading.Lock()   # held by the one request that is asking SOAP
+_status_refresh = threading.Lock()   # held while the one background probe is asking SOAP (released by _probe_bg)
+_probe_done = threading.Event()      # set once the first probe has answered
+STATUS_FIRST_WAIT = max(0.0, float(os.environ.get("WU_STATUS_FIRST_WAIT", "1.5") or 1.5))
 
 
-def _status_now() -> bytes:
-    doc = {"realm": REALM_NAME, "online": False, "players": None, "bots": None, "queue": None,
-           "uptime_s": None, "build": STATUS_BUILD, "bots_method": "characters_in_world_minus_connected",
-           "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+def _status_doc() -> dict:
+    return {"realm": REALM_NAME, "online": False, "players": None, "bots": None, "queue": None,
+            "uptime_s": None, "build": STATUS_BUILD, "bots_method": "characters_in_world_minus_connected",
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+
+def _status_now() -> tuple[bytes, bool, str]:
+    """One SOAP "server info": the status document, and the sign-in check's (ok, kind)."""
+    doc = _status_doc()
+    ok, kind = False, "down"
     try:
         doc.update(parse_server_info(ac_soap("server info")))
         doc["online"] = True
+        ok, kind = True, ""
     except SoapError as e:
         # "auth"/"fault": the worldserver answered, so it is up, but we learned no numbers
         doc["online"] = e.kind != "down"
+        kind = e.kind
         if e.kind != "down":
             log.warning("status: soap %s", e.kind)
+    return (json.dumps(doc, separators=(",", ":")) + "\n").encode("utf-8"), ok, kind
+
+
+def _status_checking() -> bytes:
+    """What status.json says before the first SOAP answer is in (a slow worldserver right after a restart)."""
+    doc = _status_doc()
+    doc["checking"] = True
     return (json.dumps(doc, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+def _probe_bg() -> None:
+    try:
+        try:
+            body, ok, kind = _status_now()
+        except Exception as e:   # noqa: BLE001  (the probe must always release its lock)
+            log.warning("status: %s", e)
+            body, ok, kind = b"", False, "down"
+        now = time.monotonic()
+        if body:
+            with _status_lock:
+                _status.update(at=now, body=body)
+        with _health_lock:
+            _health.update(ok=ok, kind=kind, at=now, known=True)
+    finally:
+        _status_refresh.release()
+        _probe_done.set()
+
+
+def _probe_kick() -> None:
+    """Start the background probe unless one is already running."""
+    if _status_refresh.acquire(blocking=False):
+        try:
+            threading.Thread(target=_probe_bg, name="wu-soap-probe", daemon=True).start()
+        except Exception:   # noqa: BLE001
+            _status_refresh.release()
+            raise
+
+
+def _probe_first_wait(limit: float) -> None:
+    # only the start's first ask waits (a page asks several times: each must not wait again)
+    if not _probe_done.is_set() and _first_wait.acquire(blocking=False):
+        _probe_done.wait(limit)
+
+
 def status_json() -> bytes:
-    """The cached status document; SOAP is asked at most once per STATUS_TTL seconds."""
+    """The cached status document; SOAP is asked at most once per STATUS_TTL seconds (and by health(), at most once per
+    HEALTH_TTL), in a background thread, so no request waits on SOAP (audit 12 Nov). Only the very first ask after a
+    start waits at most STATUS_FIRST_WAIT for an answer."""
     with _status_lock:
         fresh = time.monotonic() - _status["at"] < STATUS_TTL
         body = _status["body"]
     if fresh and body:
         return body
-    # One request refreshes; the others keep serving the previous answer meanwhile.
-    if not _status_refresh.acquire(blocking=not body):
+    _probe_kick()
+    if body:
         return body
-    try:
-        with _status_lock:  # someone may have refreshed while we waited
-            if time.monotonic() - _status["at"] < STATUS_TTL and _status["body"]:
-                return _status["body"]
-        body = _status_now()
-        with _status_lock:
-            _status.update(at=time.monotonic(), body=body)
-        return body
-    finally:
-        _status_refresh.release()
+    _probe_first_wait(STATUS_FIRST_WAIT)
+    with _status_lock:
+        return _status["body"] or _status_checking()
 
 
 def status_with_gamedata(body: bytes) -> bytes:
@@ -3949,9 +4140,20 @@ class PageHandler(BaseHTTPRequestHandler):
         if phonelab is not None:   # Phone Lab (stream/phonelab.py): its recorder on this browser's pages while a session is on
             body, nonce, lab = phonelab.inject(self, body, ctype, nonce)
             connect = connect or lab
+        # gzip a page when the browser takes it (audit 12 Nov: whether Caddy compresses the site is not known; it leaves
+        # an answer that is already encoded alone). Pages only, and only when worth it.
+        zipped = False
+        if (ctype.startswith("text/html") and len(body) > 1400 and self.command != "HEAD"
+                and "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+                and not any(k.lower() == "content-encoding" for k in (headers or {}))):
+            body, zipped = gzip.compress(body, 6, mtime=0), True
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        if zipped:
+            self.send_header("Content-Encoding", "gzip")
+        if ctype.startswith("text/html"):
+            self.send_header("Vary", "Accept-Encoding")
         for k, v in (headers or {}).items():
             self.send_header(k, v)
         if same_origin:  # /__env.js: never readable from another site's page
@@ -3974,6 +4176,32 @@ class PageHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def site_css_file(self, query: dict) -> None:
+        """GET /wrath/art/site.css?v=<version>: kept a year when the version is the current one (a new deploy is a new
+        address); any other version (or none) gets the current bytes, kept five minutes. gzip when the browser takes it."""
+        got = site_css()
+        if got is None:
+            self.send(404, b"not found\n", "text/plain")
+            return
+        body, ver, gz = got
+        current = (query.get("v") or [""])[0] == ver
+        zipped = "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+        out = gz if zipped else body
+        self.send_response(200)
+        self.send_header("Content-Type", "text/css; charset=utf-8")
+        self.send_header("Content-Length", str(len(out)))
+        if zipped:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Vary", "Accept-Encoding")
+        self.send_header("ETag", f'"{ver}"')
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable" if current else "public, max-age=300")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(out)
 
     def art(self, name: str) -> None:
         """GET /wrath/art/<name>: the site art and theme, from the allow-list only, cached for a week.
@@ -4662,12 +4890,21 @@ class PageHandler(BaseHTTPRequestHandler):
         if path == QUEUE_API:
             self.queue_api(query)
             return
+        if path == "/robots.txt":   # the site's root, through fastloop.sh's Caddy route (robots_txt)
+            self.send(200, robots_txt(), "text/plain; charset=utf-8", public=True)
+            return
+        if path == "/sitemap.xml":
+            self.send(200, sitemap_xml(), "application/xml; charset=utf-8", public=True)
+            return
         if path == "/wrath/status.json":
             self.send(200, status_with_gamedata(status_json()), "application/json; charset=utf-8", public=True)
             return
         if path == "/wrath/healthz":
             ok, kind = health()
             self.send(200 if ok else 503, b"ok\n" if ok else f"soap {kind}\n".encode(), "text/plain")
+            return
+        if path == SITE_CSS_PATH:   # the hub frame's shared styles, versioned (site_css)
+            self.site_css_file(query)
             return
         if path.startswith("/wrath/art/"):
             self.art(urllib.parse.unquote(path[len("/wrath/art/"):]))
@@ -4817,6 +5054,15 @@ class PageHandler(BaseHTTPRequestHandler):
         if docs is not None and docs.match(path):   # the Leyline docs (stream/docs.py)
             if not browse_limit.hit(rl_bucket(self.ip()), 600):
                 self.send(429, busy_page(back=path))
+                return
+            if path == getattr(docs, "SEARCH_JSON", None):   # the docs' search index (stream/docs.py), public, short cache
+                self.send(200, docs.search_json(), "application/json; charset=utf-8", public=True)
+                return
+            if path.rstrip("/") == getattr(docs, "SEARCH", None):   # the docs search: its one script under this page's nonce
+                nonce = secrets.token_urlsafe(16)
+                status, body = docs.page(path, leyline_css(), card_meta, REALM_NAME, frame=docs_frame if hub_framed() else None,
+                                         query=query, nonce=nonce)
+                self.send(status, site_chrome(body, path), nonce=nonce, connect=True)
                 return
             status, body = docs.page(path, leyline_css(), card_meta, REALM_NAME, frame=docs_frame if hub_framed() else None)
             self.send(status, site_chrome(body, path))

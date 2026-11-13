@@ -32,7 +32,11 @@ keeps working for what it already does (the official realm, ratings, the forum).
   `crypto_sign_ed25519_*_to_curve25519`). So a friend code, which is only the public key, is enough to write to
   someone. `ring` has no static X25519, so `identity.rs` carries a small port of TweetNaCl's curve code (public
   domain). The tests check it against RFC 7748's vectors and against the Ed25519 side.
-* **Backup:** there is no settings export in the launcher today. When one is added, it must carry `peer.key`.
+* **Backup:** Settings › **Your Leyline network key** saves `peer.key` to a file the player picks (with a warning
+  line in it; the key is never shown on the page or logged) and brings a saved one back (the key the PC had is kept
+  aside as `peer.key.before-<time>`, never deleted; restart to finish): `identity::export_text`, `identity::import`.
+  A friend who didn't save it comes back as a new login; the host's **Give their characters to…** on the old row
+  moves the characters to the new one (`engine::give_chars`, backed up first; Built-in engine worlds).
 * **Hero Key attestation (optional, not built):** a card could carry a site-signed binding of the peer key to a
   Hero Key. It would be shown as an extra and never required. The site has no signing endpoint for that yet.
 

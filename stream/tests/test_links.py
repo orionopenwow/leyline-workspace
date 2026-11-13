@@ -137,7 +137,7 @@ unk = rpage("/r/zzzzzzzz")
 check("unknown realm: still a card with both buttons", meta(unk, "og:title") and "go=r:zzzzzzzz" in unk and "Open in Leyline" in unk
       and "isn't on the list" in unk)
 check("broken realm list: a card", "Open in Leyline" in rpage("/r/frostpea", realms=lambda: 1 / 0))
-check("realm pages: no brand words", not re.findall(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard", f + w + off + unk))
+check("realm pages: no brand words", not re.findall(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard", (f + w + off + unk).replace("not affiliated with or endorsed by Blizzard Entertainment", " ")))
 
 # live now and new this week
 ln = [r["name"] for r in L.live_now(REALMS)]
@@ -163,6 +163,7 @@ check("live item: own-client realm plays via its link page", it["play"] == "/wra
 check("live item: browser realm plays via the hop", L.live_item(REALMS[0])["play"] == "/wrath?go=r:frostpeakaaaaaaa")
 
 def visible(p):
+    p = (p.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(p, str) else p.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     return re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", p, flags=re.S))
 allp = "".join(page(p) for p in list(good) + bad[:5])
 brand = re.findall(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard", visible(allp) + " ".join(re.findall(r'content="([^"]*)"', allp)))

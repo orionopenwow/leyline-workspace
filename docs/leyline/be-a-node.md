@@ -4,6 +4,10 @@ Your PC can help the Leyline network while you're not playing. No game running, 
 
 <!-- TODO(owner): this opening in your words -->
 
+<!-- if not be_a_node -->
+> **Not open yet.** Be a node is built, but it isn't switched on for players yet. The card on the Host page says **Not open yet** and its switch stays off until the Leyline team opens it for everyone at once. This page says how it will work.
+
+<!-- end if -->
 ## The switch
 
 In the launcher: **Host**. The **Be a node** card is at the top. Press the switch: **On**.

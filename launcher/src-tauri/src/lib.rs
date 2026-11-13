@@ -117,7 +117,6 @@ pub const LINKS: &[(&str, &str)] = &[
     ("profile", crate::site!("/wrath/profile")),
     ("herokey", crate::site!("/account/key")),
     ("linkgoogle", crate::site!("/auth/google/start?link=1")),
-    ("linkdiscord", crate::site!("/auth/discord/start?link=1")),
     ("linkedlaunchers", crate::site!("/wrath/link")),
     ("news", crate::site!("/wrath/leyline/news")),
     ("docs", crate::site!("/wrath/docs")),
@@ -128,6 +127,14 @@ pub const LINKS: &[(&str, &str)] = &[
     ("docsplay", crate::site!("/wrath/docs/play")),
     ("docsmods", crate::site!("/wrath/docs/mods")),
     ("docslauncher", crate::site!("/wrath/docs/launcher")),
+    ("docsden", crate::site!("/wrath/docs/den")), // Your Den
+    ("docsdeninvite", crate::site!("/wrath/docs/den-invite")), // a friend in your Den
+    ("docsmobile", crate::site!("/wrath/docs/mobile")), // the phone's Play page
+    ("docsherokey", crate::site!("/wrath/docs/hero-key")), // Manage account
+    ("docssolo", crate::site!("/wrath/docs/solo")), // Leyline Solo, the small first-era app
+    ("docscommands", crate::site!("/wrath/docs/commands")), // Boss Rush and Modes: the chat commands
+    ("docspublishing", crate::site!("/wrath/docs/publishing")), // a mod or a theme onto the Workshop
+    ("docsmodes", crate::site!("/wrath/docs/wrath-unleashed#duels-boss-rush-and-your-den")), // Boss Rush, Duels, the boards
     ("mods", crate::site!("/wrath/mods")),
     ("discord", "https://discord.gg/RfChVr8J7T"),
     ("forum", forum::PAGE), // the website's forum: posting happens there (forum.rs)
@@ -149,8 +156,9 @@ pub const LINKS: &[(&str, &str)] = &[
     ("alwayson", crate::site!("/wrath/docs/always-on")),
     ("network", crate::site!("/wrath/docs/network")), // the host guide's first item: how the network works
     ("beanode", crate::site!("/wrath/docs/be-a-node")), // Become a node: the play bar's skip-the-line card (docs/QUEUE.md)
-    ("themes", "https://github.com/orionopenwow/WrathUnleashed/blob/main/docs/THEMES.md"), // themes agent
-    ("modders", "https://github.com/orionopenwow/WrathUnleashed/blob/main/mods/README-modders.md"),
+    // Make a theme (Discover › Themes) and Make a mod (Discover): the website's public docs, never the private repo
+    ("themes", crate::site!("/wrath/docs/themes")),
+    ("modders", crate::site!("/wrath/docs/mods")),
     ("releases", update::RELEASES_PAGE),
     ("docker", host::docker::DESKTOP_URL),
     ("dockerengine", host::docker::ENGINE_URL),
@@ -185,6 +193,26 @@ mod link_tests {
     }
 
     #[test]
+    fn make_a_mod_and_a_theme_open_public_pages() {
+        assert_eq!(super::link("modders"), Some("https://leylinelauncher.com/wrath/docs/mods"));
+        assert_eq!(super::link("themes"), Some("https://leylinelauncher.com/wrath/docs/themes"));
+        // the working repo is private: a player would get a 404
+        for n in ["modders", "themes", "docs", "gettingstarted"] {
+            let u = super::link(n).unwrap().to_ascii_lowercase();
+            assert!(!u.contains("wrathunleashed/") && !u.contains("leyline-workspace"), "{n}");
+        }
+    }
+
+    #[test]
+    fn the_info_bubble_docs_pages_are_on_the_site() {
+        for (n, p) in [("docsden", "den"), ("docsdeninvite", "den-invite"), ("docsmobile", "mobile"), ("docsherokey", "hero-key"),
+            ("docssolo", "solo"), ("docscommands", "commands"), ("docspublishing", "publishing"),
+            ("docsmodes", "wrath-unleashed#duels-boss-rush-and-your-den")] {
+            assert_eq!(super::link(n), Some(format!("https://leylinelauncher.com/wrath/docs/{p}").as_str()), "{n}");
+        }
+    }
+
+    #[test]
     fn the_forum_links_to_the_site() {
         assert_eq!(super::link("forum"), Some("https://leylinelauncher.com/wrath/leyline/forum"));
         assert_eq!(super::link("forumnew"), Some("https://leylinelauncher.com/wrath/leyline/forum/new"));
@@ -196,7 +224,7 @@ mod link_tests {
         assert_eq!(super::link("profile"), Some("https://leylinelauncher.com/wrath/profile"));
         assert_eq!(super::link("herokey"), Some("https://leylinelauncher.com/account/key"));
         assert_eq!(super::link("linkgoogle"), Some("https://leylinelauncher.com/auth/google/start?link=1"));
-        assert_eq!(super::link("linkdiscord"), Some("https://leylinelauncher.com/auth/discord/start?link=1"));
+        assert!(super::link("linkdiscord").is_none(), "Discord sign-in was removed (2 Nov)");
         assert_eq!(super::link("linkedlaunchers"), Some("https://leylinelauncher.com/wrath/link"));
     }
 

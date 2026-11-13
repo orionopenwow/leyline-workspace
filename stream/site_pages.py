@@ -725,10 +725,23 @@ def GUIDE_LIST() -> list[dict]:   # noqa: N802 (a function: the download link is
     ]
 
 
+def _node_open() -> bool:
+    f = portal("be_a_node_on")
+    try:
+        return bool(f()) if callable(f) else False
+    except Exception:   # noqa: BLE001
+        return False
+
+
 def guides() -> list[dict]:
     out = GUIDE_LIST()
     for n, g in enumerate(out, 1):
         g["n"] = n
+        # Be a node is built but not open while its flag is off: the episode says so first (audit 12 Nov)
+        if g["slug"] == "be-a-node" and not _node_open():
+            g["line"] = "Help carry the network from your own PC. Not open yet: this is how it will work."
+            g["stuck"] = ["Not open yet: the switch on the Host page stays off until it opens for everyone at once."] + [
+                x for x in g["stuck"] if not x.startswith("It says Not open yet")]
     return out
 
 
@@ -740,16 +753,33 @@ def _poster(g: dict) -> list[str]:
     return [f"slots/guide-{g['slug']}.webp"]
 
 
+def _guide_video(g: dict) -> bool:
+    return any(_pic_ok(f"{SLOT_DIR}guide-{g['slug']}.{x}") for x in ("webm", "mp4"))
+
+
+def _guide_media(g: dict) -> str:
+    """The episode's video when its file is there, else its poster as a picture, else nothing (audit 12 Nov: every
+    episode said "Video coming soon"; a placeholder is not shown to players any more). The file names the owner adds:
+    stream/www-files/art/slots/guide-<slug>.webm (or .mp4) and guide-<slug>.webp."""
+    if _guide_video(g):
+        return video_slot(f"guide-{g['slug']}", _poster(g), f"Video guide: {g['title']}", g["title"])
+    if _first(_poster(g)):
+        return slot(_poster(g), f"Episode {g['n']}: {g['title']}", g["title"])
+    return f"<!-- TODO(owner): the video, stream/www-files/art/{SLOT_DIR}guide-{_e(g['slug'])}.webm (or .mp4) -->"
+
+
 def guides_body() -> str:
     cards = "".join(
         f'<li><a class="lp-ep" href="{GUIDES}/{_e(g["slug"])}">'
-        + slot(_poster(g), f"Episode {g['n']}: {g['title']}", g["title"]).replace("Picture coming soon", "Video coming soon")
+        + (slot(_poster(g), f"Episode {g['n']}: {g['title']}", g["title"]) if _first(_poster(g)) else "")
         + f'<span class="lp-n">Episode {g["n"]}</span><b>{_e(g["title"])}</b><span>{_e(g["line"])}</span></a></li>'
         for g in guides())
+    vids = any(_guide_video(g) for g in guides())
     # TODO(owner): the guide series' opening line, your words (draft below)
     return ('<div class="lp lp-guides"><p class="lp-kick">Guides</p><h1>Leyline, step by step</h1>'
-            '<p class="lp-lede">Twelve short guides, from your first log in to running your own realm. Each has a video '
-            'and the same steps written down.</p>'
+            '<p class="lp-lede">Twelve short guides, from your first log in to running your own realm. '
+            + ('Each has a video and the same steps written down.' if vids else 'Each has the steps written down.')
+            + '</p>'
             f'<ol class="lp-eps" style="margin-top:18px">{cards}</ol>'
             f'<p class="lp-dim" style="margin-top:18px">Stuck anywhere? Ask on the <a href="{_e(_discord())}" '
             'rel="noopener noreferrer">Discord</a>, or read the <a href="/wrath/docs">Docs</a>.</p></div>')
@@ -772,7 +802,7 @@ def guide_body(g: dict) -> str:
             f'<p class="lp-kick">Episode {g["n"]} of {len(all_g)}</p><h1>{_e(g["title"])}</h1>'
             f'<p class="lp-lede">{_e(g["line"])}</p>'
             '<div class="lp-two" style="margin-top:16px"><div>'
-            + video_slot(f"guide-{g['slug']}", _poster(g), f"Video guide: {g['title']}", g["title"])
+            + _guide_media(g)
             + f'<section class="lp-sec" aria-labelledby="gd-steps"><h2 id="gd-steps">Steps</h2><ol class="lp-do">{steps}</ol></section>'
             '</div><aside class="lp-side" aria-labelledby="gd-stuck"><h2 id="gd-stuck">Stuck?</h2>'
             f'<ul class="lp-list">{stuck}</ul>'
@@ -831,7 +861,7 @@ def press_body() -> str:
                '<p class="lp-dim" style="margin-top:10px">Please keep the mark as it is: no new colours, no stretching.</p></section>'
                if logos else "")
             + f'<section class="lp-sec" aria-labelledby="pr-shots"><h2 id="pr-shots">Screenshots</h2><div class="lp-gal">{shots}</div></section>'
-            f'<p class="lp-legal">{_e(LEGAL)} Game names belong to their owners.</p></div>')
+            '</div>')   # the legal line is in the site's footer on every page now (audit 12 Nov)
 
 
 def press_page() -> bytes:

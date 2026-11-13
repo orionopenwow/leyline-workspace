@@ -11,6 +11,7 @@ a session, never another account's place. GET /wrath/api/queue and status.json's
 """
 import re
 import http.client, importlib.util, json, os, re, sys, tempfile, threading, time, urllib.parse
+os.environ.setdefault("LEYLINE_DOMAIN_MOVE", "0")   # this suite checks the names from before the move (the default is the new names since 12 Nov)
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from xml.sax.saxutils import escape
 
@@ -149,9 +150,10 @@ check("player 3: a place cookie, HttpOnly Secure SameSite=Lax under /wrath", boo
     x in h["set-cookie"] for x in ("HttpOnly", "Secure", "SameSite=Lax", "Path=/wrath")), h.get("set-cookie"))
 check("player 3: no play session cookie", "wu_play" not in h.get("set-cookie", ""))
 check("queue page: You're #1 in line, about N min", b"You're #1 in line" in b and re.search(rb"About \d+ min", b) is not None)
-check("queue page: Skip the line with its four choices", b"Skip the line" in b and all(
-    f'id="{i}"'.encode() in b for i in ("q-pc", "q-host", "q-node", "q-seed")))
-check("queue page: become a node -> the docs page", b'href="/wrath/docs/be-a-node"' in b)
+check("queue page: Skip the line with its choices", b"Skip the line" in b and all(
+    f'id="{i}"'.encode() in b for i in ("q-pc", "q-host", "q-seed")))
+check("queue page: Become a node only while the be_a_node flag is on (off here: audit 12 Nov)",
+      (b'id="q-node"' in b) == wp.be_a_node_on() and (b'href="/wrath/docs/be-a-node"' in b) == wp.be_a_node_on())
 check("queue page: seed a server -> the roadmap's seeded servers", b"#seeded-servers" in b)
 check("queue page: own game folder in the browser needs no seat", b'href="/wrath/play?mode=own"' in b)
 check("queue page: leave the line", b'id="q-leave"' in b)
@@ -163,7 +165,7 @@ check("queue page: its script runs under the page's nonce, may only fetch this s
       and "connect-src 'self'" in csp, csp)
 check("queue page: a reload without script", b'<noscript><meta http-equiv="refresh" content="30;url=/wrath/play?mini=mini">' in b)
 check("queue page: no password, no game login", PASSWORD.encode() not in b and b"WRQ00003" not in b)
-check("queue page: no game-brand names", not BRANDS.search(b), BRANDS.findall(b))
+check("queue page: no game-brand names", not BRANDS.search(b.replace(b"not affiliated with or endorsed by Blizzard Entertainment", b" ")), BRANDS.findall(b))
 check("queue page: no money links", not re.search(rb"donat|patreon|ko-fi|paypal|tip jar", b, re.I))
 
 st, h, b = play(3, "10.8.0.3", q3)

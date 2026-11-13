@@ -330,3 +330,21 @@ test('a computer (or an older core with no platform command) keeps the desktop l
     await ctx.close();
   }
 });
+
+test('offline on the phone: Play and Play solo say so instead of a blank page; back online the line goes', async () => {
+  const { page, ctx, errors } = await open();
+  await ctx.setOffline(true);
+  await page.click('#ph-play');
+  await page.waitForSelector('#ph-offline:not([hidden])');
+  assert.match(await page.textContent('#ph-offline'), /^You're offline\. The game opens from leylinelauncher\.com/);
+  assert.equal(await page.evaluate(() => document.querySelector('#page-phone.on') !== null), true, 'still here, not a blank page');
+  await page.click('#ph-solo');
+  assert.match(await page.textContent('#ph-offline'), /Play solo opens from leylinelauncher\.com, so it needs the internet/);
+  assert.match(await page.textContent('#ph-solo-hint'), /needs the internet/, 'the hint no longer promises offline play');
+  await ctx.setOffline(false);
+  await page.waitForSelector('#ph-offline', { state: 'hidden' });
+  await page.click('#ph-play');
+  await page.waitForSelector('#game');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

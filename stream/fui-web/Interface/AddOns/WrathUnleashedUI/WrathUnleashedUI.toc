@@ -27,6 +27,7 @@ TeleportsData.lua
 Teleports.lua
 Guide.lua
 RealmGuideData.lua
+RealmGuideLocal.lua
 RealmGuide.lua
 Golf.lua
 ModeAPI.lua

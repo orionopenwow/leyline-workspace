@@ -1,6 +1,7 @@
 # Be a node: one switch on the Host page
 
-**Status (2026-11-05):** built behind the site flag `be_a_node` (off). Phase 1 below is in the launcher; phases 2
+**Status (2026-11-05; flag checked 12 Nov: still off live):** built behind the site flag `be_a_node` (off). The player page
+(`docs/leyline/be-a-node.md`) and the overview say "Not open yet" while the flag is off (stream/docs.py gated blocks). Phase 1 below is in the launcher; phases 2
 and 3 are designed, not built. The Rust code has unit tests that have not been run yet (cargo can't run where it
 was written); the launcher UI has browser tests with the fake core.
 

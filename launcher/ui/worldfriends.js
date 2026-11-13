@@ -116,7 +116,30 @@
     for (const x of [trust, rm, del]) x.disabled = off;
     if (!H.running) { rm.disabled = true; del.disabled = true; }
     acts.append(trust, rm, del);
+    // a friend who came back with a new Leyline key (a reinstall, a new PC) is a new row: their old row's characters
+    // go to it in one step (app.rs world_friend "give:", backed up first)
+    const others = (H.list || []).filter((x) => x.user !== f.user);
+    if ((f.chars || []).length && others.length) {
+      const give = btn("Give their characters to…", "btn small wf-give", () => { H.ask = "give:" + f.user; paintHost(); });
+      give.title = "For a friend who came back with a new Leyline key (a reinstall or a new PC): their characters move to that friend's login.";
+      give.disabled = off || !H.running;
+      acts.append(give);
+    }
     li.append(top, sub, acts);
+    if (H.ask === "give:" + f.user) {
+      const box = mk("div", "wf-confirm");
+      box.setAttribute("role", "alertdialog");
+      const pick = mk("select", "oc-sel wf-give-to");
+      pick.setAttribute("aria-label", "Give them to");
+      for (const x of others) { const o = mk("option", "", who(x)); o.value = x.user; pick.append(o); }
+      box.append(mk("p", "", `Give ${who(f)}'s characters to another friend's login on your world? Use it when a friend came back with a new Leyline key. A back-up is taken first.`), pick);
+      const yes = btn("Give them", "btn small primary wf-yes", () => act(f, "give:" + pick.value));
+      const no = btn("Cancel", "btn small wf-no", () => { H.ask = ""; paintHost(); });
+      const r = mk("div", "wf-acts");
+      r.append(yes, no);
+      box.append(r);
+      li.append(box);
+    }
     if (H.ask === "remove:" + f.user || H.ask === "delete:" + f.user) {
       const deleting = H.ask.startsWith("delete:");
       const nChars = (f.chars || []).length;

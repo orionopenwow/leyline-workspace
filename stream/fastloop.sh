@@ -71,6 +71,9 @@ had_survivors=""
 if [ -f "$WU/portal/survivors.py" ]; then cp -p "$WU/portal/survivors.py" "$BK/survivors.py"; had_survivors=1; fi
 # the showcase pages and Leyline on your phone (site_pages.py, mobile_page.py)
 for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
+# Leyline weekly (weekly.py + weekly.json), Den of the week, the den market, game modes and the brand file reader
+# (audit 12 Nov: the portal loads them but no deploy shipped them)
+for f in weekly.py weekly.json denweek.py denmarket.py gamemods.py brandfile.py; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_profiles=""
 if [ -f "$WU/portal/profiles.py" ]; then cp -p "$WU/portal/profiles.py" "$BK/profiles.py"; had_profiles=1; fi
 had_herokeys=""
@@ -130,6 +133,7 @@ put_back() {
   if [ -n "$had_boards" ]; then cp -p "$BK/boards.py" "$WU/portal/boards.py"; else rm -f "$WU/portal/boards.py"; fi
   if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
   for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
+  for f in weekly.py weekly.json denweek.py denmarket.py gamemods.py brandfile.py; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
@@ -266,6 +270,16 @@ if [ -f survivors.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.ar
 # the showcase pages (/wrath/guides, /wrath/press, /wrath/modes/<way>), Leyline on your phone (/wrath/mobile) and
 # Leyline Solo (/wrath/solo; its download shows only with WU_SOLO_RELEASED=1 in the portal's environment): optional
 for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do
+  if [ -f "$f" ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$f" && install -m 644 "$f" "$WU/portal/$f"; fi
+done
+# Leyline weekly ("This week" on the front page and in the launcher's home.json): weekly.py and its picks, always as a pair
+if [ -f weekly.py ] && [ -f weekly.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' weekly.py weekly.json \
+    && install -m 644 weekly.py weekly.json "$WU/portal/"
+fi
+# Den of the week (denweek.py), the den market (/wrath/dens: denmarket.py, off until WU_DENS), game modes in Mods and the
+# realm lists (gamemods.py) and the fork brand file reader (brandfile.py, idle unless WU_BRAND_FILE): each optional
+for f in denweek.py denmarket.py gamemods.py brandfile.py; do
   if [ -f "$f" ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$f" && install -m 644 "$f" "$WU/portal/$f"; fi
 done
 # Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar): optional; its store is
@@ -503,6 +517,34 @@ else
   echo "  already there (or profiles.py isn't installed)"
 fi
 
+echo "== Caddy: robots.txt and sitemap.xml at the site's root come from the portal (audit 12 Nov: both were 4xx)"
+# Only these two paths; the rest of the root stays the website's. Backed up first; a Caddy that refuses gets its old file.
+if ! grep -q "leyline-seo-files" "$CF"; then
+  cp -p "$CF" "$BK/Caddyfile.seo"
+  if python3 -I - "$CF" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+anchor = "\thandle {\n\t\treverse_proxy ovlive-realm:8090"
+if anchor not in s:
+    print("  the site block has no catch-all handle for the website: left as it is"); sys.exit(3)
+add = ("\t# leyline-seo-files: robots.txt and sitemap.xml are the portal's (stream/wrath_portal.py robots_txt, sitemap_xml)\n"
+       "\t@seofiles path /robots.txt /sitemap.xml\n"
+       "\thandle @seofiles {\n\t\treverse_proxy wu-portal:8091\n\t}\n")
+s = s.replace(anchor, add + anchor, 1)
+open(p, "w").write(s)
+print("  added")
+PY
+  then
+    if ! caddy_reload; then
+      cat "$BK/Caddyfile.seo" > "$CF"; caddy_reload || true
+      echo "  WARNING: Caddy refused the robots/sitemap route; the old Caddyfile is back (the pages are unchanged)"
+    fi
+  fi
+else
+  echo "  already there"
+fi
+
 echo "== check"
 sleep 2
 # The checks ask the names players use now (review 4 Nov: they still asked the old ones). The old names still answer;
@@ -553,6 +595,12 @@ c11l=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://$SIT
 echo "  /login (302 to /wrath/signin = the old sign-in page pruned): $c11l"
 c12=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/leyline-preview || true)
 echo "  /wrath/leyline-preview hidden hub (200 = on): $c12"
+c13=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/robots.txt || true)
+c14=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/sitemap.xml || true)
+c15=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/docs/search.json || true)
+echo "  /robots.txt (200): $c13   /sitemap.xml (200): $c14   /wrath/docs/search.json docs search (200): $c15"
+c16=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/art/site.css || true)
+echo "  /wrath/art/site.css the site's shared styles (200): $c16"
 echo "  warm.html (public): $c1   /data (must stay gated, 302/401/403): $c2   /wrath signed out (200 = saved-key page): $c3"
 echo "  /wrath/art/wu-card.webp (200 = the art is served): $c4"
 c3o=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath || true)

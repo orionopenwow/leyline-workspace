@@ -141,6 +141,19 @@
       }
       kids.push(wait);
     }
+    // the list couldn't load and nothing was kept from before (a fresh install offline, or the website down): say why,
+    // with Try again (audit 12 Nov: the status line saying so was hidden in this view)
+    if (!kids.length && typeof catFailed !== "undefined" && catFailed) {
+      const box2 = el("div", "dc-empty dc-failed");
+      box2.setAttribute("role", "status");
+      box2.append(el("p", "status bad", sh === "addons" ? "Can't load the addons list." : "Can't load the mods list."),
+        el("p", "hint", "You may be offline, or the website may be busy. Mods you already installed still work: see Installed."));
+      const again = el("button", "btn small", "Try again");
+      again.type = "button";
+      again.addEventListener("click", () => { again.disabled = true; again.textContent = "Trying…"; loadCatalog(false); });
+      box2.append(again);
+      kids.push(box2);
+    }
     if (!kids.length) kids.push(el("p", "hint dc-empty", sh === "addons" ? "The addons list is not here yet." : "The mods list is not here yet."));
     box.replaceChildren(...kids);
   }

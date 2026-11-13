@@ -83,6 +83,7 @@ ChatFrame_OpenChat = function(t) opened.chat = t end
 dofile(dir .. "/WrathUnleashedUI.lua")
 dofile(dir .. "/Style.lua")
 dofile(dir .. "/RealmGuideData.lua")
+dofile(dir .. "/RealmGuideLocal.lua")
 dofile(dir .. "/RealmGuide.lua")
 local W = assert(WrathUnleashedUI)
 local R = assert(W.RealmGuide, "W.RealmGuide")
@@ -121,6 +122,45 @@ SlashCmdList.WUREALMGUIDE("button off")
 check("/wuguide button off hides the button and remembers", not b:IsShown() and WrathUnleashedUIDB.guideNoMinimap)
 SlashCmdList.WUREALMGUIDE("button on")
 check("/wuguide button on brings it back", b:IsShown() and not WrathUnleashedUIDB.guideNoMinimap)
+
+-- a world on the player's own PC: its realm names its kind in the hello (ov_modapi.lua), the guide is that world's
+win:Hide()
+W.SetRealmKind("single")
+R.Show(true)
+win = _G.LeylineRealmGuide
+check("Single player: its own guide (built again for the new kind), Welcome to your own world",
+    win:IsShown() and win.heading.text == "Welcome to your own world" and win.title.text == "SINGLE PLAYER NOTES")
+local spPages = R.Pages()
+check("Single player: pages on bots, dungeons, friends and the world itself", (function()
+    local want = { bots = true, dungeons = true, friends = true, world = true }
+    for _, p in ipairs(spPages) do want[p.key] = nil end
+    return next(want) == nil end)())
+R.Go("commands")
+check("Single player: All commands has /comp, .recruit party, .buddy, /together and never .hub", win.body.text:find("/comp", 1, true)
+    and win.body.text:find(".recruit party", 1, true) and win.body.text:find(".buddy", 1, true) and win.body.text:find("/together", 1, true)
+    and not win.body.text:find(".hub", 1, true))
+check("Single player: none of the official realm's lines (3x, boost to 80, Discord, one auction house)", (function()
+    for _, p in ipairs(W.REALM_GUIDES.single.pages) do
+        for _, l in ipairs(p.lines) do
+            if l:find("3x", 1, true) or l:find("boost to 80", 1, true) or l:find("Discord", 1, true) or l:find("auction house", 1, true) then return false, l end
+        end
+    end
+    return true end)())
+R.Go("bots")
+check("the Bots page: Ctrl-B, the minimap button, /comp", win.body.text:find("Ctrl-B", 1, true) and win.body.text:find("minimap", 1, true))
+R.Go("world")
+check("Your world: offline, back-ups, Restore and Repair", win.body.text:find("offline", 1, true) and win.body.text:find("Restore", 1, true)
+    and win.body.text:find("Repair", 1, true))
+W.SetRealmKind("original")
+R.Show(true)
+win = _G.LeylineRealmGuide
+check("the original world: its own Welcome (level 60)", win.title.text == "ORIGINAL WORLD NOTES" and win.body.text:find("level 60", 1, true))
+W.SetRealmKind("bossrush")
+check("Boss Rush has no guide of its own: none (never the official realm's)", R.Guide() == nil)
+R.ShowButton()
+check("Boss Rush: no guide button on the minimap", not b:IsShown())
+W.SetRealmKind("bad kind!")
+check("a kind that isn't a word is ignored", W.RealmKind == "bossrush")
 
 print(string.format("\n%d/%d passed", pass, pass + fail))
 os.exit(fail == 0 and 0 or 1)

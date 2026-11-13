@@ -207,6 +207,14 @@ impl Kind {
             Kind::Vanilla => "vanilla",
         }
     }
+    /// What the realm scripts call it (OV_REALM_KIND): "single", "original", "bossrush".
+    pub fn realm_kind(self) -> &'static str {
+        match self {
+            Kind::Single => "single",
+            Kind::BossRush => "bossrush",
+            Kind::Vanilla => "original",
+        }
+    }
     pub fn from_word(w: &str) -> Option<Kind> {
         KINDS.into_iter().find(|k| k.word() == w.trim())
     }
@@ -586,6 +594,9 @@ pub fn world_env(p: &Paths, s: &State, profile: &str, modules: &str, realm: Opti
     put(&mut v, "AC_ALE_SCRIPT_PATH", fwd(&p.lua()));
     // the realm script for the in-game Leyline tab of the Friends window (lua_scripts/ov_worldfriends.lua): only here
     put(&mut v, "OV_WORLDFRIENDS", "1");
+    // which local world this is (ov_modapi.lua's hello tells the add-on, whose realm guide shows this world's pages;
+    // ov_qol.lua's login tips are this world's own)
+    put(&mut v, "OV_REALM_KIND", p.kind.realm_kind());
     put(&mut v, &env_name("WorldServerPort"), WORLD_PORT.to_string());
     put(&mut v, &env_name("RealmID"), "1");
     put(&mut v, &env_name("Console.Enable"), "0");
@@ -2889,6 +2900,7 @@ mod tests {
         assert!(g("AC_DATA_DIR").unwrap().ends_with("engine/data"), "Single player's maps");
         assert!(g("AC_LOGIN_DATABASE_INFO").unwrap().contains(";13306;"));
         assert_eq!(g("AC_BIND_IP").as_deref(), Some("127.0.0.1"), "this PC only: friends come through the launcher");
+        assert_eq!(g("OV_REALM_KIND").as_deref(), Some("original"), "the add-on's guide and the login tips are this world's own");
     }
 
     #[test]

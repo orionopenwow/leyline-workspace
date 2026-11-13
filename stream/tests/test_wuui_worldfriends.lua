@@ -189,6 +189,16 @@ check("single player's login tips say how to invite a friend in game (Friends, t
     end
     return n == 1 end)())
 check("it makes its tables when missing", #executed == 3 and executed[1]:find("CREATE TABLE IF NOT EXISTS ov_world_share"))
+check("an ask nobody ran in two minutes is answered (the launcher is closed), so the game stops waiting",
+    T.ExpireSql(1000000):find("WHERE done = 0 AND made > 0 AND made < 999880", 1, true) and T.ExpireSql(1000000):find("launcher is closed", 1, true))
+do
+    local n = #executed
+    T.Info(me)
+    local ran = false
+    for i = n + 1, #executed do if executed[i]:find("^UPDATE ov_world_asks SET done = 1") then ran = true end end
+    check("the host's info expires stale asks first", ran)
+    for i = #executed, n + 1, -1 do table.remove(executed, i) end
+end
 os.getenv = realGetenv
 
 local sent = {}

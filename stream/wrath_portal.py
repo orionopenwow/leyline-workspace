@@ -1717,7 +1717,24 @@ def den_week_home(body: bytes | None) -> bytes | None:
         return body
     sys.modules["wu_denweek"] = m
     try:
-        return m.merge_home(body)
+        body = m.merge_home(body)
+    except Exception:   # noqa: BLE001
+        pass
+    return this_week_home(body)
+
+
+def this_week_home(body: bytes | None) -> bytes | None:
+    """home.json with Leyline weekly's "This week" row added as "this_week" (stream/weekly.py: one featured pick per
+    mode, each until its featured_until), for the launcher's Home. Only into a home.json that is there and good: no file,
+    or a broken one, stays a 404 as before."""
+    if body is None:
+        return None
+    w = sys.modules.get("wu_weekly") or _load_module("wu_weekly", "weekly.py")
+    if w is None:
+        return body
+    sys.modules["wu_weekly"] = w
+    try:
+        return w.merge_home(body)
     except Exception:   # noqa: BLE001
         return body
 

@@ -68,8 +68,9 @@ Everything on the network is a signed record that anyone can check. The protocol
 ## Weekly featured picks
 
 The launcher's Home and the website show a **This week** row: one featured item per mode, each until its
-`featured_until` time. The data is `stream/weekly.json` (`stream/weekly.py` reads it); the launcher keeps a built-in
-copy for when it is offline. Picking the week's items is a person's job, not a script's.
+`featured_until` time. The data is `stream/weekly.json` (`stream/weekly.py` reads it); the launcher reads the row from
+the site's `home.json` (`this_week`) and keeps the last copy for when it is offline, hiding picks whose time has passed.
+Picking the week's items is a person's job, not a script's.
 
 ## Tests
 

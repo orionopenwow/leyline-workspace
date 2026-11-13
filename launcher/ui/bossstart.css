@@ -1,0 +1,91 @@
+/* Boss Rush, start anywhere (bossstart.js): the picker above Boss Rush's own card (bossrush.css), in the theme's
+   tokens (style.css, themes/themes.css); the starts are the list kit's rows (listkit.css). */
+.bs .bs-head h2 { margin: 0; }
+.bs-tag { margin: 2px 0 0; color: var(--t-muted); font-size: 13px; }
+.bs-body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; margin: 12px 0 4px; align-items: start; }
+.bs-where, .bs-how { display: grid; gap: 10px; align-content: start; min-width: 0; }
+
+/* raids: one tab each */
+.bs-raids { display: flex; flex-wrap: wrap; gap: 6px; }
+.bs-raid { font: inherit; font-size: 12.5px; padding: 6px 12px; cursor: pointer; color: var(--t-text-2, var(--t-text)); background: var(--t-card, var(--t-surface));
+  border: var(--t-border-w, 1px) solid var(--t-card-border, var(--t-border)); border-radius: 999px; }
+.bs-raid:hover { color: var(--t-text); border-color: var(--t-border-strong); }
+.bs-raid.on { color: var(--t-accent-strong, var(--t-accent)); border-color: var(--t-accent); box-shadow: 0 0 0 1px var(--t-accent) inset; background: var(--t-accent-soft, var(--t-surface)); }
+.bs-raid:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+
+/* the starts (list kit rows) */
+.bs-list { min-width: 0; }
+.bs-list .lk-body { max-height: 360px; overflow: auto; }
+.bs-row { display: grid; gap: 2px; padding: 8px 10px; cursor: pointer; border-radius: var(--t-radius-xs, 7px); border: 1px solid transparent; }
+.bs-row:hover { background: color-mix(in srgb, var(--t-text) 4%, transparent); }
+.bs-row.on { border-color: var(--t-accent); background: var(--t-accent-soft, transparent); }
+.bs-row-t { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bs-row-t b { font: 650 13.5px var(--t-font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-row-s { font-size: 12px; color: var(--t-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-scope { flex: none; padding: 0 7px; border-radius: 999px; font-size: 10.5px; line-height: 17px; letter-spacing: .02em;
+  border: 1px solid color-mix(in srgb, var(--t-muted) 40%, transparent); color: var(--t-muted); }
+.bs-scope.raid { color: var(--t-gold, var(--t-accent)); border-color: color-mix(in srgb, var(--t-gold, var(--t-accent)) 55%, transparent); }
+.bs-scope.wing { color: var(--t-accent-strong, var(--t-accent)); border-color: color-mix(in srgb, var(--t-accent) 55%, transparent); }
+
+/* how: difficulty, size, who, the hero, the raid */
+.bs-opts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px 12px; align-items: center; padding: 12px 14px;
+  background: var(--t-card, var(--t-surface)); border: var(--t-border-w, 1px) solid var(--t-card-border, var(--t-border)); border-radius: var(--t-radius-sm, 10px); }
+.bs-lbl { font-size: 12px; color: var(--t-muted); }
+.bs-segs, .bs-specs { display: flex; flex-wrap: wrap; gap: 6px; }
+.bs-seg { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; padding: 5px 11px; cursor: pointer; color: var(--t-text);
+  background: var(--t-surface-2, var(--t-surface)); border: var(--t-border-w, 1px) solid var(--t-border); border-radius: 999px; }
+.bs-seg.big { font-weight: 650; padding: 7px 14px; }
+.bs-seg.on { border-color: var(--t-accent); color: var(--t-accent-strong, var(--t-accent)); box-shadow: 0 0 0 1px var(--t-accent) inset; }
+.bs-seg:disabled { opacity: .45; cursor: not-allowed; }
+.bs-seg:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+.bs-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.bs-class { font: inherit; font-size: 13px; padding: 5px 8px; color: var(--t-text); background: var(--t-surface-2, var(--t-surface));
+  border: var(--t-border-w, 1px) solid var(--t-border); border-radius: 8px; }
+
+/* role marks: tank (shield), healer (cross), damage (blade) */
+.bs-ri, .bs-role svg { width: 14px; height: 14px; flex: none; display: inline-block; }
+.bs-ri svg { width: 100%; height: 100%; display: block; }
+.bs-ri svg, .bs-role svg { fill: currentColor; }
+.bs-ri.tank, .bs-role.tank { color: #7fb2ff; }
+.bs-ri.heal, .bs-role.heal { color: var(--t-ok, #4fd18b); }
+.bs-ri.dps, .bs-role.dps { color: #ff9a6b; }
+.bs-team { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 12.5px; }
+.bs-you { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; background: var(--t-accent-soft, transparent); color: var(--t-text); }
+.bs-you.friend { background: color-mix(in srgb, var(--t-ok, #4fd18b) 14%, transparent); }
+.bs-comp { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bs-comp-l { color: var(--t-muted); }
+.bs-role { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent); }
+.bs-role b { color: var(--t-text); font-variant-numeric: tabular-nums; }
+
+/* friends */
+.bs-friends { display: grid; gap: 8px; min-width: 0; }
+.bs-check { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; cursor: pointer; }
+.bs-fhero { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bs-invite-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.bs-link { flex: 1; min-width: 160px; font: 12px var(--t-mono, monospace); padding: 5px 8px; color: var(--t-text); background: var(--t-surface-2, var(--t-surface));
+  border: var(--t-border-w, 1px) solid var(--t-border); border-radius: 8px; }
+.bs-note, .bs-line { font-size: 12.5px; color: var(--t-muted); margin: 0; }
+.bs-line.warn { color: var(--t-warn, var(--t-accent)); }
+
+/* the big Start */
+.bs-go { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0 4px; }
+.bs-start { min-width: 200px; min-height: 44px; font-size: 16px; font-weight: 700; letter-spacing: .02em; }
+.bs-what { font-size: 13px; color: var(--t-text-2, var(--t-muted)); }
+
+/* the raid as the realm sees it */
+.bs-state { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 14px; margin: 10px 0 4px; border-radius: var(--t-radius-sm, 10px);
+  background: var(--t-card, var(--t-surface)); border: var(--t-border-w, 1px) solid var(--t-card-border, var(--t-border)); }
+.bs-state.ready, .bs-state.cleared { border-color: var(--t-ok, var(--t-accent)); }
+.bs-state.fighting { border-color: var(--t-warn, var(--t-accent)); }
+.bs-state.wiped { border-color: var(--t-bad); }
+.bs-state.lobby { border-color: var(--t-accent); }
+.bs-big { font: 800 16px var(--t-font-display, var(--t-font)); letter-spacing: .05em; text-transform: uppercase; }
+.bs-facts { font-size: 13px; color: var(--t-text-2, var(--t-muted)); font-variant-numeric: tabular-nums; }
+
+/* narrow windows and phones: one column */
+@media (max-width: 900px) {
+  .bs-body { grid-template-columns: minmax(0, 1fr); }
+}
+html.phone .bs-body { grid-template-columns: minmax(0, 1fr); }
+html.phone .bs-start { width: 100%; }

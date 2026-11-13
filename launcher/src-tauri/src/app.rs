@@ -2575,8 +2575,8 @@ async fn world_invite(kind: String) -> Result<DenInvite, String> {
 
 fn world_invite_now(k: crate::host::engine::Kind) -> Result<DenInvite, String> {
     use crate::host::{denhost, denways, engine as eng, litenet, worldfriends as wf, worldshare as ws};
-    if k == eng::Kind::BossRush {
-        return Err("Boss Rush is for one hero for now: invite a friend from Single player or the original world.".into());
+    if k == eng::Kind::BossRush && !bossrush_friend_file().is_file() {
+        return Err("Pick the fight for you and your friend on the Boss Rush page first (With friends).".into());
     }
     let p = world_paths(k);
     if !eng::status(&p).running {
@@ -2684,6 +2684,8 @@ fn world_friends_of(k: crate::host::engine::Kind, realm_id: &str, secret: &str) 
         era: wf::Era::Wrath,
         console: Arc::new(move |l: &str| eng::console(&world_paths(k), l)),
         with_chars: Arc::new(move || eng::friend_chars(&world_paths(k)).map(|v| v.into_iter().map(|c| c.user).collect()).unwrap_or_default()),
+        // Boss Rush: a friend plays a hero (the module's heroes live on their own account), made as they come in
+        login_for: (k == eng::Kind::BossRush).then(|| -> wf::LoginFor { Arc::new(|u: &str, p: &str| bossrush_friend_login(u, p)) }),
     }
 }
 
@@ -2710,6 +2712,7 @@ fn classic_friends_of(realm_id: &str, secret: &str) -> crate::host::worldfriends
         era: wf::Era::Classic,
         console: Arc::new(|l: &str| classic::soap(&classic::load_state(&classic_paths()), l)),
         with_chars: Arc::new(|| classic::friend_logins_with_chars(&classic_paths())),
+        login_for: None,
     }
 }
 
@@ -3469,6 +3472,8 @@ struct BossRushClass {
 #[derive(Serialize)]
 struct BossRushCatalog {
     fights: Vec<BossRushFight>,
+    /// Start anywhere's tree: raids, their wings and bosses, the whole raid (ui/bossstart.js).
+    raids: Vec<BossRushRaid>,
     classes: Vec<BossRushClass>,
     maps: Vec<u32>,
     exact: crate::host::engine::EngineStatus,
@@ -3483,6 +3488,7 @@ async fn bossrush_catalog() -> Result<BossRushCatalog, String> {
     blocking(|| {
         Ok(BossRushCatalog {
             fights: br::FIGHTS.iter().map(|f| BossRushFight { key: f.key, title: f.title, raid: f.raid, map: f.map, heroic: f.heroic, light: f.light, blurb: f.blurb }).collect(),
+            raids: bossrush_raids(),
             classes: br::CLASSES.iter().map(|c| BossRushClass { word: c.0, label: c.1, specs: c.2.to_vec() }).collect(),
             maps: br::maps(),
             exact: crate::host::engine::status(&bossrush_paths()),
@@ -3540,7 +3546,7 @@ struct BossRushPlay {
 /// Den's own one-click start (the page calls den_play_lite after this).
 #[tauri::command]
 async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, diff: String, class: String, spec: String, engine: String) -> Result<BossRushPlay, String> {
-    use crate::host::{bossrush as br, engine as eng};
+    use crate::host::bossrush as br;
     let pick = br::check(&fight, &diff, &class, &spec, &engine)?;
     let profile = core.client(&client)?;
     if profile.build != clients::Build::V335a {
@@ -3560,6 +3566,16 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
         .await?;
         return Ok(BossRushPlay { message: "Your fight is ready: Den Lite opens it.".into(), engine: "light".into(), hero: String::new(), made: false, auto: true, account: String::new(), password: String::new(), code });
     }
+    let pk = pick.clone();
+    bossrush_exact(&core, &client, profile, move |main| br::go_line(main, &pk), code).await
+}
+
+/// The exact engine's one click, for a fight (bossrush_play) or a start anywhere (bossrush_start_at): the hero
+/// account's login set (once), the module asked for the hero and its waiting go (`bossfight hero go ...`, the line
+/// `go` makes from the player's own account), then the game started signed in to the hero account, whose login lands
+/// at the start.
+async fn bossrush_exact(core: &Core, client: &str, profile: ClientProfile, go: impl FnOnce(&str) -> String + Send + 'static, code: String) -> Result<BossRushPlay, String> {
+    use crate::host::{bossrush as br, engine as eng};
     let p = bossrush_paths();
     let st = eng::status(&p);
     if !st.set_up {
@@ -3568,7 +3584,6 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
     if !st.running {
         return Err("Boss Rush isn't running: press Start first.".into());
     }
-    let pk = pick.clone();
     let (reply, hero_acc, pass) = blocking(move || {
         let p = bossrush_paths();
         let main = eng::load_state(&p).account;
@@ -3577,7 +3592,7 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
         let [create, set] = br::account_lines(&hero_acc, &pass)?;
         let _ = eng::console(&p, &create); // there already: fine
         eng::console(&p, &set).map_err(|e| format!("Boss Rush's realm didn't take the hero's login ({e}). Is it still starting? Try again in a minute."))?;
-        let text = eng::console(&p, &br::go_line(&main, &pk)).map_err(|e| {
+        let text = eng::console(&p, &go(&main)).map_err(|e| {
             if e.to_ascii_lowercase().contains("no such command") {
                 "Boss Rush's engine doesn't have boss fights yet: update the engine on this page.".to_string()
             } else {
@@ -3596,9 +3611,171 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
     let _ = crate::herokey::set_login(&profile.path, &hero_acc, Some(realm));
     let refused = crate::hybrid::refused(&profile.path);
     let session = if refused { None } else { Some(crate::hybrid::Session { user: hero_acc.clone(), pass: pass.clone(), realm: Some(realm.into()), enter: true, pick: None, make: None }) };
-    let (message, hybrid) = point_and_play_with(&core, &client, eng::REALM, true, session, true)?;
+    let (message, hybrid) = point_and_play_with(core, client, eng::REALM, true, session, true)?;
     let auto = hybrid.is_ok();
     Ok(BossRushPlay { message, engine: "exact".into(), hero, made, auto, account: if auto { String::new() } else { hero_acc }, password: if auto { String::new() } else { pass }, code })
+}
+
+// ---- Boss Rush: start anywhere (host/bossrush.rs RAIDS, the module's BossfightsStarts.h; ui/bossstart.js) -------------
+
+#[derive(Serialize)]
+struct BossRushWing {
+    key: &'static str,
+    title: &'static str,
+    fights: Vec<&'static str>,
+}
+
+#[derive(Serialize)]
+struct BossRushRaid {
+    key: &'static str,
+    title: &'static str,
+    map: u32,
+    heroic: bool,
+    whole: &'static str,
+    fights: Vec<&'static str>,
+    wings: Vec<BossRushWing>,
+}
+
+fn bossrush_raids() -> Vec<BossRushRaid> {
+    crate::host::bossrush::RAIDS
+        .iter()
+        .map(|r| BossRushRaid {
+            key: r.key,
+            title: r.title,
+            map: r.map,
+            heroic: r.heroic,
+            whole: r.whole,
+            fights: r.fights.to_vec(),
+            wings: r.wings.iter().map(|w| BossRushWing { key: w.key, title: w.title, fights: w.fights.to_vec() }).collect(),
+        })
+        .collect()
+}
+
+/// Start anywhere: in front of a boss, at a wing's first boss, or at the raid's gate; 10 or 25; with companions (the
+/// empty seats filled now) or with friends (a raid that waits for them: bossrush_go_now starts it, companions in the
+/// seats left unless `companions` is off). Exact engine only (the real raid).
+#[tauri::command]
+async fn bossrush_start_at(core: State<'_, Core>, client: String, start: String, diff: String, size: u8, party: String, companions: bool, class: String, spec: String) -> Result<BossRushPlay, String> {
+    use crate::host::bossrush as br;
+    let pick = br::check_start(&start, &diff, size, &party, companions, &class, &spec)?;
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err("Boss Rush plays with a different game folder: pick one of its version.".into());
+    }
+    let pk = pick.clone();
+    bossrush_exact(&core, &client, profile, move |main| br::start_go_line(main, &pk), String::new()).await
+}
+
+/// The console's answer to `bossfight rush <verb> RUSH [arg]` as the page reads it.
+fn rush_json(r: &crate::host::bossrush::Rush) -> serde_json::Value {
+    use crate::host::bossrush::Rush;
+    match r {
+        Rush::Run(x) => serde_json::json!({
+            "kind": "run", "start": x.start, "diff": x.diff, "phase": x.phase, "leader": x.leader, "map": x.map, "instance": x.instance,
+            "x": x.x, "y": x.y, "z": x.z, "dist": x.dist, "members": x.members, "bots": x.bots, "inside": x.inside, "step": x.step,
+            "step_title": crate::host::bossrush::start(&x.step).map(|s| s.1).unwrap_or(""), "done": x.done, "of": x.of, "boss": x.boss,
+            "wipes": x.wipes, "clears": x.clears, "marks": x.marks, "last": x.last, "ms": x.ms, "clock": crate::host::bossrush::clock(x.ms),
+        }),
+        Rush::Lobby { start, diff, waiting, size } => serde_json::json!({ "kind": "lobby", "start": start, "diff": diff, "waiting": waiting, "size": size }),
+        Rush::Offline => serde_json::json!({ "kind": "offline" }),
+        Rush::Ok { word } => serde_json::json!({ "kind": "ok", "word": word }),
+        Rush::No { why } => serde_json::json!({ "kind": "no", "why": why }),
+        Rush::Nothing => serde_json::json!({ "kind": "nothing" }),
+    }
+}
+
+/// One Boss Rush console word for the player's hero (SOAP, 127.0.0.1 only), read back.
+fn bossrush_rush_now(verb: &str, arg: Option<&str>) -> Result<crate::host::bossrush::Rush, String> {
+    use crate::host::{bossrush as br, engine as eng};
+    let p = bossrush_paths();
+    if !eng::status(&p).running {
+        return Err("Boss Rush isn't running.".into());
+    }
+    let main = eng::load_state(&p).account;
+    let text = eng::console(&p, &br::rush_line(verb, &main, arg)?).map_err(|e| {
+        if e.to_ascii_lowercase().contains("no such command") {
+            "Boss Rush's engine is older than start anywhere: update the engine on this page.".to_string()
+        } else {
+            format!("Boss Rush's realm didn't answer ({e}).")
+        }
+    })?;
+    Ok(br::parse_rush(&text))
+}
+
+/// Where the hero's raid is: the start it stands at, the phase, the party, the bosses down, the last result.
+#[tauri::command]
+async fn bossrush_state() -> Result<serde_json::Value, String> {
+    blocking(|| bossrush_rush_now("status", None).map(|r| rush_json(&r))).await
+}
+
+/// Retry from this boss: after a wipe the raid stands again in front of the first boss still standing; after a
+/// clear the same start again in a fresh instance.
+#[tauri::command]
+async fn bossrush_retry() -> Result<serde_json::Value, String> {
+    blocking(|| bossrush_rush_now("retry", None).map(|r| rush_json(&r))).await
+}
+
+/// With friends: start now with whoever is there (companions in the seats left, unless `companions` is off).
+#[tauri::command]
+async fn bossrush_go_now(companions: bool) -> Result<serde_json::Value, String> {
+    blocking(move || bossrush_rush_now("go", if companions { None } else { Some("nobots") }).map(|r| rush_json(&r))).await
+}
+
+/// Out of the run (the hero stays at its start).
+#[tauri::command]
+async fn bossrush_leave() -> Result<serde_json::Value, String> {
+    blocking(|| bossrush_rush_now("leave", None).map(|r| rush_json(&r))).await
+}
+
+/// What a friend who joins Boss Rush plays: the start, the difficulty, the size, the party word and the friend's
+/// hero (`<share>/bossrush-friend.json`, read when the friend's claim comes in: world_friends_of's login_for).
+fn bossrush_friend_file() -> PathBuf {
+    crate::host::worldshare::dir(&bossrush_paths().root).join("bossrush-friend.json")
+}
+
+/// Invite a friend into the Boss Rush raid: the same invite link as a world's (the relay tunnel, the same network),
+/// and when the friend's launcher comes in, a hero made for them on the spot (the class and spec picked here; they
+/// can respec in game for free) that waits at the same start, in the same raid.
+#[tauri::command]
+async fn bossrush_invite(start: String, diff: String, size: u8, companions: bool, friend_class: String, friend_spec: String) -> Result<DenInvite, String> {
+    use crate::host::bossrush as br;
+    let pick = br::check_start(&start, &diff, size, "friends", companions, &friend_class, &friend_spec)?;
+    blocking(move || {
+        let doc = serde_json::json!({ "start": pick.start, "diff": pick.diff_token(), "mode": pick.party.mode(), "class": pick.class, "spec": pick.spec });
+        let f = bossrush_friend_file();
+        if let Some(d) = f.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        settings::write_atomic(&f, doc.to_string().as_bytes()).map_err(|e| e.to_string())?;
+        world_invite_now(crate::host::engine::Kind::BossRush)
+    })
+    .await
+}
+
+/// A friend's claim on Boss Rush, after their login is ready: their hero (made on their hero account with the claim's
+/// password, waiting at the host's start) is the login their game uses.
+fn bossrush_friend_login(user: &str, pass: &str) -> Result<String, String> {
+    use crate::host::{bossrush as br, engine as eng};
+    let p = bossrush_paths();
+    let pick: serde_json::Value = std::fs::read_to_string(bossrush_friend_file()).ok().and_then(|t| serde_json::from_str(&t).ok()).ok_or("The host hasn't picked a fight for friends yet.")?;
+    let g = |k: &str| pick.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let (diff, size) = match g("diff").as_str() {
+        "normal25" => ("normal", 25),
+        "heroic25" => ("heroic", 25),
+        "heroic" => ("heroic", 10),
+        _ => ("normal", 10),
+    };
+    let companions = g("mode") != "group-only";
+    let sp = br::check_start(&g("start"), diff, size, "friends", companions, &g("class"), &g("spec"))?;
+    let hero = br::hero_account_of(user).ok_or("That login doesn't look right.")?;
+    let [create, set] = br::account_lines(&hero, pass)?;
+    let _ = eng::console(&p, &create);
+    eng::console(&p, &set)?;
+    match br::parse_reply(&eng::console(&p, &br::start_go_line(user, &sp))?) {
+        br::HeroReply::Ok { .. } => Ok(hero),
+        br::HeroReply::No(why) => Err(format!("Your friend's hero couldn't be made: {why}.")),
+        br::HeroReply::Nothing => Err("Boss Rush's realm gave no answer for your friend's hero.".into()),
+    }
 }
 
 #[derive(Serialize)]
@@ -4627,6 +4804,12 @@ pub fn run() {
             bossrush_board,
             bossrush_record,
             bossrush_code,
+            bossrush_start_at, // start anywhere (ui/bossstart.js)
+            bossrush_state,
+            bossrush_retry,
+            bossrush_go_now,
+            bossrush_leave,
+            bossrush_invite,
             forge_state, // Forge, the Den's terrain editor (host/forge.rs, ui/den.js "Open in Forge")
             forge_install,
             forge_open,
@@ -5261,6 +5444,328 @@ pub fn single_play_test_cli(cli: crate::playtest::Cli) -> i32 {
             std::thread::sleep(Duration::from_secs(8));
         }
         save(&rep);
+    }
+    end(sp_stop_all(&core, &profile, k, rep))
+}
+
+/// Boss Rush's status for the playtest: the run as the module sees it, or why not (offline, an error).
+fn br_status() -> Result<crate::host::bossrush::RushRun, String> {
+    use crate::host::bossrush::Rush;
+    match bossrush_rush_now("status", None)? {
+        Rush::Run(r) => Ok(r),
+        Rush::Lobby { waiting, size, .. } => Err(format!("waiting for players ({waiting} of {size})")),
+        Rush::Offline => Err("the hero isn't in the world yet".into()),
+        Rush::No { why } => Err(why),
+        Rush::Ok { word } => Err(format!("unexpected answer: {word}")),
+        Rush::Nothing => Err("the realm gave no answer (an engine older than start anywhere?)".into()),
+    }
+}
+
+/// Wait (at most `max_s`) until `ok` says the run is where it should be; the last status and its verdict either way.
+fn br_wait(max_s: u64, mut ok: impl FnMut(&crate::host::bossrush::RushRun) -> Result<String, String>) -> (Option<crate::host::bossrush::RushRun>, Result<String, String>) {
+    let until = std::time::Instant::now() + Duration::from_secs(max_s);
+    let mut last = (None, Err("never looked".to_string()));
+    while std::time::Instant::now() < until {
+        match br_status() {
+            Ok(r) => {
+                let v = ok(&r);
+                let done = v.is_ok();
+                last = (Some(r), v);
+                if done {
+                    return last;
+                }
+            }
+            Err(e) => last.1 = Err(e),
+        }
+        std::thread::sleep(Duration::from_secs(3));
+    }
+    last
+}
+
+/// `Leyline play-test --bossrush [--fresh] [--game <folder>] [--boss <start>] [--size 10|25] [--diff normal|heroic]
+/// [--hero <class>-<spec>] [--hold <s>] [--fight-max <s>] [--checks bossstart,bossfight]` (crate::sptest; owner 12 Nov:
+/// "tested by you at least a full boss fight run through"): Boss Rush through the page's own functions with nobody
+/// at the keyboard: the Boss Rush install set up from the game folder (bossrush_setup's begin_kind), then the start
+/// picker's one click (bossrush_start_at's bossrush_exact: the hero, its waiting go, the game signed in), then
+/// * `bossstart`: the raid in front of the boss, checked on the realm itself (`bossfight rush status`: the start's
+///   map, an instance of its own, the hero within a few yards of the start, a full raid of companions inside);
+/// * `bossfight`: the hero handed to the bots' own AI (`bossfight rush autopilot on`: nobody is at the keys), the
+///   fight begun as a player would (`bossfight rush pull`: the final fight's paladin spoken to), then watched to its
+///   end: the engage, the boss's phase casts, the outcome (a kill or a wipe, as it was), then Retry (a wipe: the
+///   heroes' own auto retry, else `bossfight rush retry`; a clear: the same start in a fresh instance) until the raid
+///   is in front of the boss again. Bots that can't win don't fail it: a fight that never starts or ends, or can't be
+///   retried, does.
+/// Writes `<data>/br-play-test.json`. Exit 0 only when every step passed.
+pub fn bossrush_play_test_cli(cli: crate::playtest::Cli) -> i32 {
+    use crate::host::{bossrush as br, engine as eng};
+    use crate::sptest::{self as sp, Check};
+    std::hint::black_box(sp::BR_MARK.as_ptr());
+    let dir = settings::app_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let k = eng::Kind::BossRush;
+    let now = crate::denclick::now_ms;
+    let mut rep = sp::Report::new("bossrush", &cli.sp_checks, now());
+    rep.levelling = "";
+    let report_path = dir.join(sp::BR_REPORT);
+    let save = |rep: &sp::Report| {
+        let _ = settings::write_atomic(&report_path, serde_json::to_string_pretty(rep).unwrap_or_default().as_bytes());
+    };
+    let say = |l: &str| sp_say(&dir, l);
+    let end = |mut rep: sp::Report| -> i32 {
+        rep.finish(now());
+        let _ = settings::write_atomic(&dir.join(sp::BR_REPORT), serde_json::to_string_pretty(&rep).unwrap_or_default().as_bytes());
+        sp_say(&dir, &format!("{}\n{}", rep.table(), if rep.passed { "PASS" } else { "FAIL" }));
+        if rep.passed { 0 } else { 1 }
+    };
+    let want = |c: Check| cli.sp_checks.contains(&c);
+    let (class, spec) = cli.hero.split_once('-').unwrap_or(("mage", "fire"));
+    let diff = if cli.br_heroic { "heroic" } else { "normal" };
+    say(&format!("Boss Rush playtest: {} ({diff}, {} players), hero {class} {spec}, checks: {}", cli.boss, cli.br_size, cli.sp_checks.iter().map(|c| c.word()).collect::<Vec<_>>().join(",")));
+    let had = dir.join(settings::FILE_NAME).exists();
+    rep.extra["fresh"] = serde_json::json!({ "asked": cli.fresh, "empty": !had, "dir": dir });
+    rep.extra["start"] = serde_json::json!({ "start": cli.boss, "diff": diff, "size": cli.br_size, "hero": cli.hero });
+    if cli.fresh && had {
+        rep.step("fresh data folder", Some(false), 0, "--fresh needs an empty data folder: this one already has a launcher's settings");
+        return end(rep);
+    }
+    if !eng::supported() {
+        rep.step("setup", Some(false), 0, "Boss Rush's exact engine is made for Windows PCs: run this on the PC");
+        return end(rep);
+    }
+    let Some((scope, title, raid)) = br::start(&cli.boss) else {
+        rep.step("setup", Some(false), 0, format!("{} isn't a Boss Rush start", cli.boss));
+        return end(rep);
+    };
+    let pick = match br::check_start(&cli.boss, diff, cli.br_size, "companions", true, class, spec) {
+        Ok(p) => p,
+        Err(e) => {
+            rep.step("setup", Some(false), 0, e);
+            return end(rep);
+        }
+    };
+    let core = Core {
+        settings: Mutex::new(settings::load(&dir)),
+        dir: dir.clone(),
+        known_urls: Mutex::new(HashSet::new()),
+        mods_lock: Arc::new(Mutex::new(())),
+        games: Mutex::new(Vec::new()),
+        upd: Mutex::new(UpdState::default()),
+        deep_link: Mutex::new(None),
+    };
+    let p = bossrush_paths();
+    // 1. the game folder
+    let t = std::time::Instant::now();
+    if let Some(g) = &cli.game {
+        let same = |a: &Path| a.to_string_lossy().trim_end_matches(['\\', '/']).eq_ignore_ascii_case(g.to_string_lossy().trim_end_matches(['\\', '/']));
+        if !core.snapshot().clients.iter().any(|c| same(&c.path)) {
+            if let Err(e) = clients::detect(g).map_err(|e| e.to_string()).and_then(|det| add_profile(&core, g.clone(), det)) {
+                rep.step("game folder", Some(false), t.elapsed().as_millis() as u64, format!("couldn't add the game folder: {e}"));
+                return end(rep);
+            }
+        }
+    }
+    let found = find_folder_now(&core, k);
+    let Some(client) = found.picked.clone() else {
+        rep.step("game folder", Some(false), t.elapsed().as_millis() as u64, format!("no single game folder of the right version ({} found)", found.found.len()));
+        return end(rep);
+    };
+    let profile = match world_client(&core, k, &client) {
+        Ok(pr) => pr,
+        Err(e) => {
+            rep.step("game folder", Some(false), t.elapsed().as_millis() as u64, e);
+            return end(rep);
+        }
+    };
+    rep.step("game folder", Some(true), t.elapsed().as_millis() as u64, format!("{} ({})", profile.name, profile.path.display()));
+    // 2. the disk check, 3. setup (the engine, the raid maps from the game folder, the database) and the start
+    let t = std::time::Instant::now();
+    let pf = eng::preflight(&p);
+    rep.step("preflight", Some(pf.ok), t.elapsed().as_millis() as u64, if pf.ok { format!("{:.1} GB free, {:.1} GB needed", pf.free_gb, pf.need_gb) } else { pf.message.clone() });
+    if !pf.ok {
+        return end(rep);
+    }
+    rep.phase = "setup".into();
+    save(&rep);
+    let t = std::time::Instant::now();
+    let mut setup = eng::begin_kind(&settings::app_dir(), k, Some(profile.path.clone()), false).and_then(|line| {
+        say(&format!("setup: {line}"));
+        sp_follow_job(&dir, "setup", 200 * 60)
+    });
+    if setup.is_ok() && !eng::status(&p).running {
+        setup = eng::begin_kind(&settings::app_dir(), k, None, false).and_then(|line| {
+            say(&format!("start: {line}"));
+            sp_follow_job(&dir, "start", 20 * 60)
+        });
+    }
+    let st = eng::status(&p);
+    let ok = setup.is_ok() && st.running;
+    rep.step("setup", Some(ok), t.elapsed().as_millis() as u64, match &setup {
+        Err(e) => e.clone(),
+        Ok(()) if !st.running => format!("set up {} but not running (database {}, login {}, world {})", st.set_up, st.db_up, st.auth_up, st.world_up),
+        Ok(()) => format!("Boss Rush's engine {}, set up and running", if st.version.is_empty() { "?".to_string() } else { st.version.clone() }),
+    });
+    save(&rep);
+    if !ok {
+        return end(rep);
+    }
+    // 4. the start picker's one click (the realm may still be loading: a few tries)
+    rep.phase = "entering".into();
+    save(&rep);
+    let t = std::time::Instant::now();
+    let mut played: Result<BossRushPlay, String> = Err("not tried".into());
+    for _ in 0..16 {
+        let pk = pick.clone();
+        played = tauri::async_runtime::block_on(bossrush_exact(&core, &client, profile.clone(), move |main| br::start_go_line(main, &pk), String::new()));
+        match &played {
+            Err(e) if e.contains("didn't answer") || e.contains("still starting") || e.contains("gave no answer") || e.contains("didn't take") => {
+                say(&format!("play: {e} (trying again in 15 s)"));
+                std::thread::sleep(Duration::from_secs(15));
+            }
+            _ => break,
+        }
+    }
+    let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
+    let play = match played {
+        Ok(pl) => pl,
+        Err(e) => {
+            rep.step("play", Some(false), t.elapsed().as_millis() as u64, e);
+            return end(sp_stop_all(&core, &profile, k, rep));
+        }
+    };
+    rep.pid = pid;
+    rep.hero = true;
+    rep.account = br::hero_account(&eng::load_state(&p).account);
+    rep.step("play", Some(pid != 0), t.elapsed().as_millis() as u64, format!("{} {title} ({}): the game started (pid {pid}), hero {} ({})", scope.word(), raid.title, play.hero, if play.made { "made now" } else { "ready" }));
+    rep.step("signed in by itself", Some(play.auto), 0, if play.auto { "the login screen got the hero's login" } else { "the game was left at its login screen" });
+    save(&rep);
+    // 5. the hero in the world (the realm's own word: its status answers once the hero is in)
+    let t = std::time::Instant::now();
+    let (seen, v) = br_wait(sp::IN_WORLD_S, |_| Ok(String::new()));
+    match (seen.as_ref(), v) {
+        (Some(r), Ok(_)) => {
+            rep.step("in the world", Some(true), t.elapsed().as_millis() as u64, format!("{} on map {} ({})", r.leader, r.map, if r.phase.is_empty() { "-" } else { r.phase.as_str() }));
+        }
+        (_, v) => {
+            let e = v.err().unwrap_or_else(|| "no answer".to_string());
+            rep.step("in the world", Some(false), t.elapsed().as_millis() as u64, e);
+            return end(sp_stop_all(&core, &profile, k, rep));
+        }
+    }
+    rep.phase = "in_world".into();
+    save(&rep);
+    // 6. bossstart: in front of the boss, with the full raid
+    let start_map = raid.map;
+    let size = u32::from(cli.br_size);
+    let t = std::time::Instant::now();
+    let (r0, v) = br_wait(sp::START_WITHIN_S, |r| sp::judge_start(r, &cli.boss, start_map, size));
+    let at_start = v.is_ok();
+    if want(Check::BossStart) {
+        rep.step("bossstart", Some(at_start), t.elapsed().as_millis() as u64, v.clone().unwrap_or_else(|e| e));
+    } else {
+        rep.step("at the start", Some(at_start), t.elapsed().as_millis() as u64, v.clone().unwrap_or_else(|e| e));
+    }
+    rep.extra["at_start"] = serde_json::json!(r0.as_ref().map(|r| serde_json::json!({ "map": r.map, "instance": r.instance, "x": r.x, "y": r.y, "z": r.z, "dist": r.dist, "members": r.members, "bots": r.bots })));
+    rep.phase = "boss_ready".into();
+    save(&rep);
+    let hold = Duration::from_secs(cli.hold.clamp(8, crate::playtest::HOLD_MAX));
+    std::thread::sleep(hold);
+    // 7. bossfight: a full fight to its end, then Retry
+    if want(Check::BossFight) && at_start {
+        let t = std::time::Instant::now();
+        let mut timeline: Vec<serde_json::Value> = Vec::new();
+        let note = |line: String, timeline: &mut Vec<serde_json::Value>| {
+            say(&format!("fight: {line}"));
+            timeline.push(serde_json::json!({ "s": t.elapsed().as_secs(), "what": line }));
+        };
+        let auto = bossrush_rush_now("autopilot", Some("on")).map(|r| rush_json(&r)).unwrap_or_else(|e| serde_json::json!({ "kind": "no", "why": e }));
+        note(format!("the hero on the bots' own AI: {auto}"), &mut timeline);
+        let pulled = bossrush_rush_now("pull", None).map(|r| rush_json(&r)).unwrap_or_else(|e| serde_json::json!({ "kind": "no", "why": e }));
+        note(format!("pull: {pulled}"), &mut timeline);
+        let before = r0.clone();
+        let mut prev = before.clone();
+        let mut engaged = false;
+        let mut outcome: Option<(String, u64)> = None;
+        let mut phases: Vec<String> = Vec::new();
+        let mut shot_fighting = false;
+        let until_engage = std::time::Instant::now() + Duration::from_secs(sp::ENGAGE_WITHIN_S);
+        let until_end = std::time::Instant::now() + Duration::from_secs(cli.fight_max);
+        while std::time::Instant::now() < until_end {
+            if !engaged && std::time::Instant::now() > until_engage {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(3));
+            let Ok(cur) = br_status() else { continue };
+            for e in sp::fight_events(prev.as_ref(), &cur) {
+                note(e, &mut timeline);
+            }
+            if cur.phase == "fighting" {
+                engaged = true;
+                if !shot_fighting {
+                    shot_fighting = true;
+                    rep.phase = "fighting".into();
+                    save(&rep);
+                }
+            }
+            for m in &cur.marks {
+                if !phases.contains(m) {
+                    phases.push(m.clone());
+                }
+            }
+            let base = before.as_ref().map(|b| (b.wipes, b.clears)).unwrap_or((0, 0));
+            if cur.clears > base.1 || (cur.phase == "cleared") {
+                engaged = true;
+                outcome = Some(("clear".into(), cur.ms));
+            } else if cur.wipes > base.0 || cur.phase == "wiped" {
+                engaged = engaged || cur.wipes > base.0;
+                outcome = Some(("wipe".into(), cur.ms));
+            }
+            prev = Some(cur);
+            if outcome.is_some() {
+                break;
+            }
+        }
+        rep.phase = "fight_end".into();
+        save(&rep);
+        std::thread::sleep(Duration::from_secs(6));
+        // Retry: back in front of the boss (a wipe: the heroes' own retry in 8 s, else the page's Retry; a clear: the
+        // same start in a fresh instance)
+        let retry: Result<String, String> = match outcome.as_ref().map(|o| o.0.as_str()) {
+            None => Err("no end to retry from".into()),
+            Some(what) => {
+                let old_instance = prev.as_ref().map(|r| r.instance).unwrap_or(0);
+                let (_, mut v) = br_wait(30, |r| if r.phase == "ready" { Ok(format!("ready again by itself (instance {})", r.instance)) } else { Err(r.phase.clone()) });
+                if v.is_err() {
+                    let word = bossrush_rush_now("retry", None).map(|r| rush_json(&r)).unwrap_or_else(|e| serde_json::json!({ "kind": "no", "why": e }));
+                    note(format!("Retry pressed: {word}"), &mut timeline);
+                    v = br_wait(sp::RETRY_WITHIN_S, |r| {
+                        if r.phase != "ready" {
+                            return Err(r.phase.clone());
+                        }
+                        if what == "clear" && r.instance == old_instance {
+                            return Err("still the cleared instance".into());
+                        }
+                        Ok(format!("Retry: ready again (instance {})", r.instance))
+                    })
+                    .1;
+                }
+                v.and_then(|line| {
+                    let (_, near) = br_wait(60, |r| if r.dist <= sp::NEAR_YD { Ok(format!("{:.1} yd from the start", r.dist)) } else { Err(format!("{:.1} yd from the start", r.dist)) });
+                    near.map(|n| format!("{line}, {n}"))
+                })
+            }
+        };
+        if retry.is_ok() {
+            rep.phase = "retried".into();
+            save(&rep);
+        }
+        let _ = bossrush_rush_now("autopilot", Some("off"));
+        let (ok, line) = sp::judge_fight(engaged, outcome.as_ref().map(|(w, ms)| (w.as_str(), *ms)), &phases, retry);
+        rep.extra["fight"] = serde_json::json!({ "engaged": engaged, "outcome": outcome.as_ref().map(|o| o.0.clone()), "ms": outcome.as_ref().map(|o| o.1), "phases": phases, "timeline": timeline });
+        rep.step("bossfight", Some(ok), t.elapsed().as_millis() as u64, line);
+        save(&rep);
+        std::thread::sleep(Duration::from_secs(8));
+    } else if want(Check::BossFight) {
+        rep.step("bossfight", Some(false), 0, "the raid never stood in front of the boss: the fight wasn't started");
     }
     end(sp_stop_all(&core, &profile, k, rep))
 }

@@ -38,6 +38,7 @@
 <link rel="stylesheet" href="single.css"><!-- Single player: its page and Home row (single.js) -->
 <link rel="stylesheet" href="oneclick.css"><!-- single player in one click: the setup card, the chip, Home's button (oneclick.js) -->
 <link rel="stylesheet" href="bossrush.css"><!-- Boss Rush: its page and Home row (bossrush.js) -->
+<link rel="stylesheet" href="bossstart.css"><!-- Boss Rush, start anywhere: its picker and the raid's state (bossstart.js) -->
 <link rel="stylesheet" href="solo.css"><!-- Play solo everywhere, Invite a friend, the GM command center (solo.js, gmcenter.js) -->
 <link rel="stylesheet" href="hostfriends.css"><!-- Play with friends: the one window, Ready for friends?, the friend's steps (hostfriends.js) -->
 <link rel="stylesheet" href="info.css"><!-- the "i" button and its bubble (info.js) -->
@@ -484,6 +485,7 @@
 
   <!-- BOSS RUSH (bossrush.js): the engine (exact or light), the fight, the difficulty, the hero, Fight; the board -->
   <section class="page" id="page-bossrush">
+    <div class="panel wide bs" id="bs" role="region" aria-label="Start anywhere"></div><!-- bossstart.js: a boss, a wing or the whole raid; companions or friends; Start; Retry -->
     <div class="panel wide br" id="br"></div>
   </section>
 
@@ -1006,6 +1008,7 @@
 <script src="oneclick.js"></script><!-- single player in one click: folder, room, Quick start, the setup card, errors (window.LeylineOneClick; after vanilla.js) -->
 <script src="characters.js"></script><!-- Characters: On this PC and Online (window.LeylineCharacters; after vanilla.js) -->
 <script src="bossrush.js"></script><!-- Boss Rush: its page (window.LeylineBossRush; after app.js) -->
+<script src="bossstart.js"></script><!-- Boss Rush, start anywhere (window.LeylineBossStart; after listkit.js and bossrush.js) -->
 <script src="singleupdate.js"></script><!-- Single player: the bots, always up to date (Update the bots, Bots updated; window.LeylineSingleUpdate) -->
 <script src="gmcenter.js"></script><!-- the GM command center for your own worlds (window.LeylineGM; after den.js) -->
 <script src="hostnetwork.js"></script><!-- Host: the Network tab (host/network.rs) -->

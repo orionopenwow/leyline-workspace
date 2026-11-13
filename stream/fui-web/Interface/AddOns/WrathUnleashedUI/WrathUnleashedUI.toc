@@ -18,6 +18,7 @@ DenHome.lua
 DenBar.lua
 Gizmo.lua
 DenKeys.lua
+DenCoach.lua
 BuildTools.lua
 Dojo.lua
 DenTourney.lua
@@ -38,6 +39,7 @@ Workshop.lua
 CompanionsData.lua
 Companions.lua
 CompanionsTabs.lua
+CompanionsMore.lua
 BotBar.lua
 BossFights.lua
 Social.lua

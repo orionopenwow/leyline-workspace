@@ -1,0 +1,94 @@
+/* The Single player page's "Mods in this world" (index.html #spm, spmods.js): the same parts as the Friends area
+   (friends.css .spf): the title on the panel's header strip in Marcellus, each mod a raised card on the stone, the
+   status pills like a realm's, the list kit's tabs and chips, the launcher's own buttons. Only the theme's tokens. */
+.spm { display: grid; gap: 14px; }
+.spm-hslot, .spm-eslot, .spm-foot { display: grid; gap: 10px; }
+.spm-eslot:empty, .spm-foot:empty { display: none; }
+.spm-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px;
+  margin: -22px -26px 0; padding: 15px 26px 14px;
+  background: var(--t-panel-head); border-bottom: var(--t-border-w, 1px) solid var(--t-panel-border);
+  border-radius: calc(var(--t-radius) - 1px) calc(var(--t-radius) - 1px) 0 0;
+}
+html.phone .spm-head { margin: -14px -12px 0; padding: 12px; }
+/* the stone (dark base, slate.css), as the Friends area's head (friends.css) */
+html:not([data-base="light"]) .spm-head {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.42)), var(--stone);
+  border-bottom: 1px solid var(--sl-edge, #0a0908);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+html:not([data-base="light"]) .spm .spm-title { color: var(--sl-gold, #e2bd66); text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 2px 6px rgba(0, 0, 0, 0.6); }
+html:not([data-base="light"]) .spm-head .spm-lede { color: #c4c1b6; }
+/* the kit's tabs: the launcher's page tabs, as in the Friends list */
+.spm .lk-tabs { border: var(--t-border-w, 1px) solid var(--t-panel-border); }
+.spm .lk-tab { color: var(--t-text-2); font-size: 12.5px; }
+.spm-titles { display: grid; gap: 4px; min-width: 0; flex: 1 1 320px; }
+.spm .spm-title { margin: 0; font: 400 23px/1.2 "Marcellus", Georgia, serif; letter-spacing: 0.03em; text-transform: none; }
+.spm-lede { margin: 0; font-size: 13px; color: var(--t-text-2, var(--t-muted)); max-width: 72ch; }
+.spm-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.spm-tools .spm-kind { width: auto; min-width: 0; field-sizing: content; height: 32px; padding: 0 28px 0 10px; font-size: 12.5px; }
+.spm-folder { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+
+/* nothing in the game folder yet: a well sunk into the stone, the store one click away */
+.spm-empty {
+  display: grid; gap: 6px; justify-items: start; padding: 14px 16px; border-radius: 8px;
+  background: var(--t-surface-2); border: var(--t-border-w, 1px) dashed var(--t-border);
+}
+.spm-empty p { margin: 0; font-size: 12.5px; color: var(--t-muted); max-width: 64ch; }
+.spm-empty-t { font: 400 17px/1.2 "Marcellus", Georgia, serif; letter-spacing: 0.02em; }
+
+/* the list (listkit.js) */
+.spm-list { display: grid; gap: 8px; }
+.spm-list .lk-body { gap: 8px; }
+.spm-list .lk-group { font: 400 15px/1.2 "Marcellus", Georgia, serif; letter-spacing: 0.02em; color: var(--t-text); }
+.spm-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; padding: 11px 14px;
+  background: var(--t-card); border: var(--t-border-w, 1px) solid var(--t-card-border); border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 4px 14px rgba(0, 0, 0, 0.14);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+html[data-base="light"] .spm-row { box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 14px rgba(16, 24, 40, 0.07); }
+.spm-row:hover { border-color: var(--t-border-strong); }
+.spm-row[aria-selected="true"] {
+  border-color: color-mix(in srgb, var(--t-accent) 55%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--t-accent) 14%, transparent), transparent 60%), var(--t-card);
+  box-shadow: inset 3px 0 0 var(--t-accent), 0 4px 14px rgba(0, 0, 0, 0.14);
+}
+.spm-row.has-update { box-shadow: inset 3px 0 0 var(--t-good, var(--t-accent)), 0 4px 14px rgba(0, 0, 0, 0.14); }
+.spm-row.off .spm-name { opacity: 0.65; }
+.spm-top { grid-column: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.spm-name { font: 400 16.5px/1.2 "Marcellus", Georgia, serif; letter-spacing: 0.02em; }
+.spm-ver { font-size: 12px; color: var(--t-muted); }
+.spm-line { grid-column: 1; margin: 0; font-size: 12.5px; color: var(--t-muted); }
+.spm-acts { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; }
+html.phone .spm-row { grid-template-columns: 1fr; }
+html.phone .spm-acts { grid-column: 1; grid-row: auto; justify-content: flex-start; }
+
+/* On / Off: a switch with its word */
+.spm-switch {
+  display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px 0 4px; border-radius: 999px; cursor: pointer;
+  font: 600 12px var(--t-font); color: var(--t-muted); background: var(--t-surface-2); border: var(--t-border-w, 1px) solid var(--t-border);
+}
+.spm-switch::before {
+  content: ""; width: 30px; height: 18px; border-radius: 999px; flex: none;
+  background: radial-gradient(circle at 9px 50%, var(--t-text-2, #ccc) 6px, transparent 6.5px), var(--t-raised, rgba(127, 127, 127, 0.3));
+  transition: background 0.15s;
+}
+.spm-switch.on { color: var(--t-text); border-color: color-mix(in srgb, var(--t-good, var(--t-accent)) 55%, transparent); }
+.spm-switch.on::before { background: radial-gradient(circle at 21px 50%, #fff 6px, transparent 6.5px), var(--t-good, var(--t-accent)); }
+.spm-switch:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+.spm-switch[disabled] { opacity: 0.55; cursor: default; }
+
+.spm-fine { margin: 0; }
+.spm-status:empty { display: none; }
+.spm-status { margin: 0; }
+.spm-restart-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+
+/* Mods & Addons › Discover while picking for single player (app.js paintSpBar) */
+.dc-sp {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin: 0 0 10px; padding: 10px 14px;
+  border-radius: 8px; background: color-mix(in srgb, var(--t-accent) 12%, var(--t-surface-2)); border: var(--t-border-w, 1px) solid color-mix(in srgb, var(--t-accent) 45%, var(--t-border));
+}
+.dc-sp[hidden] { display: none; }
+.dc-sp-text { font-size: 13px; color: var(--t-text); }
+.dc-card .acts .dc-sp-add { white-space: nowrap; }

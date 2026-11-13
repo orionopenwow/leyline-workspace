@@ -7,9 +7,10 @@
 --               opens its menu (follow, stay, attack my target, passive, gear up, spec and role, send home).
 --               Slots are laid out out of combat only (the client's rule for secure frames); a change in combat
 --               waits for the fight's end.
---   Orders bar  Follow, Stay, Attack my target, Passive (then Fight) and Pull (your tank bot opens on your target)
---               for every bot. Each has a key binding (Esc > Key Bindings > Bots; Bindings.xml), unbound until you
---               set one; its key shows on the button.
+--   Orders bar  Follow, Stay, Attack my target, Passive (then Fight), Pull (your tank bot opens on your target),
+--               Regroup (a far bot is brought to you) and Flee (they stop fighting and run with you) for every bot.
+--               Each has a key binding (Esc > Key Bindings > Bots; Bindings.xml), unbound until you set one; its key
+--               shows on the button. Keys too for Drink, the Ready? checklist and your target bot's gear.
 --   Tips        three short tips the first time a character of this account has bots; never again after
 --               (/comp tips shows them again).
 -- The icons are the game's own (the pet bar's follow, stay, attack and passive art), by path only.
@@ -35,7 +36,13 @@ BINDING_NAME_WUBOTS_STAY = "Bots: stay here"
 BINDING_NAME_WUBOTS_ATTACK = "Bots: attack my target"
 BINDING_NAME_WUBOTS_PASSIVE = "Bots: passive / fight"
 BINDING_NAME_WUBOTS_PULL = "Bots: pull my target"
+BINDING_NAME_WUBOTS_REGROUP = "Bots: regroup on me"
+BINDING_NAME_WUBOTS_FLEE = "Bots: flee with me"
+BINDING_NAME_WUBOTS_DRINK = "Bots: drink now"
 BINDING_NAME_WUBOTS_WINDOW = "Bots window"
+BINDING_NAME_WUBOTS_READY = "Bots: Ready? checklist"
+BINDING_NAME_WUBOTS_GEAR = "Bots: gear of my target bot"
+BINDING_NAME_WUBOTS_TACTICS = "Bots: tactics"
 
 local ORDERS = {
     { key = "follow", label = "Follow", bind = "WUBOTS_FOLLOW", icon = PET_FOLLOW_TEXTURE or "Interface\\Icons\\Ability_Tracking",
@@ -48,6 +55,10 @@ local ORDERS = {
         tip = "Bots stop attacking (press again: they fight)." },
     { key = "pull", label = "Pull", bind = "WUBOTS_PULL", icon = "Interface\\Icons\\Ability_Warrior_Charge",
         tip = "Your tank bot opens the fight on your target; the others join in." },
+    { key = "regroup", label = "Regroup", bind = "WUBOTS_REGROUP", icon = "Interface\\Icons\\Ability_Hunter_Pathfinding",
+        tip = "Every bot comes back and follows you; a bot far away is brought to you." },
+    { key = "flee", label = "Flee", bind = "WUBOTS_FLEE", icon = "Interface\\Icons\\Ability_Rogue_Sprint",
+        tip = "Bots stop fighting and run with you. Press Passive (it says Fight) once you are safe." },
 }
 
 local ACTIVITY = { following = { "Following", 0.45, 0.9, 0.45 }, fighting = { "Fighting", 1, 0.5, 0.3 },
@@ -64,9 +75,13 @@ end
 
 -- ---------------------------------------------------------------- orders and keys
 
--- One key or button press: follow, stay, attack, passive (toggles with fight), pull; "window" opens the window.
+-- One key or button press: follow, stay, attack, passive (toggles with fight), pull, regroup, flee, drink; "window"
+-- opens the window, "ready" the Ready? checklist, "tactics" the Tactics tab, "gear" your target bot's gear.
 function C.Key(what)
     if what == "window" then return C.Toggle() end
+    if what == "ready" then return C.OpenReady and C.OpenReady() end
+    if what == "tactics" then return C.Toggle("tactics") end
+    if what == "gear" then return C.OpenGear and C.OpenGear() end
     if #C.bots == 0 then return C.Notice("You have no bots with you.") end
     if what == "passive" then what = allPassive() and "active" or "passive" end
     return C.BarOrder(what)
@@ -363,8 +378,8 @@ end
 local TIPS = {
     { "Your bots", "This bar shows your bots. Left-click one to target it; right-click it for orders, its spec, its role "
         .. "and new gear.", "bar" },
-    { "Orders for everyone", "Follow, Stay, Attack, Passive and Pull for all your bots at once. Give them keys in Esc > Key "
-        .. "Bindings > Bots.", "orders" },
+    { "Orders for everyone", "Follow, Stay, Attack, Passive, Pull, Regroup and Flee for all your bots at once. Give them "
+        .. "keys in Esc > Key Bindings > Bots.", "orders" },
     { "More bots", "Open the Bots window (/comp, or the minimap button) to fill a party or a raid, bring your alts or a "
         .. "levelling buddy, or pick a dungeon.", nil },
 }

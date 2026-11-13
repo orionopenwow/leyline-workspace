@@ -1,6 +1,17 @@
 """Single player playtest on this PC, nobody at the keyboard (owner 11 Nov: "make sure you do your own playtests on my
 pc and level up before releasing and then release"). Control step `sp-playtest`.
 
+With --bossrush (Control step `sp-playtest-boss`; owner 12 Nov: "tested by you at least a full boss fight run
+through"): Boss Rush instead of single player, in the same fresh data folder with the same guards, puts and clean-up:
+`Leyline play-test --fresh --bossrush --boss <start> --checks bossstart,bossfight`: the Boss Rush install set up from
+your game folder, the start picker's one click (the hero, the game signed in), then `bossstart` (the raid in front of
+the boss, a full companion raid, on the realm's own word) and `bossfight` (the hero on the bots' own AI, the fight
+begun as a player would, watched to its end: the engage, the boss's phase casts, a kill or a wipe as it was, then
+Retry back in front of the boss). Results in logs\boss-playtest\<time>\ and logs\boss-playtest\latest.txt.
+
+    python -I tools/first-run/sp_playtest.py run --bossrush [--boss frozen-throne] [--size 10|25] [--diff normal|heroic]
+                                                [--hero mage-fire] [--fight-max 1500] [--checks bossstart,bossfight]
+
     python -I tools/first-run/sp_playtest.py [run] [--kind single|vanilla] [--both] [--game <Wrath folder>]
                                                 [--hold 20] [--level 10] [--checks levelup,companions,stoponexit,repair]
                                                 [--no-key] [--keep] [--work <folder>] [--timeout 230]
@@ -56,6 +67,13 @@ SHA_URL = RELEASE + "Leyline.exe.sha256"
 INFO_URL = RELEASE + "launcher-test.json"
 SP_MARK = b"leyline-play-test-single-v1"      # launcher/src-tauri/src/sptest.rs SP_MARK
 REPORT = "sp-play-test.json"                  # sptest.rs REPORT
+BR_MARK = b"leyline-play-test-bossrush-v1"    # sptest.rs BR_MARK
+BR_REPORT = "br-play-test.json"               # sptest.rs BR_REPORT
+BR_CHECKS = "bossstart,bossfight"
+# Boss Rush's report phases (app.rs bossrush_play_test_cli) the game window is photographed at
+BR_SHOTS = {"entering": "entering", "in_world": "in-world", "boss_ready": "in-front-of-the-boss", "fighting": "fighting",
+            "fight_end": "fight-end", "retried": "retried"}
+BR_WORLD_PHASES = ("boss_ready", "fighting")
 CLI_LOG = "sp-play-test.log"                  # sptest.rs LOG
 KEY_ENV = fr.KEY_ENV
 PORTS = {"login": 3724, "world": 8085, "database": 13306, "soap": 17878}   # host/engine.rs
@@ -82,6 +100,10 @@ FIX = {
     "stoponexit": "Tell Claude this line (app.rs stop_world_when_closed).",
     "repair": "Tell Claude this line (host/engine.rs begin_repair).",
     "clean up": "Stop the world from the launcher's Single player page if it still runs; tell Claude this line.",
+    "in the world": "Look at the screenshots in this run's folder; tell Claude this line.",
+    "bossstart": "Send the in-front-of-the-boss screenshot and this line to Claude (the module's start, BossfightsStarts.h).",
+    "at the start": "Send the in-front-of-the-boss screenshot and this line to Claude.",
+    "bossfight": "Send the fighting and fight-end screenshots and this line to Claude (bossrush.rs, the module's run).",
 }
 
 
@@ -215,13 +237,23 @@ def build_cmd(exe: Path, game: Path, kind: str, first: bool, a) -> list:
     cmd = [str(exe), "play-test"]
     if first:
         cmd.append("--fresh")
+    if kind == "bossrush":
+        return cmd + ["--game", str(game), "--bossrush", "--boss", a.boss, "--size", str(a.size), "--diff", a.diff, "--hero", a.hero,
+                      "--hold", str(max(8, min(int(a.hold), 600))), "--fight-max", str(max(60, min(int(a.fight_max), 3600))),
+                      "--checks", a.checks or BR_CHECKS]
     cmd += ["--game", str(game), "--single", kind, "--hold", str(max(8, min(int(a.hold), 600))),
             "--level", str(max(2, min(int(a.level), 80))), "--checks", a.checks]
     return cmd
 
 
 def kind_list(a) -> list:
+    if getattr(a, "bossrush", False):
+        return ["bossrush"]
     return list(KINDS) if a.both else [a.kind]
+
+
+def boss(a) -> bool:
+    return bool(getattr(a, "bossrush", False))
 
 
 # ------------------------------------------------------------------------------------------------ the outside world
@@ -293,11 +325,11 @@ def run(a, io=None, lines=None, owner=None, owners=None, root=None, stamp=None) 
     ln = lines or Lines()
     root = Path(root) if root else ROOT
     stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
-    out = root / "logs" / "sp-playtest" / stamp
+    out = root / "logs" / ("boss-playtest" if boss(a) else "sp-playtest") / stamp
     out.mkdir(parents=True, exist_ok=True)
     owner = Path(owner) if owner else fr.owner_app_dir()
     owners = owner_dirs() if owners is None else owners
-    print("SINGLE PLAYER PLAYTEST (%s)" % time.strftime("%Y-%m-%d %H:%M"), flush=True)
+    print("%s (%s)" % (title(a), time.strftime("%Y-%m-%d %H:%M")), flush=True)
     st8 = {"tmp": None, "saved": {}, "dirs": {}, "token": "", "pids": set(), "game": None, "reports": {},
            "owner_before": owner_state(owner)}
 
@@ -340,6 +372,9 @@ def run(a, io=None, lines=None, owner=None, owners=None, root=None, stamp=None) 
             return
         if not ln.add(SP_MARK in raw, "the test launcher has the single player playtest", "", "The launcher-test build is older: tell Claude."):
             return
+        if boss(a) and not ln.add(BR_MARK in raw, "the test launcher has the Boss Rush playtest", "",
+                                  "The launcher-test build is older than start anywhere: a new test build is needed (tell Claude)."):
+            return
         st, info = io.get_text(INFO_URL, 4096)
         try:
             meta = json.loads(info) if st == 200 else {}
@@ -348,7 +383,9 @@ def run(a, io=None, lines=None, owner=None, owners=None, root=None, stamp=None) 
         ln.add(None, "built from", "%s %s" % (meta.get("branch", "?"), str(meta.get("commit", "?"))[:10]))
         # the test Hero Key
         key = ""
-        if a.no_key:
+        if boss(a):
+            ln.add(None, "test Hero Key", "not needed: Boss Rush plays on its own hero login")
+        elif a.no_key:
             ln.add(None, "test Hero Key", "--no-key: the world's own login (as offline)")
         else:
             st, d = io.http("POST", "account/new", js={"audit": True})
@@ -382,6 +419,10 @@ def run(a, io=None, lines=None, owner=None, owners=None, root=None, stamp=None) 
     return finish(ln, out, root)
 
 
+def title(a) -> str:
+    return "BOSS RUSH PLAYTEST" if boss(a) else "SINGLE PLAYER PLAYTEST"
+
+
 def owner_state(owner: Path) -> dict:
     return {str(p): fr.sha(p) for p in (owner / "settings.json", owner / "social-session.json")}
 
@@ -396,7 +437,8 @@ def one_run(a, io, ln, exe, game, kind, first, data, webview, key, out, st8, dea
         env[KEY_ENV] = key
     cmd = build_cmd(exe, game, kind, first, a)
     cli_out = st8["tmp"] / ("cli-%s.txt" % kind)
-    report_path = data / REPORT
+    report_path = data / (BR_REPORT if kind == "bossrush" else REPORT)
+    shots_at, world_at = (BR_SHOTS, BR_WORLD_PHASES) if kind == "bossrush" else (SHOTS, WORLD_PHASES)
     if report_path.exists():
         report_path.unlink()
     proc = io.spawn_logged(cmd, env, str(exe.parent), cli_out)
@@ -414,11 +456,11 @@ def one_run(a, io, ln, exe, game, kind, first, data, webview, key, out, st8, dea
         if phase and phase != seen:
             seen = phase
             print("     phase: %s" % phase, flush=True)
-            if phase in SHOTS and pid and shots < MAX_SHOTS:
-                ok, _ = io.screenshot(pid, out / ("%02d-%s-%s.png" % (shots, kind, SHOTS[phase])))
+            if phase in shots_at and pid and shots < MAX_SHOTS:
+                ok, _ = io.screenshot(pid, out / ("%02d-%s-%s.png" % (shots, kind, shots_at[phase])))
                 shots += 1 if ok else 0
                 next_shot = io.now() + SHOT_EVERY_S
-        elif phase in WORLD_PHASES and pid and io.now() >= next_shot and shots < MAX_SHOTS:
+        elif phase in world_at and pid and io.now() >= next_shot and shots < MAX_SHOTS:
             ok, _ = io.screenshot(pid, out / ("%02d-%s-%s.png" % (shots, kind, phase.replace("_", "-"))))
             shots += 1 if ok else 0
             next_shot = io.now() + SHOT_EVERY_S
@@ -439,7 +481,7 @@ def one_run(a, io, ln, exe, game, kind, first, data, webview, key, out, st8, dea
     st8["reports"][kind] = rep
     if rep.get("pid"):
         st8["pids"].add(int(rep["pid"]))
-    save_report(ln, rep, out / ("%s-%s" % (kind, REPORT)))
+    save_report(ln, rep, out / ("%s-%s" % (kind, BR_REPORT if kind == "bossrush" else REPORT)))
     for src, name in ((cli_out, "%s-lines.txt" % kind),):
         copy_hidden(ln, src, out / name)
     if timed_out:
@@ -545,8 +587,9 @@ def finish(ln, out: Path, root: Path) -> int:
     verdict = "FAIL" if ln.failed() else "PASS"
     rows = [r for r in ln.rows if r[0] in ("PASS", "FAIL")]
     table = "\n".join("%-4s  %s" % (k, w) for k, w, _d, _f in rows)
-    full = "SINGLE PLAYER PLAYTEST (%s)\n%s\n%s\n" % (time.strftime("%Y-%m-%d %H:%M"), ln.hide(ln.text()), verdict)
-    (out / "sp-playtest.txt").write_text(full, encoding="utf-8")
+    name = "BOSS RUSH PLAYTEST" if out.parent.name == "boss-playtest" else "SINGLE PLAYER PLAYTEST"
+    full = "%s (%s)\n%s\n%s\n" % (name, time.strftime("%Y-%m-%d %H:%M"), ln.hide(ln.text()), verdict)
+    (out / ("boss-playtest.txt" if out.parent.name == "boss-playtest" else "sp-playtest.txt")).write_text(full, encoding="utf-8")
     (out.parent / "latest.txt").write_text(full + "Folder: %s\n" % out, encoding="utf-8")
     print("\n%s\n%s" % (table, verdict), flush=True)
     print("Saved %s" % out, flush=True)
@@ -563,12 +606,22 @@ def main(argv=None):
     ap.add_argument("--game", help="your Wrath game folder (default: the one in your launcher)")
     ap.add_argument("--hold", type=int, default=20, help="seconds in the world before the checks (screenshots)")
     ap.add_argument("--level", type=int, default=10, help="the level the levelup check goes to")
-    ap.add_argument("--checks", default=CHECKS, help="which checks (default: all four)")
+    ap.add_argument("--checks", default=None, help="which checks (default: all four; with --bossrush both of its own)")
+    ap.add_argument("--bossrush", action="store_true", help="Boss Rush instead: start anywhere and a full boss fight")
+    ap.add_argument("--boss", default="frozen-throne", help="with --bossrush: the boss, wing or whole raid to start at")
+    ap.add_argument("--size", type=int, choices=(10, 25), default=10, help="with --bossrush: 10 or 25 players")
+    ap.add_argument("--diff", choices=("normal", "heroic"), default="normal", help="with --bossrush: the difficulty")
+    ap.add_argument("--hero", default="mage-fire", help="with --bossrush: the hero, <class>-<spec>")
+    ap.add_argument("--fight-max", type=int, default=1500, help="with --bossrush: seconds the fight is watched at most")
     ap.add_argument("--no-key", action="store_true", help="no test Hero Key: the world's own login")
     ap.add_argument("--keep", action="store_true", help="keep the test folder")
     ap.add_argument("--work", help="where the test folder goes (default: the system's temp folder)")
     ap.add_argument("--timeout", type=int, default=TIMEOUT_MIN, help="minutes for all of it")
     a = ap.parse_args(argv)
+    if a.checks is None:
+        a.checks = BR_CHECKS if a.bossrush else CHECKS
+    if not re.fullmatch(r"[a-z0-9-]+", a.boss or "") or not re.fullmatch(r"[a-z]+-[a-z]+", a.hero or ""):
+        ap.error("--boss and --hero: words, digits and dashes only")
     if not re.fullmatch(r"[a-z,]+", a.checks or ""):
         ap.error("--checks: words and commas only")
     for f in (sys.stdout, sys.stderr):

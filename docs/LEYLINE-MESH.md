@@ -85,6 +85,10 @@ strings are versioned.
 | endpoint, inside a realm record | the **relay's node key** (`leyline-mesh-endpoint-v1`) | relay host, the realm's auth and world ports, `ws` (whether the browser bridge is served), `ts` | 15 min |
 | `relay` | the **node key** (`leyline-mesh-node-v1`) | host, `http` base, region, `volunteer`, `ws`, `mesh`, caps (realms, streams, KB/s), load (realms, streams) | 30 min |
 | `block` | a **pinned staff key** (`leyline-mesh-block-v1`) | target (`r-<realm id>` or `n-<node id>`), reason, `ts`, `expires` | at most 90 days |
+| `info` | the **node key** or the **realm key** (`leyline-mesh-info-v1`) | the capability document: role, `proto_min`/`proto_max`, software, `supported` capability ids, limits, `admin` (abuse contact as a peer id), rules, region, languages, `restricted` | 24 h |
+
+The written spec, the tolerant-reader rule (unknown fields kept, unknown kinds and versions ignored) and the
+conformance vectors are in [COMMONHOLD-V1.md](COMMONHOLD-V1.md) (12 Nov).
 
 Why no node can forge a realm or keep a dead one alive:
 

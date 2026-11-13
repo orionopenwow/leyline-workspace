@@ -47,6 +47,12 @@ pub enum Check {
     Levelup,
     StopOnExit,
     Repair,
+    /// Boss Rush (`play-test --bossrush`): the one click puts the hero in front of the named boss with a full
+    /// companion raid ([`judge_start`]).
+    BossStart,
+    /// Boss Rush: the boss fought to an end by the companion raid (the hero on the bots' own AI), its start, its
+    /// phases and its outcome recorded, then Retry back in front of the boss ([`judge_fight`]).
+    BossFight,
 }
 
 /// Every check, in the order they run.
@@ -59,7 +65,113 @@ impl Check {
             Check::Levelup => "levelup",
             Check::StopOnExit => "stoponexit",
             Check::Repair => "repair",
+            Check::BossStart => "bossstart",
+            Check::BossFight => "bossfight",
         }
+    }
+}
+
+/// Boss Rush's checks, in the order they run.
+pub const BOSS_ALL: [Check; 2] = [Check::BossStart, Check::BossFight];
+
+/// `bossstart,bossfight` (`all` for both) into the run order.
+pub fn parse_boss_checks(text: &str) -> Result<Vec<Check>, String> {
+    let mut want = Vec::new();
+    for w in text.split(',').map(|w| w.trim().to_ascii_lowercase()).filter(|w| !w.is_empty()) {
+        match w.as_str() {
+            "all" => want.extend(BOSS_ALL),
+            other => match BOSS_ALL.iter().find(|c| c.word() == other) {
+                Some(c) => want.push(*c),
+                None => return Err(format!("--checks with --bossrush doesn't know {other:?} (bossstart, bossfight, all)")),
+            },
+        }
+    }
+    if want.is_empty() {
+        return Err("--checks needs at least one check".into());
+    }
+    Ok(BOSS_ALL.into_iter().filter(|c| want.contains(c)).collect())
+}
+
+// ------------------------------------------------------------------------------------------------ Boss Rush's checks
+
+/// In the launcher program when it has the Boss Rush playtest (the test tool checks the download for it).
+pub const BR_MARK: &str = "leyline-play-test-bossrush-v1";
+/// `<data folder>/br-play-test.json`: the Boss Rush run's report.
+pub const BR_REPORT: &str = "br-play-test.json";
+/// From the click to the raid standing in front of the boss: the game, the login, the hero, the bots (the module waits
+/// up to 60 s for them on Boss Rush's profile).
+pub const START_WITHIN_S: u64 = 420;
+/// The hero stands this close to the start (yards): the raid lands in rows of three, a few yards apart.
+pub const NEAR_YD: f32 = 15.0;
+/// From the pull to the boss engaged (the final fight's paladin walks up and talks first).
+pub const ENGAGE_WITHIN_S: u64 = 240;
+/// The longest fight watched unless `--fight-max` says otherwise (the final fight runs 10 to 15 minutes cleared).
+pub const FIGHT_MAX_S: u64 = 1500;
+/// After a wipe or a clear, Retry has the raid in front of the boss again within this.
+pub const RETRY_WITHIN_S: u64 = 240;
+
+/// Is the raid in front of its start, complete: the start's map, an instance of its own, ready (not fighting), the
+/// hero within [`NEAR_YD`] of the start, `size` members of whom `size - 1` companions, everyone inside.
+pub fn judge_start(r: &crate::host::bossrush::RushRun, start: &str, map: u32, size: u32) -> Result<String, String> {
+    let line = format!(
+        "{} at {} ({}), map {} instance {}, {:.1} yd from the start, {} in the raid ({} companions, {} inside), phase {}",
+        r.leader, if r.step.is_empty() { "-" } else { r.step.as_str() }, r.diff, r.map, r.instance, r.dist, r.members, r.bots, r.inside, r.phase
+    );
+    if r.start != start {
+        return Err(format!("the run is {} not {start}: {line}", r.start));
+    }
+    if r.map != map || r.instance == 0 {
+        return Err(format!("not in the raid's own instance: {line}"));
+    }
+    if r.phase != "ready" {
+        return Err(format!("not ready: {line}"));
+    }
+    if r.dist > NEAR_YD {
+        return Err(format!("not in front of the boss: {line}"));
+    }
+    if r.members != size || r.bots + 1 != size || r.inside != size {
+        return Err(format!("the raid isn't complete: {line}"));
+    }
+    Ok(line)
+}
+
+/// What happened between two looks at the run: the phase changing, the boss's phase casts, bosses down, results.
+pub fn fight_events(prev: Option<&crate::host::bossrush::RushRun>, cur: &crate::host::bossrush::RushRun) -> Vec<String> {
+    let mut out = Vec::new();
+    let Some(p) = prev else {
+        out.push(format!("phase {}", cur.phase));
+        return out;
+    };
+    if p.phase != cur.phase {
+        out.push(format!("phase {} -> {}", p.phase, cur.phase));
+    }
+    for m in cur.marks.iter().skip(if p.phase == cur.phase || cur.phase == "fighting" { p.marks.len().min(cur.marks.len()) } else { 0 }) {
+        out.push(format!("boss phase cast: {m}"));
+    }
+    if cur.done > p.done {
+        out.push(format!("{} of {} down", cur.done, cur.of));
+    }
+    if cur.wipes > p.wipes {
+        out.push(format!("wipe at {}", crate::host::bossrush::clock(cur.ms)));
+    }
+    if cur.clears > p.clears {
+        out.push(format!("clear in {}", crate::host::bossrush::clock(cur.ms)));
+    }
+    out
+}
+
+/// The fight's verdict: it passes when it ran from the pull to an end (a kill or a wipe, said as it was) and Retry
+/// had the raid ready in front of the boss again. Bots that can't win don't fail it; a fight that never started,
+/// never ended or couldn't be retried does.
+pub fn judge_fight(engaged: bool, outcome: Option<(&str, u64)>, phases: &[String], retry: Result<String, String>) -> (bool, String) {
+    let ph = if phases.is_empty() { "none seen".to_string() } else { phases.join(", ") };
+    let Some((what, ms)) = outcome else {
+        return (false, format!("{}; phases: {ph}", if engaged { "the fight never ended in time" } else { "the boss never engaged" }));
+    };
+    let told = if what == "clear" { format!("KILL in {}", crate::host::bossrush::clock(ms)) } else { format!("WIPE at {}", crate::host::bossrush::clock(ms)) };
+    match retry {
+        Ok(r) => (engaged, format!("outcome: {told}; phases: {ph}; retry: {r}")),
+        Err(e) => (false, format!("outcome: {told}; phases: {ph}; retry FAILED: {e}")),
     }
 }
 
@@ -475,6 +587,52 @@ mod tests {
         assert_eq!(f, ["bin/w.conf.dist", "bin/w.exe"]);
         assert_eq!(pick_victim(f.iter().map(String::as_str)).as_deref(), Some("bin/w.conf.dist"));
         assert_eq!(rel_path(d.path(), "bin/w.exe"), d.path().join("bin").join("w.exe"));
+    }
+
+    #[test]
+    fn boss_checks() {
+        assert_eq!(parse_boss_checks("bossfight,bossstart").unwrap(), vec![Check::BossStart, Check::BossFight]);
+        assert_eq!(parse_boss_checks("all").unwrap(), BOSS_ALL.to_vec());
+        assert!(parse_boss_checks("levelup").is_err());
+        assert!(parse_checks("bossfight").is_err(), "single player's list stays its own");
+        assert_eq!(serde_json::to_string(&Check::BossFight).unwrap(), "\"bossfight\"");
+        use crate::host::bossrush::RushRun;
+        let mut r = RushRun { start: "frozen-throne".into(), diff: "normal".into(), phase: "ready".into(), leader: "Kalinra".into(), map: 631, instance: 3, dist: 3.0, members: 10, bots: 9, inside: 10, step: "frozen-throne".into(), of: 1, ..Default::default() };
+        assert!(judge_start(&r, "frozen-throne", 631, 10).unwrap().contains("10 in the raid (9 companions, 10 inside)"));
+        assert!(judge_start(&r, "icc-council", 631, 10).is_err());
+        r.inside = 7;
+        assert!(judge_start(&r, "frozen-throne", 631, 10).unwrap_err().contains("isn't complete"), "bots still arriving");
+        r.inside = 10;
+        r.dist = 40.0;
+        assert!(judge_start(&r, "frozen-throne", 631, 10).unwrap_err().contains("not in front"));
+        r.dist = 2.0;
+        r.instance = 0;
+        assert!(judge_start(&r, "frozen-throne", 631, 10).is_err());
+        r.instance = 3;
+        // the timeline
+        let mut c = r.clone();
+        assert_eq!(fight_events(None, &c), vec!["phase ready"]);
+        c.phase = "fighting".into();
+        c.marks = vec!["transition1".into()];
+        assert_eq!(fight_events(Some(&r), &c), vec!["phase ready -> fighting", "boss phase cast: transition1"]);
+        let mut d = c.clone();
+        d.marks.push("quake".into());
+        assert_eq!(fight_events(Some(&c), &d), vec!["boss phase cast: quake"]);
+        let mut e = d.clone();
+        e.phase = "wiped".into();
+        e.wipes = 1;
+        e.ms = 312_345;
+        e.marks.clear();
+        assert_eq!(fight_events(Some(&d), &e), vec!["phase fighting -> wiped", "wipe at 5:12.3"]);
+        // the verdict: a wipe passes when it ran and Retry worked, and says so
+        let ph = vec!["transition1".to_string()];
+        let (ok, line) = judge_fight(true, Some(("wipe", 312_345)), &ph, Ok("in front of the boss again".into()));
+        assert!(ok && line.contains("WIPE at 5:12.3") && line.contains("transition1"), "{line}");
+        let (ok, line) = judge_fight(true, Some(("clear", 700_000)), &[], Ok("fresh raid".into()));
+        assert!(ok && line.contains("KILL in 11:40.0") && line.contains("none seen"));
+        assert!(!judge_fight(true, Some(("wipe", 1)), &ph, Err("still wiped".into())).0);
+        assert!(!judge_fight(false, None, &[], Ok(String::new())).0);
+        assert!(judge_fight(true, None, &[], Ok(String::new())).1.contains("never ended"));
     }
 
     #[test]

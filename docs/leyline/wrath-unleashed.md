@@ -87,16 +87,16 @@ Everything that is different on Wrath Unleashed, in one place. In the game, the 
 |---|---|
 | `.hub hardcore` | how to start |
 
-## Minigolf, modes and your Den
+## Duels, Boss Rush and your Den
 
-- Minigolf and minigames to play with friends, right in the world.
+- Duels and Boss Rush: one on one at level 80, or straight onto a raid's final fight with companions.
 - Your Den: a room of your own to build in, on your PC through the launcher. Invite a friend with one link.
-- The Workshop shares what players build.
+- The Workshop shares what players build. More modes are on the way.
 
 | Command | What it does |
 |---|---|
-| `/golf` | minigolf |
-| `/modes` | minigames with friends |
+| `/modes` | Duels and Boss Rush |
+| `/bf` | Boss Rush: the boss fights |
 | `/workshop` | the Workshop |
 
 ## Help and settings

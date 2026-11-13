@@ -705,7 +705,7 @@ namespace
 
     // An offline hero: out of any group left over (a stale raid would change its difficulty at login and send it to
     // its homebind), unbound, and saved on the platform at the waiting go's difficulty.
-    void PrepareOffline(std::uint32_t guidLow, int diff, BossDef const& b)
+    void PrepareOffline(std::uint32_t guidLow, int diff, BossDef const& b, int size = 10)
     {
         ObjectGuid g = ObjectGuid::Create<HighGuid::Player>(guidLow);
         if (ObjectGuid groupGuid = sCharacterCache->GetCharacterGroupGuidByGuid(g))
@@ -715,7 +715,7 @@ namespace
         UnbindOffline(guidLow);
         CharacterDatabase.Execute("UPDATE characters SET map = {}, position_x = {}, position_y = {}, position_z = {}, orientation = {}, "
             "zone = {}, instance_id = 0, instance_mode_mask = {} WHERE guid = {} AND online = 0",
-            b.mapId, b.x, b.y, b.z, b.o, b.zone, InstanceModeMask(diff), guidLow);
+            b.mapId, b.x, b.y, b.z, b.o, b.zone, InstanceModeMask(diff, size), guidLow);
     }
 
     void QueueJoin(ObjectGuid guid, JoinArgs const& a, std::uint64_t delayMs, std::uint64_t waitMs)
@@ -968,7 +968,7 @@ namespace
         acc.current = m.guid;
         if (verb == "go")
         {
-            acc.pendingGo = acc.lastGo = HeroGo(*a.boss, a.diff, a.mode);
+            acc.pendingGo = acc.lastGo = HeroGo(*a.boss, a.diff, a.mode, a.size);
             acc.pendingUntil = NowUnix() + HERO_INTENT_TTL;
             Player* online = ObjectAccessor::FindConnectedPlayer(ObjectGuid::Create<HighGuid::Player>(m.guid));
             if (online && online->IsInWorld())
@@ -977,7 +977,7 @@ namespace
                 QueueJoin(online->GetGUID(), a, 500, 60000);
             }
             else if (!online)
-                PrepareOffline(m.guid, a.diff, *a.boss);
+                PrepareOffline(m.guid, a.diff, *a.boss, a.size);
         }
         SaveAccount(l.hero);
         h->SendSysMessage(OkLine(l, m, made));
@@ -1192,8 +1192,11 @@ namespace LeylineBFHeroes
         CharacterDatabase.DirectExecute("CREATE TABLE IF NOT EXISTS leyline_bf_hero_accounts (hero_account_id INT UNSIGNED NOT NULL PRIMARY KEY, "
             "main_account_id INT UNSIGNED NOT NULL, current_guid INT UNSIGNED NOT NULL DEFAULT 0, last_class TINYINT UNSIGNED NOT NULL DEFAULT 0, "
             "last_spec VARCHAR(12) NOT NULL DEFAULT '', last_spec2 VARCHAR(12) NOT NULL DEFAULT '', last_faction TINYINT NOT NULL DEFAULT -1, "
-            "last_go VARCHAR(40) NOT NULL DEFAULT 'bf:frozen-throne:normal:bots', pending_go VARCHAR(40) NOT NULL DEFAULT '', "
+            "last_go VARCHAR(64) NOT NULL DEFAULT 'bf:frozen-throne:normal:bots', pending_go VARCHAR(64) NOT NULL DEFAULT '', "
             "pending_until INT UNSIGNED NOT NULL DEFAULT 0, UNIQUE KEY main (main_account_id))");
+        // Boss Rush's wing and raid starts and its 25-player words make a longer go (BossfightsStarts.h): 64 fits them
+        CharacterDatabase.DirectExecute("ALTER TABLE leyline_bf_hero_accounts MODIFY last_go VARCHAR(64) NOT NULL DEFAULT 'bf:frozen-throne:normal:bots', "
+            "MODIFY pending_go VARCHAR(64) NOT NULL DEFAULT ''");
         CharacterDatabase.DirectExecute("CREATE TABLE IF NOT EXISTS leyline_bf_heroes (guid INT UNSIGNED NOT NULL PRIMARY KEY, "
             "hero_account_id INT UNSIGNED NOT NULL, class TINYINT UNSIGNED NOT NULL, spec VARCHAR(12) NOT NULL, spec2 VARCHAR(12) NOT NULL, "
             "created_at INT UNSIGNED NOT NULL DEFAULT 0, KEY account (hero_account_id))");
@@ -1282,7 +1285,7 @@ namespace LeylineBFHeroes
             return false;
         Map* map = p->GetMap();
         bool usedInstance = map && LeylineBFCore::InstanceUsed(p->GetInstanceId());
-        ::Difficulty want = a.diff == DIFF_HEROIC ? RAID_DIFFICULTY_10MAN_HEROIC : RAID_DIFFICULTY_10MAN_NORMAL;
+        ::Difficulty want = ::Difficulty(RaidDifficultyIndex(a.diff, a.size));
         bool otherDifficulty = map && map->GetDifficulty() != want;
         if (!usedInstance && !otherDifficulty)
             return false;

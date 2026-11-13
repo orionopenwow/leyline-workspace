@@ -22,6 +22,10 @@ fn main() {
                 let _ = std::fs::create_dir_all(&d);
                 std::env::set_var(leyline_lib::settings::APP_DIR_ENV, &d);
             }
+            // --bossrush: Boss Rush's playtest (start anywhere and a full boss fight, sptest.rs)
+            if cli.bossrush {
+                std::process::exit(leyline_lib::bossrush_play_test_cli(cli))
+            }
             // --single: single player's playtest on a local world (sptest.rs), else PLAY on the official realm
             if cli.single.is_some() {
                 std::process::exit(leyline_lib::single_play_test_cli(cli))

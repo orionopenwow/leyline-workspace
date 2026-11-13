@@ -389,8 +389,8 @@ namespace LeylineBF
     }
 
     // characters.instance_mode_mask: dungeon difficulty in the low nibble, raid difficulty in the high one
-    // (10 normal = 0, 10 heroic = 2).
-    inline std::uint8_t InstanceModeMask(int diff) { return std::uint8_t((diff == DIFF_HEROIC ? 2 : 0) << 4); }
+    // (10 normal = 0, 25 normal = 1, 10 heroic = 2, 25 heroic = 3).
+    inline std::uint8_t InstanceModeMask(int diff, int size = 10) { return std::uint8_t(RaidDifficultyIndex(diff, size) << 4); }
 
     // ---- the console command and its replies ------------------------------------------------------------------------
 
@@ -476,9 +476,10 @@ namespace LeylineBF
     }
 
     // The hero's waiting go, as stored (leyline_bf_hero_accounts.pending_go): the same text as the website's go kind.
-    inline std::string HeroGo(BossDef const& boss, int diff, int mode)
+    // Boss Rush's 25-player raids keep "normal25" / "heroic25" (BossfightsLogic.h DiffToken); the table's column is 64.
+    inline std::string HeroGo(BossDef const& boss, int diff, int mode, int size = 10)
     {
-        return std::string("bf:") + boss.key + ":" + DifficultyName(diff) + ":" + ModeName(mode);
+        return std::string("bf:") + boss.key + ":" + DiffToken(diff, size) + ":" + ModeName(mode);
     }
 
     inline JoinArgs ParseHeroGo(std::string const& go)

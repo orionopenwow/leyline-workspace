@@ -1,0 +1,22 @@
+{
+ "format": 1,
+ "about": "Leyline weekly v0 (stream/weekly.py): one featured pick per game mode, shown on the launcher's Home and the site's front page until featured_until (UTC). TODO(owner): these first picks are placeholders (Modes is Duels and Boss Rush only for now); staff choose each week's.",
+ "items": [
+  {
+   "mode": "frozen-throne",
+   "title": "Boss of the week",
+   "line": "The Frozen Throne fight. Beat your best clear time.",
+   "visit": "",
+   "featured_from": "2026-11-09",
+   "featured_until": "2026-11-16T00:00:00Z"
+  },
+  {
+   "mode": "arena-queue",
+   "title": "Duels this week",
+   "line": "Queue for a 1v1 and climb the week's board.",
+   "visit": "",
+   "featured_from": "2026-11-09",
+   "featured_until": "2026-11-16T00:00:00Z"
+  }
+ ]
+}

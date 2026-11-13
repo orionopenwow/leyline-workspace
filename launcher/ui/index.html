@@ -37,7 +37,10 @@
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
 <link rel="stylesheet" href="single.css"><!-- Single player: its page and Home row (single.js) -->
 <link rel="stylesheet" href="oneclick.css"><!-- single player in one click: the setup card, the chip, Home's button (oneclick.js) -->
+<link rel="stylesheet" href="spmods.css"><!-- Single player: Mods in this world (spmods.js) -->
 <link rel="stylesheet" href="bossrush.css"><!-- Boss Rush: its page and Home row (bossrush.js) -->
+<link rel="stylesheet" href="boards.css"><!-- Leaderboards: Boss Rush and Duels, signed by the realms (boards.js) -->
+<link rel="stylesheet" href="bossstart.css"><!-- Boss Rush, start anywhere: its picker and the raid's state (bossstart.js) -->
 <link rel="stylesheet" href="solo.css"><!-- Play solo everywhere, Invite a friend, the GM command center (solo.js, gmcenter.js) -->
 <link rel="stylesheet" href="hostfriends.css"><!-- Play with friends: the one window, Ready for friends?, the friend's steps (hostfriends.js) -->
 <link rel="stylesheet" href="info.css"><!-- the "i" button and its bubble (info.js) -->
@@ -265,6 +268,11 @@
         <!-- TODO(owner): Home's loadouts line in your own voice -->
         <p class="hint hm-lo" id="hm-lo">Make it yours: save the mods you like as a loadout and switch in one click. Clean is always one click away. <button type="button" class="link" data-hm-go="installed">Loadouts ›</button></p>
       </section>
+      <!-- Leyline weekly (stream/weekly.py, through the site's home.json): one featured pick per mode, each until its end -->
+      <section class="hm-sec" id="hm-week" aria-labelledby="hm-week-h" hidden>
+        <div class="card-head hm-head"><span id="hm-week-h">THIS WEEK</span><button type="button" class="link" data-hm-go="modes">All modes ›</button></div>
+        <div class="hm-row" id="hm-week-row"></div>
+      </section>
       <section class="hm-sec" id="hm-modes" aria-labelledby="hm-modes-h" hidden>
         <div class="card-head hm-head"><span id="hm-modes-h">GAME MODES</span><button type="button" class="link" data-hm-go="modes">See all ›</button></div>
         <div class="hm-row" id="hm-modes-row"></div>
@@ -338,6 +346,8 @@
         <p class="hint">No review, no signing: only add mods and addons from people you trust. Downloads must match their checksum, and anything holding game data or secrets is refused. Native mods (.dll, .asi) need a one-time OK. Removing a mod takes out exactly what Leyline put in.</p>
       </div>
       <div class="tabpane" id="pane-discover" role="tabpanel" aria-labelledby="tab-mods-discover" data-view="simple" data-tab="mods">
+        <!-- picking mods for single player (app.js modsForSingle, spCardButton): which game folder, and the way back -->
+        <div class="dc-sp" id="dc-sp" role="status" hidden><span class="dc-sp-text" id="dc-sp-text"></span><button type="button" class="btn small" id="dc-sp-back">Back to Single player</button></div>
         <!-- the tabs Mods | Addons | Themes go above this (themes.js); the line says what is on the tab (simple.js) -->
         <p class="hint shelf-line" id="dc-line"></p>
         <!-- the Simple view (simple.js): one search box and short rows of big cards; Browse everything is the full catalog -->
@@ -413,7 +423,7 @@
         </div>
         <span class="toolbar-fill"></span>
         <select class="client-pick rl-client" data-for="realms" aria-label="Play with" title="Play with"></select>
-        <button type="button" class="btn small" data-page-go="modes" title="Minigames and game modes">Modes</button>
+        <button type="button" class="btn small" data-page-go="modes" title="Duels and Boss Rush">Modes</button>
         <button type="button" class="icon-btn" id="rl-refresh" aria-label="Refresh" title="Refresh the list">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
         <div class="rl-pop-wrap">
@@ -479,7 +489,10 @@
 
   <!-- BOSS RUSH (bossrush.js): the engine (exact or light), the fight, the difficulty, the hero, Fight; the board -->
   <section class="page" id="page-bossrush">
+    <div class="panel wide bs" id="bs" role="region" aria-label="Start anywhere"></div><!-- bossstart.js: a boss, a wing or the whole raid; companions or friends; Start; Retry -->
     <div class="panel wide br" id="br"></div>
+    <!-- Leaderboards (boards.js, docs/LEADERBOARDS.md): the realms' signed boards, Boss Rush first; local runs apart -->
+    <div class="panel wide lb-panel" id="br-boards" data-board="bossrush"></div>
   </section>
 
   <!-- SINGLE PLAYER (single.js): your game folder, the engine, Start; then Manage. Over it, the original world in one
@@ -489,6 +502,7 @@
     <div class="panel wide sp" id="sp"></div>
     <div class="panel wide spd" id="spd" role="region" aria-label="Your Den"></div><!-- den.js: Your Den from here too (Open my Den, Invite a friend, its state) -->
     <div class="panel wide oc-set" id="oc-set" aria-label="Single player settings"></div><!-- oneclick.js: Stop the world when the game closes, Your world's settings -->
+    <div class="panel wide spm" id="spm" role="region" aria-labelledby="spm-title"></div><!-- spmods.js: Mods in this world (the game folder's and the world's own), Get mods for single player -->
     <!-- The one Friends area: invite to your world, who keeps a character on it, the worlds you joined, your friends list -->
     <div class="panel wide spf" id="spf" role="region" aria-labelledby="spf-title">
       <div class="spf-head">
@@ -999,8 +1013,11 @@
 <script src="single.js"></script><!-- Single player: its page, three steps, then Manage (window.LeylineSingle; after app.js, den.js and solo.js) -->
 <script src="vanilla.js"></script><!-- the original world in one click, and window.LeylineWorlds: every local world's play path (after single.js) -->
 <script src="oneclick.js"></script><!-- single player in one click: folder, room, Quick start, the setup card, errors (window.LeylineOneClick; after vanilla.js) -->
+<script src="spmods.js"></script><!-- Single player: Mods in this world, Get mods for single player (window.LeylineSPMods; after oneclick.js) -->
 <script src="characters.js"></script><!-- Characters: On this PC and Online (window.LeylineCharacters; after vanilla.js) -->
 <script src="bossrush.js"></script><!-- Boss Rush: its page (window.LeylineBossRush; after app.js) -->
+<script src="boards.js"></script><!-- Leaderboards on every [data-board] mount: Modes (#md-boards) and Boss Rush (#br-boards) (window.LeylineBoards; after modes.js and bossrush.js) -->
+<script src="bossstart.js"></script><!-- Boss Rush, start anywhere (window.LeylineBossStart; after listkit.js and bossrush.js) -->
 <script src="singleupdate.js"></script><!-- Single player: the bots, always up to date (Update the bots, Bots updated; window.LeylineSingleUpdate) -->
 <script src="gmcenter.js"></script><!-- the GM command center for your own worlds (window.LeylineGM; after den.js) -->
 <script src="hostnetwork.js"></script><!-- Host: the Network tab (host/network.rs) -->

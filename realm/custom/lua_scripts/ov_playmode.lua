@@ -45,13 +45,15 @@ local LOGIN_FRESH = 300      -- seconds after the click within which the first l
 local LOGIN_DELAY = 7000     -- after ov_go.lua (5 s) and ov_workshop.lua (6 s)
 local GAP = 5                -- seconds between one player's starts
 
--- The live realm modes of stream/playmodes.json (stream/tests/test_playmodes.py keeps the ids equal).
+-- The live realm modes of stream/playmodes.json (stream/tests/test_playmodes.py keeps the ids equal). listed = false:
+-- the catalog has it "listed": false (owner 12 Nov: Duels and Boss Rush only for now): .playmode leaves it off its list,
+-- but .playmode <id> (and a pick already made) still starts it. Delete it with the catalog's line to list it again.
 -- solo / party: { name, data } of the mode's own OVMOD message; go: sent after a solo start that needs it.
 local MODES = {
-    ["minigolf"] = { title = "Minigolf", mod = "wugolf", solo = { "start", "" }, party = { "start", "" }, go = "go" },
-    ["bumper-balls"] = { title = "Bumper Balls", mod = "wumodes", solo = { "solo", "bumper" }, party = { "host", "bumper" } },
-    ["coin-dash"] = { title = "Coin Dash", mod = "wumodes", solo = { "solo", "coindash" }, party = { "host", "coindash" } },
-    ["community"] = { title = "Community modes", open = true },
+    ["minigolf"] = { title = "Minigolf", mod = "wugolf", solo = { "start", "" }, party = { "start", "" }, go = "go", listed = false },
+    ["bumper-balls"] = { title = "Bumper Balls", mod = "wumodes", solo = { "solo", "bumper" }, party = { "host", "bumper" }, listed = false },
+    ["coin-dash"] = { title = "Coin Dash", mod = "wumodes", solo = { "solo", "coindash" }, party = { "host", "coindash" }, listed = false },
+    ["community"] = { title = "Community modes", open = true, listed = false },
     -- cmd: a command the character runs (Player:RunCommand); the module behind it answers in chat
     ["frozen-throne"] = { title = "The Frozen Throne", cmd = "bossfight join frozen-throne normal bots", bossfight = true },
     ["arena-queue"] = { title = "The 1v1 arena queue", cmd = "q1v1 unrated" },
@@ -88,7 +90,7 @@ end
 
 local function listText()
     local ids = {}
-    for id in pairs(MODES) do ids[#ids + 1] = id end
+    for id, m in pairs(MODES) do if m.listed ~= false then ids[#ids + 1] = id end end
     table.sort(ids)
     return table.concat(ids, ", ")
 end

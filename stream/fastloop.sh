@@ -65,6 +65,8 @@ had_duels=""
 if [ -f "$WU/portal/duels.py" ]; then cp -p "$WU/portal/duels.py" "$BK/duels.py"; had_duels=1; fi
 had_bossfights=""
 if [ -f "$WU/portal/bossfights.py" ]; then cp -p "$WU/portal/bossfights.py" "$BK/bossfights.py"; had_bossfights=1; fi
+had_boards=""
+if [ -f "$WU/portal/boards.py" ]; then cp -p "$WU/portal/boards.py" "$BK/boards.py"; had_boards=1; fi
 had_survivors=""
 if [ -f "$WU/portal/survivors.py" ]; then cp -p "$WU/portal/survivors.py" "$BK/survivors.py"; had_survivors=1; fi
 # the showcase pages and Leyline on your phone (site_pages.py, mobile_page.py)
@@ -125,6 +127,7 @@ put_back() {
   if [ -n "$had_downloads" ]; then cp -p "$BK/downloads.py" "$WU/portal/downloads.py"; else rm -f "$WU/portal/downloads.py"; fi
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_bossfights" ]; then cp -p "$BK/bossfights.py" "$WU/portal/bossfights.py"; else rm -f "$WU/portal/bossfights.py"; fi
+  if [ -n "$had_boards" ]; then cp -p "$BK/boards.py" "$WU/portal/boards.py"; else rm -f "$WU/portal/boards.py"; fi
   if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
   for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
@@ -254,6 +257,9 @@ if [ -f duels.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1
 # boss fights, duels and arena (/wrath/bossfights, /wrath/arena, /wrath/api/bossfights): optional; it reads
 # $WU/portal/duels/bossfights.json (realm/custom/bossfights-export.py) and modes_data.py beside it
 if [ -f bossfights.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' bossfights.py && install -m 644 bossfights.py "$WU/portal/bossfights.py"; fi
+# the signed leaderboards (/wrath/boards, /wrath/api/boards/...; docs/LEADERBOARDS.md): optional; it reads
+# $WU/portal/duels/boards/ (realm/custom/boards-export.py) and keeps community and local boards in the portal's data
+if [ -f boards.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' boards.py && install -m 644 boards.py "$WU/portal/boards.py"; fi
 # Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors): optional; its address is
 # $WU/portal/survivors.url (hosting/survivors/sv-site-up.sh)
 if [ -f survivors.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' survivors.py && install -m 644 survivors.py "$WU/portal/survivors.py"; fi
@@ -517,6 +523,8 @@ c7m=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/mode
 echo "  /wrath/modes.json game modes (200 = on): $c7m"
 c7b=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/api/bossfights || true)
 echo "  /wrath/api/bossfights boss fight boards (200 = on): $c7b"
+c7s=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/api/boards/index.json || true)
+echo "  /wrath/api/boards/index.json signed leaderboards (200 = on): $c7s"
 c7p=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/mobile || true)
 c7q=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/art/mobile/phone-play.webp || true)
 echo "  /wrath/mobile Leyline on your phone (200 = on): $c7p, its screenshots: $c7q"

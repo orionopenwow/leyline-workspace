@@ -2659,8 +2659,13 @@ async function installProject(p, btn) {
   renderCatalog();
 }
 
+// The mods list's first load, while it runs: only an install link waits for it (handleDeepLink).
+let catalogLoading = null;
+
 // A hub page's "Install with Leyline" (leyline://install/<id>): show that project with its INSTALL button. Nothing
-// installs until the player clicks INSTALL.
+// installs until the player clicks INSTALL. Also a realm, a friend's invite, a Den, a Den code or the game's Host
+// window. Taken at start, and again whenever a link reaches the open launcher (the core's `deep-link` event, app.rs
+// deep_link_arrived: Leyline is never opened twice).
 async function handleDeepLink() {
   let link = null;
   try { link = await invoke("deep_link_take"); } catch (_) { return; }
@@ -2685,6 +2690,7 @@ async function handleDeepLink() {
     return;
   }
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
+  if (catalogLoading) { try { await catalogLoading; } catch (_) { /* the list as it is */ } }   // only installs wait for the mods list
   if (link.id.startsWith("look:")) {   // the website's Looks page: Discover › Looks, that card (looks.js); nothing installs yet
     show("mods", true, "discover");
     if (!(window.LeylineLooks && window.LeylineLooks.focus(link.id))) say("cat-status", "That look isn't in the list here yet. Try again in a few minutes.", "warn");
@@ -4094,7 +4100,12 @@ renderNews();
 renderModTiles();
 refresh().then(() => {
   setMode(mode);
-  loadCatalog(true).then(handleDeepLink);
+  catalogLoading = loadCatalog(true).finally(() => { catalogLoading = null; });
+  handleDeepLink();   // a friend's invite or a realm link doesn't wait for the mods list
+  try {
+    const ev = window.__TAURI__ && window.__TAURI__.event;
+    if (ev && ev.listen) ev.listen("deep-link", () => { handleDeepLink(); });
+  } catch (_) { /* no events: links still come at start */ }
   loadRealms(true);
   loadUpdateState();
   loadNews();

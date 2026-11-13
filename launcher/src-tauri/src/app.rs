@@ -36,8 +36,8 @@ pub(crate) struct Core {
     games: Mutex<Vec<Child>>,
     /// The launcher's own update: what the last check said, and a downloaded update waiting for "Restart".
     upd: Mutex<UpdState>,
-    /// A `leyline://install/<id>` link Leyline was started with, until the UI takes it (deeplink.rs).
-    deep_link: Mutex<Option<crate::deeplink::Link>>,
+    /// A `leyline://` link Leyline was started with or was handed while open, until the UI takes it (deeplink.rs).
+    deep_link: Mutex<crate::deeplink::Inbox>,
 }
 
 impl Core {
@@ -1519,7 +1519,7 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
         mods_lock: Arc::new(Mutex::new(())),
         games: Mutex::new(Vec::new()),
         upd: Mutex::new(UpdState::default()),
-        deep_link: Mutex::new(None),
+        deep_link: Mutex::new(crate::deeplink::Inbox::default()),
     };
     let root = lite::root(&settings::app_dir());
     let fail = |why: String| {
@@ -1626,7 +1626,7 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
         mods_lock: Arc::new(Mutex::new(())),
         games: Mutex::new(Vec::new()),
         upd: Mutex::new(UpdState::default()),
-        deep_link: Mutex::new(None),
+        deep_link: Mutex::new(crate::deeplink::Inbox::default()),
     };
     let same = |a: &std::path::Path, b: &std::path::Path| a.to_string_lossy().trim_end_matches(['\\', '/']).eq_ignore_ascii_case(b.to_string_lossy().trim_end_matches(['\\', '/']));
     // --game a folder the launcher doesn't have yet (a fresh data folder has none): added as Find your game files does
@@ -4179,10 +4179,28 @@ fn set_count_installs(core: State<Core>, on: bool) -> Result<(), String> {
     })
 }
 
-/// The `leyline://` link Leyline was started with, once (then None).
+/// The `leyline://` link waiting for the UI, once (then None): the one Leyline started with, or one that reached the
+/// open launcher (`deep_link_arrived`).
 #[tauri::command]
 fn deep_link_take(core: State<Core>) -> Option<crate::deeplink::Link> {
     core.deep_link.lock().ok().and_then(|mut d| d.take())
+}
+
+/// A `leyline://` link reached the open launcher (a second start's arguments on Windows and Linux, the deep-link
+/// plugin on macOS): keep it for `deep_link_take`, bring the window forward and tell the UI (ui/app.js listens for
+/// `deep-link`). Nothing starts here: the UI shows the page and the player clicks.
+fn deep_link_arrived(app: &AppHandle, link: Option<crate::deeplink::Link>) {
+    use tauri::Emitter;
+    let Some(link) = link else { return };
+    let fresh = app.state::<Core>().deep_link.lock().map(|mut d| d.put(link, crate::denclick::now_ms())).unwrap_or(false);
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+    if fresh {
+        let _ = app.emit_to("main", "deep-link", ());
+    }
 }
 
 /// Install a dropped or picked .zip, .MPQ, native file or folder.
@@ -4601,6 +4619,22 @@ pub fn run() {
     let dir = settings::app_dir();
     let s = settings::load(&dir);
     tauri::Builder::default()
+        // One launcher: a second start (a leyline:// link clicked while Leyline is open, or a second shortcut click)
+        // hands its arguments to this one and quits; this window comes forward (deep_link_arrived). First, as the
+        // plugin asks.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let link = crate::deeplink::from_args(argv);
+            if link.is_none() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.unminimize();
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+            deep_link_arrived(app, link);
+        }))
+        // leyline:// links on macOS (always handed over as an event, never as an argument) and while open elsewhere
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -4611,9 +4645,25 @@ pub fn run() {
             mods_lock: Arc::new(Mutex::new(())),
             games: Mutex::new(Vec::new()),
             upd: Mutex::new(UpdState::default()),
-            deep_link: Mutex::new(crate::deeplink::from_args(std::env::args())),
+            deep_link: Mutex::new(crate::deeplink::Inbox::new(crate::deeplink::from_args(std::env::args()))),
         })
         .setup(|app| {
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let h = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    deep_link_arrived(&h, crate::deeplink::from_urls(event.urls().iter().map(|u| u.as_str())));
+                });
+                // macOS: a link that started Leyline arrives here rather than in the arguments
+                if let Ok(Some(urls)) = app.deep_link().get_current() {
+                    let link = crate::deeplink::from_urls(urls.iter().map(|u| u.as_str()));
+                    if let (Some(link), Ok(mut d)) = (link, app.state::<Core>().deep_link.lock()) {
+                        if d.waiting.is_none() {
+                            d.put(link, crate::denclick::now_ms());
+                        }
+                    }
+                }
+            }
             start_update_timer(app.handle().clone());
             crate::p2p::cmds::magnet_from_args(); // a shared magnet: link (only with the magnet_links flag on)
             crate::agents::commands::start(app.handle().clone()); // Agents: the heartbeat `Leyline mcp` looks for (agents.rs)
@@ -5211,7 +5261,7 @@ pub fn single_play_test_cli(cli: crate::playtest::Cli) -> i32 {
         mods_lock: Arc::new(Mutex::new(())),
         games: Mutex::new(Vec::new()),
         upd: Mutex::new(UpdState::default()),
-        deep_link: Mutex::new(None),
+        deep_link: Mutex::new(crate::deeplink::Inbox::default()),
     };
     let p = world_paths(k);
     // the test Hero Key (the first-run tool's test account), only from the environment: signed in, then forgotten

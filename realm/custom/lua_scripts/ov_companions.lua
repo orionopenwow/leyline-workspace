@@ -63,6 +63,19 @@
 --                      order <what> <name|all>                 what: follow stay attack passive active assist
 --                                                              noassist cc nocc pull (tanks attack the
 --                                                              owner's target; without a tank bot, everyone)
+--                                                              regroup (follow; a far bot is summoned) flee
+--                                                              (mod-playerbots' "flee": follow and passive)
+--                                                              drink (bots with mana drink now)
+--                                                              tactics, each with its "no" form, kept per owner
+--                                                              and given to bots that join later:
+--                                                              waitpull (damage waits for the tank: +wait for
+--                                                              attack, +threat, "wait for attack time 3"),
+--                                                              healtank (healers "focus heal <the tank>", the
+--                                                              owner when no tank bot), savemana (healers +save
+--                                                              mana), aoe (damage +dps aoe; off: +dps assist)
+--                      inspect <name>                          send me that bot's gear and the upgrades in its bags
+--                      equip <name>\t<item entry>              wear that item from its bags ("e |Hitem:<entry>:")
+--                      upgrade <name>                          wear every upgrade in its bags ("equip upgrade")
 --                      formation <near|melee|line|circle|arrow|shield|queue|chaos>
 --                      prepare                                 maintenance, autogear (not alts), rebuff
 --                      fill <party|raid>[\t<picks>]  usual  dismiss <name|all>
@@ -75,11 +88,16 @@
 --                      <picks>: the window's per-slot choices, "tank=warrior:prot pve,healer=any,dps=mage,dps=any"
 --                      (role=class[:premade spec]); a pick that doesn't fit the role is ignored (the usual pick)
 --   server -> client   roster  H\t<count>\t<cap>\t<raid 0|1>\t<formation>\t<assist 0|1>\t<cc 0|1>\t<state>
---                              \t<buddy on 0|1>\t<raids on 0|1>
+--                              \t<buddy on 0|1>\t<raids on 0|1>\t<waitpull 0|1>\t<healtank 0|1>\t<savemana 0|1>
+--                              \t<aoe 0|1>
 --                              B\t<name>\t<class id>\t<role>\t<kind bot|alt|buddy>\t<spec>\t<item level>\t<status>\t<level>
 --                              S\t<class id>\t<spec>=<role>,...     (the realm's premade specs per class present)
 --                      msg <text>                              the answer the chat would have had
 --                      alts    A\t<name>\t<level>\t<class id>\t<with you 0|1>\t<online 0|1>   U\t<name> (the usual party)
+--                      gear    G\t<name>\t<class id>\t<level>\t<item level>\t<kind>
+--                              I\t<slot>\t<entry>\t<item level>\t<quality>\t<item name>      (what it wears, slots 0-17)
+--                              U\t<slot>\t<entry>\t<item level>\t<quality>\t<item name>\t<now> (the best upgrade in
+--                              its bags for that slot, against the item level it wears there now)
 -- After a window request, the answers to it (and the arrivals it starts) go to the window, not the chat; a typed
 -- command switches them back to the chat.
 --
@@ -340,7 +358,8 @@ end
 -- state (per world server run; mod-playerbots logs a player's bots out when the player logs out)
 ------------------------------------------------------------------------------------------------
 local companions = {}   -- [ownerGuid] = { [botGuid] = { name, cls, role, spec, buddy, alt, order, passive } }
-local orders = {}       -- [ownerGuid] = { formation, assist, cc }: the window's group-wide switches
+local orders = {}       -- [ownerGuid] = { formation, assist, cc, waitpull, healtank, savemana, aoe }: the window's
+                        -- group-wide switches (the tactics are given to bots that join later too: applyTactics)
 local pending = {}      -- [ownerGuid] = { { cls, word, spec, role, buddy, alt, guid, name, at }, ... }
 local lastRecruit = {}  -- [ownerGuid] = os.time()
 local ticking = {}      -- [ownerGuid] = the running arrival timer's number
@@ -477,7 +496,7 @@ end
 ------------------------------------------------------------------------------------------------
 -- arrival: claim the bots that joined, set them up
 ------------------------------------------------------------------------------------------------
-local ownSave, pushRoster, autoArrived, autoDismissed   -- below
+local ownSave, pushRoster, autoArrived, autoDismissed, applyTactics   -- below
 
 local function claimed(botGuid)
     for _, list in pairs(companions) do if list[botGuid] then return true end end
@@ -518,6 +537,7 @@ local function setUp(owner, m, p)
     end
     tell(owner, m, "ll normal")
     tell(owner, m, "follow")
+    if applyTactics then applyTactics(owner, m, ROLES[p.role or ""] and p.role or roleOf(owner, m)) end
 end
 
 local function convertIfNeeded(owner)
@@ -1262,7 +1282,8 @@ pushRoster = function(player)
     local raiding = isRaidGroup(player)
     local lines = { table.concat({ "H", #list, raiding and perPlayerRaid() or perPlayer(), raiding and 1 or 0,
         o.formation or "chaos", o.assist and 1 or 0, o.cc and 1 or 0, state, buddyOn() and 1 or 0,
-        groupMax() > PARTY and 1 or 0 }, "\t") }
+        groupMax() > PARTY and 1 or 0, o.waitpull and 1 or 0, o.healtank and 1 or 0, o.savemana and 1 or 0,
+        o.aoe and 1 or 0 }, "\t") }
     local classes, seen = {}, {}
     for _, e in ipairs(list) do
         local c, m = e.c, e.m
@@ -1332,6 +1353,35 @@ local ORDERS = {
     cc      = { said = "Crowd control on: bots that can will keep extra enemies busy.", group = "cc", on = true,
         fn = function(p, e) strategy(p, e.m, "+cc") end },
     nocc    = { said = "Crowd control off.", group = "cc", on = false, fn = function(p, e) strategy(p, e.m, "-cc") end },
+    -- back to the owner: follow, and a bot that is far away (or elsewhere) is fetched with mod-playerbots' summon
+    regroup = { said = "Regrouping on you.", fn = function(p, e)
+        tell(p, e.m, "follow"); e.c.order = "follow"
+        local sameMap = try(e.m, "GetMapId") == try(p, "GetMapId")
+        local d = tonumber(try(e.m, "GetDistance", p))
+        if not sameMap or (d ~= nil and d > TELEPORT_DISTANCE) then tell(p, e.m, "summon") end
+    end },
+    -- mod-playerbots' own flee: it stops, follows and turns passive (Fight brings it back)
+    flee    = { said = "Running with you: they stop fighting. Press Fight when you are safe.", fn = function(p, e)
+        tell(p, e.m, "flee"); e.c.order = "follow"; e.c.passive = true
+    end },
+    drink   = { said = "Bots with mana drink up.", fn = function(p, e) tell(p, e.m, "drink") end },
+    -- tactics (applyTactics gives the group's ones to bots that join later)
+    waitpull   = { said = "Damage bots wait for the tank to hold the first enemy, and watch their threat.",
+        group = "waitpull", on = true, fn = function(p, e) applyTactics(p, e.m, e.role, "waitpull", true) end },
+    nowaitpull = { said = "Damage bots open the fight with the tank.", group = "waitpull", on = false,
+        fn = function(p, e) applyTactics(p, e.m, e.role, "waitpull", false) end },
+    healtank   = { said = "Healers heal the tank first.", group = "healtank", on = true,
+        fn = function(p, e) applyTactics(p, e.m, e.role, "healtank", true) end },
+    nohealtank = { said = "Healers heal whoever needs it most.", group = "healtank", on = false,
+        fn = function(p, e) applyTactics(p, e.m, e.role, "healtank", false) end },
+    savemana   = { said = "Healers save mana between fights.", group = "savemana", on = true,
+        fn = function(p, e) applyTactics(p, e.m, e.role, "savemana", true) end },
+    nosavemana = { said = "Healers spend mana freely.", group = "savemana", on = false,
+        fn = function(p, e) applyTactics(p, e.m, e.role, "savemana", false) end },
+    aoe        = { said = "Damage bots spread their damage over many enemies.", group = "aoe", on = true,
+        fn = function(p, e) applyTactics(p, e.m, e.role, "aoe", true) end },
+    noaoe      = { said = "Damage bots focus one enemy at a time.", group = "aoe", on = false,
+        fn = function(p, e) applyTactics(p, e.m, e.role, "aoe", false) end },
     -- the tank bots open the fight on the owner's target, the others join in as they assist; no tank bot: everyone
     pull    = { said = "Pulling your target.", target = true, fn = function(p, e) tell(p, e.m, "attack") end,
         pick = function(list)
@@ -1465,6 +1515,171 @@ local function onGear(player, data)
     ilvlCache[e.bg] = nil
     say(player, e.c.name .. " is picking better gear.")
     later(player, 4000, function(p) ilvlCache[e.bg] = nil; pushRoster(p) end)
+end
+
+-- The tactics (the window's Tactics tab), by role, through mod-playerbots' own strategies and commands:
+--   waitpull  damage: +wait for attack (waits after the tank engages), +threat (stops near the tank's threat), and
+--             "wait for attack time 3"; off: -wait for attack, -threat
+--   healtank  healers: "focus heal <tank>" (the first tank bot, else the owner, who then tanks); off: "focus heal none"
+--   savemana  healers: +save mana / -save mana
+--   aoe       damage: +dps aoe (spread); off: +dps assist (focus; the two replace each other)
+-- With no `what`: a bot that just joined gets every tactic its owner has on.
+local function groupTank(owner)
+    for _, e in ipairs(myBots(owner)) do if e.role == "tank" then return e.c.name end end
+    return safeName(owner:GetName())
+end
+applyTactics = function(owner, m, role, what, on)
+    if not what then
+        local o = orders[owner:GetGUIDLow()] or {}
+        for _, k in ipairs({ "waitpull", "healtank", "savemana", "aoe" }) do
+            if o[k] then applyTactics(owner, m, role, k, true) end
+        end
+        return
+    end
+    if what == "waitpull" and role == "dps" then
+        strategy(owner, m, (on and "+" or "-") .. "wait for attack")
+        strategy(owner, m, (on and "+" or "-") .. "threat")
+        if on then tell(owner, m, "wait for attack time 3") end
+    elseif what == "healtank" and role == "healer" then
+        local tank = on and groupTank(owner) or ""
+        tell(owner, m, "focus heal " .. ((on and tank ~= "") and tank:lower() or "none"))
+    elseif what == "savemana" and role == "healer" then
+        strategy(owner, m, (on and "+" or "-") .. "save mana")
+    elseif what == "aoe" and role == "dps" then
+        strategy(owner, m, on and "+dps aoe" or "+dps assist")
+    end
+end
+
+-- The gear window (inspect, equip, upgrade). What each inventory type can go in (equipment slots 0-17).
+local INV_SLOTS = { [1] = { 0 }, [2] = { 1 }, [3] = { 2 }, [5] = { 4 }, [20] = { 4 }, [6] = { 5 }, [7] = { 6 }, [8] = { 7 },
+    [9] = { 8 }, [10] = { 9 }, [11] = { 10, 11 }, [12] = { 12, 13 }, [16] = { 14 }, [13] = { 15, 16 }, [17] = { 15 },
+    [21] = { 15 }, [14] = { 16 }, [22] = { 16 }, [23] = { 16 }, [15] = { 17 }, [25] = { 17 }, [26] = { 17 }, [28] = { 17 } }
+local BACKPACK, BAG_SLOTS = 255, { 19, 20, 21, 22 }
+
+-- Every item in the bot's backpack and bags (Player:GetItemByPos: bag 255 slots 23-38, bags 19-22 slots 0-35).
+local function bagItems(m)
+    local out = {}
+    for slot = 23, 38 do
+        local it = try(m, "GetItemByPos", BACKPACK, slot)
+        if it then out[#out + 1] = it end
+    end
+    for _, bag in ipairs(BAG_SLOTS) do
+        local b = try(m, "GetItemByPos", BACKPACK, bag)
+        local size = b and tonumber(try(b, "GetBagSize")) or 0
+        for slot = 0, math.min(size, 36) - 1 do
+            local it = try(m, "GetItemByPos", bag, slot)
+            if it then out[#out + 1] = it end
+        end
+    end
+    return out
+end
+
+local function itemFields(it)
+    local entry = tonumber(try(it, "GetEntry")) or 0
+    return entry, tonumber(try(it, "GetItemLevel")) or 0, tonumber(try(it, "GetQuality")) or 1, clean(try(it, "GetName") or ""):sub(1, 60)
+end
+
+-- slot -> { entry, ilvl, quality, name }: what the bot wears
+local function worn(m)
+    local out = {}
+    for _, slot in ipairs(GEAR_SLOTS) do
+        local it = try(m, "GetEquippedItemBySlot", slot)
+        if it then
+            local entry, lv, q, nm = itemFields(it)
+            out[slot] = { entry = entry, ilvl = lv, quality = q, name = nm }
+        end
+    end
+    return out
+end
+
+-- slot -> { entry, ilvl, quality, name, now }: the best item in its bags for each slot that beats what it wears there
+-- (the lower of the two rings, trinkets or hands), and that the bot can wear (Player:CanEquipItem when mod-ale has it)
+local function upgrades(m, wearing)
+    wearing = wearing or worn(m)
+    local best = {}
+    for _, it in ipairs(bagItems(m)) do
+        local entry, lv, q, nm = itemFields(it)
+        local slots = INV_SLOTS[tonumber(try(it, "GetInventoryType")) or 0]
+        if entry > 0 and lv > 0 and slots then
+            local pick, low
+            for _, slot in ipairs(slots) do
+                local cur = wearing[slot] and wearing[slot].ilvl or 0
+                if (low == nil or cur < low) and try(m, "CanEquipItem", it, slot) ~= false then pick, low = slot, cur end
+            end
+            if pick and lv > low and (not best[pick] or lv > best[pick].ilvl) then
+                best[pick] = { entry = entry, ilvl = lv, quality = q, name = nm, now = low }
+            end
+        end
+    end
+    return best
+end
+
+local function pushGear(player, e)
+    if not OVMod then return end
+    local m = e.m
+    local wearing = worn(m)
+    local lines = { table.concat({ "G", clean(e.c.name), e.c.cls or m:GetClass(), m:GetLevel(), itemLevel(m),
+        e.c.buddy and "buddy" or e.c.alt and "alt" or e.c.dungeon and "dungeon" or "bot" }, "\t") }
+    for _, slot in ipairs(GEAR_SLOTS) do
+        local w = wearing[slot]
+        if w then lines[#lines + 1] = table.concat({ "I", slot, w.entry, w.ilvl, w.quality, w.name }, "\t") end
+    end
+    local up = upgrades(m, wearing)
+    for _, slot in ipairs(GEAR_SLOTS) do
+        local u = up[slot]
+        if u then lines[#lines + 1] = table.concat({ "U", slot, u.entry, u.ilvl, u.quality, u.name, u.now }, "\t") end
+    end
+    OVMod.Send(player, MOD, "gear", table.concat(lines, "\n"))
+end
+
+local function onInspect(player, data)
+    if not windowReady(player) then return end
+    local e = findBot(player, tostring(data or ""):match("^(%S+)$"))
+    if not e then return say(player, "That bot isn't with you.") end
+    pushGear(player, e)
+end
+
+-- One item from its bags: only an upgrade the bags really hold (the gear window's Equip). Alts too: it is their own
+-- item, worn because the player asked.
+local function onEquip(player, data)
+    if not windowReady(player) then return end
+    local name, entry = tostring(data or ""):match("^(%S+)\t(%d+)$")
+    local e = findBot(player, name)
+    if not e then return say(player, "That bot isn't with you.") end
+    entry = tonumber(entry)
+    local held
+    for _, it in ipairs(bagItems(e.m)) do if tonumber(try(it, "GetEntry")) == entry then held = it end end
+    if not held then return say(player, e.c.name .. " doesn't carry that item.") end
+    if not calm(player) or busy(player, e) then return end
+    tell(player, e.m, "e |Hitem:" .. entry .. ":0|h")
+    ilvlCache[e.bg] = nil
+    say(player, e.c.name .. " puts on " .. clean(try(held, "GetName") or "the item") .. ".")
+    later(player, 1500, function(p)
+        ilvlCache[e.bg] = nil
+        local again = findBot(p, e.c.name)
+        if again then pushGear(p, again) end
+        pushRoster(p)
+    end)
+end
+
+-- Everything better in its bags (mod-playerbots' "equip upgrade"): never new gear, so alts may too.
+local function onUpgrade(player, data)
+    if not windowReady(player) then return end
+    local e = findBot(player, tostring(data or ""):match("^(%S+)$"))
+    if not e then return say(player, "That bot isn't with you.") end
+    local n = 0
+    for _ in pairs(upgrades(e.m)) do n = n + 1 end
+    if n == 0 then return say(player, e.c.name .. " has nothing better in its bags.") end
+    if not calm(player) or busy(player, e) then return end
+    tell(player, e.m, "equip upgrade")
+    ilvlCache[e.bg] = nil
+    say(player, string.format("%s puts on %s from its bags.", e.c.name, plural(n, "upgrade")))
+    later(player, 1500, function(p)
+        ilvlCache[e.bg] = nil
+        local again = findBot(p, e.c.name)
+        if again then pushGear(p, again) end
+        pushRoster(p)
+    end)
 end
 
 -- The Your alts tab: the account's other characters (the ones .companions alts lists, plus which are with you
@@ -1826,6 +2041,9 @@ if OVMod then
     OVMod.On(MOD, "spec", onSpec)
     OVMod.On(MOD, "role", onRole)
     OVMod.On(MOD, "gear", onGear)
+    OVMod.On(MOD, "inspect", onInspect)
+    OVMod.On(MOD, "equip", onEquip)
+    OVMod.On(MOD, "upgrade", onUpgrade)
     OVMod.On(MOD, "fill", function(player, data)
         if not windowReady(player) then return end
         local kind, picks = tostring(data or ""):match("^(%a+)\t?(.*)$")
@@ -2032,4 +2250,5 @@ RegisterPlayerEvent(42, onCommand)      -- PLAYER_EVENT_ON_COMMAND
 OV_COMPANIONS_TEST = { companions = companions, pending = pending, realmCount = realmCount, ROLES = ROLES,
     planRoles = planRoles, SHAPE = SHAPE, specsFor = specsFor, specRole = specRole, adopt = adopt, orders = orders,
     pushRoster = pushRoster, window = OVMod ~= nil, DUNGEONS = DUNGEONS, parsePicks = parsePicks,
-    AUTO_ORDER = AUTO_ORDER, partyOf = partyOf, partyEntries = partyEntries, freshEntries = freshEntries }
+    AUTO_ORDER = AUTO_ORDER, partyOf = partyOf, partyEntries = partyEntries, freshEntries = freshEntries,
+    upgrades = upgrades, INV_SLOTS = INV_SLOTS, applyTactics = function(...) return applyTactics(...) end }

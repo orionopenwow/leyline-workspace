@@ -235,6 +235,7 @@
       const ready = m.kind === "in-game" ? `In game, type ${m.start.cmd}.` : await invoke("mode_prepare_desktop", { client: c.id, id: m.id });
       const started = await invoke("play", { client: c.id, realm: state.official_realm || OFFICIAL });
       say(`${started} ${ready}`, "ok");
+      if (window.LeylineAddons) window.LeylineAddons.afterPlay();
     } catch (e) {
       say(oops(e), "bad");
     } finally {

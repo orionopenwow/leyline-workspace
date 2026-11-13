@@ -438,7 +438,11 @@
       try { await call("engine_start"); job = ENGINE_JOB(); say(""); paint(); follow(true); } catch (e) { say(oops(e, "Single player didn't start. Try again."), "bad"); }
       return;
     }
-    try { const r = await call("engine_play", { client: c.id }); say((r && r.message) || "Started.", "ok"); }
+    try {
+      if (window.LeylineAddons) await window.LeylineAddons.beforePlay(c, { offer: false });   // companions' addon up to date (addons.js)
+      const r = await call("engine_play", { client: c.id }); say((r && r.message) || "Started.", "ok");
+      if (window.LeylineAddons) window.LeylineAddons.afterPlay();
+    }
     catch (e) { say(oops(e, "The game didn't start."), "bad"); }
   }
   async function stop(b) {

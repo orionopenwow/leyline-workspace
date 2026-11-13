@@ -327,10 +327,42 @@ fn den_ground_root(core: &Core, realm: &str) -> Option<PathBuf> {
     None
 }
 
+/// Leyline's in-game addons brought up to date right before a PLAY on a 3.3.5a client (crate::addons::
+/// prepare_for_play; 12 Nov: updates only on launcher start never reached the owner's game folder). Quick (the last
+/// good listing when fresh, else 3 s for the release), never an error, skipped while another install holds the mod
+/// lock. What it updated is the play bar's "In-game add-ons updated" (addons_play_note). `install_missing`: put the
+/// pack in where it isn't (the first Single player setup).
+fn addons_before_launch_now(core: &Core, client: &str, install_missing: bool) {
+    let Ok(p) = core.client(client) else { return };
+    if p.build != clients::Build::V335a {
+        return;
+    }
+    let Ok(_g) = core.mods_lock.try_lock() else { return };
+    let r = crate::addons::prepare_for_play(&core.dir, &p, crate::addons::DESCRIPTOR_URL, install_missing);
+    crate::addons::note_play(&r);
+}
+
+/// `addons_before_launch_now` off the async runtime's own threads.
+async fn addons_before_launch(core: &Core, client: &str, install_missing: bool) {
+    let Ok(p) = core.client(client) else { return };
+    if p.build != clients::Build::V335a {
+        return;
+    }
+    let (dir, lock) = (core.dir.clone(), core.mods_lock.clone());
+    let _ = blocking(move || {
+        let Ok(_g) = lock.try_lock() else { return Ok(()) };
+        let r = crate::addons::prepare_for_play(&dir, &p, crate::addons::DESCRIPTOR_URL, install_missing);
+        crate::addons::note_play(&r);
+        Ok(())
+    })
+    .await;
+}
+
 /// Point the client at the realm, then start it. On the official realm, signed in on Home, the game signs in by
 /// itself and opens at character select (`play_official`).
 #[tauri::command]
 async fn play(app: AppHandle, core: State<'_, Core>, client: String, realm: String) -> Result<String, String> {
+    addons_before_launch(&core, &client, false).await;
     if crate::addresses::is_official_realm(realm.trim()) {
         return play_official(&core, &client, &realm, Some(&app)).await;
     }
@@ -548,6 +580,7 @@ async fn play_realm(app: AppHandle, core: State<'_, Core>, client: String, slug:
         let s = core.snapshot();
         realms::pick_client(&realm, &s.clients, Some(&client))?.id.clone()
     };
+    addons_before_launch(&core, &client, false).await;
     let r2 = realm.clone();
     let addr = blocking(move || realms::desktop_address(&r2, |relay| format!("https://{relay}"))).await?;
     let mut msg = if realm.official { play_official(&core, &client, &addr, Some(&app)).await? } else { point_and_play(&core, &client, &addr, true)? };
@@ -573,6 +606,7 @@ async fn play_realm_herokey(core: State<'_, Core>, client: String, slug: String)
         let s = core.snapshot();
         realms::pick_client(&realm, &s.clients, Some(&client))?.id.clone()
     };
+    addons_before_launch(&core, &client, false).await;
     let d2 = dir.clone();
     let login = blocking(move || crate::herokey::sign_in(&d2, &rid)).await.map_err(|e| {
         if e == "signed_out" { "Log in to Leyline first: Log In, in the title bar.".to_string() } else { e }
@@ -1457,6 +1491,7 @@ async fn den_play_lite(app: AppHandle, core: State<'_, Core>, client: String) ->
     if profile.build != crate::clients::Build::V335a {
         return Err("Your Den plays with a different game folder: pick or add it in the play bar, where its version shows.".into());
     }
+    addons_before_launch(&core, &client, false).await;
     let game = profile.path.clone();
     blocking(move || den_lite_up(&game)).await?;
     let (play, st) = den_launch(&core, &client)?;
@@ -1970,6 +2005,8 @@ async fn world_status(kind: String) -> Result<crate::host::engine::EngineStatus,
 async fn world_setup(core: State<'_, Core>, client: String, kind: String) -> Result<String, String> {
     let k = world_kind(&kind)?;
     let profile = world_client(&core, k, &client)?;
+    // the first setup puts the Leyline addons in too (companions, the bot bar): the world plays with them
+    addons_before_launch(&core, &profile.id, true).await;
     blocking(move || world_setup_with(k, &profile)).await
 }
 
@@ -2280,6 +2317,8 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     use crate::host::{bossrush as br, engine as eng, localworld as lw, oneclick::tag};
     let profile = world_client(core, k, client)?;
     let client = profile.id.as_str();
+    // `first`: the first entry from one click, so the addons go in if they aren't yet
+    addons_before_launch_now(core, client, first);
     let p = world_paths(k);
     let st = eng::status(&p);
     if !st.set_up {
@@ -4678,6 +4717,9 @@ pub fn run() {
             crate::addons::commands::addons_auto_update,
             crate::addons::commands::addons_set_prefs,
             crate::addons::commands::addons_should_offer,
+            crate::addons::commands::addons_before_play,
+            crate::addons::commands::addons_play_note,
+            crate::addons::commands::addons_mark_asked,
             // Agents: Allow agents, approval cards, the audit, Connect (agents.rs, ui/agents.js)
             crate::agents::commands::agents_state,
             crate::agents::commands::agents_set_allow,

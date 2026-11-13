@@ -1807,10 +1807,12 @@ $("play-form").addEventListener("submit", async (ev) => {
     if (window.LeylineLoadouts && rr && !(await window.LeylineLoadouts.beforeJoin(rr, c)).go) { say("play-status", ""); return; }
     const j = window.LeylineGameMods && rr ? await window.LeylineGameMods.beforeJoin(rr, c, (t, k) => say("play-status", t, k)) : { go: true, leyline: false };
     if (!j.go) { say("play-status", ""); return; }
-    if (window.LeylineAddons && isOfficial() && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
+    // the Leyline addons up to date first (any realm), and offered on the official realm (addons.js)
+    if (window.LeylineAddons && !j.leyline) await window.LeylineAddons.beforePlay(c, { offer: isOfficial() });
     say("play-status", "Starting…");
     const started = await invoke("play", { client: c.id, realm });
     say("play-status", playLine(started, c), "ok");
+    if (window.LeylineAddons) window.LeylineAddons.afterPlay();   // "In-game add-ons updated" on the play bar
     $("play-status").title = String(started);   // the whole of it on hover
     statusFor = playKey();
     played = true;
@@ -3724,9 +3726,10 @@ async function playRealm(r, btn) {
     if (window.LeylineLoadouts && !(await window.LeylineLoadouts.beforeJoin(r, c)).go) { say("rl-status", ""); btn.disabled = false; return; }
     const j = window.LeylineGameMods ? await window.LeylineGameMods.beforeJoin(r, c, (t, k) => say("rl-status", t, k)) : { go: true, leyline: false };
     if (!j.go) { say("rl-status", ""); btn.disabled = false; return; }
-    if (window.LeylineAddons && r.official && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
+    if (window.LeylineAddons && !j.leyline) await window.LeylineAddons.beforePlay(c, { offer: !!r.official });   // up to date; offered on the official realm (addons.js)
     const msg = await invoke("play_realm", { client: c.id, slug: r.slug });
     started = true;
+    if (window.LeylineAddons) window.LeylineAddons.afterPlay();
     holdPlay(null, true);
     say("rl-status", msg + (r.official ? "" : ` ${r.name} has its own accounts: log in with yours there`
       + (r.join_url ? ", or make one with Make an account." : ".")), "ok");
@@ -3748,7 +3751,9 @@ async function playRealmHeroKey(r, btn) {
   btn.disabled = true;
   say("rl-status", `Signing in to ${r.name} with your Hero Key…`);
   try {
+    if (window.LeylineAddons) await window.LeylineAddons.beforePlay(picked, { offer: false });   // the Leyline addons up to date (addons.js)
     const l = await invoke("play_realm_herokey", { client: picked.id, slug: r.slug });
+    if (window.LeylineAddons) window.LeylineAddons.afterPlay();
     const mins = Math.max(1, Math.round((l.valid_s || 600) / 60));
     if (l.auto) say("rl-status", `Started on ${r.name} as ${l.user}. The game signs you in by itself.`, "ok");
     else {

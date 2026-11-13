@@ -9,9 +9,14 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const TIMEOUT: Duration = Duration::from_secs(8);
+/// How long a request may wait for the server to take the connection. A server that is down but whose name answers
+/// (the connection hangs) gives up after this, not after the whole `TIMEOUT` (audit 12 Nov).
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+/// The whole realm list, every source and name together: then the kept copy is shown (realms.rs fetch_network).
+pub const REALMS_BUDGET: Duration = Duration::from_secs(10);
 
 /// A listing as the UI sees it.
 #[derive(Debug, Clone, Serialize)]
@@ -49,10 +54,27 @@ fn mtime(p: &Path) -> Option<u64> {
     fs::metadata(p).ok()?.modified().ok()?.duration_since(UNIX_EPOCH).ok().map(|d| d.as_secs())
 }
 
-/// GET `url` as text, failing after `timeout`.
+/// GET `url` as text, failing after `timeout` (the old name's retry included, `addresses::try_both`).
 pub fn get(url: &str, timeout: Duration) -> Result<String, String> {
-    let agent = ureq::AgentBuilder::new().timeout(timeout).user_agent(concat!("Leyline/", env!("CARGO_PKG_VERSION"))).build();
-    crate::addresses::try_both(url, |u| agent.get(u).call()).map_err(|e| e.to_string())?.into_string().map_err(|e| e.to_string())
+    get_by(url, Instant::now() + timeout)
+}
+
+/// GET `url` as text, failing at `deadline`: one budget for the new name and the old name together, a connection
+/// that hangs given up after `CONNECT_TIMEOUT`.
+pub fn get_by(url: &str, deadline: Instant) -> Result<String, String> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(CONNECT_TIMEOUT)
+        .user_agent(concat!("Leyline/", env!("CARGO_PKG_VERSION")))
+        .build();
+    crate::addresses::try_both(url, |u| agent.get(u).timeout(left(deadline)).call())
+        .map_err(|e| e.to_string())?
+        .into_string()
+        .map_err(|e| e.to_string())
+}
+
+/// The time left before `deadline` (at least a millisecond: a request with none fails at once).
+pub fn left(deadline: Instant) -> Duration {
+    deadline.saturating_duration_since(Instant::now()).max(Duration::from_millis(1))
 }
 
 /// A JSON document fetched with a cache fallback.

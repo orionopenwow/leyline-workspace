@@ -369,6 +369,15 @@ pub fn cached(app_dir: &Path, url: &str) -> Option<Vec<Project>> {
     parse(&v, &origin).ok().map(|(_, p)| p)
 }
 
+/// The whole catalog as last fetched, marked as kept, without the network: Discover shows it at once while the fresh
+/// list loads (app.rs mods_catalog_cached). None before the first fetch.
+pub fn cached_catalog(app_dir: &Path, url: &str) -> Option<Catalog> {
+    let origin = net::origin(url)?;
+    let (v, saved_at) = net::read_cache(&cache_path(app_dir))?;
+    let (categories, projects) = parse(&v, &origin).ok()?;
+    Some(Catalog { categories, projects, from_cache: true, saved_at, error: None })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -450,6 +459,9 @@ mod tests {
         let off = fetch_from(&format!("{}/wrath/mods/all.json", dead_url().trim_end_matches("/x.json")), d.path()).unwrap();
         assert!(off.from_cache && off.error.is_some());
         assert_eq!(cached(d.path(), &format!("{base}/wrath/mods/all.json")).unwrap().len(), 3);
+        let kept = cached_catalog(d.path(), &format!("{base}/wrath/mods/all.json")).unwrap();
+        assert!(kept.from_cache && kept.projects.len() == 3 && kept.error.is_none() && kept.saved_at.is_some());
+        assert!(cached_catalog(tempfile::tempdir().unwrap().path(), &format!("{base}/wrath/mods/all.json")).is_none());
         // A reply that is not a catalog does not replace the cache.
         let bad = serve_routes(vec![("/wrath/mods/all.json", "200 OK", br#"{"mods":[]}"#.to_vec())]);
         assert!(fetch_from(&format!("{bad}/wrath/mods/all.json"), d.path()).unwrap().from_cache);

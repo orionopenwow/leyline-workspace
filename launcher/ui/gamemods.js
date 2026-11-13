@@ -133,7 +133,11 @@
         if (!c) { b.disabled = true; b.title = "Add a game client first"; }
         else if (typeof fitsClient === "function" && !fitsClient(p, c)) { b.disabled = true; b.title = `Made for ${p.builds.join(" / ")} clients`; }
         else if (mine) b.disabled = true;
-        b.addEventListener("click", () => installProject(p, b).then(render));
+        // after the install the player stays here, on its card, lit (app.js decorateCard)
+        b.addEventListener("click", () => installProject(p, b).then(() => {
+          render();
+          if (gmList && $("gm-section") && $("gm-section").contains(gmList.el)) { renderSection(); if (gmList.el.getClientRects().length) gmList.focusRow(p.id); }
+        }));
         acts.append(b);
       }
       if (p.page || p.repo) {
@@ -234,22 +238,62 @@
     art.append(thumb, body);
     return art;
   }
+  // The tab is one list on the list kit (listkit.js, docs/LAUNCHER-LISTS.md), in three groups (Play now, Game mode
+  // mods, Coming and hosted): a search, chips (Installed, Favourites: the Mods page's one set of stars), Sort, the
+  // count, keys, and Enter for the card's first button (Play, Install, Open Your Den).
+  let gmList = null;
+  const GM_GROUPS = ["Play now", "Game mode mods", "Coming and hosted"];
+  const rowName = (r) => (r.type === "den" ? "Your Den" : r.type === "mode" ? r.m.title : r.g.name);
+  function sectionList(box) {
+    if (gmList && box.contains(gmList.el)) return gmList;
+    const line = el("p", "hint shelf-line", "Minigames and modes that change how you play: on our realm, in your browser, or on this PC.");
+    const holder = el("div", "gm-list");
+    holder.id = "gm-list";
+    box.replaceChildren(line, holder);
+    gmList = window.LeylineList.create(holder, {
+      id: "gamemodes",
+      key: (r) => r.k,
+      label: "Game modes",
+      noun: ["game mode", "game modes"],
+      nameOf: rowName,
+      render: (r, ctx) => {
+        const c = r.type === "den" ? denCard() : r.type === "mode" ? modeCard(r.m) : card(r.g);
+        if (r.type === "mod" && typeof decorateCard === "function") decorateCard(c, r.g.project);
+        const star = ctx.star();
+        star.classList.add("dc-star");
+        const thumb = c.querySelector(".dc-thumb");
+        if (thumb) thumb.append(star); else c.prepend(star);
+        if (ctx.query) for (const n of c.querySelectorAll(".dc-body .name, .dc-body .desc")) window.LeylineList.mark(n, ctx.query);
+        return c;
+      },
+      search: { placeholder: "Search game modes", fields: (r) => (r.type === "den" ? ["Your Den", "building room on this PC", "Dojo"]
+        : r.type === "mode" ? [r.m.title, r.m.line, KIND_WORD[r.m.kind]] : [r.g.name, r.g.line, r.g.project ? r.g.project.author : "", r.g.project ? (r.g.project.tags || []).join(" ") : ""]) },
+      filters: [
+        { id: "have", label: "Installed", test: (r) => r.type === "mod" && typeof installed !== "undefined" && installed.some((x) => x.key === r.g.id) },
+        { id: "fav", label: "Favourites", test: (r) => !!(gmList && gmList.isFav(r)) },
+      ],
+      filtersLabel: "Show",
+      sort: { options: [{ id: "name", label: "Name", compare: (a, b) => rowName(a).localeCompare(rowName(b)) }], none: "Suggested", label: "Sort" },
+      group: { of: (r) => r.group, order: GM_GROUPS, hideSingle: false },
+      favourites: { id: "mods", label: "Favourites" },
+      primary: (r, node) => { const b = node.querySelector(".acts .btn:not([disabled])"); if (b) b.click(); },
+      empty: (info) => (info.reason === "loading" ? "Loading the game modes…" : null),
+      classes: { body: "mod-grid dc-grid dc-big" },
+    });
+    return gmList;
+  }
   function renderSection() {
     const box = $("gm-section");
-    if (!box) return;
+    if (!box || !window.LeylineList) return;
     const all = modes();
     const live = all.filter((m) => m.status === "live" && m.kind !== "realm-type");
     const other = all.filter((m) => !live.includes(m));
-    const grid = (cards) => { const g = el("div", "mod-grid dc-grid dc-big"); g.append(...cards); return g; };
-    const kids = [el("p", "hint shelf-line", "Minigames and modes that change how you play: on our realm, in your browser, or on this PC.")];
-    kids.push(el("h3", "gm-h", "Play now"), grid(live.map(modeCard).concat([denCard()])));
-    const mods = entries().filter((g) => g.kind === "mod");
-    if (mods.length) {
-      kids.push(el("h3", "gm-h", "Game mode mods"), el("p", "lede", "From the mods list. Install adds them to your game folder; turn them off any time in Installed or with a loadout."));
-      kids.push(grid(mods.map(card)));
-    }
-    if (other.length) kids.push(el("h3", "gm-h", "Coming and hosted"), grid(other.map(modeCard)));
-    box.replaceChildren(...kids);
+    const rows = live.map((m) => ({ k: "mode:" + m.id, type: "mode", m, group: "Play now" }));
+    rows.push({ k: "den", type: "den", group: "Play now" });
+    for (const g of entries().filter((x) => x.kind === "mod")) rows.push({ k: g.id, type: "mod", g, group: "Game mode mods" });
+    for (const m of other) rows.push({ k: "mode:" + m.id, type: "mode", m, group: "Coming and hosted" });
+    const list = sectionList(box);
+    list.update(rows);
   }
   async function showSection() {
     renderSection();

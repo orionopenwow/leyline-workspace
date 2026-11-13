@@ -2242,6 +2242,17 @@ function decorateCard(card, p) {
   card.classList.toggle("just", !!justInstalled && p.id === justInstalled);
   return card;
 }
+// The kit's no-match words, with this list's own word for its rows ("No addons match “x”."): its noun is a function (the
+// count says mods or addons by the tab), so its own words would say "items".
+function noMatch(info, api, many) {
+  const acts = [];
+  if (info.suggest) acts.push({ label: `Show ${info.suggest.n} in ${info.suggest.long}`, run: () => api.setTab(info.suggest.tab, true) });
+  if (info.query && info.filtersOn) acts.push({ label: "Reset", run: () => api.reset() });
+  else if (info.query) acts.push({ label: "Clear search", run: () => api.setQuery("", true) });
+  else if (info.filtersOn) acts.push({ label: "Clear filters", run: () => api.resetFilters() });
+  const text = info.query ? `No ${many} match “${info.query}”.` : `No ${many} match these filters.`;
+  return { text: text + (info.query && !info.filtersOn ? " Try fewer words." : ""), actions: acts };
+}
 function catListMake() {
   if (catList || !window.LeylineList || !$("cat-grid")) return catList;
   const word = () => (catShelf() === "addons" ? ["addon", "addons"] : ["mod", "mods"]);
@@ -2284,7 +2295,7 @@ function catListMake() {
       const n = node.querySelector(".dc-body .name");
       if (n && n.tagName === "BUTTON") n.click();
     },
-    empty: (info) => {
+    empty: (info, api) => {
       const tab = catShelf();
       if (info.reason === "loading") return tab === "addons" ? "Loading the addons…" : "Loading the mods…";
       if (catFailed) return false;   // "Can't load the mods. Try again." is already the one line
@@ -2295,7 +2306,7 @@ function catListMake() {
       if (gname && !info.query && !catalog.projects.some((p) => S.group(p) === catFilter.group)) {
         return { text: `No mods in ${gname} yet. Make the first one: see Make a mod.`, actions: [{ label: "All mods", run: () => { catFilter.group = ""; renderCatalog(); } }] };
       }
-      return null;   // the kit's words: Clear search, Clear filters, Reset
+      return noMatch(info, api, tab);   // the kit's words: Clear search, Clear filters, Reset
     },
     classes: { body: "mod-grid dc-grid", empty: "dc-empty" },
     bar: $("dc-kbar"),
@@ -2875,7 +2886,7 @@ function instListMake() {
       const page = instPage(m);
       if (page) openUrl(page);
     },
-    empty: (info) => {
+    empty: (info, api) => {
       const c = pickedClient();
       if (!c) return "Add your game client first.";
       if (buildTag(c.build) === "other" && !installed.length) return "Leyline does not know this client's build, so it installs no mods or addons here. Realms work.";
@@ -2884,7 +2895,7 @@ function instListMake() {
         return { text: `No ${word} in this client yet. Find some in Discover › ${instShelf === "addons" ? "Addons" : "Mods"}, or drop one above.`,
           actions: [{ label: instShelf === "addons" ? "Find addons" : "Find mods", primary: true, run: () => { show("mods", false, "discover"); if (window.LeylineThemes) window.LeylineThemes.showTab(instShelf); } }] };
       }
-      return null;
+      return noMatch(info, api, instShelf === "addons" ? "addons" : "mods");
     },
     classes: { body: "cards mods-grid", empty: "inst-empty" },
   });

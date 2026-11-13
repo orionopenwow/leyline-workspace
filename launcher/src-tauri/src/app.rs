@@ -373,7 +373,8 @@ fn den_ground_root(core: &Core, realm: &str) -> Option<PathBuf> {
 /// pack in where it isn't (the first Single player setup).
 fn addons_before_launch_now(core: &Core, client: &str, install_missing: bool) {
     let Ok(p) = core.client(client) else { return };
-    if p.build != clients::Build::V335a {
+    // the page checked them a moment ago (addons.js beforePlay): one check per Play
+    if p.build != clients::Build::V335a || (!install_missing && crate::addons::checked_recently(&p.id)) {
         return;
     }
     let Ok(_g) = core.mods_lock.try_lock() else { return };
@@ -384,7 +385,7 @@ fn addons_before_launch_now(core: &Core, client: &str, install_missing: bool) {
 /// `addons_before_launch_now` off the async runtime's own threads.
 async fn addons_before_launch(core: &Core, client: &str, install_missing: bool) {
     let Ok(p) = core.client(client) else { return };
-    if p.build != clients::Build::V335a {
+    if p.build != clients::Build::V335a || (!install_missing && crate::addons::checked_recently(&p.id)) {
         return;
     }
     let (dir, lock) = (core.dir.clone(), core.mods_lock.clone());
@@ -1326,6 +1327,12 @@ fn den_lite_up(game: &Path) -> Result<bool, String> {
     lite::update_in_background(&app);
     let l = l.with_client(game);
     let was = l.status().running;
+    // a local world on this PC holds the same login port: said by name (never stopped unasked)
+    if !was {
+        if let Some(k) = running_world() {
+            return Err(format!("{} is running on this PC and uses the same login port as Your Den. Stop it on the Single player page (everyone is saved), then press Play again.", k.title()));
+        }
+    }
     l.start()?;
     for _ in 0..50 {
         if l.status().running {
@@ -3805,6 +3812,8 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
     if !st.running {
         return Err("Boss Rush isn't running: press Start first.".into());
     }
+    // the Leyline addons (the BossFights window) up to date first, as every local world's Play does
+    addons_before_launch(&core, &profile.id, false).await;
     let pk = pick.clone();
     let (reply, hero_acc, pass) = blocking(move || {
         let p = bossrush_paths();
@@ -3835,6 +3844,10 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
     let session = if refused { None } else { Some(crate::hybrid::Session { user: hero_acc.clone(), pass: pass.clone(), realm: Some(realm.into()), enter: true, pick: None, make: None }) };
     let (message, hybrid) = point_and_play_with(&core, &client, eng::REALM, true, session, true)?;
     let auto = hybrid.is_ok();
+    // the world stops (everyone saved) a minute after this game closes (Settings › world_stop_on_exit), as the other
+    // local worlds do
+    let plays = WORLD_PLAYS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    stop_world_when_closed(core.dir.clone(), eng::Kind::BossRush, LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed), plays);
     Ok(BossRushPlay { message, engine: "exact".into(), hero, made, auto, account: if auto { String::new() } else { hero_acc }, password: if auto { String::new() } else { pass }, code })
 }
 

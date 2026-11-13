@@ -78,6 +78,13 @@ local SAMPLE_NAME = "Leyline Sample Hangout"
 local SAMPLE_NOTE = "temporary"
 local ASK_EVERY, ANSWER_WAIT = 30, 6     -- seconds: refresh at most this often; no answer after this = unavailable
 local UNAVAILABLE = "Realm list unavailable"
+-- On a world on the player's own PC (its hello names its kind: W.RealmKind) there is no online list to ask: said
+-- plainly, with where the online realms and their own worlds are.
+local LOCAL_UNAVAILABLE = "This world runs on your PC, so the online realm list isn't here: open the Leyline launcher to play online. Your own worlds are under Mine."
+local function unavailable(text)
+    if W.RealmKind then return LOCAL_UNAVAILABLE end
+    return text or UNAVAILABLE
+end
 local POP_MEDIUM, POP_HIGH = 10, 50       -- players (people, not bots) for Medium / High when a realm has no maximum
 
 local RULESETS = {
@@ -287,7 +294,7 @@ end
 
 function L.Request(force)
     if not force and L.askedAt and now() - L.askedAt < ASK_EVERY and not L.failed then return false end
-    if not SendAddonMessage or not UnitName then setStatus(UNAVAILABLE); return false end
+    if not SendAddonMessage or not UnitName then setStatus(unavailable()); return false end
     L.askedAt, L.waiting, L.failed = now(), true, nil
     setStatus("Asking the realm for the realm list...")
     pcall(SendAddonMessage, PREFIX, "L", "WHISPER", UnitName("player"))
@@ -804,7 +811,7 @@ function L.OnMessage(prefix, msg, channel, sender)
         L.incoming, L.waiting, L.failed = nil, nil, true
         L.all = {}
         L.View()
-        setStatus(rest ~= "" and plain(rest, 120) or UNAVAILABLE)
+        setStatus(unavailable(rest ~= "" and plain(rest, 120) or nil))
         L.Refresh()
     end
 end
@@ -1606,7 +1613,7 @@ local function build()
         end
         if L.waiting and L.askedAt and now() - L.askedAt > ANSWER_WAIT then
             L.waiting, L.failed, L.incoming = nil, true, nil
-            setStatus(UNAVAILABLE)
+            setStatus(unavailable())
             L.View()
             L.Refresh()
         end

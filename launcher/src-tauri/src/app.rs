@@ -3806,6 +3806,18 @@ async fn realms_list(core: State<'_, Core>) -> Result<RealmList, String> {
     Ok(l)
 }
 
+/// The realm list as last fetched, at once and without the network (None before the first fetch): the page shows it
+/// while `realms_list` asks the network.
+#[tauri::command]
+async fn realms_list_cached(core: State<'_, Core>) -> Result<Option<RealmList>, String> {
+    let dir = core.dir.clone();
+    let l = blocking(move || Ok(realms::cached_list(&dir))).await?;
+    if let Some(l) = &l {
+        core.allow(l.realms.iter().flat_map(|r| [r.join_url.clone(), r.discord.clone(), r.report_url.clone()]).flatten());
+    }
+    Ok(l)
+}
+
 /// Open the browser client. Only that one address: the UI cannot open arbitrary URLs through this.
 #[tauri::command]
 fn open_browser_play(app: AppHandle) -> Result<(), String> {
@@ -3862,6 +3874,18 @@ async fn mods_catalog(core: State<'_, Core>) -> Result<Catalog, String> {
     let dir = core.dir.clone();
     let c = blocking(move || catalog::fetch(&dir)).await?;
     core.allow(c.projects.iter().flat_map(|p| [p.repo.clone(), p.page.clone(), p.author_url.clone()]).filter(|u| !u.is_empty()));
+    Ok(c)
+}
+
+/// The mods list as last fetched, at once and without the network (None before the first fetch): Discover shows it
+/// while `mods_catalog` asks the network.
+#[tauri::command]
+async fn mods_catalog_cached(core: State<'_, Core>) -> Result<Option<Catalog>, String> {
+    let dir = core.dir.clone();
+    let c = blocking(move || Ok(catalog::cached_catalog(&dir, catalog::URL))).await?;
+    if let Some(c) = &c {
+        core.allow(c.projects.iter().flat_map(|p| [p.repo.clone(), p.page.clone(), p.author_url.clone()]).filter(|u| !u.is_empty()));
+    }
     Ok(c)
 }
 
@@ -4517,6 +4541,8 @@ pub fn run() {
             catalog_listing,
             realm_listing,
             realms_list,
+            realms_list_cached, // the kept list at once, then realms_list (audit 12 Nov)
+            mods_catalog_cached,
             open_browser_play,
             realm_status,
             open_link,

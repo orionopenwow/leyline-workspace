@@ -99,15 +99,44 @@ pub fn official_realm() -> &'static str {
 }
 
 /// Run `call` on `url`; when it could not reach the server at all (DNS, connect, TLS: not an HTTP answer) and
-/// `url` is on a new name, run it once more on the old name.
+/// `url` is on a new name, run it once more on the old name. Once a new name has answered in this run, this computer
+/// resolves it: a later failure is the server or the network, and the old name (the same server) would only double the
+/// wait (audit 12 Nov: a realm list could take 32 s), so it is not tried again.
 pub fn try_both<T>(url: &str, mut call: impl FnMut(&str) -> Result<T, ureq::Error>) -> Result<T, ureq::Error> {
     match call(url) {
-        Err(ureq::Error::Transport(t)) => match fallback(url) {
+        Err(ureq::Error::Transport(t)) => match fallback(url).filter(|_| !new_name_answered()) {
             Some(old) => call(&old),
             None => Err(ureq::Error::Transport(t)),
         },
-        other => other,
+        other => {
+            if fallback(url).is_some() {
+                set_new_name_answered();
+            }
+            other
+        }
     }
+}
+
+// One flag for the whole run (every request thread); each test thread has its own, so tests don't meet.
+#[cfg(not(test))]
+static NEW_NAME_ANSWERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(not(test))]
+fn new_name_answered() -> bool {
+    NEW_NAME_ANSWERED.load(std::sync::atomic::Ordering::Relaxed)
+}
+#[cfg(not(test))]
+fn set_new_name_answered() {
+    NEW_NAME_ANSWERED.store(true, std::sync::atomic::Ordering::Relaxed)
+}
+#[cfg(test)]
+thread_local! { static NEW_NAME_ANSWERED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+#[cfg(test)]
+fn new_name_answered() -> bool {
+    NEW_NAME_ANSWERED.with(|c| c.get())
+}
+#[cfg(test)]
+fn set_new_name_answered() {
+    NEW_NAME_ANSWERED.with(|c| c.set(true))
 }
 
 #[cfg(test)]
@@ -164,5 +193,27 @@ mod tests {
         });
         assert_eq!(r.unwrap(), 7);
         assert_eq!(seen, ["https://leylinelauncher.com/x", "https://play.openvanilla.app/x"]);
+    }
+
+    #[test]
+    fn no_old_name_retry_once_the_new_name_answered() {
+        let down = || ureq::get("http://127.0.0.1:1/").call().map(|_| 0u8);
+        let mut seen = vec![];
+        // the new name answers once (any HTTP answer counts)
+        let r: Result<u8, ureq::Error> = try_both("https://leylinelauncher.com/a", |u| { seen.push(u.to_string()); Ok(1) });
+        assert_eq!(r.unwrap(), 1);
+        // then the server is unreachable: one try, no second wait on the old name
+        let r: Result<u8, ureq::Error> = try_both("https://leylinelauncher.com/b", |u| { seen.push(u.to_string()); down() });
+        assert!(matches!(r, Err(ureq::Error::Transport(_))));
+        assert_eq!(seen, ["https://leylinelauncher.com/a", "https://leylinelauncher.com/b"]);
+    }
+
+    #[test]
+    fn a_local_address_never_marks_the_new_name() {
+        let r: Result<u8, ureq::Error> = try_both("http://127.0.0.1:9/x", |_| Ok(1));
+        assert_eq!(r.unwrap(), 1);
+        let mut seen = vec![];
+        let _ = try_both("https://leylinelauncher.com/x", |u| { seen.push(u.to_string()); ureq::get("http://127.0.0.1:1/").call().map(|_| 0u8) });
+        assert_eq!(seen.len(), 2, "still tries the old name: {seen:?}");
     }
 }

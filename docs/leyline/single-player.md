@@ -19,7 +19,8 @@ join you whenever you like.
 1. Open **Single player** in Leyline's side menu (or press **Original world** on Home).
 2. Press **Play the original world (level 60) with companions**.
 3. The first time, Leyline gets its engine (one download, shared by every single player world), reads the maps from
-   your game folder and fills the world. This takes 10 to 30 minutes. You can use the rest of Leyline meanwhile.
+   your game folder and fills the world. This takes 5 to 20 minutes (most of it is filling the world). You can use
+   the rest of Leyline meanwhile.
 4. Your game starts and logs in by itself. You land on your characters, or on character creation if you have none.
 
 After the first time, the same button takes a minute or two.
@@ -35,7 +36,16 @@ you straight into the world at level 1.
 
 ## Your companions
 
-In the game, your companions are a few words away:
+In the game, open the **Bots window**: press **Ctrl-B**, click the **Bots** button by the minimap, or type `/comp`.
+From the window you bring bots, pick their roles and specs, see their gear and send them home. Walk into a 5-player
+dungeon and dungeon buddies fill your party by themselves; they go home when you leave.
+
+Want bots to join by themselves when you log in? On the **Single player** page, **Your world** has companions, dungeon
+buddies, a roaming population and the experience rate. A new world starts quiet: nobody joins until you ask.
+
+The Leyline button on the minimap (or `/guide`) opens this world's own guide in the game.
+
+Or type:
 
 | Type | What happens |
 |---|---|
@@ -69,8 +79,26 @@ just for them inside, and checks the way in before you send it.
 - A friend **anywhere else** comes in through the Leyline relay. Nothing to open on your router; your address is never
   shown.
 
-Your friend needs Leyline, their own game folder and a Hero Key. Game files never travel between you. See
+Your friend needs Leyline and their own game folder. No Hero Key and no account: their Leyline proves it's them.
+Game files never travel between you. In the game, `/together` (or Friends, the Leyline tab) makes the link too. See
 [Host for friends](host-for-friends.md) for the checklist and the fixes.
+
+Their character stays on your world, theirs to keep. If your friend reinstalls or moves to a new PC, they keep their
+characters by bringing back their saved key (**Settings**, **Your Leyline network key**). If they didn't save it,
+invite them again and use **Give their characters to…** on their old row in your friends list.
+
+## Your world: saving, stopping, offline
+
+- Your world is saved as you play.
+- It stops (everyone saved) a minute after the game closes, and when Leyline closes. Both are switches in **Single
+  player settings**. With friends in your world, Leyline asks before it closes.
+- **Offline**: after the first setup, your world plays with no internet. The internet is only needed for the first
+  setup, engine and add-on updates, logging in with your Hero Key (your characters stay reachable without it), and
+  inviting a friend through the relay (a friend on the same network needs none).
+- **Updates**: when the engine has a fix, the world's card says **Update your world engine**. Your characters, your
+  friends' characters and your settings stay; your world is backed up first.
+- **Your characters and your Hero Key**: logged in or not, Play goes in on the login that holds your characters on
+  this PC. If they're on an earlier login, the card offers **Move them to the login I use now**.
 
 ## The first era on its own: Leyline Solo
 
@@ -91,3 +119,6 @@ also runs in Docker there (its page shows the way).
 | Setting up stopped | Press **Try again**: it carries on from the step that stopped. **Logs** shows what happened |
 | "is running on this PC, and one world runs at a time" | Press **Stop it and play**: the other world's characters are saved |
 | The game doesn't log in by itself | Type the login shown on the card once; Leyline made it for you and keeps it on your PC |
+| Something is broken (a file gone, the world won't start) | Press **Repair** on the error card: it checks every engine file, puts back only what's broken and keeps your saves |
+| You want an earlier copy of your world | **Back-ups and Restore** on the world's card: a back-up is made once a day, before every engine update and before Repair (the newest 10 are kept). **Restore** backs up your world as it is now first, so you can undo it |
+| An antivirus warning | Allow Leyline's folder in it, then press **Repair** |

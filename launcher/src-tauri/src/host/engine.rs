@@ -386,8 +386,13 @@ pub struct State {
     /// The installed zip's sha256 and engine.json version.
     pub sha256: String,
     pub version: String,
-    /// The release's sha256 when last looked (engine_update_check).
+    /// The release's sha256 when last looked (engine_update_check), and when that was (unix seconds). The engine is
+    /// shared by every world: Single player's state.json holds these for all of them ([`engine_shas`]).
     pub latest_sha256: String,
+    pub latest_at: u64,
+    /// The engine (its sha256) this world's servers last started on: a different one now is an update, and the
+    /// world's saves are backed up before it first runs on it.
+    pub ran_sha: String,
     pub db_made: bool,
     pub filled: bool,
     pub account_made: bool,
@@ -947,7 +952,7 @@ pub fn have(p: &Paths, s: &State, update: bool) -> Have {
     let db = s.db_made && db_made(p);
     Have {
         installed: installed(p),
-        update: update && !s.latest_sha256.is_empty() && s.latest_sha256 != s.sha256,
+        update: update && update_ready(p),
         maps: maps_done(p),
         db,
         filled: s.filled && db,
@@ -992,6 +997,8 @@ pub struct EngineStatus {
     pub kind: Kind,
     pub realm_name: String,
     pub other_running: Option<Kind>,
+    /// When the release was last asked for a newer engine (unix seconds; 0: never).
+    pub update_checked: u64,
 }
 
 pub fn status(p: &Paths) -> EngineStatus {
@@ -1007,7 +1014,7 @@ pub fn status(p: &Paths) -> EngineStatus {
         installed: h.installed,
         can_get: !h.installed && supported(),
         version: s.version.clone(),
-        update: h.installed && !s.latest_sha256.is_empty() && s.latest_sha256 != s.sha256,
+        update: h.installed && update_ready(p),
         maps: h.maps,
         db: h.db,
         filled: h.filled,
@@ -1026,6 +1033,7 @@ pub fn status(p: &Paths) -> EngineStatus {
         kind: p.kind,
         realm_name: p.kind.realm_name().into(),
         other_running: other,
+        update_checked: engine_shas(p).2,
     }
 }
 
@@ -1276,6 +1284,14 @@ fn repair(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> 
     if ensure_secrets_for(&mut s, p.kind).map_err(|e| tag("other", e))? {
         save_state(p, &s).map_err(|e| tag("disk", e))?;
     }
+    // the saves as they are, before anything is mended (a database too broken to give them: logged, Repair goes on)
+    if s.account_made && db_made(p) {
+        job(|j| j.detail = "Backing up your world first".into());
+        match backup_why(p, "before Repair") {
+            Ok(_) => setup_log(p, "backed up before Repair"),
+            Err(e) => setup_log(p, &format!("the back-up before Repair didn't work: {e}")),
+        }
+    }
     let mut want = String::new();
     for (i, step) in steps.iter().enumerate() {
         job(|j| {
@@ -1285,6 +1301,9 @@ fn repair(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> 
             j.detail.clear();
         });
         setup_log(p, step.label());
+        if *step == Step::Start {
+            backup_before_new_engine(p, &mut s, false);
+        }
         let r = match step {
             Step::Verify => verify_files(p, &mut s),
             Step::Login => resync_login(p),
@@ -1374,6 +1393,8 @@ fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
         save_state(p, &s).map_err(|e| tag("disk", e))?;
     }
     heal_partial(p);
+    // a world made in this run has nothing of the player's to back up yet
+    let fresh = steps.contains(&Step::Account);
     let mut want = String::new();
     for (i, step) in steps.iter().enumerate() {
         job(|j| {
@@ -1383,9 +1404,33 @@ fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
             j.detail.clear();
         });
         setup_log(p, step.label());
+        if *step == Step::Start {
+            backup_before_new_engine(p, &mut s, fresh);
+        }
         run_step(p, game, *step, &mut s, &mut want).map_err(|e| classify(*step, e))?;
     }
     Ok(())
+}
+
+/// Before a world's servers first start on an engine they haven't run on (an update, or Repair putting a newer one
+/// in): its saves backed up (the new world server may update its databases). A failed back-up is logged and the
+/// world still starts (its saves are untouched by the update itself).
+fn backup_before_new_engine(p: &Paths, s: &mut State, fresh: bool) {
+    let (inst, _, _) = engine_shas(p);
+    if inst.is_empty() || s.ran_sha == inst {
+        return;
+    }
+    if !fresh && s.account_made && db_made(p) {
+        job(|j| j.detail = "Backing up your world first (characters, friends' logins, bots)".into());
+        match backup_why(p, "before the engine update") {
+            Ok(f) => setup_log(p, &format!("backed up before the new engine's first start: {}", f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())),
+            Err(e) => setup_log(p, &format!("the back-up before the new engine's first start didn't work: {e}")),
+        }
+    }
+    let mut now = load_state(p);
+    now.ran_sha = inst.clone();
+    let _ = save_state(p, &now);
+    s.ran_sha = inst;
 }
 
 /// What a setup stopped midway (the launcher closed, the PC slept) can leave, cleared before going on, so nothing
@@ -1600,8 +1645,17 @@ pub fn place(p: &Paths, zip: &Path, want_text: &str, s: &mut State) -> Result<()
     }
     let _ = fs::remove_dir_all(&old);
     s.sha256 = want.clone();
-    s.latest_sha256 = want;
-    s.version = version;
+    s.latest_sha256 = want.clone();
+    s.version = version.clone();
+    if p.kind != Kind::Single {
+        // the engine is Single player's install, shared: its state says which one is there for every world
+        let sp = shared_paths(p);
+        let mut ss = load_state(&sp);
+        ss.sha256 = want.clone();
+        ss.latest_sha256 = want;
+        ss.version = version;
+        let _ = save_state(&sp, &ss);
+    }
     Ok(())
 }
 
@@ -1665,18 +1719,100 @@ pub fn preflight(p: &Paths) -> crate::host::oneclick::Preflight {
     r
 }
 
-/// The release's checksum now; true when it isn't the installed one.
+/// The release's checksum now; true when it isn't the installed one. Kept in Single player's state (the engine is
+/// shared) and this world's own.
 pub fn check_update(p: &Paths) -> Result<bool, String> {
     fs::create_dir_all(&p.tmp).map_err(|e| e.to_string())?;
-    let shaf = p.tmp.join(format!("{ASSET}.sha256"));
+    let shaf = p.tmp.join(format!("{ASSET}.sha256.check"));
     crate::upstream::download(&format!("{}{ASSET}.sha256", release()), &shaf, 4096).map_err(|e| format!("Couldn't look for an engine update: {e}"))?;
     let t = fs::read_to_string(&shaf).unwrap_or_default();
     let _ = fs::remove_file(&shaf);
     let latest = crate::host::forge::sha_in(&t).ok_or("The engine's checksum file doesn't look right.")?;
-    let mut s = load_state(p);
-    s.latest_sha256 = latest;
-    save_state(p, &s)?;
-    Ok(installed(p) && s.latest_sha256 != s.sha256)
+    let now = now_secs();
+    let sp = shared_paths(p);
+    for q in [&sp, p] {
+        if q.state_file().is_file() || q == &sp {
+            let mut s = load_state(q);
+            s.latest_sha256 = latest.clone();
+            s.latest_at = now;
+            save_state(q, &s)?;
+        }
+    }
+    Ok(update_ready(p))
+}
+
+/// How old a look at the release may be before Play or a page asks again (12 hours).
+pub const UPDATE_CHECK_EVERY: u64 = 12 * 3600;
+/// The longest a page or Play waits for that look; past it, the last answer is used and the look goes on.
+pub const UPDATE_CHECK_WAIT: Duration = Duration::from_secs(5);
+
+/// A look is due: never looked, longer ago than `every`, or the clock went back.
+pub fn check_due(last: u64, now: u64, every: u64) -> bool {
+    last == 0 || now < last || now - last >= every
+}
+
+/// [`check_update`] when the last look is older than `every` seconds (else the last answer), waiting at most
+/// [`UPDATE_CHECK_WAIT`] (offline or a slow site: the last answer; the look finishes in the background). Never
+/// an error: no answer is "no update known".
+pub fn check_update_cached(p: &Paths, every: u64) -> bool {
+    if !installed(p) {
+        return false;
+    }
+    if !check_due(engine_shas(p).2, now_secs(), every) {
+        return update_ready(p);
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let q = p.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(check_update(&q));
+    });
+    match rx.recv_timeout(UPDATE_CHECK_WAIT) {
+        Ok(Ok(u)) => u,
+        _ => update_ready(p),
+    }
+}
+
+/// Single player's paths: its install holds the engine every world shares.
+fn shared_paths(p: &Paths) -> Paths {
+    Paths::for_kind(&p.app, Kind::Single)
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// The shared engine: (installed sha256, the release's when last looked, when that was). From Single player's state,
+/// else (an engine installed before that was kept there) this world's own.
+pub fn engine_shas(p: &Paths) -> (String, String, u64) {
+    let s = load_state(&shared_paths(p));
+    if !s.sha256.is_empty() {
+        return (s.sha256, s.latest_sha256, s.latest_at);
+    }
+    let o = load_state(p);
+    (o.sha256, o.latest_sha256, o.latest_at)
+}
+
+/// The release has another engine than the installed one (from the last look).
+pub fn update_ready(p: &Paths) -> bool {
+    let (inst, latest, _) = engine_shas(p);
+    installed(p) && !inst.is_empty() && !latest.is_empty() && inst != latest
+}
+
+/// Update a world's engine (in the background, on [`progress`] as setup is): its saves are backed up before it first
+/// runs on the new engine (in [`run`]), then the new engine is downloaded and checked, put in place of the old one
+/// (the world stopped first: everyone saved), and the world started again. Only the engine's own files change: the
+/// maps, the saves, the settings and the back-ups stay. Every world shares the engine: the others take it at their
+/// next start (each backed up first too).
+pub fn begin_update(app_dir: &Path, kind: Kind) -> Result<String, String> {
+    let p = Paths::for_kind(app_dir, kind);
+    let s = load_state(&p);
+    if !set_up(&have(&p, &s, false)) {
+        return Err(crate::host::oneclick::tag("other", format!("Set {} up first: it gets the newest engine then.", kind.title())));
+    }
+    if !update_ready(&p) {
+        return Ok("Your world's engine is up to date.".into());
+    }
+    begin_setup(app_dir, kind, None, true, None)
 }
 
 // ------------------------------------------------------------------------------------------------ the maps
@@ -2294,6 +2430,13 @@ pub fn stop(p: &Paths) -> Result<String, String> {
         let _ = refresh_chars(p);
     }
     let s = load_state(p);
+    // the day's back-up, while the database still runs (at most one a day; the newest KEEP_BACKUPS kept)
+    if s.account_made && port_answers(DB_PORT) && other_running(p).is_none() && backup_due(newest_backup_at(p), now_secs()) {
+        match backup_why(p, "daily") {
+            Ok(_) => setup_log(p, "the day's back-up made"),
+            Err(e) => setup_log(p, &format!("the day's back-up didn't work: {e}")),
+        }
+    }
     let mut g = PROCS.lock().map_err(|_| "busy")?;
     let mut forced = false;
     if port_answers(WORLD_PORT) || alive(&mut g.world) {
@@ -2391,9 +2534,110 @@ pub fn prune(names: &[PathBuf]) -> Vec<PathBuf> {
     names[..names.len().saturating_sub(KEEP_BACKUPS)].to_vec()
 }
 
+/// The automatic back-up is due: none yet, or the newest is a day old.
+pub fn backup_due(newest: Option<u64>, now: u64) -> bool {
+    match newest {
+        None => true,
+        Some(t) => now < t || now - t >= 86_400,
+    }
+}
+
+/// When the newest back-up was written (unix seconds).
+pub fn newest_backup_at(p: &Paths) -> Option<u64> {
+    list_backups(p).iter().filter_map(|f| fs::metadata(f).ok()?.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs())).max()
+}
+
+/// One back-up, for the Restore list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BackupInfo {
+    /// The file's name (what `restore` takes).
+    pub name: String,
+    /// When (UTC, "2026-11-12 21:05:09").
+    pub at: String,
+    /// Why it was made: "by hand", "daily", "before the engine update", "before Repair", "before a restore", ...
+    pub why: String,
+    pub kb: u64,
+}
+
+/// The back-ups, newest first, each with its time and why (from its about.json).
+pub fn backups_info(p: &Paths) -> Vec<BackupInfo> {
+    let mut v: Vec<BackupInfo> = list_backups(p)
+        .into_iter()
+        .map(|f| {
+            let about = read_about(&f).unwrap_or_default();
+            let name = f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let at = about.get("at").and_then(|x| x.as_str()).map(String::from).unwrap_or_else(|| name.trim_start_matches("single-player-").trim_end_matches(".zip").to_string());
+            let why = about.get("why").and_then(|x| x.as_str()).unwrap_or("by hand").to_string();
+            BackupInfo { name, at, why, kb: fs::metadata(&f).map(|m| m.len() / 1024).unwrap_or(0) }
+        })
+        .collect();
+    v.reverse();
+    v
+}
+
+fn read_about(zip: &Path) -> Option<serde_json::Value> {
+    let mut a = zip::ZipArchive::new(fs::File::open(zip).ok()?).ok()?;
+    let mut e = a.by_name("about.json").ok()?;
+    let mut t = String::new();
+    std::io::Read::read_to_string(&mut e, &mut t).ok()?;
+    serde_json::from_str(&t).ok()
+}
+
+/// Put a back-up's saves back (`name` from [`backups_info`]): the world as it is now backed up first (so a restore
+/// can be undone), the world stopped (everyone saved), the back-up's databases loaded, the world left stopped (Play
+/// starts it). Nothing is done when the back-up of now doesn't work. The world must not be setting up.
+pub fn restore(p: &Paths, name: &str) -> Result<String, String> {
+    use crate::host::oneclick::tag;
+    let file = list_backups(p).into_iter().find(|f| f.file_name().is_some_and(|n| n.to_string_lossy() == name)).ok_or_else(|| tag("other", "That back-up isn't there any more."))?;
+    if let Some(o) = other_running(p) {
+        return Err(tag("ports", format!("{} is running on this PC: stop it first, then restore.", o.title())));
+    }
+    if progress().running {
+        return Err(tag("other", "A world is setting up or starting: wait for it, then restore."));
+    }
+    let at = read_about(&file).and_then(|a| a.get("at").and_then(|x| x.as_str()).map(String::from)).unwrap_or_default();
+    // a copy first: the back-up of now may prune the oldest, which can be this one
+    fs::create_dir_all(&p.tmp).map_err(|e| tag("disk", e.to_string()))?;
+    let copy = p.tmp.join("restore.zip");
+    fs::copy(&file, &copy).map_err(|e| tag("disk", format!("Couldn't read the back-up: {e}")))?;
+    let r = (|| {
+        backup_why(p, "before a restore").map_err(|e| tag("db", format!("Nothing was restored: the back-up of your world as it is now didn't work ({e}).")))?;
+        setup_log(p, &format!("restoring the back-up of {at}"));
+        stop(p).map_err(|e| tag("other", e))?;
+        start_db(p).map_err(|e| tag("db", e))?;
+        let sql_file = p.tmp.join("restore.sql");
+        {
+            let mut a = zip::ZipArchive::new(fs::File::open(&copy).map_err(|e| e.to_string())?).map_err(|e| tag("other", format!("That back-up can't be read: {e}")))?;
+            let mut e = a.by_name("saves.sql").map_err(|_| tag("other", "That back-up has no saves in it."))?;
+            let mut out = fs::File::create(&sql_file).map_err(|e| tag("disk", e.to_string()))?;
+            std::io::copy(&mut e, &mut out).map_err(|e| tag("disk", e.to_string()))?;
+        }
+        let f = fs::File::open(&sql_file).map_err(|e| e.to_string())?;
+        let out = mysql_cmd(p, &p.mysql(), &["--default-character-set=utf8mb4"]).stdin(Stdio::from(f)).stdout(Stdio::null()).stderr(Stdio::piped()).output().map_err(|e| e.to_string());
+        let _ = fs::remove_file(&sql_file);
+        let out = out?;
+        if !out.status.success() {
+            return Err(tag("db", format!("The back-up didn't load: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("").chars().take(200).collect::<String>())));
+        }
+        let _ = mysql_cmd(p, &p.mysqladmin(), &["shutdown"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+        let _ = wait_closed(DB_PORT, 60);
+        // the characters list is read again at the next start
+        let _ = fs::remove_file(chars_file(p));
+        setup_log(p, &format!("restored the back-up of {at}"));
+        Ok(format!("Restored your world to {at} (UTC). Press Play to go in. Your world as it was just before is kept as a back-up too."))
+    })();
+    let _ = fs::remove_file(&copy);
+    r
+}
+
 /// The saves (accounts, characters, the bots) dumped and zipped into backups/; MySQL started for it when it was
 /// down, and stopped again after. The path of the zip.
 pub fn backup(p: &Paths) -> Result<PathBuf, String> {
+    backup_why(p, "by hand")
+}
+
+/// [`backup`], saying why it was made (in its about.json, for the Restore list).
+pub fn backup_why(p: &Paths, why: &str) -> Result<PathBuf, String> {
     let s = load_state(p);
     if !(s.db_made && db_made(p)) {
         return Err("There is nothing to back up yet: start Single player once first.".into());
@@ -2419,8 +2663,14 @@ pub fn backup(p: &Paths) -> Result<PathBuf, String> {
         }
         fs::create_dir_all(&p.backups).map_err(|e| e.to_string())?;
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let to = p.backups.join(backup_name(now));
-        let about = serde_json::json!({ "what": "Leyline Single player back-up", "at": stamp(now), "engine": s.version, "databases": dbs, "account": s.account });
+        let mut to = p.backups.join(backup_name(now));
+        let mut n = 1;
+        while to.exists() && n < 10 {
+            // two in the same second (a restore's own back-up right after a daily one)
+            to = p.backups.join(backup_name(now).replace(".zip", &format!("-{n}.zip")));
+            n += 1;
+        }
+        let about = serde_json::json!({ "what": "Leyline Single player back-up", "at": stamp(now), "why": why, "engine": s.version, "databases": dbs, "account": s.account });
         let r = zip_files(&to, &[("saves.sql", dump.as_path())], &about.to_string());
         let _ = fs::remove_file(&dump);
         r?;
@@ -3032,5 +3282,46 @@ mod tests {
         }
         assert!(logs(&p, 40).is_empty());
         assert!(backup(&p).unwrap_err().contains("nothing to back up"));
+    }
+
+    #[test]
+    fn engine_updates_are_looked_for_twice_a_day_and_shared_by_every_world() {
+        assert!(check_due(0, 1000, UPDATE_CHECK_EVERY), "never looked");
+        assert!(!check_due(1000, 1000 + 3600, UPDATE_CHECK_EVERY));
+        assert!(check_due(1000, 1000 + UPDATE_CHECK_EVERY, UPDATE_CHECK_EVERY));
+        assert!(check_due(5000, 1000, UPDATE_CHECK_EVERY), "a clock set back");
+        let d = tempfile::tempdir().unwrap();
+        let single = Paths::for_kind(d.path(), Kind::Single);
+        let van = Paths::for_kind(d.path(), Kind::Vanilla);
+        // Single player's state holds the shared engine's checksums: the original world sees its update too
+        save_state(&single, &State { sha256: "a".repeat(64), latest_sha256: "b".repeat(64), latest_at: 7, ..Default::default() }).unwrap();
+        save_state(&van, &State { sha256: "0".repeat(64), ..Default::default() }).unwrap();
+        assert_eq!(engine_shas(&van), ("a".repeat(64), "b".repeat(64), 7));
+        assert!(!update_ready(&van), "nothing is installed here");
+        // an update plans the download and the start, never the maps, database or fill again
+        let h = Have { installed: true, update: true, maps: true, db: true, filled: true, account: true, running: true };
+        assert_eq!(plan(&h), vec![Step::Download, Step::Unpack, Step::Start]);
+    }
+
+    #[test]
+    fn backups_once_a_day_listed_newest_first_with_why() {
+        assert!(backup_due(None, 100));
+        assert!(!backup_due(Some(100), 100 + 3600));
+        assert!(backup_due(Some(100), 100 + 86_400));
+        let d = tempfile::tempdir().unwrap();
+        let p = Paths::new(d.path());
+        std::fs::create_dir_all(&p.backups).unwrap();
+        let sql = d.path().join("s.sql");
+        std::fs::write(&sql, "-- saves").unwrap();
+        zip_files(&p.backups.join(backup_name(1_000)), &[("saves.sql", sql.as_path())], r#"{"at":"1970-01-01 00:16:40","why":"daily"}"#).unwrap();
+        zip_files(&p.backups.join(backup_name(90_000)), &[("saves.sql", sql.as_path())], r#"{"at":"1970-01-02 01:00:00"}"#).unwrap();
+        let v = backups_info(&p);
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].at, "1970-01-02 01:00:00", "newest first");
+        assert_eq!(v[0].why, "by hand", "older back-ups say nothing: made by hand");
+        assert_eq!(v[1].why, "daily");
+        assert!(newest_backup_at(&p).is_some());
+        // a name that isn't one of them is refused, nothing touched
+        assert!(restore(&p, "../state/state.json").unwrap_err().contains("isn't there"));
     }
 }

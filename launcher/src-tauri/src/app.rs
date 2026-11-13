@@ -2248,6 +2248,47 @@ async fn world_backup(kind: String) -> Result<String, String> {
     blocking(move || crate::host::engine::backup(&world_paths(k)).map(|p| p.display().to_string())).await
 }
 
+/// A world's back-ups, newest first (when, why), for its Restore list.
+#[tauri::command]
+async fn world_backups(kind: String) -> Result<Vec<crate::host::engine::BackupInfo>, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || Ok(crate::host::engine::backups_info(&world_paths(k)))).await
+}
+
+/// Put one of a world's back-ups back (its name from world_backups): the world as it is now backed up first, the
+/// world stopped (sharing with friends ends with it), the back-up loaded; Play starts it again.
+#[tauri::command]
+async fn world_restore(kind: String, name: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        world_share_off(k);
+        crate::host::engine::restore(&world_paths(k), &name)
+    })
+    .await
+}
+
+/// Ask the release for a newer world engine (the engine every world shares) when the last look is over 12 hours old
+/// (`force`: now), waiting 5 s at most; the world's status after (its `update`).
+#[tauri::command]
+async fn world_update_check(kind: String, force: Option<bool>) -> Result<crate::host::engine::EngineStatus, String> {
+    use crate::host::engine as eng;
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        let p = world_paths(k);
+        eng::check_update_cached(&p, if force.unwrap_or(false) { 0 } else { eng::UPDATE_CHECK_EVERY });
+        Ok(eng::status(&p))
+    })
+    .await
+}
+
+/// Update a world's engine (a background job on engine_progress, as setup): its saves backed up first, the new
+/// engine put in place, the world started again. The maps, saves and settings stay.
+#[tauri::command]
+fn world_update(kind: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    crate::host::engine::begin_update(&settings::app_dir(), k)
+}
+
 #[derive(Serialize)]
 struct WorldChoices {
     races: Vec<crate::host::localworld::RaceChoice>,
@@ -4601,6 +4642,10 @@ pub fn run() {
             world_stop,
             world_logs,
             world_backup,
+            world_backups,
+            world_restore,
+            world_update_check,
+            world_update,
             world_choices,
             world_settings_get, // Single player's world settings before the first load and later (host/spsettings.rs)
             world_settings_set,

@@ -1080,7 +1080,8 @@ class Hub:
                    '<span>Menu</span></label>')
         return '<nav class="hb-tabs" aria-label="Quick links">' + "".join(out) + "</nav>"
 
-    def _shell(self, title: str, body: str, path: str, nonce: str = "", active: str | None = None, css: str = "") -> bytes:
+    def _shell(self, title: str, body: str, path: str, nonce: str = "", active: str | None = None, css: str = "",
+               card: bool = True) -> bytes:
         """The page around body. nonce: the CSP nonce for HUB_JS (the front page and the realm list); "" for no script.
         active: the header item to highlight (default: from path). css: more styles (the forum's, stream/forum.py)."""
         e = html.escape
@@ -1115,8 +1116,19 @@ class Hub:
                 + "".join(f'<a href="{e(h)}" rel="noopener noreferrer">{e(t)}</a>' for t, h in social)
                 + f'</nav></div><p class="hb-foot-legal">{e(LEGAL_LINE)}</p></div></footer>')
         robots = "" if front_on() else '<meta name="robots" content="noindex">'
-        meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
-                'with mods, addons, realm scripts and tools.">')
+        desc = "Leyline: one launcher for your own game clients and every realm, with mods, addons, realm scripts and tools."
+        meta = f'<meta name="description" content="{e(desc)}">'
+        # The canonical address and the link card (audit 12 Nov: the front page had neither, so a link to it on Discord
+        # or Reddit showed no preview). Only at the front door (the hidden preview stays noindex), and not for pages
+        # other modules draw in this frame: they bring their own (card=False, wrath_portal.hub_frame).
+        pc = self.portal("page_card")
+        if card and front_on() and callable(pc):
+            try:
+                pub = path.split("?", 1)[0].split("#", 1)[0]
+                pub = FRONT + pub[len(BASE):] if pub.startswith(BASE) else pub
+                meta += pc(pub.rstrip("/") or FRONT, title, desc)
+            except Exception:   # noqa: BLE001: the page works without a card
+                pass
         # The frame's shared styles (the same on every page, ~120 KB) are one versioned stylesheet the browser keeps
         # (/wrath/art/site.css?v=<hash>, served immutable by the portal: audit 12 Nov, every page inlined them and was
         # sent no-store). The page's own styles and the backdrop (it follows the game data switch) stay inline.

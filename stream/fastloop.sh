@@ -517,6 +517,34 @@ else
   echo "  already there (or profiles.py isn't installed)"
 fi
 
+echo "== Caddy: robots.txt and sitemap.xml at the site's root come from the portal (audit 12 Nov: both were 4xx)"
+# Only these two paths; the rest of the root stays the website's. Backed up first; a Caddy that refuses gets its old file.
+if ! grep -q "leyline-seo-files" "$CF"; then
+  cp -p "$CF" "$BK/Caddyfile.seo"
+  if python3 -I - "$CF" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+anchor = "\thandle {\n\t\treverse_proxy ovlive-realm:8090"
+if anchor not in s:
+    print("  the site block has no catch-all handle for the website: left as it is"); sys.exit(3)
+add = ("\t# leyline-seo-files: robots.txt and sitemap.xml are the portal's (stream/wrath_portal.py robots_txt, sitemap_xml)\n"
+       "\t@seofiles path /robots.txt /sitemap.xml\n"
+       "\thandle @seofiles {\n\t\treverse_proxy wu-portal:8091\n\t}\n")
+s = s.replace(anchor, add + anchor, 1)
+open(p, "w").write(s)
+print("  added")
+PY
+  then
+    if ! caddy_reload; then
+      cat "$BK/Caddyfile.seo" > "$CF"; caddy_reload || true
+      echo "  WARNING: Caddy refused the robots/sitemap route; the old Caddyfile is back (the pages are unchanged)"
+    fi
+  fi
+else
+  echo "  already there"
+fi
+
 echo "== check"
 sleep 2
 # The checks ask the names players use now (review 4 Nov: they still asked the old ones). The old names still answer;
@@ -567,6 +595,12 @@ c11l=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://$SIT
 echo "  /login (302 to /wrath/signin = the old sign-in page pruned): $c11l"
 c12=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/leyline-preview || true)
 echo "  /wrath/leyline-preview hidden hub (200 = on): $c12"
+c13=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/robots.txt || true)
+c14=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/sitemap.xml || true)
+c15=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/docs/search.json || true)
+echo "  /robots.txt (200): $c13   /sitemap.xml (200): $c14   /wrath/docs/search.json docs search (200): $c15"
+c16=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/art/site.css || true)
+echo "  /wrath/art/site.css the site's shared styles (200): $c16"
 echo "  warm.html (public): $c1   /data (must stay gated, 302/401/403): $c2   /wrath signed out (200 = saved-key page): $c3"
 echo "  /wrath/art/wu-card.webp (200 = the art is served): $c4"
 c3o=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath || true)

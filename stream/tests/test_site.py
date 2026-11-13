@@ -548,6 +548,26 @@ _bn = wp.be_a_node_on
 wp.be_a_node_on = lambda: True
 check("be_a_node on: the card is back", 'id="q-node"' in wp.skip_line_cards())
 wp.be_a_node_on = _bn
+# robots.txt, sitemap.xml, canonical and link cards (audit 12 Nov: robots and sitemap 4xx, the front page had no card)
+st_r, h_r, rb = raw("/robots.txt")
+rt = rb.decode()
+check("robots.txt: 200, text, everything public allowed, sign-in and APIs not, the sitemap named",
+      st_r == 200 and h_r.get("content-type", "").startswith("text/plain") and "User-agent: *" in rt and "Disallow: /wrath/admin" in rt
+      and "Disallow: /wrath/api/" in rt and "Disallow: /\n" not in rt and re.search(r"Sitemap: https://[^/\s]+/sitemap\.xml", rt), rt[:300])
+st_s, h_s, sb = raw("/sitemap.xml")
+locs = re.findall(r"<loc>https://[^/<]+(/[^<]*)</loc>", sb.decode())
+check("sitemap.xml: 200, XML, the front page, Start here, docs and guides", st_s == 200 and "xml" in h_s.get("content-type", "")
+      and "/wrath/leyline" in locs and "/wrath/start" in locs and "/wrath/docs/friends" in locs and "/wrath/guides" in locs
+      and len(locs) == len(set(locs)) and len(locs) > 40, len(locs))
+check("sitemap.xml: no sign-in, admin or switched-off page", not any(l.startswith(("/wrath/admin", "/wrath/key", "/wrath/signin", "/wrath/single-player"))
+      for l in locs))
+bad_locs = [l for l in locs if get(l)[0] != 200]
+check("sitemap.xml: every address answers 200", not bad_locs, bad_locs[:5])
+for p in ("/wrath/leyline", "/wrath/leyline/realms", "/wrath/docs", "/wrath/start", "/wrath/guides"):
+    _, _, pg = get(p)
+    can = re.findall(r'<link rel="canonical" href="([^"]+)">', pg)
+    check(f"link card: {p} has one canonical (its own address) and og tags", len(can) == 1 and can[0].endswith(p)
+          and pg.count('property="og:title"') == 1 and pg.count('property="og:image"') == 1 and pg.count('name="description"') == 1, can)
 check("site.css: the same version on every page (one download for the whole site)", len({tuple(v) for v in links.values()}) == 1)
 check("site.css: brand words stay off it too", not BANNED.search(css_b.decode()))
 

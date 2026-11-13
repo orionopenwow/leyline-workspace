@@ -1856,8 +1856,15 @@ CARD_DESCRIPTION = ("Play Wrath in your browser, on the Leyline network. "
 
 def card_meta(path: str, title: str = "") -> str:
     """Link-preview tags (Open Graph and X) for a public page, so a pasted link shows a proper card."""
+    return page_card(path, title, CARD_DESCRIPTION, with_description=True)
+
+
+def page_card(path: str, title: str = "", description: str = "", with_description: bool = False) -> str:
+    """The canonical link and the link-preview tags for path (the hub's own pages pass their own description: the front
+    page had none, so a link to it on Discord or Reddit showed no card; audit 12 Nov)."""
     e = html.escape
     title = title or REALM_NAME
+    desc = description or CARD_DESCRIPTION
     url = f"https://{PUBLIC_HOST}{path}"
     img = f"https://{PUBLIC_HOST}{art_url('wu-card.webp')}"
     card = [("property", "og:image:type", "image/webp"), ("property", "og:image:width", "1200"), ("property", "og:image:height", "630")]
@@ -1865,12 +1872,13 @@ def card_meta(path: str, title: str = "") -> str:
         img = f"https://{PUBLIC_HOST}{art_url('leyline-mark-512.png')}"
         card = [("property", "og:image:type", "image/png"), ("property", "og:image:width", "512"), ("property", "og:image:height", "512")]
     tags = [("property", "og:type", "website"), ("property", "og:site_name", SITE_NAME),
-            ("property", "og:title", title), ("property", "og:description", CARD_DESCRIPTION),
+            ("property", "og:title", title), ("property", "og:description", desc),
             ("property", "og:url", url), ("property", "og:image", img),
             *card, ("property", "og:image:alt", f"{REALM_NAME}: Wrath on the Leyline network"),
             ("name", "twitter:card", "summary" if BRAND else "summary_large_image"), ("name", "twitter:title", title),
-            ("name", "twitter:description", CARD_DESCRIPTION), ("name", "twitter:image", img)]
-    return (f'<meta name="description" content="{e(CARD_DESCRIPTION)}"><link rel="canonical" href="{e(url)}">'
+            ("name", "twitter:description", desc), ("name", "twitter:image", img)]
+    return ((f'<meta name="description" content="{e(desc)}">' if with_description else "")
+            + f'<link rel="canonical" href="{e(url)}">'
             + "".join(f'<meta {k}="{n}" content="{e(v)}">' for k, n, v in tags))
 
 
@@ -3056,6 +3064,51 @@ def site_css_link() -> str:
     return f'<link rel="stylesheet" href="{SITE_CSS_PATH}?v={got[1]}">' if got else ""
 
 
+# robots.txt and sitemap.xml for the site (audit 12 Nov: both answered 4xx). Served at the site's root by the portal:
+# fastloop.sh adds a Caddy route for these two paths only (the rest of the root stays the website's). The sitemap lists
+# the public pages that always answer, by their address on this name; switched-off pages are left out.
+ROBOTS_DISALLOW = ("/wrath/admin", "/wrath/api/", "/wrath/play", "/wrath/link", "/wrath/key", "/wrath/signin", "/wrath/profile",
+                   "/wrath/leyline-preview", "/wrath/phonelab", "/wrath/bugs", "/wrath/docs/search", "/__gate", "/__auth",
+                   "/auth/", "/account", "/login", "/logout", "/data/")
+
+
+def robots_txt() -> bytes:
+    lines = ["# Leyline: everything public may be read; sign-in, the play session and the APIs are not pages", "User-agent: *"]
+    lines += [f"Disallow: {p}" for p in ROBOTS_DISALLOW]
+    lines += ["", f"Sitemap: https://{PUBLIC_HOST}/sitemap.xml", ""]
+    return "\n".join(lines).encode("utf-8")
+
+
+def sitemap_paths() -> list[str]:
+    paths = ["/wrath/leyline", START_PATH, "/wrath/download", "/wrath/leyline/realms", "/wrath/leyline/catalog",
+             "/wrath/leyline/addons", "/wrath/leyline/gallery", "/wrath/leyline/news",
+             *(["/wrath/leyline/forum"] if forum is not None and getattr(forum, "store", None) is not None else []),
+             "/wrath/modes", "/wrath/looks", "/wrath/leaderboards", "/wrath/bossfights", "/wrath/arena"]
+    if site_pages is not None:
+        paths += [site_pages.GUIDES] + [f"{site_pages.GUIDES}/{g['slug']}" for g in site_pages.guides()] + [site_pages.PRESS]
+        if single_on():
+            paths.append(site_pages.SINGLE)
+    if mobile_page is not None:
+        paths.append(getattr(mobile_page, "PATH", "/wrath/mobile"))
+    if solo_page is not None:
+        paths.append(getattr(solo_page, "PATH", "/wrath/solo"))
+    if docs is not None:
+        paths += [docs.page_url(n) for n, _ in docs.PAGES]
+    seen, out = set(), []
+    for p in paths:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def sitemap_xml() -> bytes:
+    e = html.escape
+    urls = "".join(f"<url><loc>{e(f'https://{PUBLIC_HOST}{p}')}</loc></url>" for p in sitemap_paths())
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            + urls + "</urlset>\n").encode("utf-8")
+
+
 def hub_framed() -> bool:
     return (hub_mod is not None and getattr(hub_mod, "hub", None) is not None
             and hub_mod.hub_on() and hub_mod.front_on())
@@ -3072,7 +3125,7 @@ def hub_frame(title: str, body: str, path: str, current: str = "", nonce: str = 
     try:
         h = getattr(hub_mod._REQ, "handler", None)
         hub_mod._REQ.who = hub_mod._viewer(h) if h is not None else None
-        out = hub_mod.hub._shell(title, body, path, nonce=nonce, active=HUB_ACTIVE.get(current, ""), css=css)
+        out = hub_mod.hub._shell(title, body, path, nonce=nonce, active=HUB_ACTIVE.get(current, ""), css=css, card=False)
         out = out.replace(hub_mod.BASE.encode(), hub_mod.FRONT.encode())   # the hub's links at the front door (as hub._Live)
         out = out.replace(b'<meta name="robots" content="noindex">', b"")
         if 'name="description"' in meta:
@@ -4834,6 +4887,12 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if path == QUEUE_API:
             self.queue_api(query)
+            return
+        if path == "/robots.txt":   # the site's root, through fastloop.sh's Caddy route (robots_txt)
+            self.send(200, robots_txt(), "text/plain; charset=utf-8", public=True)
+            return
+        if path == "/sitemap.xml":
+            self.send(200, sitemap_xml(), "application/xml; charset=utf-8", public=True)
             return
         if path == "/wrath/status.json":
             self.send(200, status_with_gamedata(status_json()), "application/json; charset=utf-8", public=True)

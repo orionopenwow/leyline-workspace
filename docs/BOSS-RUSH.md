@@ -104,6 +104,19 @@ unless said otherwise. Ids are each raid's own header in the pinned core (`3f296
 | `frost-watcher` | The Frost Watcher | Vault of Archavon (624) | 38433, 3 | -43.77, -263.71, 91.25, 4.73 | no | none | no |
 | `spell-weaver` | The Spellweaver's Eye | The Eye of Eternity (616) | 28859, 0 | 734.40, 1301.27, 266.20, 0 (20 yd west of the disc's middle, `eye_of_eternity.h CenterPos`) | no | none | no |
 
+| `icc-gunship` | The Gunship Battle | Icecrown Citadel (631) | ships, 2 | alliance -467.29, 2466.70, 190.46, 3.10; horde -474.19, 1916.34, 216.33, 3.17 (game_tele 1958 / 1957) | yes | 0 DONE, 1 DONE through the script (brings the ships) | no |
+| `icc-deathbringer` | The Deathbringer | Icecrown Citadel (631) | 37813, 3 | -559.59, 2211.55, 539.29, 6.27 (game_tele 1959: the rise's landing) | yes | 0-2 DONE | no |
+| `icc-bloat` | The Bloated Horror | Icecrown Citadel (631) | 36626, 4 | 4267.71, 3077.06, 359.5, π/2 (door 201371) | yes | 0-3 DONE | no |
+| `icc-ooze` | The Ooze Horror | Icecrown Citadel (631) | 36627, 5 | 4445.72, 3077.06, 359.5, π/2 (door 201370) | yes | 0-3 DONE | no |
+| `icc-professor` | The Mad Professor | Icecrown Citadel (631) | 36678, 6 | 4356.76, 3147.91, 388.4, π/2 (door 201372) | yes | 0-5 DONE; the trap event DONE (`SetData(254, 3)`: the lab's door) | no |
+| `icc-council` | The Blood Council | Icecrown Citadel (631) | 37970, 7 | 4573.03, 2769.33, 361.3, 0 (door 201376) | yes | 0-3 and 14 (the trash that opens the hall) DONE | no |
+| `icc-blood-queen` | The Blood Queen | Icecrown Citadel (631) | 37955, 8 | 4526.99, 2769.85, 403.8, 0 (door 201746) | yes | 0-3, 14, 7 DONE | no |
+| `icc-dreamwalker` | The Dreamwalker | Icecrown Citadel (631) | 36789, 10 | 4300.61, 2484.49, 366.4, π (door 201375) | yes | 0-3 and 9 (the ambush) DONE | no |
+| `icc-frost-queen` | The Frost Queen | Icecrown Citadel (631) | 36853, 11 | 4266.2, 2484.56, 210.5, 0 (door 201373) | yes | 0-3, 9, 10, 13 (the gauntlet) DONE; the two frost wyrms (37533, 37534) killed through the core, so the script calls her | no |
+
+Since start anywhere (12 Nov) `bone-lord` and `cult-mistress` also start 8 yards outside their rooms' doors (201857 at
+-338.09, 2211.47; 201563 at -520.44, 2211.47, its floor 62.8), not inside the hall.
+
 "Heroic" is the game's own heroic 10 (raid difficulty 2): the citadel, the Ruby Sanctum (and the Coliseum, not in
 the catalog yet) have one; the others are normal only in this version of the game, so the page and the module refuse
 heroic for them.
@@ -134,6 +147,76 @@ Considered and left out of this first catalog (each needs more than prerequisite
 wing (spawned by the gauntlet's two dragons dying), the plague wing's professor (the wing's event), Ulduar's keepers
 and its last fights (the keepers' lights, the sigils), the Coliseum (the event chain of its announcer), the
 necropolis's last fight (the four wings and the console). Each is a row away once checked in game.
+
+## 2b. Start anywhere
+
+Owner, 12 Nov: "Boss Rush should allow you to start in front of any boss or any raid wing or the entire raid itself with
+companions or with friends in a one-click UI that's convenient and then tested by you at least a full boss fight run
+through — [the final fight]."
+
+**The tree** (`BossfightsStarts.h Raids()`; the launcher's copy `host/bossrush.rs RAIDS`, checked against it by a test):
+
+| Raid | Whole raid (from its entrance) | Wings (from their first boss) | Bosses |
+|---|---|---|---|
+| Icecrown Citadel | `icc-raid` (areatrigger_teleport 5670: 76.86, 2211.37, 30.0) | `icc-spire` The Lower Spire (0, 1, 3), `icc-plague` The Plagueworks (4, 5, 6), `icc-crimson` The Crimson Hall (7, 8), `icc-frostwing` The Frostwing Halls (10, the gauntlet 13, 11); The Frozen Throne is its one boss | all 12 above |
+| The Ruby Sanctum | `rs-raid` (5869) : the three guardians, then the dragon | (one fight) | `twilight-destroyer` |
+| Vault of Archavon | `voa-raid` (5258): the four watchers, any order | (one room each) | the four watchers |
+| The Obsidian Sanctum, Onyxia's Lair, The Eye of Eternity | (one fight each) | | their fights |
+
+A wing or the whole raid is a row of its own for the run code (`Scopes()`): the start, the earlier bosses DONE, a
+`chain` of boss ids. The clock starts on the first pull of any boss in it and stops on the last boss's end (the final
+fight's 10% cast); a FAIL of any of its bosses, or everyone dead away from a boss for 10 s (the trash), is a wipe. The
+gunship (2) is set DONE for the Lower Spire wing and the whole citadel: companions can't cross between the ships (it
+stays a start of its own). The ambush before the dreamer (9) is a step of the whole raid, not a start.
+
+**Retry from this boss:** after a wipe the raid stands again at the start in front of the first boss of the run still
+standing (`RetrySpot`); a step with no start of its own (the gauntlet, the sanctum's guardians) goes back to the
+nearest earlier one that has one, else to the run's own start. Heroes are back up 8 s after a wipe by themselves (as
+before); the page's Retry does it at once; after a clear, Again plays the same start in a fresh instance.
+
+**Size:** 10 or 25 (`normal25` / `heroic25` in a join and a hero's waiting go; raid difficulty 1 and 3). Companions
+fill 2 tanks, 3 healers, 5 damage (10) or 3, 6, 16 (25), less the players' roles (`DefaultSeats25`, `BotSeats`). The
+official realm keeps 10 and the featured fight only (`AllFights`). The hero table's go columns are 64 now.
+
+**Companions or friends:** companions are the module's own mod-playerbots addclass bots (as before; `ov_companions.lua`
+is off on Boss Rush's profile). With friends: the host's hero waits in a lobby for the start (`group`, or `group-only`
+without companions); **Invite a friend** (`bossrush_invite`) is the worlds' own invite link (the relay tunnel, the same
+network: `world_invite_now`, which Boss Rush may use now); when the friend's launcher claims its login, the host's
+launcher answers with a hero made for them on their own hero account, with the claim's password, waiting at the same
+start (`worldfriends::World::login_for`, app.rs `bossrush_friend_login`). **Start now** (`bossfight rush go`) starts
+with whoever is there; companions take the rest (`LobbyWaitSec` 600 on Boss Rush's profile, else it starts by itself).
+
+**The page** (`ui/bossstart.js`, `bossstart.css`, its own part `#bs` above Boss Rush's card): a tab per raid; the whole
+raid, each wing and each boss as list kit rows grouped by wing (search, keys); Normal / Heroic; 10 / 25; With
+companions (their roles as tank / healer / damage marks with counts) or With friends (the friend's hero, Invite a
+friend, companions in the seats left or players only); your hero; one **Start** (`bossrush_start_at`); then the raid
+as the realm says it (`bossrush_state` every 4 s): waiting for friends with Start now, ready, fighting with the
+bosses down and the clock, wiped with **Retry from this boss**, cleared with Again, Leave.
+
+**The console words** (SOAP, 127.0.0.1; `bossfight rush <verb> <ACCOUNT> [arg]`, security administrator, console
+only): `status` (`bfrush run key=… diff=… phase=… map=… inst=… x= y= z= dist=… members= bots= inside= step=… done=a/b
+boss=… wipes= clears= marks=… last=… ms=…`, or `bfrush lobby …`, `bfrush offline`), `retry`, `go [nobots]`, `pull` (the
+final fight's paladin spoken to as a player would, any other boss pulled onto the hero), `autopilot on|off`
+(mod-playerbots' own AI plays the hero: the playtest), `leave`.
+
+### The boss playtest
+
+`Leyline play-test --bossrush [--boss <start>] [--size 10|25] [--diff normal|heroic] [--hero <class>-<spec>]
+[--fight-max <s>] [--checks bossstart,bossfight]` (app.rs `bossrush_play_test_cli`, sptest.rs), run by
+`tools/first-run/sp_playtest.py --bossrush` in a fresh data folder (Control: **`sp-playtest-boss`**):
+
+1. the game folder, the disk check, Boss Rush set up from the game folder and started (the page's own `begin_kind`);
+2. the start picker's one click (`bossrush_exact` with `start_go_line`): the hero made, the game signed in;
+3. **bossstart:** within 7 minutes, on the realm's word: the start's map, an instance of its own, phase ready, the hero
+   within 15 yards of the start, `size` members of whom `size - 1` companions, all inside;
+4. **bossfight** (default: the final fight): `autopilot on`, `pull`, then every 3 s the status: the engage (within 4
+   minutes: the paladin walks up and talks first), the boss's phase casts (`transition1`, `quake`, `transition2`, `end`:
+   `PhaseMarks`), bosses down, the outcome (a kill or a wipe, with its time), then Retry (a wipe: ready again by
+   itself within 30 s, else `retry`; a clear: `retry` gives a fresh instance) until the hero is back within 15 yards of
+   the start. It passes when the fight ran from the pull to an end and Retry worked; the line says KILL or WIPE as it
+   was. Bots that can't win don't fail it.
+5. the game closed, the realm stopped, the game folder put back. Screenshots: entering, in the world, in front of the
+   boss, fighting, the fight's end, retried. `logs\boss-playtest\<time>\` (`br-play-test.json` has the timeline).
 
 ## 3. Lightweight: only the raid maps
 
@@ -332,6 +415,10 @@ Ranked by fun for the effort, highest first. "E" = exact engine, "L" = light ver
 | `launcher/src-tauri/src/host/engine.rs` | `Kind::BossRush`: its own install on the shared engine files, the lighter map read, one realm at a time |
 | `launcher/src-tauri/src/app.rs` | `bossrush_catalog`, `_setup`, `_start`, `_stop`, `_logs`, `_play`, `_board`, `_record`, `_code` |
 | `launcher/ui/bossrush.js`, `bossrush.css`, `index.html` | the page, the side menu item, Home's row |
+| `realm/custom/modules/mod-leyline-bossfights/src/BossfightsStarts.h` | start anywhere: raids, wings, steps, the wing and whole-raid rows, retry spots, phase marks, the status line |
+| `launcher/ui/bossstart.js`, `bossstart.css` | start anywhere's picker and the raid's state (`#bs` on the page) |
+| `launcher/src-tauri/src/sptest.rs`, `playtest.rs`, app.rs `bossrush_play_test_cli` | the boss playtest |
+| `tools/first-run/sp_playtest.py --bossrush`, `Boss Rush playtest.bat` | Control `sp-playtest-boss` |
 | `labs/den-lite/src/bossrush.rs` | std only: the encounter format, the fight, the light catalog |
 | `labs/den-lite/src/bossrush_world.rs` | the world glue (a child of world.rs) |
 | `labs/den-lite/src/combat.rs` | `Kind::Raid`, `set_health`, `raid_hit`, `raid_heal`, `refill_me` |
@@ -381,3 +468,13 @@ Ranked by fun for the effort, highest first. "E" = exact engine, "L" = light ver
 * **Light version limits (by design, honest):** no death screen or ghost (a wipe resets), companions don't cast real
   spells (their damage and healing are numbers), no line of sight, no threat table, no boss movement beyond its spot.
 * **Sizes and times** of the exact engine's first set-up: not measured (section 3).
+* **Start anywhere (12 Nov), all from reading the pinned core and its world database, nothing stood on yet:** each
+  start's spot 8 yards outside its door (a raised doorstep may put the raid a little high, harmless); the gunship's
+  spots on the ships (transports: the deck may have moved; untested); the frost wyrms killed through `KillSelf` calling
+  the queen in (their grid loaded first); the lab's door through the trap event's `SetData`; the whole raid's walk
+  with bots between bosses (the trash, the ambush's event, the gauntlet); 25-player raids (the addclass pool must
+  hold enough bots per class: three priests, three shamans...); a friend's claim answered with their hero (the
+  friend's game signing in to the hero account over the relay); `autopilot` (mod-playerbots' self bot) playing a
+  hero; `pull` on the final fight (the paladin's gossip as its script takes it). The syntax-only compile of the
+  module (with and without mod-playerbots) is clean; the launcher's Rust is checked by CI only (no local cargo
+  build); the boss playtest is what proves the fight.

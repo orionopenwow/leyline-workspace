@@ -233,10 +233,9 @@ check("realms.json: the launcher's fields", c[BUSY]["connect"]["url"] == f"https
       and c[BUSY]["community"]["uptime"] == {"h24": 99, "d7": 98})
 check("realms.json: an old relay record gets safe defaults", c[OLD]["profile"]["build"] == 12340 and c[OLD]["tags"] == []
       and c[OLD]["community"]["uptime"] == {"h24": None, "d7": None})
-check("realms.json: the sample block for the launcher (with our realm's mod list, the Leyline Modes first)",
+check("realms.json: the sample block for the launcher (with our realm's mod list, the listed Leyline Modes first: Duels and Boss Rush)",
       {k: v for k, v in doc["sample"].items() if k != "mods"} == {"name": "Leyline Sample Hangout", "temporary": True, "combos": "modern"}
-      and doc["sample"]["mods"][:4] == [{"id": "mode:minigolf"}, {"id": "mode:bumper-balls"}, {"id": "mode:coin-dash"},
-                                        {"id": "mode:community"}], doc["sample"])
+      and doc["sample"]["mods"][:2] == [{"id": "mode:arena-queue"}, {"id": "mode:frozen-throne"}], doc["sample"])
 check("realms.json: the sample block's race/class preset is one the launcher knows (junk: modern)",
       json.loads(wp.network.realms_json([], True, {}, {"combos": "all"}))["sample"]["combos"] == "all"
       and json.loads(wp.network.realms_json([], True, {}, {"combos": "../x"}))["sample"]["combos"] == "modern")

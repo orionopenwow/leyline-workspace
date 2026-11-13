@@ -90,21 +90,31 @@ def page_checks(label):
 
 page_checks("frame off:")
 st, _, modes_pg = get("/wrath/modes")
-check("/wrath/modes: the shelf comes first, before Duels", 'id="shelf"' in modes_pg and modes_pg.index('id="shelf"') < modes_pg.index('id="duels"'))
-check("/wrath/modes: one card per way to play (flag off: six)", modes_pg.count('class="lp-mode"') == 6, modes_pg.count('class="lp-mode"'))
-for want in ("Wrath Unleashed", "Community realms", "Your Den", "Azeroth Survivors", "Minigolf and the Dojo", "The seeded realm"):
-    check(f"shelf: {want}", f"<h3>{want}</h3>" in modes_pg)
-check("shelf: each card has How it works", modes_pg.count(">How it works</a>") == 6)
-check("shelf: the seeded realm is marked Coming, with no Play", re.search(r'id="way-seeded-realm".*?Coming.*?</article>', modes_pg, re.S)
-      and not re.search(r'id="way-seeded-realm"(?:(?!</article>).)*class="lp-btn" href', modes_pg, re.S))
-check("shelf: Play now on the official realm goes to /wrath", 'href="/wrath">Play now</a>' in modes_pg)
+# Duels and Boss Rush only on /wrath/modes (owner 12 Nov): the shelf is on the front page (Ways to play), not here
+check("/wrath/modes: no shelf (Duels and Boss Rush only)", 'id="shelf"' not in modes_pg and 'class="lp-mode"' not in modes_pg
+      and 'id="duels"' in modes_pg)
+shelf_pg = sp.shelf()
+check("shelf: one card per way to play (flag off: four; Survivors and Minigolf hidden)", shelf_pg.count('class="lp-mode"') == 4, shelf_pg.count('class="lp-mode"'))
+for want in ("Wrath Unleashed", "Community realms", "Your Den", "The seeded realm"):
+    check(f"shelf: {want}", f"<h3>{want}</h3>" in shelf_pg)
+for gone in ("Azeroth Survivors", "Minigolf and the Dojo"):
+    check(f"shelf: {gone} hidden, kept in MODES()", f"<h3>{gone}</h3>" not in shelf_pg and any(m["title"] == gone and m.get("hidden") for m in sp.MODES()))
+check("shelf: hidden_ids", sp.hidden_ids() == ["azeroth-survivors", "golf-and-dojo"], sp.hidden_ids())
+for gone in ("azeroth-survivors", "golf-and-dojo"):
+    st_g, h_g, _ = get(f"/wrath/modes/{gone}")
+    check(f"/wrath/modes/{gone}: sends players to the Modes page", st_g == 302 and h_g.get("location") == "/wrath/modes", (st_g, h_g.get("location")))
+check("front page Ways to play: no Minigolf, no Survivors", "Minigolf" not in sp.front_modes() and "Azeroth Survivors" not in sp.front_modes())
+check("shelf: each card has How it works", shelf_pg.count(">How it works</a>") == 4)
+check("shelf: the seeded realm is marked Coming, with no Play", re.search(r'id="way-seeded-realm".*?Coming.*?</article>', shelf_pg, re.S)
+      and not re.search(r'id="way-seeded-realm"(?:(?!</article>).)*class="lp-btn" href', shelf_pg, re.S))
+check("shelf: Play now on the official realm goes to /wrath", 'href="/wrath">Play now</a>' in shelf_pg)
 
 # ---------------------------------------------------------------- the flag: dark by default
 st, _, page = get("/wrath/single-player")
 check("flag off: /wrath/single-player is the 404", st == 404, st)
 st, _, page = get("/wrath/modes/single-player")
 check("flag off: /wrath/modes/single-player is not ours (404)", st == 404 and "Single player" not in visible(page).split("No such mode")[0][-200:], st)
-check("flag off: no Single player on the shelf", "Single player" not in visible(modes_pg))
+check("flag off: no Single player on the shelf", "Single player" not in visible(shelf_pg))
 check("flag off: no Single player in the nav", "/wrath/single-player" not in wp.site_nav())
 check("flag off: the front sections have Ways to play and no Single player",
       'id="ways"' in sp.front_sections() and 'id="single-player"' not in sp.front_sections())
@@ -135,7 +145,7 @@ check("single player: no <video> without its file (poster only, marked as coming
 check("single player: the marketing lines are left for the owner", "TODO(owner)" in open(os.path.join(STREAM, "site_pages.py")).read())
 check("single player: no brand words", not BANNED.findall(v))
 check("single player: no version numbers", not VERSION.findall(v), VERSION.findall(v))
-check("flag on: the shelf has seven cards", get("/wrath/modes")[2].count('class="lp-mode"') == 7)
+check("flag on: the shelf has five cards", sp.shelf().count('class="lp-mode"') == 5)
 check("flag on: /wrath/modes/single-player answers", get("/wrath/modes/single-player")[0] == 200)
 check("flag on: Single player in the nav", 'href="/wrath/single-player"' in wp.site_nav())
 check("flag on: the front page section", 'id="single-player"' in sp.front_sections())

@@ -388,6 +388,8 @@ def single_page() -> bytes:
 # ------------------------------------------------------------------------------------------------- the Modes shelf
 # Every way to play, one card each (owner 4 Nov brief: picture, one line, Play now / How it works). "flag": shown only
 # with that switch on. "play": (href, label) or None (coming). Pictures: our own slot first, then a stand-in we have.
+# "hidden": True keeps a card here but off the shelf, and its /wrath/modes/<id> page sends players to /wrath/modes
+# (owner 12 Nov: Modes are Duels and Boss Rush only for now). Delete the line to bring it back.
 def MODES() -> list[dict]:   # noqa: N802 (a function: the download link and the flag are read per request)
     dl = _download()
     return [
@@ -439,7 +441,7 @@ def MODES() -> list[dict]:   # noqa: N802 (a function: the download link and the
         {"id": "azeroth-survivors", "title": "Azeroth Survivors", "kick": "In your browser",
          "line": "A survivors-style roguelike: pick a hero and hold out against the waves. Runs in your browser.",
          "pic": ["leyline-mode-azeroth-survivors.webp"], "alt": "Azeroth Survivors key art", "w": 483, "h": 298,
-         "play": ("/wrath/survivors", "Play now"), "guide": "survivors",
+         "play": ("/wrath/survivors", "Play now"), "guide": "survivors", "hidden": True,
          "how": [
              "Open Azeroth Survivors and log in. It needs a browser with WebGPU: Chrome or Edge on a computer.",
              "Pick a hero and a zone. Your spells cast themselves: you move, level up and pick upgrades.",
@@ -449,7 +451,7 @@ def MODES() -> list[dict]:   # noqa: N802 (a function: the download link and the
          "line": "Tee off on courses players built, right on our realm, or train in the Dojo in Your Den.",
          "pic": ["slots/mode-golf.webp", "leyline-shot-minigolf.webp"],
          "alt": "Minigolf on our own realm: a fairway toward the flag in a red canyon",
-         "play": ("/wrath?go=mode:minigolf", "Play Minigolf"), "guide": "",
+         "play": ("/wrath?go=mode:minigolf", "Play Minigolf"), "guide": "", "hidden": True,
          "how": [
              "Play Minigolf logs you in and takes your character to the course once you are in the world.",
              "In the game, /golf opens it: Play here starts a game where you stand and invites your party; Practice "
@@ -473,8 +475,13 @@ def MODES() -> list[dict]:   # noqa: N802 (a function: the download link and the
 
 
 def modes() -> list[dict]:
-    """MODES with the unannounced ones left out while their switch is off."""
-    return [m for m in MODES() if not m.get("flag") or single_public()]
+    """MODES with the unannounced ones left out while their switch is off, and the hidden ones left out."""
+    return [m for m in MODES() if (not m.get("flag") or single_public()) and not m.get("hidden")]
+
+
+def hidden_ids() -> list[str]:
+    """The shelf's hidden cards (their pages send players to /wrath/modes)."""
+    return [m["id"] for m in MODES() if m.get("hidden")]
 
 
 def mode_by_id(ident: str) -> dict | None:
@@ -876,7 +883,8 @@ def match(path: str) -> bool:
     if p.startswith(GUIDES + "/"):
         return bool(SLUG_RE.fullmatch(p[len(GUIDES) + 1:]))
     if p.startswith(MODES_PATH + "/"):
-        return mode_by_id(p[len(MODES_PATH) + 1:]) is not None
+        ident = p[len(MODES_PATH) + 1:]
+        return mode_by_id(ident) is not None or ident in hidden_ids()
     return False
 
 
@@ -892,6 +900,9 @@ def get(h, path: str, query: dict) -> None:
         pass
     p = path.rstrip("/")
     body = None
+    if p.startswith(MODES_PATH + "/") and p[len(MODES_PATH) + 1:] in hidden_ids():
+        h.redirect(MODES_PATH)   # a hidden way to play: the Modes page (Duels and Boss Rush)
+        return
     if p == SINGLE:
         body = single_page()
     elif p == GUIDES:

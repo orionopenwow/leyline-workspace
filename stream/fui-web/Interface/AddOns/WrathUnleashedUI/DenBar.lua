@@ -68,6 +68,11 @@ local CARDS = {
         "Wheel far out: fly with WASD, Space / X  ·  Shift fast",
         "Right mouse + wheel: fly speed  ·  Home: back to you",
         "Ctrl+1 2 3 keep the view, Shift+1 2 3 go back",
+        "Numpad 8 2 4 6 (Ctrl+arrows) nudge  ·  9 3 up, down  ·  7 1 turn",
+        "Alt: fine (in hand: no grid)  ·  Shift: big steps",
+        "Alt+drag circle select  ·  drag one of several: all move",
+        "M magnet (edge to edge)  ·  Ctrl+L follow the slope",
+        "/dentour: your first build, step by step",
     }, "\n") },
 }
 D.CARDS = CARDS

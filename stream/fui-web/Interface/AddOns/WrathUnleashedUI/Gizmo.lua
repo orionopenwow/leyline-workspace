@@ -194,7 +194,9 @@ function G.Tick(force)
         G.settled = false
     end
     G.lastSend, G.lastU, G.lastV = t, u, v
-    return send(string.format("hover %.4f %.4f %.4f %d", u, v, a, G.zoom))
+    -- Alt held with something in hand: the precise spot, no grid and no magnet (DenKeys.lua K.FreeWord, qol.rs)
+    local free = ((G.armed or G.dragging) and K() and K().FreeWord) and K().FreeWord() or ""
+    return send(string.format("hover %.4f %.4f %.4f %d%s", u, v, a, G.zoom, free))
 end
 
 -- ---------------------------------------------------------------- the build camera
@@ -491,7 +493,9 @@ local function showTag()
         parts[#parts + 1] = (k.drag.kind == "rotate" and "Turning: move the mouse left or right" or "Sizing: move the mouse up or down")
             .. ", let go to keep it  ·  Esc puts it back"
     elseif G.dragging then
-        parts[#parts + 1] = "Moving: let go to drop it  ·  wheel or Q E turns it  ·  Esc puts it back"
+        local n = k and k.sel and k.sel.n or 1
+        parts[#parts + 1] = (n >= 2 and ("Moving " .. n .. " together: let go to drop them") or "Moving: let go to drop it")
+            .. "  ·  wheel or Q E turns it  ·  Alt: free  ·  Esc puts it back"
     elseif G.armed == "place" then
         parts[#parts + 1] = handName() .. " in hand: click the ground  ·  wheel or Q E turns it  ·  Shift+click places more  ·  Esc puts it away"
     elseif G.armed == "move" then
@@ -502,6 +506,7 @@ local function showTag()
         parts[#parts + 1] = "Axis " .. (AXIS_TEXT[G.axis] or G.axis) .. ": the mouse wheel moves it"
     end
     if G.atEdge and (G.armed or G.dragging) then parts[#parts + 1] = "Edge of your Den: it stays inside" end
+    if k and k.snapped and (G.armed or G.dragging) then parts[#parts + 1] = "Snapped edge to edge (Alt: free, M: magnet off)" end
     if #parts == 0 and G.build then parts[#parts + 1] = G.Hint() end
     if G.far then
         if G.far.snap then
@@ -531,7 +536,8 @@ G.ShowTag = showTag
 -- Q / E: turn what is held (in hand, dragged) or the selection, by G.TURN degrees (Q: left).
 function G.Turn(sign)
     if not G.build then return false end
-    local deg = sign * G.TURN
+    -- Alt: 1 degree (the last bit, with the precise spot)
+    local deg = sign * ((IsAltKeyDown and IsAltKeyDown()) and 1 or G.TURN)
     if G.dragging or G.armed == "move" or G.armed == "place" then return send("preview turn " .. deg) end
     -- the prop under the cursor (mega-placer.js: "spin the piece under the cursor"), one undo; else the selection
     if G.hovered and G.hovered.id and G.hovered.id > 0 and G.hovered.id ~= G.sel then return send(string.format("turnat %d %d", G.hovered.id, deg)) end
@@ -642,6 +648,8 @@ function G.SetBuild(on)
         send("gizmo on")
         -- the cursor's ring (mega-placer.js): gold place, teal grab, grey nothing
         send("gizmo ring on")
+        -- the builder's comforts kept from last time: the magnet, following the slope (DenKeys.lua)
+        if K() and K().OnBuild then K().OnBuild() end
         G.CameraIn()
     else
         G.Cancel()
@@ -808,6 +816,13 @@ function G.TipUpdate()
     tip:ClearAllPoints()
     tip:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", (x or 0) / s + 16, (y or 0) / s + 8)
     tip.fs:SetText(G.hovered.name)
+    local hint = (K() and K().TipHint) and K().TipHint() or nil
+    if tip.hint then
+        tip.hint:SetText(hint or "")
+        tip:SetHeight(hint and 34 or 20)
+        local w = math.max(tonumber(tip.fs.GetStringWidth and tip.fs:GetStringWidth() or 0) or 0, tonumber(tip.hint.GetStringWidth and tip.hint:GetStringWidth() or 0) or 0)
+        tip:SetWidth(math.max(160, w + 14))
+    end
     tip:Show()
 end
 
@@ -1281,7 +1296,15 @@ local function setup()
     tip:SetFrameStrata("TOOLTIP")
     tip:SetWidth(160); tip:SetHeight(20)
     tip.fs = tip.CreateFontString and tip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") or { SetText = function() end }
-    if tip.fs.SetPoint then tip.fs:SetPoint("LEFT", tip, "LEFT", 6, 0) end
+    if tip.fs.SetPoint then tip.fs:SetPoint("TOPLEFT", tip, "TOPLEFT", 6, -4) end
+    -- what the mouse does to it (DenKeys.lua K.TipHint), smaller and muted, under its name
+    tip.hint = tip.CreateFontString and tip:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall") or nil
+    if tip.hint and tip.hint.SetPoint then tip.hint:SetPoint("TOPLEFT", tip.fs, "BOTTOMLEFT", 0, -2) end
+    if tip.SetBackdrop then
+        tip:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+        if tip.SetBackdropColor then tip:SetBackdropColor(0.06, 0.07, 0.1, 0.9) end
+    end
     tip:Hide()
     -- build mode's frame round the screen and its word, so it is plain which mode you are in
     frame = CreateFrame("Frame", "LeylineGizmoBuildFrame", UIParent)

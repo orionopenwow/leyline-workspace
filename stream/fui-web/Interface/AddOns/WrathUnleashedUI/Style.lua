@@ -292,7 +292,9 @@ S.ICONS = { "all", "banners", "barrels", "build", "buildings", "class", "close",
     "up", "down", "left", "right", "turnleft", "turnright", "liftup", "liftdown", "smaller", "bigger", "bring", "tilt",
     "upright", "settle", "random", "centre", "reset", "swap", "camera",
     -- the Dojo's loadout
-    "bars", "gearset", "range" }
+    "bars", "gearset", "range",
+    -- the builder's comforts (12 Nov): the circle select, the magnet, the slope, fill, nudge, the first build's tour
+    "circle", "magnet", "slope", "fill", "nudge", "coach" }
 local iconSet = {}
 for _, n in ipairs(S.ICONS) do iconSet[n] = true end
 function S.Icon(name) return S.ICON_DIR .. (iconSet[name or ""] and name or "noimage") end

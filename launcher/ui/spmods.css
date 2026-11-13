@@ -11,8 +11,19 @@
   border-radius: calc(var(--t-radius) - 1px) calc(var(--t-radius) - 1px) 0 0;
 }
 html.phone .spm-head { margin: -14px -12px 0; padding: 12px; }
+/* the stone (dark base, slate.css), as the Friends area's head (friends.css) */
+html:not([data-base="light"]) .spm-head {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.42)), var(--stone);
+  border-bottom: 1px solid var(--sl-edge, #0a0908);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+html:not([data-base="light"]) .spm .spm-title { color: var(--sl-gold, #e2bd66); text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 2px 6px rgba(0, 0, 0, 0.6); }
+html:not([data-base="light"]) .spm-head .spm-lede { color: #c4c1b6; }
+/* the kit's tabs: the launcher's page tabs, as in the Friends list */
+.spm .lk-tabs { border: var(--t-border-w, 1px) solid var(--t-panel-border); }
+.spm .lk-tab { color: var(--t-text-2); font-size: 12.5px; }
 .spm-titles { display: grid; gap: 4px; min-width: 0; flex: 1 1 320px; }
-.spm-title { margin: 0; font: 400 23px/1.2 "Marcellus", Georgia, serif; letter-spacing: 0.03em; }
+.spm .spm-title { margin: 0; font: 400 23px/1.2 "Marcellus", Georgia, serif; letter-spacing: 0.03em; text-transform: none; }
 .spm-lede { margin: 0; font-size: 13px; color: var(--t-text-2, var(--t-muted)); max-width: 72ch; }
 .spm-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .spm-tools .spm-kind { width: auto; min-width: 0; field-sizing: content; height: 32px; padding: 0 28px 0 10px; font-size: 12.5px; }

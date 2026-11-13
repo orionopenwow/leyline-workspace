@@ -658,11 +658,24 @@ pub fn mark_asked_own(app_dir: &Path, client: &str, version: &str) -> Result<Pre
 static PLAY_NOTE: std::sync::Mutex<Option<PlayPrep>> = std::sync::Mutex::new(None);
 
 pub fn note_play(prep: &PlayPrep) {
+    if let Ok(mut g) = LAST_PREP.lock() {
+        *g = Some((prep.client.clone(), std::time::Instant::now()));
+    }
     if prep.updated.is_some() {
         if let Ok(mut g) = PLAY_NOTE.lock() {
             *g = Some(prep.clone());
         }
     }
+}
+
+/// The game folder whose add-ons were last brought up to date before a PLAY, and when.
+static LAST_PREP: std::sync::Mutex<Option<(String, std::time::Instant)>> = std::sync::Mutex::new(None);
+/// A second check right after the page's own (addons.js beforePlay, then the PLAY itself) is skipped within this.
+pub const PREP_AGAIN: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The add-ons of game folder `client` were checked before a PLAY in the last [`PREP_AGAIN`].
+pub fn checked_recently(client: &str) -> bool {
+    LAST_PREP.lock().ok().and_then(|g| g.clone()).is_some_and(|(c, t)| c == client && t.elapsed() < PREP_AGAIN)
 }
 
 pub fn take_play_note() -> Option<PlayPrep> {

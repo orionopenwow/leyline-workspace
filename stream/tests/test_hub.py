@@ -69,6 +69,8 @@ check("hub.py loaded beside the portal", HB is not None)
 if HB is None:
     print(f"\n{passed}/{passed + failed} passed"); sys.exit(1)
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sitecss_fold import fold  # noqa: E402
 srv = ThreadingHTTPServer(("127.0.0.1", PAGE_PORT), wp.PageHandler)
 srv.daemon_threads = True
 threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -81,7 +83,13 @@ def req(path, method="GET", body=None, ip="10.9.0.1"):
         hd["Content-Type"] = "application/x-www-form-urlencoded"
     c.request(method, path, body=body, headers=hd)
     r = c.getresponse()
-    return r.status, {k.lower(): v for k, v in r.getheaders()}, r.read()
+    return r.status, {k.lower(): v for k, v in r.getheaders()}, fold(r.read(), _css)
+
+
+def _css(path):
+    c = http.client.HTTPConnection("127.0.0.1", PAGE_PORT, timeout=30)
+    c.request("GET", path)
+    return c.getresponse().read()
 
 
 INDEX = json.load(open(os.path.join(HUBDIR, "community-index.json")))

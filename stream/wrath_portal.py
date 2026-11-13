@@ -174,6 +174,7 @@ from __future__ import annotations
 
 import base64
 import collections
+import gzip
 import hashlib
 import hmac
 import html
@@ -2991,6 +2992,45 @@ HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "m
 _HUB_DESC_RE = re.compile(rb'<meta name="description" content="Leyline: one launcher[^"]*">')
 
 
+# The hub frame's shared styles as one stylesheet (audit 12 Nov: ~120 KB inlined in every page, sent no-store, so
+# nothing was reused between clicks). /wrath/art/site.css?v=<hash of its bytes>: the page names the version it was drawn
+# with, the file is kept a year (immutable), and a new deploy is a new address. The bytes get the same changes a page
+# gets on its way out (the brand switch, a fork's brand file, the names before the move), so nothing reads differently.
+SITE_CSS_PATH = "/wrath/art/site.css"
+_site_css_cache: dict = {}
+_site_css_lock = threading.Lock()
+
+
+def site_css() -> tuple[bytes, str, bytes] | None:
+    """(css bytes, version, gzip bytes) for the hub frame, or None without the hub."""
+    hub = getattr(hub_mod, "hub", None) if hub_mod is not None else None
+    if hub is None or not hasattr(hub, "shared_css"):
+        return None
+    raw = hub.shared_css()
+    with _site_css_lock:
+        hit = _site_css_cache.get(raw)
+    if hit:
+        return hit
+    wrap = ("<style>" + raw + "</style>").encode("utf-8")
+    wrap = brand_body(wrap, "text/html; charset=utf-8")
+    if BRAND_FILE:
+        wrap = _brandfile.apply(BRAND_FILE, wrap, "text/html; charset=utf-8")
+    wrap = legacy_body(wrap, "text/html; charset=utf-8", PUBLIC_HOST)
+    body = wrap[len(b"<style>"):-len(b"</style>")] if wrap.startswith(b"<style>") and wrap.endswith(b"</style>") else raw.encode("utf-8")
+    got = (body, hashlib.sha256(body).hexdigest()[:12], gzip.compress(body, 9, mtime=0))
+    with _site_css_lock:
+        if len(_site_css_cache) > 8:
+            _site_css_cache.clear()
+        _site_css_cache[raw] = got
+    return got
+
+
+def site_css_link() -> str:
+    """The <link> for the hub frame's shared styles ("" without the hub: the frame inlines them then)."""
+    got = site_css()
+    return f'<link rel="stylesheet" href="{SITE_CSS_PATH}?v={got[1]}">' if got else ""
+
+
 def hub_framed() -> bool:
     return (hub_mod is not None and getattr(hub_mod, "hub", None) is not None
             and hub_mod.hub_on() and hub_mod.front_on())
@@ -4003,9 +4043,20 @@ class PageHandler(BaseHTTPRequestHandler):
         if phonelab is not None:   # Phone Lab (stream/phonelab.py): its recorder on this browser's pages while a session is on
             body, nonce, lab = phonelab.inject(self, body, ctype, nonce)
             connect = connect or lab
+        # gzip a page when the browser takes it (audit 12 Nov: whether Caddy compresses the site is not known; it leaves
+        # an answer that is already encoded alone). Pages only, and only when worth it.
+        zipped = False
+        if (ctype.startswith("text/html") and len(body) > 1400 and self.command != "HEAD"
+                and "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+                and not any(k.lower() == "content-encoding" for k in (headers or {}))):
+            body, zipped = gzip.compress(body, 6, mtime=0), True
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        if zipped:
+            self.send_header("Content-Encoding", "gzip")
+        if ctype.startswith("text/html"):
+            self.send_header("Vary", "Accept-Encoding")
         for k, v in (headers or {}).items():
             self.send_header(k, v)
         if same_origin:  # /__env.js: never readable from another site's page
@@ -4028,6 +4079,32 @@ class PageHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def site_css_file(self, query: dict) -> None:
+        """GET /wrath/art/site.css?v=<version>: kept a year when the version is the current one (a new deploy is a new
+        address); any other version (or none) gets the current bytes, kept five minutes. gzip when the browser takes it."""
+        got = site_css()
+        if got is None:
+            self.send(404, b"not found\n", "text/plain")
+            return
+        body, ver, gz = got
+        current = (query.get("v") or [""])[0] == ver
+        zipped = "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+        out = gz if zipped else body
+        self.send_response(200)
+        self.send_header("Content-Type", "text/css; charset=utf-8")
+        self.send_header("Content-Length", str(len(out)))
+        if zipped:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Vary", "Accept-Encoding")
+        self.send_header("ETag", f'"{ver}"')
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable" if current else "public, max-age=300")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(out)
 
     def art(self, name: str) -> None:
         """GET /wrath/art/<name>: the site art and theme, from the allow-list only, cached for a week.
@@ -4722,6 +4799,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if path == "/wrath/healthz":
             ok, kind = health()
             self.send(200 if ok else 503, b"ok\n" if ok else f"soap {kind}\n".encode(), "text/plain")
+            return
+        if path == SITE_CSS_PATH:   # the hub frame's shared styles, versioned (site_css)
+            self.site_css_file(query)
             return
         if path.startswith("/wrath/art/"):
             self.art(urllib.parse.unquote(path[len("/wrath/art/"):]))

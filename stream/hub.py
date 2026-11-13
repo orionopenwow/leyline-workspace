@@ -1113,11 +1113,17 @@ class Hub:
         robots = "" if front_on() else '<meta name="robots" content="noindex">'
         meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
                 'with mods, addons, realm scripts and tools.">')
-        css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
-               + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + PHONE_CSS + self._backdrop() + self._dl_css() + css)
+        # The frame's shared styles (the same on every page, ~120 KB) are one versioned stylesheet the browser keeps
+        # (/wrath/art/site.css?v=<hash>, served immutable by the portal: audit 12 Nov, every page inlined them and was
+        # sent no-store). The page's own styles and the backdrop (it follows the game data switch) stay inline.
+        # Without the portal's stylesheet route (a test, an old portal) everything is inline as before.
+        link = self.portal("site_css_link")
+        tag = link() if callable(link) else ""
+        shared = "" if tag else self.shared_css()
+        css = shared + self._backdrop() + css
         page = (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
-                f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
+                f'<title>{e(title)}</title>{meta}{robots}{tag}<style>{css}</style></head>'
                 f'<body class="hb"><a class="hb-skip" href="#main">Skip to content</a>{top}{self._turn_hint(path)}'
                 f'<main id="main" class="hb-main{" hb-front" if front else ""}">{flag}{sub}{body}</main>{foot}'
                 + (f'<script nonce="{e(nonce)}">{HUB_JS}</script>' if nonce else "") + '</body></html>').replace(
@@ -1128,6 +1134,14 @@ class Hub:
         if front_on():
             page = page.replace(BASE, FRONT)
         return page.encode("utf-8")
+
+    def shared_css(self) -> str:
+        """The frame's styles that are the same on every page (the portal serves them as /wrath/art/site.css): the look's
+        tokens, the hub, the side menu, the stone look, phones and the download button. As the page would carry them:
+        the light-scheme rules switched off, and the hub's own address at the front door when that is on."""
+        css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
+               + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + PHONE_CSS + self._dl_css()).replace(LIGHT_MQ, LIGHT_OFF)
+        return css.replace(BASE, FRONT) if front_on() else css
 
     def _dl_css(self) -> str:
         dm = self.portal("downloads_mod")

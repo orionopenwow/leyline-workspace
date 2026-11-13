@@ -138,10 +138,16 @@ expire_strip()
 srv = ThreadingHTTPServer(("127.0.0.1", 0), wp.PageHandler)
 srv.daemon_threads = True
 threading.Thread(target=srv.serve_forever, daemon=True).start()
-def get(path, ip="203.0.113.5"):
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sitecss_fold import fold  # noqa: E402
+def _css(path):
+    c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+    c.request("GET", path); return c.getresponse().read()
+def get(path, ip="203.0.113.5", raw=False):
     c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
     c.request("GET", path, headers={"X-Forwarded-For": ip}); r = c.getresponse()
-    return r.status, {k.lower(): v for k, v in r.getheaders()}, r.read().decode("utf-8", "replace")
+    b = r.read()
+    return r.status, {k.lower(): v for k, v in r.getheaders()}, (b if raw else fold(b, _css)).decode("utf-8", "replace")
 
 NAV_ITEMS = [("Leyline", "/wrath/leyline"), ("Play", "/wrath/account"), ("Realms", "/wrath/realms"), ("Modes", "/wrath/modes"),
              ("Mods", "/wrath/mods"), ("Armory", "/wrath/armory"), ("Docs", "/wrath/docs"), ("Server", wp.HOST_URL), ("Discord", wp.DISCORD_URL),
@@ -409,6 +415,7 @@ def hub_menu(page):
     return m.group(1) if m else ""
 
 def check_frame(label, page, active, scripts=0):
+    page = fold(page.encode(), lambda _p: wp.site_css()[0]).decode()   # pages drawn here, not fetched: the same fold
     nav = hub_menu(page)
     check(f"{label}: the hub's frame (side menu, footer, tokens), not the old bar",
           page.count('<header class="hb-top">') == 1 and 'class="hb-foot"' in page and 'id="ly-site-nav"' not in page
@@ -481,6 +488,42 @@ st, _, md = get("/wrath/modes")
 nav = nav_of(md)
 check("module pages in the old bar list the hub's menu", 200 == st and all(f'href="{h}"' in nav and f">{t}</a>" in nav for t, h in HUB_MENU)
       and not OLD_ITEMS.search(nav), nav[:400])
+# ---------------------------------------------------------------- the frame's shared styles: one versioned stylesheet
+# (audit 12 Nov: ~125 KB of CSS inlined in every page, sent no-store, nothing reused between clicks)
+def raw(path, enc=""):
+    c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+    c.request("GET", path, headers={"X-Forwarded-For": "203.0.113.5", **({"Accept-Encoding": enc} if enc else {})})
+    r = c.getresponse()
+    return r.status, {k.lower(): v for k, v in r.getheaders()}, r.read()
+css_b, css_v, css_gz = wp.site_css()
+links = {}
+for p in ("/wrath/leyline", "/wrath/docs", "/wrath/start", "/wrath/guides", "/wrath/nope"):
+    st_p, h_p, pg = get(p, raw=True)
+    links[p] = re.findall(r'<link rel="stylesheet" href="/wrath/art/site\.css\?v=([0-9a-f]{12})">', pg)
+    check(f"site.css: {p} links the shared styles once, the current version", links[p] == [css_v], links[p])
+    check(f"site.css: {p} no longer carries the shared styles inline (under 80 KB)", len(pg.encode()) < 80_000
+          and wp.hub_mod.SIDE_CSS.strip()[:60] not in pg, len(pg))
+st_c, h_c, b_c = raw(f"/wrath/art/site.css?v={css_v}")
+check("site.css: the current version is CSS, kept a year (immutable), readable without a cookie", st_c == 200
+      and h_c.get("content-type") == "text/css; charset=utf-8" and "max-age=31536000" in h_c.get("cache-control", "")
+      and "immutable" in h_c.get("cache-control", "") and b_c == css_b and len(b_c) > 80_000, (st_c, h_c.get("cache-control")))
+check("site.css: holds the frame's styles (side menu, stone, phone)", wp.hub_mod.SIDE_CSS.strip()[:60].encode() in b_c
+      and b"hb-side" in b_c and wp.hub_mod.LIGHT_MQ.encode() not in b_c)
+st_o, h_o, b_o = raw("/wrath/art/site.css?v=000000000000")
+check("site.css: an old or made-up version gets today's bytes, kept only 5 minutes", st_o == 200 and b_o == css_b
+      and h_o.get("cache-control") == "public, max-age=300")
+st_z, h_z, b_z = raw(f"/wrath/art/site.css?v={css_v}", "gzip, br")
+import gzip as _gz
+check("site.css: gzip when the browser takes it", h_z.get("content-encoding") == "gzip" and _gz.decompress(b_z) == css_b
+      and len(b_z) < len(css_b) // 3 and "Accept-Encoding" in h_z.get("vary", ""))
+st_h, h_h, b_h = raw("/wrath/docs", "gzip")
+check("pages: gzip when the browser takes it, Vary set, still no-store", h_h.get("content-encoding") == "gzip"
+      and b"<html" in _gz.decompress(b_h) and "Accept-Encoding" in h_h.get("vary", "") and h_h.get("cache-control") == "no-store")
+st_n, h_n, b_n = raw("/wrath/docs")
+check("pages: no gzip unless asked", "content-encoding" not in h_n and b_n.startswith(b"<!doctype html"))
+check("site.css: the same version on every page (one download for the whole site)", len({tuple(v) for v in links.values()}) == 1)
+check("site.css: brand words stay off it too", not BANNED.search(css_b.decode()))
+
 os.environ["WU_HUB_FRONT"] = "0"
 check("front door off: the gold frame as before", 'id="ly-site-nav"' in wp.signed_out_page().decode()
       and 'class="hb-top"' not in wp.signed_out_page().decode())

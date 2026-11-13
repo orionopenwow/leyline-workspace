@@ -376,6 +376,9 @@ local function buildSelect(pg)
         snaps[#snaps + 1] = { a .. "°", function() local b = B(); if b then b.SetAngle(a) end; T.Refresh() end, "angle" .. a, "Turn by " .. a .. "°" }
     end
     snaps[#snaps + 1] = { "Land", function() cmd("land") end, "land", "Surface snap: put it on what is under it (a table's top, a floor, the ground)" }
+    -- the builder's comforts (DenKeys.lua, Den Lite qol.rs): toggles kept between sessions
+    snaps[#snaps + 1] = { "Magnet", function() local k = W.DenKeys; if k then k.MagnetToggle() end; T.Refresh() end, "magnet", "M: in hand near one of its kind, it snaps edge to edge (Alt: free)" }
+    snaps[#snaps + 1] = { "On the slope", function() local k = W.DenKeys; if k then k.SlopeToggle() end; T.Refresh() end, "slope", "Ctrl+L: what you place or move lies on the ground's slope" }
     y = row(pg, snaps, y - 18, pg.c)
     section(pg, "Solid (walk into, stand on)", y)
     y = row(pg, {
@@ -437,10 +440,12 @@ local function buildArrange(pg)
         { "Round it", function() T.Ring(pg.rn:GetText(), pg.rr:GetText(), pg.face, false) end, "ring", "Round the selected prop" },
         { "Round me", function() T.Ring(pg.rn:GetText(), pg.rr:GetText(), pg.face, true) end, "ringme", "Round where you stand" },
     }, y, pg.c)
-    section(pg, "Copy", y)
+    section(pg, "Copy and fill", y)
     row(pg, {
         { "Copy", function() cmd("copy") end, "copy" }, { "Paste", function() local b = B(); if b then b.Paste() end end, "paste" },
         { "Duplicate", function() cmd("dup") end, "dup" },
+        { "Fill gap", function() local k = W.DenKeys; if k then k.Fill("gap") else cmd("fill gap") end end, "fillgap", "Copies of the first selected in the gap between it and the second" },
+        { "Fill box", function() local k = W.DenKeys; if k then k.Fill("box") else cmd("fill box") end end, "fillbox", "The box two selected props make (opposite corners) covered with copies of the first" },
     }, y - 18, pg.c)
 end
 
@@ -643,6 +648,8 @@ function T.Refresh()
     p.solidText:SetText(st.selId and coll and ("This one: " .. coll .. ".") or "Select a prop to set it.")
     local mz = T.measured
     p.measureText:SetText(mz and string.format("%.2f yd (%.2f on the flat, %.2f up) · it is %.1f x %.1f x %.1f yd", mz.d or 0, mz.flat or 0, mz.up or 0, mz.w or 0, mz.dp or 0, mz.h or 0) or "")
+    local k = W.DenKeys
+    activeIf(p.c.magnet, k and k.magnet); activeIf(p.c.slope, k and k.slope)
     -- Arrange
     local a = win.pages.arrange
     for f, c in pairs(a.faces) do activeIf(c, a.face == f) end

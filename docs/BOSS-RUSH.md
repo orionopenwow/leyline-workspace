@@ -45,8 +45,11 @@ fight"). The page (`launcher/ui/bossrush.js`, `bossrush.css`):
 6. **Fight.** Exact: the hero is made at once (or picked), and the game starts signed in to the hero, onto the
    platform. Light: Den Lite gets the fight, then Your Den's own one-click start opens it.
 7. **The result card** after a run (CLEARED or WIPED, the time, New best) with **Try again**, the **best times** board
-   (kept on this PC), and **Share this fight**: the fight as a code (`ley1.fight.r.<...>.<check>`) to copy, or a
-   friend's code pasted to pick their fight.
+   (kept on this PC; each cleared best has **Share**: onto the website's local-run board, docs/LEADERBOARDS.md), and
+   **Share this fight**: the fight as a code (`ley1.fight.r.<...>.<check>`) to copy, or a friend's code pasted to pick
+   their fight.
+8. **Leaderboards** under the page (`#br-boards`, ui/boards.js): the realms' signed boards (Boss Rush first, Duels,
+   Local runs). This week's featured fight (the catalog in turn, one a week) has a **This week** chip on its tile.
 
 ### What happens on Fight (exact)
 
@@ -273,8 +276,8 @@ Never used: wowdecomp, Waystone, any decompiled client, any leaked source.
 
 Ranked by fun for the effort, highest first. "E" = exact engine, "L" = light version.
 
-1. **Weekly rotation** (E, L): a featured fight each week, the board for that week (the module's boards already have
-   "this week").
+1. **Weekly rotation** (E, L): a featured fight each week, the board for that week. **Built** (12 Nov,
+   docs/LEADERBOARDS.md): `featured_fight` / `featured` / `B.featured`, the tile's chip, the boards' line.
 2. **Co-op with a friend** (E): the hero queue already takes a group; the Boss Rush install's realm opened to a friend
    through the Den invite path (relay tunnel) so two heroes fight with eight bots.
 3. **Co-op with a friend** (L): Den Lite's friends listener: a guest joins the host's fight.
@@ -285,7 +288,8 @@ Ranked by fun for the effort, highest first. "E" = exact engine, "L" = light ver
 6. **Affixes** (L, then E): a weekly twist (more adds, faster rings, a shrinking floor, healing halved).
 7. **Ghost replays** (L): record the player's path and the fight's events (the fight is deterministic by seed), play a
    best run back as a ghost.
-8. **Results card with the fight's story** (E, L): who died to what, the damage and healing per companion.
+8. **Results card with the fight's story** (E, L): who died to what, the damage and healing per companion. First
+   step built: deaths per clear on the signed boards (ov_boards.lua).
 9. **Encounter editor in the Den** (L): write a fight in the format, place its rings on the Den's floor, share it as a
    code (`ley1.fight`).
 10. **Jaina commentary** (L): Jaina (`jaina.rs`) calls the mechanics in her own voice and coaches after a wipe.
@@ -295,7 +299,8 @@ Ranked by fun for the effort, highest first. "E" = exact engine, "L" = light ver
 13. **Ulduar's keepers and the end** (E): the lights and the sigils set by the module.
 14. **The necropolis's last fight** (E).
 15. **Speedrun splits** (E, L): the time per phase, against your best.
-16. **Daily challenge** (L): one seed for everyone that day, the same rings in the same places.
+16. **Daily challenge** (L): one seed for everyone that day, the same rings in the same places. Planned next
+    (docs/LEADERBOARDS.md section 6: a seed in `bossrush.json`, replay checks for local runs).
 17. **Companion orders** (E, L): "tank, move it there", "healer, focus me", from a small panel.
 18. **Pick your companions** (E, L): which classes fill the seats (the module's `BotSeats` already reads a config).
 19. **No-companion mode** (E): solo or players only (the module's group-only).
@@ -304,6 +309,8 @@ Ranked by fun for the effort, highest first. "E" = exact engine, "L" = light ver
 22. **Hard modes** (E): the Sanctum's drakes already; the vault's and Ulduar's next.
 23. **A boss rush proper** (E, L): several fights back to back on one clock.
 24. **Leaderboard online** (E): the website's boards for Boss Rush runs, uploaded only when the player says so.
+    **Built**: signed realm boards for every catalog fight a realm offers, and the separate local-run board (Share),
+    docs/LEADERBOARDS.md.
 25. **Spectate** (L): a friend watches the host's fight.
 26. **Training dummies with a fight's mechanics** (L): the Dojo's practice boss given a catalog fight's rings.
 27. **Accessibility** (L): longer warnings, a colour-blind ring look, a "story" difficulty.
@@ -336,6 +343,8 @@ Ranked by fun for the effort, highest first. "E" = exact engine, "L" = light ver
 | `labs/den-lite/src/bossrush_world.rs` | the world glue (a child of world.rs) |
 | `labs/den-lite/src/combat.rs` | `Kind::Raid`, `set_health`, `raid_hit`, `raid_heal`, `refill_me` |
 | `tools/boss-rush/` | Control's `boss-rush` (read-only check) and `boss-rush-test` |
+| `launcher/ui/boards.js`, `boards.css`, `src-tauri/src/boards.rs` | the Leaderboards view under the page, Share onto the local-run board (docs/LEADERBOARDS.md) |
+| `realm/custom/lua_scripts/ov_boards.lua`, `realm/custom/boards-export.py`, `stream/boards.py` | deaths per clear, the signed boards, the website's page |
 
 ## 8. Tests
 

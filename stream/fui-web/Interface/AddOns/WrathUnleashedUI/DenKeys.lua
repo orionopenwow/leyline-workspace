@@ -655,7 +655,10 @@ function K.OnMessage(prefix, msg, channel, sender)
         if K.dupWait and s and s.id ~= K.dupWait then K.dupLast, K.dupWait = s.id, nil end
         if (was ~= nil) ~= (s ~= nil) then refresh() end
     elseif name == "snapped" then
+        local was = K.snapped
         K.snapped = data == "1"
+        -- said at once in the status line's left part (the build hint under it shows it too, once notes fade)
+        if K.snapped and not was then note("Snapped edge to edge with its neighbour (Alt: free, M: magnet off)") end
         if g and g.ShowTag then g.ShowTag() end
     elseif name == "nudged" then
         local dx, dy, dz = data:match("^([%-%d%.]+),([%-%d%.]+),([%-%d%.]+)")

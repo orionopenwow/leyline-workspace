@@ -1,3 +1,86 @@
+# Your Den, next (12 Nov 2026): the builder's comforts
+
+Owner, 12 Nov: "send out an agent for the den that creates and suggests features for the den and makes it more user
+intuitive, adding quality of life features and everything, including Noggit and the editor that follows terrain,
+click and drag to move, and so on and so forth. Make sure that we completely develop out these features."
+
+Branch `agent/den-qol` (CI on `feat-den-qol`). What the editor already had before this pass is in DEN-TOOLS.md
+("Keys"), DEN-EDITOR-PARITY.md and DEN-PLACEMENT.md: the copy that glides under the cursor, click-to-carry and
+press-and-drag, the ground's height under what is carried (`surface_z` over Forge's ground), the far view, undo and
+redo everywhere (200 deep), copy / paste / duplicate by an offset, grid and angle snaps, Box select, L to lie on the
+slope, a searchable gallery with Favourites and Recent, the hover glow and name. The list below is what was still
+missing against those docs and the Noggit plan, ranked by what a first-time builder trips over first.
+
+## Suggestions, ranked (built: B; left: L)
+
+| # | What | Why a first-time builder needs it | |
+|---|---|---|---|
+| 1 | **A first-build tour** (`DenCoach.lua`, `/dentour`) | Nothing told a newcomer what to press after the intro cards. Nine steps (Build, Pick, Put down, Move, Turn, Copy, Undo, Select several, Play), each moves on by itself when done | B |
+| 2 | **Drag one of several and they all move** (group move) | The parity doc's gap 23 (build-multi.js): Shift+click three props, drag one, the other two stayed behind | B |
+| 3 | **Follow the slope while placing** (Ctrl+L) | L tilted a prop after the fact; on Forge's hills every placement needed it. Now placing and moving lie on the ground, the copy in hand leaning too | B |
+| 4 | **Nudge keys** (Numpad 8 4 6 2 / 9 3 / 7 1, Ctrl+arrows; Alt fine, Shift big) | The precise last bit without the panel. Noggit moves objects on the keypad; relative to the view but on the grid's axes, so a nudge never leaves the grid | B |
+| 5 | **Alt held: the precise spot** (no grid, no magnet; Alt+Q / E 1 degree) | The hold-key modifier every editor has: snap on for the rough place, Alt for the exact one, without toggling G | B |
+| 6 | **The magnet** (M) | Walls, fences and tables in a row by hand: near another of its kind a prop snaps edge to edge, turned as it is | B |
+| 7 | **Circle select** (Alt+drag) | The parity doc's row 12 (Alt drag circle): a round patch of flowers or a camp, where a box takes too much | B |
+| 8 | **Fill gap / Fill box** (Tools > Arrange) | The parity doc's row 13: a fence between two posts, a floor of tiles between two corners, one undo | B |
+| 9 | **The hover tip says what the mouse does** | "click: carry · drag: slide · Shift+click: add · Q E: turn · right-click: menu", and "drag: slide all 3" with a group | B |
+| 10 | **The keys where people look** | The ? card's foot, a Guide page of its own (More keys), the status line's hint | B |
+| 11 | Rotate and size handles in the world | The stock client has no ring or box model to draw them; 2 / 3 tools and the panel do it. Needs models of our own in the player's patch | L |
+| 12 | Random tilt in scatter | Small; scatter's random turn and size cover most of it. One line in DenKeys' `placed` once wanted | L |
+| 13 | Live terrain brushes in game | The client can't change its ground live (DEN.md "Terrain"): Forge stays the ground's editor; the props follow what it made (the slope, `surface_z`, the group's lift) | L |
+| 14 | A copy of the whole group gliding while it is dragged | Only the grabbed prop's copy glides (one creature); the others jump on the let-go. More copies would be more objects each frame | L |
+| 15 | Colour-dot filter in the gallery | Nothing in the catalog says a prop's colour; would need a hand list | L |
+
+## What was built, and how it works
+
+| Feature | Den Lite (`labs/den-lite`) | Add-on (`WrathUnleashedUI`) |
+|---|---|---|
+| Group move | gizmo.rs `drag`: pressing on one of the selection keeps the others selected (the one pressed becomes the first); `a.group_from` is where it was. `commit`: qol.rs `group_moves` gives each other prop the same move, turned with it round the grabbed one (qolmath `group_place`), at its own height over the ground where it lands; `edit_each`: **one undo** for all. Locked ones stay | Gizmo.lua's status line: "Moving 3 together: let go to drop them"; the hover tip "drag: slide all 3" |
+| Follow the slope | `gizmo slope on|off`; `commit` places with `place_one` and a tilt from noggit.rs `slope_tilt` over the ground's gradient (one undo), moves the same way; the copy in hand leans (`draw`: a gameobject copy; a gliding creature can't lean) | Ctrl+L (DenKeys `SlopeToggle`), kept in the saved settings, said again on entering build mode (`K.OnBuild`); Tools > Select: On the slope |
+| Nudge | `nudge <fwd> <right> <up> [<turn>]` (qol.rs): the view's facing rounded to a quarter turn (qolmath `nudge_offset`), each selected prop moved and its height over the ground kept (it follows hills); one undo; at most 10 yd / 90° a press | Numpad 8 2 4 6, 9 3, 7 1 and Ctrl+arrows / Ctrl+PgUp PgDn, only with a selection; the step is the grid's (else half a yard), Alt a tenth / 1°, Shift five steps / 90°. An older Den Lite: the Builder's own `step` / `turn` |
+| Alt: free | `hover ... free`: the grid off and no magnet for that hover (the grid setting kept) | Gizmo.lua `G.Tick` adds the word while Alt is held with something in hand; `G.Turn` by 1° with Alt |
+| Magnet | `gizmo magnet on|off`; `hover_at`: qol.rs `magnet_spot` looks at shown props of the same entry within 12 yd (never the one carried or its group) and qolmath `magnet` snaps to the nearest of the four edge-to-edge spots within 0.9 yd, taking its facing; `snapped 1|0` to the addon | M (DenKeys `MagnetToggle`), kept, said on entering build mode; Tools > Select: Magnet; the status line says "Snapped edge to edge" |
+| Circle select | `selcircle <u0> <v0> <u1> <v1> <aspect> [<zoom>] [add]`: both points cast onto the ground with the build camera; every shown prop whose foot is inside, nearest the middle first | Alt+drag (`LeylineDenKeyCircle`): our own ring (Media\Icons\circle) drawn as you drag; Alt+Shift adds; a still Alt+click does nothing |
+| Fill gap / box | `fill gap`: copies of the first selected along the line to the second, spaced by its footprint across that line (qolmath `fill_gap`); `fill box [<step>]`: the box two props make, on the world's axes, every step (its footprint by default; qolmath `fill_box`, refused past 160 copies); each copy keeps the first's height over the ground; one undo; the copies selected | Tools > Arrange: Fill gap, Fill box (DenKeys `K.Fill` says to select two first) |
+| The tour | (nothing new: it reads what is already said) | DenCoach.lua: hooks `SendAddonMessage` (what the editor sends) and reads Den Lite's answers; shows after the intro cards until finished or ended; Skip step, End the tour; `/dentour`, `/dentour off`. TODO(owner): the steps' words |
+| The tip, the keys | the caps: `groupmove,slopefollow,magnet,nudge,selcircle,fillgap,fillbox,free` | Gizmo.lua's hover tip has a second line (DenKeys `TipHint`); DenBar's ? card and the Guide's More keys page list every new key; six icons of our own (circle, magnet, slope, fill, nudge, coach) |
+
+Files: `labs/den-lite/src/qol.rs`, `qolmath.rs` (new), hooks in `gizmo.rs`, `ovmod.rs`, `lib.rs`;
+`stream/fui-web/Interface/AddOns/WrathUnleashedUI/DenCoach.lua` (new, in the .toc after DenKeys.lua), `DenKeys.lua`,
+`Gizmo.lua`, `BuildTools.lua`, `DenBar.lua`, `Guide.lua`, `Style.lua`; `tools/den-ui/icons/make_icons.py`;
+`tools/den-ui/den-qol-scene.lua` (pictures).
+
+## Tests
+
+| Where | What | Here |
+|---|---|---|
+| `labs/den-lite/src/qolmath.rs` | 7 std-only tests: a carried group keeps its shape and turns as one (across the 0/360 wrap), the magnet's four spots, turned neighbours, the nearest of two, half widths turned, fill gap even spacing and its cap, fill box corners and refusal, the nudge on the grid's axes, the circle | **pass** (`rustc --edition 2021 --test src/qolmath.rs`) |
+| `labs/den-lite/src/qol.rs` | 8 crate tests: verbs and caps; dragging one of three carries all in one undo (offsets turned with it) and one undo puts all back; a locked extra stays, a prop outside the selection drags alone; slope follow (flat stays upright, one undo); the magnet snaps a card edge to edge and `free` frees it (and the grid); fill gap and fill box, a box too big refused, a visitor refused; the nudge on the view's axes, clamped, one undo; circle select (nearest first, add) | CI (`launcher check` / den-lite on `feat-den-qol`) |
+| `stream/tests/test_wuui_denqol.lua` | 71 checks on the whole addon (fake client, fake Den Lite): the tour's nine steps from what is sent and answered, Skip / End / `/dentour`; the nudge keys only with a selection, steps, Alt / Shift, the grid's step, the older Den Lite's fallbacks; M and Ctrl+L said, kept, said again on entering build mode, the Tools chips; Alt's `free` and 1°; snapped in the status line; group drag text; the tip's second line; Alt+drag circle, add, a still click; Fill with one and two selected, the Tools buttons; the keys card, the Guide, the hint; no brand words; TODO(owner) on the tour | **pass** |
+| Unchanged | test_wuui_gizmo 166, denkeys 80, builder 218, buildtools 52, denbar 87 (its keys card limit now 1000 letters), denhome 89, denlayout 151, denquiet 7, dentale 19, test_brand.lua 20, test_brand.py 287, tools/den-ui/icons/test_icons.py 4 | **pass** |
+
+Pictures: `docs/den-ui/den-qol-1-tour.png` to `den-qol-9-guide-keys.png` (1920x1080, the render harness:
+`texlua tools/den-ui/den-qol-scene.lua <addon dir> <out> 1920x1080`, then `node tools/den-ui/render.cjs <out>
+docs/den-ui 1920x1080 den-`).
+
+## Only a real game can confirm
+
+1. **Group move in the world**: the extras jump to their new places on the let-go (they don't glide with the one in
+   hand); check that it reads as one move and that undo puts all of them back.
+2. **The copy leaning on a slope** (Ctrl+L on Forge's hills): a gameobject copy is sent with its pitch and roll; a
+   gliding creature copy (most `.m2` props on the owner's PC) stays upright until it is put down. Check the placed
+   prop lies on the ground as the L key's does.
+3. **The magnet's feel**: 0.9 yd reach and edge to edge from each model's box (`models.rs`, else a guess): walls whose
+   box isn't known may snap with a gap or overlap.
+4. **Numpad keys**: some keyboards send NUMPAD keys only with Num Lock on; Ctrl+arrows is the fallback.
+5. **Alt in the game**: Alt is also the far view's slow flight; check that holding Alt over a prop in hand doesn't
+   collide with a self-cast or another binding the player has on ALT-BUTTON1 (it is an override only in build mode).
+6. **The tour's card** under the minimap at 1080p and 720p, and that hooking SendAddonMessage costs nothing noticeable.
+7. Press `den-lite-test` (or let CI on `feat-den-qol` say), then `den-lite`, then `addons` (DenCoach.lua is a new file
+   in the .toc), then try the tour from a fresh `/dentour`.
+
+---
+
 # Your Den, next (5 Nov 2026): the mouse proven, tales, Jaina writing them, Sky Island, Dens as codes
 
 Owner, 5 Nov: "continued development of the den features to match the movement on the mouse and everything, invent

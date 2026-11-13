@@ -143,7 +143,7 @@ Status: **done** (built and tested here; the Rust unit tests are written but not
 | Status line | done | The pill and the Gizmo's tag (tool, keys, speed) |
 | Selection: Shift adds, Del deletes | done | |
 | Selection: Ctrl+drag box | done | Ctrl+drag (Den Lite projects every prop with its build camera: `tool box`) |
-| Selection: Alt-drag circle, L area | partial | Ctrl+A: every prop within 30 yd of you (`selnear`); no circle drawn |
+| Selection: Alt-drag circle, L area | done (12 Nov) | Alt+drag: circle select, drawn as you drag (`selcircle`, qol.rs); Ctrl+A: every prop within 30 yd of you |
 | Move / rotate / scale modes (W / T / V) | partial | 1 / 2 / 3 tools: Move drags, Turn drags (live, one undo), Size drags (applied on the let-go, no live size: the copy can't be sized while carried) and the wheel; no rotate or scale handles in the world (no ring or box model) |
 | Copy / paste | done | Ctrl+C; Ctrl+V puts the copy in hand under the cursor with its turn, then its size |
 | Duplicate keeping the offset | done | Ctrl+D (`dupby`: the whole selection, one undo; again: the same offset as the last copy was moved) |
@@ -156,14 +156,14 @@ Status: **done** (built and tested here; the Rust unit tests are written but not
 | Tilt at random | missing | |
 | Place again | done | Shift+click keeps the card in hand |
 | ARRAY, ring | done | Tools > Arrange |
-| Fill box / fill gap | missing | |
+| Fill box / fill gap | done (12 Nov) | Tools > Arrange: Fill gap, Fill box (qol.rs `fill`) |
 | Stamps | done | Tools > Stamps |
 | mega-placer.js 1: the ring under the cursor | done | TODO(owner): its three looks |
 | mega-placer.js 2-4: armed place, press-drag move, Z / X turn | done | Q / E turn |
 | mega-placer.js 5: topmost hit, terrain never picked | done | pick.rs |
 | mega-placer.js 6: positions to 0.05 | missing | Free placement keeps the cursor's spot |
 | ed-ground.js: on what is under it | done | surface_z |
-| build-multi.js: moving several together | partial | The panel's move and the keys move them all; the glide carries one |
+| build-multi.js: moving several together | done (12 Nov) | Drag one of the selection: all move with it on the let-go, turned with it, one undo (qol.rs `group_moves`); the glide carries the one in hand |
 | ed-history-core.js: one undo history | done | History tab, 200 deep |
 | terrain-editor-core.js: a brush ring | missing | Forge (the client can't change its terrain live) |
 

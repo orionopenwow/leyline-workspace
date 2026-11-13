@@ -25,6 +25,18 @@ Three kinds (each is one JSON object; "id" is derived, never trusted from the wi
           {"v": 1, "target": "r-<realm id>" | "n-<node id>", "reason", "ts", "expires", "staff": "<pubkey hex>"}
           * id = "b-" + target. Valid only when staff is one of the pinned staff keys. At most BLOCK_MAX_TTL.
             While it lasts the target's records are dropped everywhere and refused on arrival.
+  info    {"kind": "info", "info": {...}, "sig": "<hex>"}   (CTX_INFO: the capability document, Commonhold v1 F3)
+          {"v": 1, "pubkey", "role": "relay" | "host", "seq", "ts", "proto_min", "proto_max", "software", "version",
+           "supported": ["mesh", "ws-bridge", ...], "limits": {"<name>": <int>, ...}, "admin": "<peer id>" | "",
+           "rules_url", "region", "languages": [...], "restricted": [...]}
+          * signed by the key it describes: a relay's node key or a host's realm key. id = "i-" + keys.realm_id(pubkey).
+            Expires INFO_TTL after ts. Every field is a claim, never proof (a probe has to check it).
+
+Tolerant reader (docs/COMMONHOLD-V1.md, "Versions"): fields a node does not know are kept, inside the signed document
+and beside it, so a record is passed on byte for byte and old nodes never strip new fields. A kind or a document
+version (`v`) a node does not know is ignored ("ignored: ..."), not refused: it is not stored and not counted against
+the sender. PROTO / PROTO_MIN are the protocol levels this code speaks; a document's proto_min/proto_max say which
+levels its signer speaks (missing: 1..1), and speaks() tells whether the two overlap.
 
 Merge rules (Store.offer): verify fully, or refuse; a blocked target is refused; for the same id the higher
 version wins (realm: beat.seq; relay: node.seq; block: block.ts); an equal version with different bytes (a key
@@ -43,10 +55,20 @@ from . import keys
 CTX_ENDPOINT = "leyline-mesh-endpoint-v1"
 CTX_NODE = "leyline-mesh-node-v1"
 CTX_BLOCK = "leyline-mesh-block-v1"
+CTX_INFO = "leyline-mesh-info-v1"
+
+# The Commonhold protocol levels this code speaks (docs/COMMONHOLD-V1.md). Level 1 is everything in that document.
+PROTO = 1
+PROTO_MIN = 1
+# The capability ids the spec names (a document may list others: unknown ids are kept and ignored).
+CAPABILITIES = ("mesh", "ws-bridge", "mailbox", "chain", "node-registry", "listing", "direct", "den-v1", "wuly-v2",
+                "sealed-relay", "herokey")
+ROLES = ("relay", "host")
 
 REALM_TTL = 15 * 60          # a realm record lives 15 minutes after the beat it carries
 ENDPOINT_TTL = 15 * 60
 NODE_TTL = 30 * 60
+INFO_TTL = 24 * 3600         # a capability document lives a day; a relay re-signs it with its relay record
 BLOCK_MAX_TTL = 90 * 86400
 SKEW = 300                   # a record "from the future" by more than this is refused
 REFRESH = 5 * 60             # a relay re-publishes an unchanged realm this often (TTL / 3)
@@ -57,6 +79,10 @@ BUCKETS = 256
 
 HOST_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+PEER_RE = re.compile(r"^[a-z2-7]{16}$")
+CAP_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,31}$")
+LIMIT_RE = re.compile(r"^[a-z][a-z0-9_]{0,23}$")
+LANG_RE = re.compile(r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$")
 REGIONS = ("na-east", "na-west", "sa", "eu", "africa", "me", "asia", "oce")
 # TODO(owner): the staff key(s) whose signed blocks the mesh honours (hex Ed25519 public keys). Empty = no
 # block record is valid anywhere (the seed relays' own RELAY_BLOCK_FILE keeps working as today).
@@ -120,9 +146,89 @@ def block_record(staff_secret: bytes, target: str, reason: str, ts: int, expires
     return {"kind": "block", "block": b, "sig": keys.sign_doc(staff_secret, b, CTX_BLOCK)}
 
 
+def info_record(secret: bytes, role: str, seq: int, ts: int, *, supported=(), limits: dict | None = None,
+                admin: str = "", software: str = "", version: str = "", region: str = "", languages=(),
+                rules_url: str = "", restricted=(), proto_min: int = PROTO_MIN, proto_max: int = PROTO,
+                extra: dict | None = None) -> dict:
+    """A signed capability document for the relay or host whose key this is. `extra`: fields a newer spec adds
+    (signed with the rest; an older reader keeps them)."""
+    doc = {"v": 1, "pubkey": keys.public_key(secret).hex(), "role": role, "seq": int(seq), "ts": int(ts),
+           "proto_min": int(proto_min), "proto_max": int(proto_max), "software": str(software)[:40],
+           "version": str(version)[:32], "supported": sorted({c for c in supported if CAP_RE.match(c)})[:32],
+           "limits": {k: int(v) for k, v in sorted((limits or {}).items()) if LIMIT_RE.match(k)}, "admin": admin,
+           "rules_url": rules_url, "region": region if region in REGIONS else "",
+           "languages": [x for x in languages if LANG_RE.match(x)][:8], "restricted": sorted(set(restricted))[:8]}
+    doc.update(extra or {})
+    return {"kind": "info", "info": doc, "sig": keys.sign_doc(secret, doc, CTX_INFO)}
+
+
+def proto_range(doc) -> tuple[int, int]:
+    """(proto_min, proto_max) of a signed document; missing or malformed: (1, 1), today's protocol."""
+    if not isinstance(doc, dict):
+        return 1, 1
+    lo, hi = doc.get("proto_min", 1), doc.get("proto_max", doc.get("proto_min", 1))
+    if not (_int(lo, 1, 65535) and _int(hi, 1, 65535)) or lo > hi:
+        return 1, 1
+    return lo, hi
+
+
+def speaks(doc, lo: int = PROTO_MIN, hi: int = PROTO) -> bool:
+    """Whether the document's signer and this code share a protocol level."""
+    a, b = proto_range(doc)
+    return a <= hi and lo <= b
+
+
 # ------------------------------------------------------------------------------------------------ checking records
 class Bad(ValueError):
     pass
+
+
+class Skip(Bad):
+    """A kind or document version this node does not know: ignored, never stored, never held against the sender."""
+
+
+def _version(doc, what):
+    if not isinstance(doc, dict):
+        raise Bad(f"no {what}")
+    v = doc.get("v")
+    if _int(v, 2):
+        raise Skip(f"{what} v{v} is newer than this node")
+    if v != 1:
+        raise Bad(f"no {what}")
+
+
+def _check_info(d: dict):
+    if d.get("role") not in ROLES:
+        raise Bad("info role")
+    if not (_int(d.get("seq")) and _int(d.get("ts"))):
+        raise Bad("info seq/ts")
+    lo, hi = d.get("proto_min"), d.get("proto_max")
+    if not (_int(lo, 1, 65535) and _int(hi, 1, 65535) and lo <= hi):
+        raise Bad("info proto_min/proto_max")
+    for k, n in (("software", 40), ("version", 32)):
+        if not (isinstance(d.get(k, ""), str) and len(d.get(k, "")) <= n):
+            raise Bad(f"info {k}")
+    sup = d.get("supported", [])
+    if not (isinstance(sup, list) and len(sup) <= 32 and all(isinstance(c, str) and CAP_RE.match(c) for c in sup)):
+        raise Bad("info supported")
+    lim = d.get("limits", {})
+    if not (isinstance(lim, dict) and len(lim) <= 16
+            and all(LIMIT_RE.match(k) and _int(v) for k, v in lim.items())):
+        raise Bad("info limits")
+    adm = d.get("admin", "")
+    if not (adm == "" or (isinstance(adm, str) and PEER_RE.match(adm))):
+        raise Bad("info admin")
+    url = d.get("rules_url", "")
+    if not (url == "" or (isinstance(url, str) and len(url) <= 200 and url.startswith("https://"))):
+        raise Bad("info rules_url")
+    if d.get("region", "") not in REGIONS + ("",):
+        raise Bad("info region")
+    langs = d.get("languages", [])
+    if not (isinstance(langs, list) and len(langs) <= 8 and all(isinstance(x, str) and LANG_RE.match(x) for x in langs)):
+        raise Bad("info languages")
+    rs = d.get("restricted", [])
+    if not (isinstance(rs, list) and len(rs) <= 8 and all(isinstance(x, str) and CAP_RE.match(x) for x in rs)):
+        raise Bad("info restricted")
 
 
 def _check_endpoint(e, rid: str, signed_relays: set, now: float):
@@ -164,8 +270,7 @@ def check(rec, now: float, staff_keys=None) -> tuple[str, int]:
     kind = rec.get("kind")
     if kind == "realm":
         beat = rec.get("beat")
-        if not isinstance(beat, dict) or beat.get("v") != 1:
-            raise Bad("no beat")
+        _version(beat, "beat")
         pk = beat.get("pubkey")
         if not (isinstance(pk, str) and HEX64.match(pk)):
             raise Bad("beat pubkey")
@@ -193,8 +298,7 @@ def check(rec, now: float, staff_keys=None) -> tuple[str, int]:
         return "r-" + rid, beat["seq"]
     if kind == "relay":
         n = rec.get("node")
-        if not isinstance(n, dict) or n.get("v") != 1:
-            raise Bad("no node")
+        _version(n, "node")
         pk = n.get("pubkey")
         if not (isinstance(pk, str) and HEX64.match(pk)):
             raise Bad("node pubkey")
@@ -212,8 +316,7 @@ def check(rec, now: float, staff_keys=None) -> tuple[str, int]:
         return node_id(pk), n["seq"]
     if kind == "block":
         b = rec.get("block")
-        if not isinstance(b, dict) or b.get("v") != 1:
-            raise Bad("no block")
+        _version(b, "block")
         staff = tuple(STAFF_KEYS if staff_keys is None else staff_keys)
         if b.get("staff") not in staff:
             raise Bad("not a staff key")
@@ -227,7 +330,19 @@ def check(rec, now: float, staff_keys=None) -> tuple[str, int]:
         if not keys.verify_doc(bytes.fromhex(b["staff"]), b, CTX_BLOCK, rec.get("sig", "")):
             raise Bad("signature")
         return "b-" + t, b["ts"]
-    raise Bad("unknown kind")
+    if kind == "info":
+        d = rec.get("info")
+        _version(d, "info")
+        pk = d.get("pubkey")
+        if not (isinstance(pk, str) and HEX64.match(pk)):
+            raise Bad("info pubkey")
+        _check_info(d)
+        if d["ts"] > now + SKEW or now - d["ts"] > INFO_TTL:
+            raise Bad("expired")
+        if not keys.verify_doc(bytes.fromhex(pk), d, CTX_INFO, rec.get("sig", "")):
+            raise Bad("signature")
+        return "i-" + keys.realm_id(bytes.fromhex(pk)), d["seq"]
+    raise Skip(f"unknown kind {str(kind)[:24]!r}" if isinstance(kind, str) else "no kind")
 
 
 def _dedupe_endpoints(eps: list) -> list:
@@ -248,11 +363,20 @@ def expires_at(rec) -> float:
         return rec["node"]["ts"] + NODE_TTL
     if k == "block":
         return rec["block"]["expires"]
+    if k == "info":
+        return rec["info"]["ts"] + INFO_TTL
     return 0
 
 
 def target_of(rec_id: str) -> str:
     return rec_id[2:] if rec_id[:2] in ("r-", "n-") else rec_id
+
+
+def subject_of(rec_id: str, rec: dict) -> str:
+    """The id a block names for this record: an info document is blocked with the relay or realm it describes."""
+    if rec_id.startswith("i-"):
+        return ("n-" if rec.get("info", {}).get("role") == "relay" else "r-") + rec_id[2:]
+    return rec_id
 
 
 # ------------------------------------------------------------------------------------------------ the store
@@ -267,7 +391,7 @@ class Store:
         self.ver: dict[str, int] = {}
         self.counter = 0
         self.at: dict[str, int] = {}          # id -> counter of its last change
-        self.stats = {"accepted": 0, "refused": 0, "stale": 0}
+        self.stats = {"accepted": 0, "refused": 0, "stale": 0, "ignored": 0}
         self.last_id = None                   # the id of the record the last offer() looked at
 
     def blocked(self, rec_id: str) -> bool:
@@ -281,10 +405,13 @@ class Store:
             rec = json.loads(json.dumps(rec))     # our own copy; check() may drop endpoints
             rid, ver = check(rec, now, self.staff_keys)
             self.last_id = rid
+        except Skip as e:
+            self.stats["ignored"] += 1
+            return False, f"ignored: {e}"
         except (Bad, ValueError, TypeError, KeyError, AttributeError) as e:
             self.stats["refused"] += 1
             return False, f"refused: {e}"
-        if rec["kind"] != "block" and self.blocked(rid):
+        if rec["kind"] != "block" and self.blocked(subject_of(rid, rec)):
             self.stats["refused"] += 1
             return False, "refused: blocked"
         cur = self.recs.get(rid)
@@ -321,8 +448,9 @@ class Store:
         self.at[rid] = self.counter
         if rec["kind"] == "block":
             t = rec["block"]["target"]
-            if t in self.recs:
-                self._drop(t)
+            for gone in (t, "i-" + t[2:]):
+                if gone in self.recs:
+                    self._drop(gone)
         self.stats["accepted"] += 1
         return True, "ok"
 
@@ -370,6 +498,9 @@ class Store:
 
     def relays(self) -> list:
         return [r for r in self.recs.values() if r["kind"] == "relay"]
+
+    def infos(self) -> list:
+        return [r for r in self.recs.values() if r["kind"] == "info"]
 
 
 # ------------------------------------------------------------------------------------------------ relay choice

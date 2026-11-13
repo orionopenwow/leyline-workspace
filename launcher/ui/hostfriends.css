@@ -1,12 +1,13 @@
 /* Play with friends (hostfriends.js): the one window, the Ready-for-friends checklist, the friend's steps, the Host page's
-   banner. In the theme's tokens (themes/themes.css). */
-.wf { position: fixed; inset: 0; z-index: 65; display: grid; place-items: center; background: rgba(0, 0, 0, .55); padding: 16px; }
-.wf[hidden] { display: none; }
+   banner. In the theme's tokens (themes/themes.css). The window is .wf[role="dialog"] (and its head .wf-card > .wf-top):
+   the Single player page's own #wf/#fw lists (worldfriends.js) wear .wf and .wf-top too and sit in the page. */
+.wf[role="dialog"] { position: fixed; inset: 0; z-index: 65; display: grid; place-items: center; background: rgba(0, 0, 0, .55); padding: 16px; }
+.wf[role="dialog"][hidden] { display: none; }
 .wf-card { width: min(680px, 100%); max-height: calc(100vh - 32px); overflow: auto; display: grid; gap: 12px; padding: 18px 20px;
   border-radius: var(--t-radius, 10px); background: var(--t-panel, var(--t-surface));
   border: var(--t-border-w, 1px) solid var(--t-panel-border, var(--t-border)); color: var(--t-text); }
-.wf-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.wf-top h2 { margin: 0; font: 700 19px var(--t-font); }
+.wf-card > .wf-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.wf-card > .wf-top h2 { margin: 0; font: 700 19px var(--t-font); }
 .wf-lead { margin: 0; color: var(--t-muted); font-size: 13.5px; }
 .wf-body { display: grid; gap: 14px; }
 .wf-sec { display: grid; gap: 8px; }

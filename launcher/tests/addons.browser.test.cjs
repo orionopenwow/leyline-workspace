@@ -29,6 +29,8 @@ const FAKE = (o) => {
   const ad = {};   // client id -> { installed, update, foreign, backups }
   for (const c of clients) ad[c.id] = Object.assign({ installed: null, update: false, foreign: [], backups: [], missing: [] }, (o.addons || {})[c.id] || {});
   let replaceAsked = false;
+  let playNote = null;
+  const asked = [];
   const status = () => ({ pack, from_cache: false, error: null, prefs: Object.assign({}, prefs), clients: clients.map((c) => Object.assign({
     client: c.id, name: c.name, build: c.build, supported: c.build === '3.3.5a', installed_at: 1 }, c.build === '3.3.5a' ? ad[c.id] : { installed: null, update: false, foreign: [], backups: [], missing: [] })) });
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
@@ -65,6 +67,18 @@ const FAKE = (o) => {
         if (args.dontAsk !== undefined) prefs.dont_ask = args.dontAsk;
         return Object.assign({}, prefs);
       case 'addons_auto_update': return o.autoUpdated || [];
+      // right before PLAY (addons.rs prepare_for_play): a pack Leyline installed that is behind is updated; the
+      // player's own copy (foreign) is named when o.ownOutdated, with whether it was asked for this version
+      case 'addons_before_play': {
+        const a = ad[args.client];
+        const r = { client: args.client, updated: null, error: null, outdated_own: [], version: pack ? pack.version : null, asked: asked.includes(args.client) };
+        if (!pack || !prefs.auto_update) return r;
+        if (a.installed && (a.update || a.missing.length)) { a.installed = pack.version; a.update = false; a.missing = []; r.updated = pack.version; playNote = r; }
+        if (o.ownOutdated && a.foreign.length) r.outdated_own = a.foreign.slice();
+        return r;
+      }
+      case 'addons_play_note': { const n = playNote; playNote = null; return n; }
+      case 'addons_mark_asked': asked.push(args.client); return Object.assign({}, prefs);
       case 'addons_install': {
         if (o.badDownload) throw 'The Leyline addons download did not check out (WrathUnleashedUI/Golf.lua is not the listed file), so nothing was installed. Try again later.';
         const a = ad[args.client];
@@ -277,6 +291,63 @@ test('not published yet: no Install button, and PLAY does not ask', async () => 
   await page.click('#play-go');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play'));
   assert.equal(await page.locator('#ad-dlg[open]').count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('PLAY on any realm: an update that is due goes in first, and the play bar says "In-game add-ons updated"', async () => {
+  const { page, ctx, errors } = await open({ page: 'play', addons: { 'c335a-1': { installed: '2026.1106.1200', update: true } } });
+  // a community realm: never offered, but brought up to date
+  await page.evaluate(() => { const s = document.getElementById('play-realm'); s.value = 'custom'; s.dispatchEvent(new Event('change')); });
+  await page.evaluate(() => { const i = document.getElementById('play-custom'); i.value = 'realm.example.org'; i.dispatchEvent(new Event('change')); });
+  await page.click('#play-go');
+  await page.waitForSelector('#pb-addons:not([hidden])');
+  assert.equal(await page.textContent('#pb-addons'), 'In-game add-ons updated');
+  const seq = await page.evaluate(() => window.__calls.map(([c]) => c).filter((c) => ['addons_before_play', 'play', 'addons_play_note'].includes(c)));
+  assert.deepEqual(seq, ['addons_before_play', 'play', 'addons_play_note']);
+  assert.equal(await page.locator('#ad-dlg[open]').count(), 0, 'nothing asked');
+  assert.equal((await calls(page, 'addons_install')).length, 0, 'the core updated it, not a second install');
+  // the next PLAY, nothing to update: the line goes
+  await page.waitForFunction(() => !document.querySelector('#play-go').disabled);
+  await page.click('#play-go');
+  await page.waitForFunction(() => window.__calls.filter(([c]) => c === 'addons_play_note').length === 2);
+  await page.waitForSelector('#pb-addons', { state: 'hidden' });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('PLAY with your own out-of-date copy: asked once ("out of date, update it?"), Update moves it aside and installs', async () => {
+  const { page, ctx, errors } = await open({ page: 'play', ownOutdated: true, addons: { 'c335a-1': { foreign: ['WrathUnleashedUI'] } } });
+  await page.click('#play-go');
+  await page.waitForSelector('#ad-dlg[open]');
+  assert.equal(await page.textContent('#ad-dlg-title'), 'Your in-game Leyline add-on is out of date');
+  assert.match(await page.textContent('#ad-dlg-body'), /Update it before you play\?/);
+  assert.match(await page.textContent('#ad-dlg-list'), /Interface\/AddOns\/WrathUnleashedUI/);
+  assert.match(await page.textContent('#ad-dlg-fine'), /Leyline\/backup/);
+  await page.click('#ad-dlg-yes');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play'));
+  assert.deepEqual(await calls(page, 'addons_install'), [{ client: 'c335a-1', replace: true }], 'no second question');
+  assert.deepEqual(await calls(page, 'addons_mark_asked'), [{ client: 'c335a-1', version: '2026.1031.900' }]);
+  assert.deepEqual(await order(page), ['addons_install', 'play']);
+  await page.waitForSelector('#pb-addons:not([hidden])');
+  assert.equal(await page.locator('#ad-dlg[open]').count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('PLAY with your own out-of-date copy: Not now plays with it, and the next PLAY does not ask again', async () => {
+  const { page, ctx, errors } = await open({ page: 'play', ownOutdated: true, addons: { 'c335a-1': { foreign: ['WrathUnleashedUI'] } } });
+  await page.click('#play-go');
+  await page.waitForSelector('#ad-dlg[open]');
+  await page.click('#ad-dlg-no');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play'));
+  assert.equal((await calls(page, 'addons_install')).length, 0);
+  assert.equal((await calls(page, 'addons_should_offer')).length, 0, 'not offered on top: the folder is there');
+  await page.waitForFunction(() => !document.querySelector('#play-go').disabled);
+  await page.click('#play-go');
+  await page.waitForFunction(() => window.__calls.filter(([c]) => c === 'play').length === 2);
+  assert.equal(await page.locator('#ad-dlg[open]').count(), 0, 'asked once');
+  assert.equal(await page.isHidden('#pb-addons'), true);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

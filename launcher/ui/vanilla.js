@@ -105,7 +105,11 @@
     if (o.pick) args.pick = o.pick;
     if (o.quick) args.quick = o.quick;
     if (o.first) args.first = true;   // the world's first entry: no characters yet, the Quick start one made and entered
-    return call("world_play", args);
+    // the Leyline addons (companions, the bot bar) up to date first; never stops the play (addons.js)
+    if (window.LeylineAddons) await window.LeylineAddons.beforePlay(c, { offer: false });
+    const r = await call("world_play", args);
+    if (window.LeylineAddons) window.LeylineAddons.afterPlay();
+    return r;
   }
   // The line after a play: signed in by itself (with the Hero Key, or the world's own login), or the login to type
   // once (login() gives it to a Copy button; the password is shown to the player, never logged).

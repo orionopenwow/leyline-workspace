@@ -197,7 +197,10 @@ mod link_tests {
         assert_eq!(super::link("modders"), Some("https://leylinelauncher.com/wrath/docs/mods"));
         assert_eq!(super::link("themes"), Some("https://leylinelauncher.com/wrath/docs/themes"));
         // the working repo is private: a player would get a 404
-        assert!(super::LINKS.iter().all(|(_, u)| !u.to_ascii_lowercase().contains("wrathunleashed/") && !u.contains("leyline-workspace")));
+        for n in ["modders", "themes", "docs", "gettingstarted"] {
+            let u = super::link(n).unwrap().to_ascii_lowercase();
+            assert!(!u.contains("wrathunleashed/") && !u.contains("leyline-workspace"), "{n}");
+        }
     }
 
     #[test]

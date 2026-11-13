@@ -465,6 +465,16 @@ pub struct Aids {
     /// What last changed the selection (`<was> -> <now>: <cause>`, world.rs `sel_changed`): den-move says it when
     /// a prop placed and selected is no longer selected a moment later.
     pub sel_by: Option<String>,
+    /// The builder's comforts (qol.rs): props placed or moved lie on the ground's slope (`gizmo slope on`); the copy
+    /// in hand snaps edge to edge with a neighbour of its kind (`gizmo magnet on`), and did at the last hover.
+    pub slope_on: bool,
+    pub magnet_on: bool,
+    pub snapped: bool,
+    /// This hover is free (`hover ... free`, Alt held): no grid, no magnet.
+    pub free: bool,
+    /// Where the prop in hand was when it was picked up (x, y, z, facing): the rest of the selection moves with it
+    /// by as much on the let-go (qol.rs `group_moves`).
+    pub group_from: Option<[f32; 4]>,
 }
 
 /// The copy in hand as a creature (glide.rs), and its glide under way: from, to (x, y, z, facing), when it started
@@ -582,7 +592,7 @@ impl AidOut {
         self.say.push(s.into());
         self
     }
-    fn merge(&mut self, o: AidOut) {
+    pub(crate) fn merge(&mut self, o: AidOut) {
         if o.change.is_some() {
             self.change = o.change;
         }
@@ -610,6 +620,7 @@ fn snap(g: f64, v: f32, mid: f32) -> f32 {
 pub fn is_aid(text: &str) -> bool {
     let v = text.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
     matches!(v.as_str(), "preview" | "hover" | "follow" | "commit" | "axis" | "grab" | "gizmo" | "mode" | "where" | "cam" | "click" | "drag" | "debug" | "yaw" | "turnat")
+        || crate::qol::is_aid(v.as_str())
 }
 
 /// What an addon message is, for [`Aids::sel_by`]: the Builder's or the aids' verb and its first word
@@ -697,6 +708,7 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
                 a.lift = p.obj.z - d.floor_at(p.obj.x, p.obj.y);
                 a.yaw = p.obj.o;
                 a.at = Some([p.obj.x, p.obj.y, p.obj.z, p.obj.o]);
+                a.group_from = a.at;
                 a.cursor = None;
                 a.follow = false;
                 // the real one hidden while its copy moves (this player only); Commit or Esc shows it again
@@ -728,7 +740,18 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
         },
         "hover" => {
             let (Some(u), Some(v)) = (num(1), num(2)) else { return AidOut::default() };
+            // `free` (Alt held, qol.rs): no grid and no magnet for this hover
+            a.free = w.iter().skip(3).any(|x| x.eq_ignore_ascii_case("free"));
+            let grid = sel.grid;
+            if a.free {
+                sel.grid = 0.0;
+            }
+            let was = a.snapped;
             let mut out = hover(d, sel, a, here, u, v, num(3), num(4), now, false);
+            sel.grid = grid;
+            if a.snapped != was {
+                out.addon.push(("snapped".into(), if a.snapped { "1".into() } else { "0".into() }));
+            }
             if a.build && a.ring_on {
                 out.merge(ring_update(d, a, here, u, v, num(3), now));
             }
@@ -807,6 +830,19 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
         },
         // the copy in hand as a gliding creature (glide.rs) or a gameobject made anew (`gizmo glide on|off`); the
         // addon is told which it is now (`glide on|off|none`: none when this game has no creature rows)
+        // the builder's comforts (qol.rs): props lie on the slope; the magnet
+        "gizmo" if arg == "slope" || arg == "magnet" => {
+            let on = !w.get(2).is_some_and(|v| v.eq_ignore_ascii_case("off"));
+            if arg == "slope" {
+                a.slope_on = on;
+            } else {
+                a.magnet_on = on;
+                a.snapped = a.snapped && on;
+            }
+            AidOut::default().tell(&arg, if on { "on".into() } else { "off".into() })
+        }
+        "nudge" => crate::qol::nudge(d, sel, a, here, &w, can),
+        "selcircle" => crate::qol::sel_circle(d, sel, a, here, &w),
         "gizmo" if arg == "glide" => {
             let off = w.get(2).is_some_and(|v| v.eq_ignore_ascii_case("off"));
             a.glide_off = off;
@@ -1080,10 +1116,17 @@ fn drag(d: &Den, sel: &mut Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect
     if !selected(sel, g) {
         sel.more.clear();
         sel.round = None;
+    } else if sel.guid != Some(g) {
+        // one of the extra ones pressed on: it is the one in hand, the first goes with the others (qol.rs: the
+        // whole selection moves with it on the let-go)
+        sel.more.retain(|m| *m != g);
+        if let Some(first) = sel.guid {
+            sel.more.insert(0, first);
+        }
     }
-    // one prop follows the mouse (the extra ones stay where they are)
     sel.guid = Some(g);
     let o = &p.obj;
+    a.group_from = Some([o.x, o.y, o.z, o.o]);
     a.armed = Some(Armed::Move(g));
     a.lift = o.z - d.floor_at(o.x, o.y);
     a.yaw = o.o;
@@ -1423,10 +1466,43 @@ fn hover_at(d: &Den, sel: &Sel, a: &mut Aids, x: f32, y: f32) {
     let n = (dx * dx + dy * dy).sqrt();
     a.at_edge = n > r;
     let (x, y) = if n > r { (cx + dx * r / n, cy + dy * r / n) } else { (x, y) };
-    let (sx, sy) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
+    let (mut sx, mut sy) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
+    // the magnet (qol.rs): near another prop of its kind, edge to edge with it and turned as it is (not while free)
+    a.snapped = false;
+    if a.magnet_on && !a.free {
+        if let Some((entry, own, skip)) = magnet_of(d, sel, a) {
+            if let Some((p, facing)) = crate::qol::magnet_spot(d, entry, &skip, [x, y], own) {
+                sx = p[0];
+                sy = p[1];
+                a.yaw = facing;
+                a.snapped = true;
+            }
+        }
+    }
     let z = surface_z(d, a, sx, sy);
     if a.at.is_none() || d.inside(sx, sy, z) {
         a.at = Some([sx, sy, z, a.yaw]);
+    }
+}
+
+/// What the magnet snaps for what is in hand: its entry, its half sizes (its own forward, left), and the props it
+/// never snaps to (itself and the group carried with it).
+fn magnet_of(d: &Den, sel: &Sel, a: &Aids) -> Option<(u32, [f32; 2], Vec<u64>)> {
+    match a.armed? {
+        Armed::Place(e) => {
+            let t = den::template(e)?;
+            let o = WorldObject { guid: 0, entry: e, display: t.display, kind: t.kind, scale: t.size, x: 0.0, y: 0.0, z: 0.0, o: 0.0, pitch: 0.0, roll: 0.0 };
+            let (hx, hy, _) = extent(&o);
+            Some((e, [hx, hy], Vec::new()))
+        }
+        Armed::Move(g) => {
+            let p = d.placed(g)?;
+            let (hx, hy, _) = extent(&p.obj);
+            let mut skip = vec![g];
+            skip.extend(sel.more.iter().copied());
+            Some((p.obj.entry, [hx, hy], skip))
+        }
+        Armed::Axis { .. } => None,
     }
 }
 
@@ -1493,7 +1569,13 @@ fn draw(d: &Den, a: &mut Aids, now: u64, force: bool) -> AidOut {
         },
     };
     let spot = [at[0], at[1], at[2], at[3]];
-    let placed = WorldObject { x: at[0], y: at[1], z: at[2], o: at[3], ..base.clone() };
+    let mut placed = WorldObject { x: at[0], y: at[1], z: at[2], o: at[3], ..base.clone() };
+    // lying on the slope (`gizmo slope on`, qol.rs): the copy leans as the prop will (a gliding creature can't lean)
+    if a.slope_on {
+        let (pi, ro) = crate::qol::tilt_at(d, at[0], at[1], (at[3].to_degrees() as f64).rem_euclid(360.0));
+        placed.pitch = pi.unwrap_or(0.0).to_radians() as f32;
+        placed.roll = ro.unwrap_or(0.0).to_radians() as f32;
+    }
     let glides = !a.glide_off && a.creature_models.as_ref().is_some_and(|c| crate::glide::fits(c, &placed));
     if glides {
         // the creature there already, the same model and size: it glides from where it is now
@@ -1583,6 +1665,8 @@ fn cancel(d: &Den, a: &mut Aids) -> AidOut {
     a.grip = None;
     a.carry = false;
     a.at_edge = false;
+    a.group_from = None;
+    a.snapped = false;
     out.tell("aim", "off".into())
 }
 
@@ -1595,7 +1679,7 @@ pub fn commit(d: &mut Den, sel: &mut Sel, a: &mut Aids, now: u64, keep: bool) ->
     let mut out = AidOut { state: true, ..Default::default() };
     let keep = keep && matches!(armed, Armed::Place(_));
     match armed {
-        Armed::Place(entry) => match d.spawn(entry, at[0], at[1], at[2], at[3]) {
+        Armed::Place(entry) => match place_tilted(d, a.slope_on, entry, at) {
             Ok(obj) => {
                 a.next_yaw = Some(at[3]);
                 sel.guid = Some(obj.guid);
@@ -1610,12 +1694,45 @@ pub fn commit(d: &mut Den, sel: &mut Sel, a: &mut Aids, now: u64, keep: bool) ->
             let spot = d.spot;
             let yaw = (at[3].to_degrees() as f64).rem_euclid(360.0);
             let name = name_of(d, g);
-            match d.edit(g, |p| {
-                p.x = (at[0] - spot.x) as f64;
-                p.y = (at[1] - spot.y) as f64;
-                p.z = (at[2] - spot.z) as f64;
-                p.yaw = yaw;
-            }) {
+            let tilt = if a.slope_on && matches!(armed, Armed::Move(_)) { Some(crate::qol::tilt_at(d, at[0], at[1], yaw)) } else { None };
+            // the rest of the selection carried with it (qol.rs): one undo for them all
+            let group = match (armed, a.group_from) {
+                (Armed::Move(_), Some(from)) if sel.guid == Some(g) && !sel.more.is_empty() => crate::qol::group_moves(d, g, &sel.more, from, at, a.slope_on),
+                _ => Vec::new(),
+            };
+            let edited = if group.is_empty() {
+                d.edit(g, |p| {
+                    p.x = (at[0] - spot.x) as f64;
+                    p.y = (at[1] - spot.y) as f64;
+                    p.z = (at[2] - spot.z) as f64;
+                    p.yaw = yaw;
+                    if let Some((pi, ro)) = tilt {
+                        p.pitch = pi;
+                        p.roll = ro;
+                    }
+                })
+            } else {
+                let mut list = Vec::with_capacity(group.len() + 1);
+                if let Some(p0) = d.placed(g) {
+                    let mut q = p0.prop.clone();
+                    q.x = (at[0] - spot.x) as f64;
+                    q.y = (at[1] - spot.y) as f64;
+                    q.z = (at[2] - spot.z) as f64;
+                    q.yaw = yaw;
+                    if let Some((pi, ro)) = tilt {
+                        q.pitch = pi;
+                        q.roll = ro;
+                    }
+                    list.push((g, q));
+                }
+                let n = group.len() + 1;
+                list.extend(group);
+                d.edit_each(list).map(|mut c| {
+                    c.message = format!("Moved {n} together (one undo).");
+                    c
+                })
+            };
+            match edited {
                 Ok(c) => {
                     if let Armed::Axis { axis, .. } = armed {
                         let s = a.dragged;
@@ -1645,6 +1762,8 @@ pub fn commit(d: &mut Den, sel: &mut Sel, a: &mut Aids, now: u64, keep: bool) ->
         a.grip = None;
         a.carry = false;
         a.at_edge = false;
+        a.group_from = None;
+        a.snapped = false;
         out.addon.push(("aim".into(), "off".into()));
     }
     // the prop was made anew: its glow and the gizmo anew
@@ -1652,7 +1771,34 @@ pub fn commit(d: &mut Den, sel: &mut Sel, a: &mut Aids, now: u64, keep: bool) ->
     a.glowing = None;
     let _ = now;
     out.merge(sync(d, sel, a));
+    // the rest of the selection (moved with it, qol.rs) glows again: a remade object loses its glow
+    for m in &sel.more {
+        if d.placed(*m).is_some() {
+            out.glow.push((*m, GLOW));
+        }
+    }
     out
+}
+
+/// A card put down (`commit`): as it is, or lying on the ground's slope there (`gizmo slope on`), one undo either way.
+fn place_tilted(d: &mut Den, slope: bool, entry: u32, at: [f32; 4]) -> Result<WorldObject, String> {
+    if !slope {
+        return d.spawn(entry, at[0], at[1], at[2], at[3]);
+    }
+    den::template(entry).ok_or("That prop isn't in your Den's catalog.")?;
+    let yaw = (at[3].to_degrees() as f64).rem_euclid(360.0);
+    let (pitch, roll) = crate::qol::tilt_at(d, at[0], at[1], yaw);
+    let spot = d.spot;
+    d.place_one(den::Prop {
+        entry: entry as u64,
+        x: (at[0] - spot.x) as f64,
+        y: (at[1] - spot.y) as f64,
+        z: (at[2] - spot.z) as f64,
+        yaw,
+        pitch,
+        roll,
+        ..Default::default()
+    })
 }
 
 /// The exact click: the cast's destination (CMSG_CAST_SPELL). Places or moves the armed prop there.
@@ -1732,11 +1878,18 @@ pub fn carry_prop(d: &Den, sel: &mut Sel, a: &mut Aids, g: u64, now: u64) -> Aid
 
 /// The prop's footprint and height in yards (half width, half depth, height), from the player's own model table when
 /// Den Lite has it, else a guess from its size.
-fn extent(o: &WorldObject) -> (f32, f32, f32) {
+pub fn extent(o: &WorldObject) -> (f32, f32, f32) {
     match crate::models::box_of(o.display) {
         Some((w, dp, h, _)) if w > 0.0 && dp > 0.0 && h > 0.0 => (w / 2.0 * o.scale, dp / 2.0 * o.scale, h * o.scale),
         _ => (GIZMO_OFF * o.scale.max(0.5) - GIZMO_MARGIN, GIZMO_OFF * o.scale.max(0.5) - GIZMO_MARGIN, 2.0 * o.scale.max(0.5)),
     }
+}
+
+/// A change made the selection's props anew (qol.rs: a nudge, a circle select): their glow and the gizmo anew.
+pub fn remade(a: &mut Aids) {
+    a.gizmo_for = None;
+    a.glowing = None;
+    a.hovered = None;
 }
 
 /// [`extent`] over the world's axes: the half width (x) and depth (y) of the prop's box as it is turned, and its

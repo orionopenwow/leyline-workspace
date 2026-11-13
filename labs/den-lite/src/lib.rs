@@ -59,6 +59,8 @@ pub mod login;
 pub mod models;
 pub mod movemodel; // the editor's mouse as it should behave (the replay harness's model)
 pub mod movewatch;
+pub mod qol; // the builder's comforts: group move, slope follow, magnet, nudge, circle select, fill gap / box
+pub mod qolmath; // their geometry (std only)
 pub mod noggit; // the editor's conveniences, Noggit's way: duplicate by an offset, select near, lie on the slope, camera frame and marks
 pub mod notice;
 pub mod objects;

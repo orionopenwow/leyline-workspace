@@ -280,13 +280,14 @@ fn guid_of(d: &Den, id: u64) -> Option<u64> {
 pub fn state(d: &Den, sel: &Sel, role: &str) -> String {
     let n = d.props.len();
     let mut s = format!(
-        "mine={n}/{MAX_PROPS};pts={n}/{MAX_PROPS};undo={};redo={};stored=0;grp=0;den={role};room={n}/{MAX_PROPS};yard=0/0;core=1;lite=1;grid={};clip={};area=den;code=-;caps={CAPS},{},{};",
+        "mine={n}/{MAX_PROPS};pts={n}/{MAX_PROPS};undo={};redo={};stored=0;grp=0;den={role};room={n}/{MAX_PROPS};yard=0/0;core=1;lite=1;grid={};clip={};area=den;code=-;caps={CAPS},{},{},{};",
         d.undo_depth(),
         d.redo_depth(),
         sel.grid,
         sel.clip.is_some() as u8,
         crate::buildtools::CAPS,
-        crate::noggit::CAPS
+        crate::noggit::CAPS,
+        crate::qol::CAPS
     );
     match sel.guid.and_then(|g| d.placed(g)) {
         Some(p) => {
@@ -359,6 +360,10 @@ pub fn builder_cmd(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool
     // selection they make (several props), so they skip the cleanup below
     if crate::noggit::is_verb(&verb) {
         return crate::noggit::builder(d, sel, here, text, can);
+    }
+    // the builder's comforts (qol.rs: fill gap / box) keep the selection they make too
+    if crate::qol::is_verb(&verb) {
+        return crate::qol::builder(d, sel, here, text, can);
     }
     let was = sel.guid;
     let out = match verb.as_str() {

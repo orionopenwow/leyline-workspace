@@ -2,6 +2,28 @@
 
 A Hero Key is a way to log in to the website without a password. It is one of the two ways to log in at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath). The other is Google.
 
+## What is a Hero Key?
+
+- **It is your login.** One line of text that starts with `ovk1.`. Whoever has it can log in as you, so keep it like a password.
+- **You get one when you sign up.** Press **Create your Hero Key** on the Log in page (or in the launcher's sign-in screen). It is free, no email needed, and it makes your account with a name picked for you (change it any time).
+- **Save it when it is made.** Download the text file, keep it in a password manager, or press "Save in this browser". We keep only a fingerprint of it, so we can never show it or send it to you again.
+- **One account everywhere.** The same key logs you in on the website, in the launcher and on Wrath Unleashed.
+
+## Lost your key?
+
+We can't send it again: we never kept it. But you can make a new one if you can still log in another way.
+
+1. **Log in another way.** Any of these works:
+   - **Google**, if you linked it to this account;
+   - your **name and password**, if you set a password (in the launcher's sign-in);
+   - a browser or a launcher that is **still logged in** (or has the key saved).
+2. Open **Your Hero Key** (on the website at [/wrath/key](/wrath/key); in the launcher: the profile chip, then Manage account).
+3. Press **Make a new key**, and save it this time. **The old key stops working at once**, so this is also what to do if someone else has your key.
+
+If none of those works, the account can't be opened again: make a new one with **Create your Hero Key**. TODO(owner): say here whether staff can help someone who lost every way in (and how they ask).
+
+Before it's lost: link Google, or set a password, on **Your Hero Key** under More. Then a lost key is a two-minute fix.
+
 The website's sign-in, Hero Keys included, is run by the Leyline Launcher realm service on leylinelauncher.com. That service is a sibling project and is not in this repo. This page says what this repo shows and marks the rest "to confirm".
 
 ## What you can do with it today

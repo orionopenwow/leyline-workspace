@@ -4959,6 +4959,15 @@ class PageHandler(BaseHTTPRequestHandler):
             if not browse_limit.hit(rl_bucket(self.ip()), 600):
                 self.send(429, busy_page(back=path))
                 return
+            if path == getattr(docs, "SEARCH_JSON", None):   # the docs' search index (stream/docs.py), public, short cache
+                self.send(200, docs.search_json(), "application/json; charset=utf-8", public=True)
+                return
+            if path.rstrip("/") == getattr(docs, "SEARCH", None):   # the docs search: its one script under this page's nonce
+                nonce = secrets.token_urlsafe(16)
+                status, body = docs.page(path, leyline_css(), card_meta, REALM_NAME, frame=docs_frame if hub_framed() else None,
+                                         query=query, nonce=nonce)
+                self.send(status, site_chrome(body, path), nonce=nonce, connect=True)
+                return
             status, body = docs.page(path, leyline_css(), card_meta, REALM_NAME, frame=docs_frame if hub_framed() else None)
             self.send(status, site_chrome(body, path))
             return

@@ -80,7 +80,7 @@ PC with companions, offline, logged in by itself, your characters in one list, a
 ## Not on Windows
 
 The one-click engine is made for Windows PCs for now. On another computer, the same original world runs in Docker:
-press **Open Vanilla+ on the Host page** on the card, and follow [Host a realm](host-a-realm.md). Single player itself
+the card's button takes you to **Vanilla+** on the Host page; then follow [Host a realm](host-a-realm.md). Single player itself
 also runs in Docker there (its page shows the way).
 
 ## When something goes wrong

@@ -23,8 +23,8 @@ In party chat you can tell bots: `follow`, `stay`, `attack`, `summon`.
 
 ## The Bots window
 
-Type `/comp` (or `/companions`), or click the bots button on the minimap. The window has six tabs:
-**Your bots**, **Party**, **Raid**, **Your alts**, **Buddy** and **Dungeons**. `/comp party`, `/comp dungeons` and so
+Type `/comp` (or `/companions`), or click the bots button on the minimap. The window has seven tabs:
+**Your bots**, **Party**, **Raid**, **Your alts**, **Buddy**, **Dungeons** and **Tactics**. `/comp party`, `/comp dungeons` and so
 on open a tab straight away.
 
 - **Party:** "Fill my party" brings 1 tank, 1 healer and damage. Pick a class and a spec for each slot, or leave
@@ -43,6 +43,17 @@ on open a tab straight away.
 - **Group:** Fill party, Fill raid, My usual party, Dismiss all.
 - **Click a bot** to pick its spec, swap its role (tank, healer or damage), give it fresh gear, or send it home.
   Your alts keep their own talents and gear.
+- **Tactics:** Tank pulls first (damage waits for the tank and watches its threat), Focus the tank's target, Spread
+  damage, Crowd control, Passive, Heal the tank first, Save mana, the formation (each one explained) and how loot
+  works. They hold for bots that join later too. `/comp tactics` opens it.
+- **Gear and upgrades** (click a bot, or `/comp gear`): what the bot wears, slot by slot, and the better items in its
+  bags with Equip, or Equip all upgrades. Trade it something from your bags, press Refresh, then Equip it.
+- **Ready?** (the button, `/comp ready`, or right-click the minimap button): a checklist before a dungeon. A tank, a
+  healer and damage (your own role from the Dungeon Finder), everyone alive and close by, bots at your level and
+  prepared, healers with mana, your gear repaired, food and drink. Fill missing roles, Prepare bots, Regroup, Drink and
+  the game's own Ready check are right there.
+- **Saved parties** (Party tab): save your class and spec picks in one of three slots, then Bring fills your party
+  with them.
 
 ## The bot bar and the orders bar
 
@@ -53,14 +64,15 @@ While bots are with you, two small bars show up. Drag either one to move it; it 
   (this works in combat too). Right-click it for its orders: follow, stay, attack my target, passive, gear up, its
   spec and role, or send it home. `+` opens the Bots window.
 - **The orders bar** gives every bot one order at once: Follow, Stay, Attack my target, Passive (press again to
-  Fight) and Pull (your tank bot opens the fight on your target, and the others join in). To give them keys, go to
+  Fight), Pull (your tank bot opens the fight on your target, and the others join in), Regroup (a bot far away is
+  brought to you) and Flee (they stop fighting and run with you). To give them keys, go to
   Esc > Key Bindings > Bots. The key you set shows on the button.
 
 `/comp bar` and `/comp orders` turn the bars off and on again. The first time you have bots, three short tips
 show you around. They don't show again, but `/comp tips` brings them back.
 
 The window never types in your chat. "Hide bot chatter" (on by default) hides your bots' achievement lines and
-their replies right after an order.
+their replies right after an order. "Hide everything your bots say" hides all their whispers and party chat too.
 
 If the realm restarts while you have bots, they come back with you. The realm tells you, and `.dismiss all` or
 the window sends them home.

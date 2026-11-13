@@ -1,6 +1,7 @@
 -- The Bots window's other tabs (3.3.5a API), after Companions.lua's "Your bots":
 --   Party     Fill my party: 1 tank, 1 healer and damage, with a class and a spec per slot (or Any). The picks are
---             kept per character and also used by "Fill party" on Your bots and by the Dungeons tab.
+--             kept per character and also used by "Fill party" on Your bots and by the Dungeons tab. Three saved
+--             parties (per character): Save keeps the picks as they are, Bring puts them back and fills the party.
 --   Raid      fill a 10-player raid (2 tanks, 3 healers, 5 damage), the raid's shape as role icons, prepare, dismiss.
 --   Your alts your own characters as bots (their own gear, spec and level); save who is with you as your usual
 --             party, bring it back.
@@ -109,6 +110,51 @@ end
 
 function C.ResetPicks() charDB().botPicks = nil end
 
+-- ---------------------------------------------------------------- saved parties (per character)
+
+C.PRESETS = 3
+local function presets()
+    local db = charDB()
+    if type(db.botPresets) ~= "table" then db.botPresets = {} end
+    return db.botPresets
+end
+
+-- Keep the picks as they are now in saved party i.
+function C.SavePreset(i)
+    if not (i >= 1 and i <= C.PRESETS) then return false end
+    local copy = {}
+    for k, p in ipairs(C.GetPicks()) do copy[k] = { word = p.word, spec = p.spec } end
+    presets()[i] = copy
+    return true
+end
+
+-- Put saved party i back as the picks; true when there was one.
+function C.UsePreset(i)
+    local saved = presets()[i]
+    if type(saved) ~= "table" then return false end
+    local picks = C.GetPicks()
+    for k = 1, #SLOTS do
+        local p = type(saved[k]) == "table" and saved[k] or {}
+        picks[k] = { word = WORD_ID[p.word or ""] and p.word or nil, spec = type(p.spec) == "string" and p.spec or nil }
+    end
+    return true
+end
+
+-- "Warrior (Protection), Priest, Mage (Fire), Any", or nil when the slot is empty.
+function C.PresetText(i)
+    local saved = presets()[i]
+    if type(saved) ~= "table" then return nil end
+    local parts = {}
+    for k = 1, #SLOTS do
+        local p = type(saved[k]) == "table" and saved[k] or {}
+        local word = WORD_ID[p.word or ""] and p.word or nil
+        local t = word and colourWord(word) or "Any"
+        if word and p.spec then t = t .. " (" .. specText(p.spec):gsub(" pve$", "") .. ")" end
+        parts[#parts + 1] = t
+    end
+    return table.concat(parts, ", ")
+end
+
 -- ---------------------------------------------------------------- the chooser (a small list under a button)
 
 local chooser
@@ -213,7 +259,27 @@ C.AddTab("party", "Party", 64, function(page)
     page.reset = button(page, "Every slot Any", 120, function() C.ResetPicks(); C.Refresh() end, "TOPLEFT", 166, -270)
     page.dismiss = button(page, "Dismiss all", 100, function() C.Dismiss("all") end, "TOPLEFT", 292, -270)
     para(page, "Up to 4 bots in a party. They always pass on loot. The Dungeons tab uses these picks too.", -304)
+    section(page, "Saved parties", -330)
+    page.presets = {}
+    for i = 1, C.PRESETS do
+        local y = -350 - (i - 1) * 26
+        local row = { n = i }
+        row.text = label(page, "", "GameFontHighlightSmall", "TOPLEFT", 22, y - 5)
+        row.text:SetWidth(300)
+        row.bring = button(page, "Bring", 80, function()
+            if C.UsePreset(i) then C.Fill("party", C.Picks()); C.Refresh() end
+        end, "TOPLEFT", 330, y)
+        U.tip(row.bring, "Bring", "Puts this saved party's picks back and fills your party with them.")
+        row.save = button(page, "Save", 80, function() C.SavePreset(i); C.Refresh() end, "TOPLEFT", 414, y)
+        U.tip(row.save, "Save", "Keeps the class and spec picks above in this slot, for this character.")
+        page.presets[i] = row
+    end
 end, function(page)
+    for i, row in ipairs(page.presets or {}) do
+        local t = C.PresetText(i)
+        row.text:SetText(i .. ". " .. (t or "|cff9d9d9dEmpty: pick above, then Save|r"))
+        if t and (C.state == "on" or C.state == nil) then row.bring:Enable() else row.bring:Disable() end
+    end
     local picks = C.GetPicks()
     for i, row in ipairs(page.slots) do
         local p = picks[i]
@@ -442,6 +508,9 @@ C.AddTab("dungeons", "Dungeons", 84, function(page)
     page.more = label(page, "", "GameFontDisableSmall", "TOPRIGHT", -24, -84 - DUNGEON_ROWS * DUNGEON_ROW_H)
     para(page, "Not in combat, not as a raid, and only the group leader. One trip to a door every few minutes.",
         -104 - DUNGEON_ROWS * DUNGEON_ROW_H)
+    page.ready = button(page, "Ready?", 100, function() if C.OpenReady then C.OpenReady() end end, "TOPLEFT", 20,
+        -126 - DUNGEON_ROWS * DUNGEON_ROW_H)
+    U.tip(page.ready, "Ready?", "A checklist before you go in: roles, repairs, food, everyone alive and close by.")
 end, function(page)
     local list = C.DungeonList(C.dungeonAll)
     local lvl = (UnitLevel and UnitLevel("player")) or 1

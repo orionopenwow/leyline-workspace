@@ -180,6 +180,38 @@ The dungeon pictures are the client's own Dungeon Finder art, by path only (`Int
 The name comes from the client's `GetLFGDungeonInfo` when it knows the dungeon by name, else from `modes_data.py`
 `LFG_ICONS`, else the group icon.
 
+### Tactics, gear and the Ready? checklist (Phase 4)
+
+`CompanionsMore.lua` adds the Tactics tab, the gear window and the Ready? checklist; `BotBar.lua` adds Regroup and
+Flee to the orders bar, and `Bindings.xml` keys for Regroup, Flee, Drink, Ready?, Tactics and the target bot's gear.
+Every command name is mod-playerbots' own (checked against its `ChatTriggerContext.h`, `StrategyContext.h` and
+`ChatShortcutActions.cpp`):
+
+| Verb | What the realm does |
+|---|---|
+| `order regroup all` | `follow`; a bot further than the teleport distance, or on another map, also gets `summon` |
+| `order flee all` | `flee` (mod-playerbots: follow, not stay, passive); the roster says passive, Fight brings them back |
+| `order drink all` | `drink` |
+| `order waitpull all` / `nowaitpull` | damage bots: `+wait for attack`, `+threat` and `wait for attack time 3` (off: `-wait for attack`, `-threat`) |
+| `order healtank all` / `nohealtank` | healers: `focus heal <tank>` (the first tank bot, else the owner); off: `focus heal none` |
+| `order savemana all` / `nosavemana` | healers: `+save mana` / `-save mana` |
+| `order aoe all` / `noaoe` | damage bots: `+dps aoe`; off: `+dps assist` (the two replace each other) |
+| `inspect <name>` | answers `gear`: `G` (name, class, level, item level, kind), `I` per worn slot (slot, entry, item level, quality, name), `U` per slot with a better item in its bags (the same, and the item level worn there now) |
+| `equip <name>\t<entry>` | only an item its bags hold: `e \|Hitem:<entry>:0\|h` (mod-playerbots reads the item id from the link) |
+| `upgrade <name>` | `equip upgrade` when its bags hold an upgrade |
+
+The four tactics are kept per owner, sent in the roster's `H` line (fields 11-14) and given to every bot that joins
+later (`applyTactics` from `setUp`). `equip` and `upgrade` wait for the end of combat and keep the per-bot cooldown;
+alts may use them (it is their own item). Upgrades: bag 255 slots 23-38 and the bags in slots 19-22
+(`Player:GetItemByPos`), each item's inventory type mapped to its equipment slots, the weaker of two rings, trinkets or
+one-hand slots, `Player:CanEquipItem` when mod-ale has it.
+
+The add-on side, all client-only: portraits and a "needs you" word on the roster rows (hurt, low on mana, far away,
+needs a res), a tooltip on every order, three saved parties on the Party tab (per character), the Ready? checklist
+(roles with your own Dungeon Finder role, alive, close by, level, prepared, healers' mana, your repairs, food and
+drink; Fill missing roles, Prepare bots, Regroup, Drink, the game's Ready check), and "Hide everything your bots say"
+(their whispers and party, raid and say lines).
+
 ## Crashes and script reloads
 
 After a crash mod-playerbots logs the player's bots back in with their master (seen live 2026-10-26: a full

@@ -82,15 +82,15 @@ W.REALM_GUIDE = {
       commands = {
         { ".hub hardcore", "how to start" },
       } },
-    { key = "fun", name = "Fun and modes", icon = "play", heading = "Minigolf, modes and your Den",
+    { key = "fun", name = "Fun and modes", icon = "play", heading = "Duels, Boss Rush and your Den",
       lines = {
-        "Minigolf and minigames to play with friends, right in the world.",
+        "Duels and Boss Rush: one on one at level 80, or straight onto a raid's final fight with companions.",
         "Your Den: a room of your own to build in, on your PC through the launcher. Invite a friend with one link.",
-        "The Workshop shares what players build.",
+        "The Workshop shares what players build. More modes are on the way.",
       },
       commands = {
-        { "/golf", "minigolf" },
-        { "/modes", "minigames with friends" },
+        { "/modes", "Duels and Boss Rush" },
+        { "/bf", "Boss Rush: the boss fights" },
         { "/workshop", "the Workshop" },
       } },
     { key = "help", name = "Help and settings", icon = "help", heading = "Help and settings",

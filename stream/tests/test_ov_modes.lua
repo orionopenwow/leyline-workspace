@@ -267,10 +267,27 @@ M.Solo(_G["LeylineModesEditorBox"]:GetText())
 check("the template runs", drew("ent ") >= 2 and M.host and M.host.title == "My Mode")
 M.Leave()
 
--- on the realm: Ann hosts, Bo joins, Cy joins late
+-- /modes is Duels and Boss Rush (owner 12 Nov): the two rows, no minigame list, nothing asked of the realm
 draws = {}
 SlashCmdList["LEYLINEMODES"]("")
 flush()
+local mw = _G["LeylineModesFrame"]
+check("/modes: Duels and Boss Rush, one row each with its buttons", M.SHOW_MINIGAMES == false and mw.featured[1].title.text == "Duels"
+    and mw.featured[2].title.text == "Boss Rush" and #mw.featured == 2 and mw.featured[1].buttons[1].text == "Queue 1v1"
+    and mw.featured[2].buttons[1].text == "Fight now")
+check("/modes: the minigames' list and buttons are off, more is coming", not mw.rows[1]:IsShown() and not mw.host:IsShown()
+    and not mw.solo:IsShown() and not mw.editor:IsShown() and not mw.leave:IsShown() and mw.more.text:find("More modes", 1, true) ~= nil)
+check("/modes: no list asked for", find(inbox(ann), "list") == nil)
+local before = #chat
+mw.featured[1].buttons[1]:Fire("OnClick")
+check("/modes: Queue 1v1 types the queue command", chat[#chat] == ".q1v1 unrated" and #chat == before + 1)
+mw.featured[1].buttons[2]:Fire("OnClick")
+check("/modes: Rated types the rated queue", chat[#chat] == ".q1v1 rated")
+mw:Hide()
+M.SHOW_MINIGAMES = true   -- the minigames' list again: the realm relay below
+SlashCmdList["LEYLINEMODES"]("")
+flush()
+check("with the minigames on: their list and buttons", mw.host:IsShown() and mw.solo:IsShown())
 check("the realm lists Bumper Balls and Coin Dash", M.modes[1] and M.modes[1].key == "bumper" and M.modes[1].max == 8 and M.modes[2] and M.modes[2].key == "coindash")
 M.pick = "bumper"
 _G["LeylineModesFrame"].host = _G["LeylineModesFrame"].host

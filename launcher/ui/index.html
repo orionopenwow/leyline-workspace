@@ -65,7 +65,7 @@
   <div class="brand" data-tauri-drag-region><div class="ly-spin slow" role="img" aria-label="Leyline" data-tauri-drag-region></div><span data-tauri-drag-region><b>Leyline</b><i>Launcher</i></span></div>
   <form class="search" id="search-form" role="search">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-    <input id="search" type="search" placeholder="Search mods, addons and realms" aria-label="Search mods, addons and realms" autocomplete="off" spellcheck="false">
+    <input id="search" type="search" placeholder="Search pages, mods and realms" aria-label="Search pages, features, mods, addons and realms" autocomplete="off" spellcheck="false">
   </form>
   <div class="tb-fill" data-tauri-drag-region></div>
   <button type="button" class="pill upd" id="tb-modupd" hidden title="Mods and addons with a newer version: open Mods &amp; Addons › Installed">Mod updates</button>
@@ -159,10 +159,11 @@
       </div>
       <button type="button" class="ph-play" id="ph-play">Play</button>
       <p class="ph-hint" id="ph-hint">The game opens full screen. Turn your phone sideways to play; Back brings you here.</p>
+      <p class="ph-say ph-offline warn" id="ph-offline" role="alert" hidden></p>
       <!-- Solo on this phone (docs/PHONE-SOLO.md): the same game page with ?go=solo, its own server inside the page -->
       <div class="ph-solo-box">
         <button type="button" class="btn ph-solo" id="ph-solo">Play solo on this phone</button>
-        <p class="ph-hint" id="ph-solo-hint">Your own world, run by this phone: no realm, your companion at your side. It is kept on this phone.</p>
+        <p class="ph-hint" id="ph-solo-hint">Your own world, run by this phone: no realm, your companion at your side. Your world is kept on this phone; the game page opens from the website, so it needs the internet.</p>
       </div>
       <!-- Join a friend (phone.js join): a friend's invite link to their PC-hosted realm plays it here, in the app -->
       <section class="ph-join-box" aria-labelledby="ph-join-title">
@@ -582,7 +583,7 @@
         <button type="button" class="btn small" id="fm-discord">Join the Discord</button></div>
       <div id="fm-view" aria-live="polite"></div>
       <p class="status" id="fm-status" role="status"></p>
-      <p class="hint fm-fine">Reading here; Log In (in the title bar) to post from the launcher. Plain text and links only.</p>
+      <p class="hint fm-fine">Reading here; Log in (in the title bar) to post from the launcher. Plain text and links only.</p>
     </div>
   </section>
 
@@ -599,6 +600,7 @@
   <section class="page" id="page-news">
     <div class="panel">
       <h2>News</h2>
+      <p class="status" id="news-status" role="status"></p>
       <div id="news-full"></div>
       <div class="row"><button type="button" class="btn" data-link="news">More on the website</button></div>
     </div>
@@ -712,6 +714,21 @@
         <li><b>Pick a realm.</b> The official realm is picked for you. The realm list in the play bar has Your Den and the realms you host or played on; Realms lists every realm.</li>
         <li><b>Play.</b> Press PLAY. Leyline sets the realm for you and keeps your original settings as a backup.</li>
       </ol>
+      <!-- audit 12 Nov: the newer parts (Single player, Your Den, Modes and Boss Rush, Friends, offline). TODO(owner): his words -->
+      <h3>Single player</h3>
+      <p class="lede">Your own world on this PC, with companions and dungeon buddies if you want them: no realm and no queue. The first setup takes a few minutes; after that it starts in seconds.
+        <button type="button" class="link" data-page-go="single">Single player ›</button> <button type="button" class="link" data-link="docsingle">The guide ›</button></p>
+      <h3>Your Den</h3>
+      <p class="lede">Your own quiet green world on this PC to build in, with your companion to help. It needs no internet or sign-in. Invite a friend sends one link.
+        <button type="button" class="link" data-page-go="den">Your Den ›</button> <button type="button" class="link" data-link="docsden">The guide ›</button></p>
+      <h3>Modes and Boss Rush</h3>
+      <p class="lede">Modes are other ways to play: quick fights, challenges and modes other players made. Boss Rush puts you straight into a boss fight; the leaderboards show the best times.
+        <button type="button" class="link" data-page-go="modes">Modes ›</button> <button type="button" class="link" data-page-go="bossrush">Boss Rush ›</button></p>
+      <h3>Friends</h3>
+      <p class="lede">Invite a friend to your world or your Den with one link; they keep their character for next time. Your friends list is on the Single player page and in the Social panel at the top.
+        <button type="button" class="link" data-page-go="single">Friends ›</button> <button type="button" class="link" data-link="hostfriends">Playing with friends ›</button></p>
+      <h3>Playing offline</h3>
+      <p class="lede">Single player and Your Den work with no internet. Realms, mods, news and the forum need it: offline, Leyline shows the lists as they were the last time, with the date. Mods you installed keep working.</p>
       <h3>Level 1 or boost to 80</h3>
       <p class="lede">On the official realm a new character can start at level 1 and level up, or take the boost to 80 and play the end game straight away. You choose when you make the character.</p>
       <h3>No files? Play in your browser</h3>
@@ -722,7 +739,7 @@
       <p class="lede">Your own AI assistant can check realms, find mods and read your realm's logs. It asks you before it changes anything.
         <button type="button" class="link" data-page-go="agents">Agents ›</button> <button type="button" class="link" data-link="agentsguide">The guide ›</button></p>
       <div class="row"><button type="button" class="btn" data-link="gettingstarted">Read the player guide</button><button type="button" class="btn" data-link="docs">Open the Leyline docs</button></div>
-      <p class="hint help-dc">Lost files or need help? Ask on the Discord: the Join the Discord button at the top.</p>
+      <p class="hint help-dc">Lost files or need help? Ask on the Discord: Join the Discord, in the side menu under News.</p>
       <!-- TODO(owner): the Report a bug words, his voice -->
       <h3>Found a bug?</h3>
       <p class="lede">Tell us what happened: it goes straight to the list the team works through.
@@ -779,14 +796,14 @@
       <div class="row"><button type="button" class="btn" id="upd-check">Check now</button><button type="button" class="btn" id="upd-restart" hidden>Restart to update</button><button type="button" class="btn" id="upd-open" hidden>Open the release page</button></div>
       <p class="status" id="upd-status" role="status"></p>
       <h3>Privacy</h3>
-      <p class="lede">We don't track you. Your account is optional and lives on the website. Leyline only fetches the mods list, realm list and status, the Leyline addons and its own updates, and keeps copies so it works offline.</p>
+      <p class="lede">We don't track you. Your account is optional and lives on the website. Leyline only fetches what its pages show: the mods list, the realm list and status, news, the forum, modes and leaderboards, the website's flags and pictures (the backdrop), the Leyline addons and its own updates, all from leylinelauncher.com and GitHub. Home also shows Melty's logo from melty.gg. Friends and invites go through the Leyline relay. It keeps copies so it works offline, and sends nothing about you.</p>
       <label class="check"><input type="checkbox" id="set-count"> Count my installs: after you install a mod, tell the website
         "one more install" (the mod, your client's build and a random one-time number; no account, nothing about you or your PC).
         It helps good mods rise in Hot and Most installed.</label>
       <p class="status" id="count-status" role="status"></p>
       <h3>Testing</h3>
       <p class="lede">For trying things out on this PC.</p>
-      <label class="check"><input type="checkbox" id="set-hybrid"> Sign in by itself: PLAY on Wrath Unleashed (signed in on Home)
+      <label class="check"><input type="checkbox" id="set-hybrid"> Log in by itself: PLAY on Wrath Unleashed (signed in on Home)
         and Hero Key sign-in go past the login screen to character select, as in the browser. Needs Forever UI's login screens in
         the game folder; without them your account name is filled in. The login goes into Leyline's own archive in the game's
         Data folder for that one start, and is taken out when the game closes.</label>

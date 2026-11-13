@@ -25,8 +25,8 @@
     single: { title: "Single player", link: "docsingle", lines: [
       "Single player runs a small game server on your PC, made only for you, with bot companions if you want them.",
       "The first setup takes 5–20 minutes; after that your world starts in seconds. Companions, dungeon buddies and how busy the world is are in its settings.",
-      "Your Den is here too: your own private room on this PC to build in. Open my Den takes you in; Invite a friend shares it.",
-      "Friends: invite one to your world, and they keep their character there for next time.",
+      "Mods in this world shows what's on when you play: add-ons, HD packs and looks in your game folder, and the mods built into your world, each with On or Off, Update and Remove. Get mods for single player opens the mod store on that game folder.",
+      "Your Den and Friends are here too: Open my Den takes you to your own room to build in, and a friend you invite keeps their character on your world.",
     ], also: { label: "Playing with friends", link: "hostfriends" } },
     realms: { title: "Realms", link: "docsplay", lines: [
       "Realms are worlds you play online with other people.",
@@ -58,6 +58,11 @@
   };
   // a part of a page with its own bubble while it is on screen (its element id → the same shape as PAGES)
   const SECTIONS = {
+    spm: { page: "single", title: "Mods in this world", link: "docsmods", more: "Mods & Addons docs", lines: [
+      "In your game folder: the add-ons, HD packs and looks Leyline put in the game folder single player plays with. Turn one off, update it or remove it here.",
+      "Built into your world: the extras your world's engine comes with. Turn the optional ones off or on; a running world changes at its next start (Restart now).",
+      "Get mods for single player opens the mod store with what works in that game folder. A mod card for another folder has Add to single player.",
+    ], also: { label: "Single player docs", link: "docsingle" } },
     spf: { page: "single", title: "Friends", link: "hostfriends", more: "Playing with friends", lines: [
       "Invite a friend: start your world, press Invite a friend and send the link. They keep their character on your world for next time.",
       "Friends with a character on your world: Trust lets them come back without a new invite. Remove keeps their characters unless you delete them.",

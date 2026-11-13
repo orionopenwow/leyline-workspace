@@ -64,7 +64,11 @@
   const side = (id, p) => (id.startsWith("mode:") ? "realm" : id.startsWith("up:") ? "client" : ({ ui: "client", both: "both", realm: "realm" })[(p || {}).kind] || "client");
   const byId = (id) => projects().find((p) => p.id === id) || null;
   const nameOf = (id) => {
-    if (id.startsWith("mode:")) { const m = modes().find((x) => x.id === id.slice(5)); return m ? m.title : id.slice(5); }
+    if (id.startsWith("mode:")) {   // a hidden mode a realm still runs keeps its name
+      const all = (window.LeylineModes && window.LeylineModes.all ? window.LeylineModes.all() : []).concat(modeList || []);
+      const m = all.find((x) => x.id === id.slice(5));
+      return m ? m.title : id.slice(5);
+    }
     const p = byId(id);
     return p ? p.name : id.replace(/^(mod|up):/, "");
   };

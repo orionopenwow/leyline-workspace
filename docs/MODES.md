@@ -285,3 +285,38 @@ Picking a plain ruleset with **Pick a ruleset yourself** removes `state/mode.jso
 `stream/modepacks.json` is made from the templates with `python3 -I stream/modepack.py --write`. The launcher builds it
 in, and the site serves it. `--verify` fails when it is out of date.
 
+
+## Duels and Boss Rush only (12 Nov)
+
+The owner: "remove the silly modes from modes and make them duels and boss rush only as we build out the larger feature
+set". Every Modes list (the launcher's Modes page, the site's `/wrath/modes` and its preview page, Mods › Game modes, the
+in-game `/modes` window, `.playmode`) shows **Duels** (`arena-queue`) and **Boss Rush** (`frozen-throne`) only. Nothing
+was deleted; to bring a mode back:
+
+| Where | Switch |
+|---|---|
+| `stream/playmodes.json` | delete the mode's `"listed": false` |
+| `launcher/ui/modes.js` | take its id out of `HIDDEN` (the core passes no flag; a test keeps the two equal) |
+| `realm/custom/lua_scripts/ov_playmode.lua` | delete its `listed = false` (`.playmode` lists it again) |
+| `stream/site_pages.py` (Ways to play shelf) | delete `"hidden": True` (Azeroth Survivors, Minigolf and the Dojo) |
+| `stream/modes.py` | `SHOW` (Dungeons, Hangouts sections of `/wrath/modes`) |
+| `stream/wrath_portal.py` `/wrath/modes` | put `site_pages.shelf()` and `modepacks.section()` back in `games=` |
+| `WrathUnleashedUI/Modes.lua` | `M.SHOW_MINIGAMES = true` (the minigames' list and buttons in `/modes`) |
+| `launcher/ui/modes.js` | `HOST_INVITE = true` (the once-a-day host-your-own line) |
+
+Hidden modes still work where they already ran: `.playmode minigolf`, `/golf`, `/modes bumper`, the Creator API, the
+Workshop and the mode jam pages are unchanged. A hidden mode is never sent as a play intent (`?go=mode:minigolf` just
+lands on `/wrath`), and `/wrath/modes/golf-and-dojo` or `/wrath/modes/azeroth-survivors` send players to `/wrath/modes`.
+
+### Leaderboard mounts
+
+Each of the two cards carries an empty box for a leaderboards module to fill:
+
+- **Launcher** (`ui/modes.js`): `<div class="md-board" id="md-board-duels" data-board="duels">` and
+  `id="md-board-bossrush" data-board="bossrush"`, inside `#md-list .md-card[data-board]`. It holds two placeholder stats
+  (`.md-stat`: Your best, Your rank, shown as a dash) and a note. The list is rebuilt on every load and Refresh: fill the
+  mounts on the `leyline:modes` document event; `window.LeylineModes.boards()` returns the mounts on the page now.
+- **Site** (`stream/playmodes.py board_mount`): `<div class="md-board" id="md-board-<board>" data-board="<board>">`
+  on `/wrath/modes` (and the preview Modes page), with a "show here soon" line to replace.
+
+`data-board` is `duels` or `bossrush` (`DETAILS[...]["board"]` in both files).

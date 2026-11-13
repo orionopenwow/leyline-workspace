@@ -27,8 +27,11 @@ const MODE = (id, title, extra) => Object.assign({ id, title, line: `${title} is
 const MODES = [MODE('minigolf', 'Minigolf'), MODE('bumper-balls', 'Bumper Balls'), MODE('coin-dash', 'Coin Dash'), MODE('community', 'Community modes'),
   MODE('brawl', 'Wrath Brawl', { kind: 'realm-type' }), MODE('arena-1v1', '1v1 arena', { kind: 'in-game' })];
 
-const FAKE = ({ catalog, modes, realms, installedMods, addonsInstalled }) => {
+const FAKE = ({ catalog, modes, realms, installedMods, addonsInstalled, hidden }) => {
   const calls = (window.__calls = []);
+  // Modes lists Duels and Boss Rush only since 12 Nov (modes.js HIDDEN); these tests list every mode again to check the
+  // machinery, unless a test asks for the real list (hidden: undefined -> [])
+  if (hidden !== true) window.LEYLINE_MODES_HIDDEN = [];
   try {
     localStorage.setItem('leyline.page', 'discover');
     localStorage.removeItem('leyline.dcView');
@@ -215,6 +218,16 @@ test('join: a native-code mod still asks its own one-time OK; saying no skips it
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play_realm'));
   assert.equal((await calls(page, 'mod_native_confirm')).length, 0);
   assert.equal((await calls(page, 'mod_install')).length, 1, 'tried once, refused by the core until the OK');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Duels and Boss Rush only (owner 12 Nov): the minigames are off Mods › Game modes, a realm\'s list still names them', async () => {
+  const modes = MODES.concat([MODE('arena-queue', 'Duels'), MODE('frozen-throne', 'Boss Rush', { players: { min: 1, max: 10 } })]);
+  const { page, errors } = await open({ modes, hidden: true });
+  const ids = await page.evaluate(async () => { await window.LeylineGameMods.loadModes(); return window.LeylineGameMods.entries().filter((g) => g.kind === 'mode').map((g) => g.id); });
+  assert.deepEqual(ids.sort(), ['mode:arena-queue', 'mode:frozen-throne']);
+  assert.equal(await page.evaluate(() => window.LeylineGameMods.nameOf('mode:coin-dash')), 'Coin Dash', 'a hidden mode keeps its name');
   assert.deepEqual(errors, []);
   await page.close();
 });

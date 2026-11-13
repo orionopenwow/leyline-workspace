@@ -29,6 +29,10 @@ const CATALOG = { categories: [{ id: 'addons', name: 'Addons', line: '', icon: '
   projects: [UP('skada', 'Skada'), UP('questie', 'Questie'), UP('idtip', 'IDTip'), PK('mod:golfcart', 'Golf Cart')], from_cache: false, saved_at: 1, error: null };
 
 const FAKE = (o) => {
+  // Modes lists Duels and Boss Rush only since 12 Nov (modes.js HIDDEN); these tests list every mode again, and the core
+  // never passes the catalog's "listed" on (modes.rs)
+  window.LEYLINE_MODES_HIDDEN = [];
+  if (Array.isArray(o.modes)) o.modes = o.modes.map((m) => { const c = Object.assign({}, m); delete c.listed; return c; });
   const calls = (window.__calls = []);
   try {
     localStorage.setItem('leyline.page', o.page || 'installed');

@@ -18,8 +18,15 @@ const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const PICTURE = path.join(__dirname, '..', 'ui', 'art', 'leyline-bg.webp');   // the site's backdrop, stood in
 const MODES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'playmodes.json'), 'utf8')).modes;
 
-const FAKE = ({ empty, browser, ms, modes, noClients, forumDown, forumWait }) => {
+const FAKE = ({ empty, browser, ms, modes, noClients, forumDown, forumWait, hidden }) => {
   const calls = (window.__calls = []);
+  // Modes lists Duels and Boss Rush only since 12 Nov (modes.js HIDDEN): these tests list every mode again for the
+  // gallery's and rows' machinery, unless a test asks for the real list ({ hidden: true })
+  if (hidden !== true) {
+    window.LEYLINE_MODES_HIDDEN = [];
+    // the core never passes the catalog's "listed" on (modes.rs): as if every mode were listed
+    modes = (modes || []).map((m) => { const c = Object.assign({}, m); delete c.listed; return c; });
+  }
   try {
     localStorage.removeItem('leyline.page');
     localStorage.setItem('leyline.mode', browser ? 'browser' : 'online');
@@ -128,7 +135,7 @@ test('the gallery: every slide with its data, a title, one line and one button; 
   const hang = page.locator('.hero-slide[data-key="hangout"]');
   assert.equal(await hang.locator('.hs-title').textContent(), 'Join Wrath Unleashed');
   assert.deepEqual(await hang.locator('.hs-body button').allTextContents(), ['Play now', 'Join the Discord']);
-  assert.match(await hang.locator('.hs-line').textContent(), /\/golf and \/modes/);
+  assert.match(await hang.locator('.hs-line').textContent(), /a duel or Boss Rush/);
   assert.deepEqual(await hang.locator('.hs-lineup .hs-rl-n b').allTextContents(), ['Wrath Unleashed'], 'the official lineup: the Hangout (no Vanilla Remastered record here)');
   const mode = page.locator('.hero-slide[data-key="mode"]');
   assert.equal(await mode.locator('img.hs-art').getAttribute('src'), 'art/modes/azeroth-survivors.webp');
@@ -338,7 +345,7 @@ test('the launch slide is full: live counts, the lineup, three modes with pictur
   // live realms with an offered build: the Hangout 5, Busy Den 30, Old Keep 3, Quiet Glade (no count), Fifth Live 1
   assert.deepEqual(await hang.locator('.hs-chip').allTextContents(), ['5 on Wrath Unleashed now', '39 playing on 5 realms']);
   assert.deepEqual(await hang.locator('.hs-mt').evaluateAll((b) => b.map((x) => [x.dataset.mode, x.querySelector('i').textContent, x.querySelector('.hs-mt-pic b').textContent])),
-    [['minigolf', '/golf', 'M'], ['bumper-balls', '/modes', 'B'], ['coin-dash', '/modes', 'C']], 'live modes on the realm, each with its colour and initial (no screenshots listed)');
+    [['arena-queue', '.q1v1', 'D'], ['frozen-throne', '/bf', 'B'], ['minigolf', '/golf', 'M']], 'live modes on the realm, Duels and Boss Rush first, each with its way in, colour and initial (no screenshots listed)');
   // forum strings are text: the title's tag is shown, not made; three at most
   const rows = await hang.locator('.hs-forum .hs-fr').evaluateAll((b) => b.map((x) => [x.querySelector('b').textContent, x.querySelector('i').textContent]));
   assert.equal(rows[0][0], 'Golf night <img src=x onerror="window.__xss=1">');
@@ -353,7 +360,7 @@ test('the launch slide is full: live counts, the lineup, three modes with pictur
   assert.deepEqual(await page.evaluate(() => window.LeylineForum.view()), { kind: 'thread', id: 8 });
   await page.evaluate(() => window.LeylineNav.show('play'));
   await showKey(page, 'hangout');
-  await hang.locator('.hs-mt[data-mode="bumper-balls"]').click();
+  await hang.locator('.hs-mt[data-mode="frozen-throne"]').click();
   assert.equal((await where(page)).page, 'page-modes');
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -610,6 +617,18 @@ test('the first slide is never bare at start: Leyline\'s own night sky at once, 
   assert.equal(await page.getAttribute('.hero-slide[data-key="hangout"] .hs-photo', 'src'), 'https://leylinelauncher.com/wrath/art/home/hangout.webp');
   // the site says there is none any more: forgotten for next time
   await page.waitForFunction(() => !localStorage.getItem('leyline.homeArt'), null, { timeout: 15000 });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Duels and Boss Rush only (owner 12 Nov): no featured Survivors slide; What\'s on and the Modes row are the two', async () => {
+  const { page, ctx, errors } = await open({ ms: 600000, hidden: true });
+  await page.waitForFunction(() => document.querySelector('.hero-slide[data-key="hangout"] .hs-mt'));
+  assert.ok(!(await keys(page)).includes('mode'), 'no featured mode slide while Survivors is hidden');
+  assert.deepEqual(await page.locator('.hero-slide[data-key="hangout"] .hs-mt').evaluateAll((b) => b.map((x) => [x.dataset.mode, x.querySelector('i').textContent])),
+    [['arena-queue', '.q1v1'], ['frozen-throne', '/bf']]);
+  await page.waitForFunction(() => document.querySelectorAll('#hm-modes-row .hm-card').length > 0);
+  assert.deepEqual(await page.$$eval('#hm-modes-row .hm-card', (c) => c.map((x) => x.dataset.mode)), ['arena-queue', 'frozen-throne']);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -190,11 +190,12 @@ test('an older core without these commands: both parts hidden, no errors', async
 
 // ---------------------------------------------------------------- the list kit
 const SHOTS = process.env.LISTS_SHOTS || '/mnt/user-data/outputs/gallery';
+const { appLook } = require('./fixtures/app-look.cjs');
 async function shot(page, name, sel) {
   try {
     require('node:fs').mkdirSync(SHOTS, { recursive: true });
-    await page.addStyleTag({ path: path.join(UI, 'style.css') }).catch(() => {});
-    await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.body.style.padding = '16px'; document.body.style.font = '14px var(--t-font, system-ui)'; document.body.style.color = 'var(--t-text)'; document.body.style.background = 'var(--t-bg, #111)'; document.getElementById('spf').style.maxWidth = '760px'; });
+    // the launcher's whole look: every stylesheet index.html links and its art, #spf as the page's Friends panel
+    if (!(await page.evaluate(() => document.body.classList.contains('ly')))) await appLook(page, { root: '#spf', panel: 'spf' });
     await (await page.$(sel)).screenshot({ path: path.join(SHOTS, `lists-friends-${name}.png`) });
   } catch (_) { /* screenshots are a nicety */ }
 }

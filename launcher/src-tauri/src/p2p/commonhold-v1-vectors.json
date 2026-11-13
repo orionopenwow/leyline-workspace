@@ -1,0 +1,1278 @@
+{
+ "cases": [
+  {
+   "check": [
+    {
+     "expect": {
+      "endpoints": 1,
+      "id": "r-kzdvvj2umnduyauf",
+      "result": "ok",
+      "version": 1761700000123
+     },
+     "record": {
+      "beat": {
+       "pubkey": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+       "realm_id": "kzdvvj2umnduyauf",
+       "record": {
+        "build": 12340,
+        "direct": false,
+        "max_players": 100,
+        "name": "Fröst Håven \"Q\"",
+        "region": "eu",
+        "tagline": "Duels/all day\n",
+        "tags": [
+         "pvp",
+         "rp"
+        ]
+       },
+       "relay": "relay.openvanilla.app",
+       "seq": 1761700000123,
+       "status": {
+        "bots": 40,
+        "online": true,
+        "players": 12,
+        "uptime_s": 3600
+       },
+       "ts": 1761700000,
+       "v": 1
+      },
+      "endpoints": [
+       {
+        "att": {
+         "auth_port": 40010,
+         "node": "29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7",
+         "realm_id": "kzdvvj2umnduyauf",
+         "relay": "relay.openvanilla.app",
+         "ts": 1761700000,
+         "v": 1,
+         "world_port": 40011,
+         "ws": true
+        },
+        "sig": "17a874c14290287efe9a451cb35e879c99374798d5d6cf7653d247ff7e6c835ded64c8f484db3fbc7a05fa581d26f5b049448ea4bb63a43dc7c3d1f9ba751400"
+       }
+      ],
+      "kind": "realm",
+      "sig": "3e4e7d4ccd2e34f8b341f72c01914519fac8cba998f696337513a52ce0154cde023bdd633fd79fc3ce884c7f2a3a21ad7931b8c300101e3f05ba860931616708"
+     }
+    },
+    {
+     "expect": {
+      "id": "n-et3o22wl7yiatqbq",
+      "result": "ok",
+      "version": 5
+     },
+     "record": {
+      "kind": "relay",
+      "node": {
+       "caps": {
+        "kbps": 512,
+        "realms": 500,
+        "streams": 4096
+       },
+       "host": "relay.openvanilla.app",
+       "http": "https://relay.openvanilla.app",
+       "load": {
+        "realms": 3,
+        "streams": 20
+       },
+       "mesh": true,
+       "pubkey": "29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7",
+       "region": "na-east",
+       "seed": false,
+       "seq": 5,
+       "ts": 1761700000,
+       "v": 1,
+       "volunteer": false,
+       "ws": true
+      },
+      "sig": "8873ef8634ca5ee190d82bf51c79192ef9c8a060f2c9d403c481570afd4e294624e8054ba71083cbb53591bf2de83cdeb18dd7b3fc39cc15d322bc925499b406"
+     }
+    }
+   ],
+   "name": "mesh-vector.json (2026-10-29): a realm with its relay's endpoint, and that relay's record",
+   "now": 1761700010
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "endpoints": 1,
+      "id": "r-7x3sucepdd3tthum",
+      "result": "ok",
+      "version": 100
+     },
+     "record": {
+      "beat": {
+       "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+       "realm_id": "7x3sucepdd3tthum",
+       "record": {
+        "name": "Vector Realm",
+        "tags": [
+         "pve"
+        ]
+       },
+       "relay": "relay.example.org",
+       "seq": 100,
+       "status": {
+        "bots": 10,
+        "online": true,
+        "players": 3,
+        "uptime_s": 60
+       },
+       "ts": 1761700000,
+       "v": 1
+      },
+      "endpoints": [
+       {
+        "att": {
+         "auth_port": 40000,
+         "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+         "realm_id": "7x3sucepdd3tthum",
+         "relay": "relay.example.org",
+         "ts": 1761700000,
+         "v": 1,
+         "world_port": 40001,
+         "ws": true
+        },
+        "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+       }
+      ],
+      "kind": "realm",
+      "sig": "1b2722d8623333a6ee1a3acbbfe97243c864a1f17a6cb544e6324ff54680da6066655d01aa96472fd10e3b8ffbc35cfc3737a55dbf40919f9345f6ba71922b08"
+     }
+    },
+    {
+     "expect": {
+      "id": "n-5ur5quysli5m74ty",
+      "result": "ok",
+      "version": 1761700000000
+     },
+     "record": {
+      "kind": "relay",
+      "node": {
+       "caps": {
+        "kbps": 256,
+        "realms": 25,
+        "streams": 512
+       },
+       "host": "relay.example.org",
+       "http": "https://relay.example.org",
+       "load": {
+        "realms": 1,
+        "streams": 4
+       },
+       "mesh": true,
+       "pubkey": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+       "region": "eu",
+       "seed": false,
+       "seq": 1761700000000,
+       "ts": 1761700000,
+       "v": 1,
+       "volunteer": true,
+       "ws": true
+      },
+      "sig": "94911218b2d466bf3c631214c4d94aa98e253b9f2c6f91c0923795502f58c3f1c539cfa608cabb37662c993e08fe4848ac79adfb85b60440a56b3cdaaa812c04"
+     }
+    },
+    {
+     "expect": {
+      "id": "i-5ur5quysli5m74ty",
+      "result": "ok",
+      "version": 1761700000000
+     },
+     "record": {
+      "info": {
+       "admin": "kilivhazfrwrkorp",
+       "languages": [
+        "en",
+        "de"
+       ],
+       "limits": {
+        "kbps": 256,
+        "realms": 25,
+        "record_bytes": 6000,
+        "streams": 512
+       },
+       "proto_max": 1,
+       "proto_min": 1,
+       "pubkey": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+       "region": "eu",
+       "restricted": [],
+       "role": "relay",
+       "rules_url": "https://relay.example.org/rules",
+       "seq": 1761700000000,
+       "software": "wurelay",
+       "supported": [
+        "listing",
+        "mesh",
+        "ws-bridge"
+       ],
+       "ts": 1761700000,
+       "v": 1,
+       "version": "2026.11"
+      },
+      "kind": "info",
+      "sig": "5edfb89b7a2de40ed397c97aaf6627d21a0a801c50ff6e51242a19ca6df24a043cfeb2dfa9fb0c46c2c0eb66c923f13635d5dc93f74113e6995337122f56ea05"
+     }
+    },
+    {
+     "expect": {
+      "id": "i-pfpnl77jaon7k3jc",
+      "result": "ok",
+      "version": 1761700000000
+     },
+     "record": {
+      "info": {
+       "admin": "",
+       "languages": [],
+       "limits": {
+        "players": 100
+       },
+       "proto_max": 1,
+       "proto_min": 1,
+       "pubkey": "d9bf2148748a85c89da5aad8ee0b0fc2d105fd39d41a4c796536354f0ae2900c",
+       "region": "",
+       "restricted": [
+        "herokey"
+       ],
+       "role": "host",
+       "rules_url": "",
+       "seq": 1761700000000,
+       "software": "wuhost",
+       "supported": [
+        "herokey",
+        "listing"
+       ],
+       "ts": 1761700000,
+       "v": 1,
+       "version": "wu-agent/1"
+      },
+      "kind": "info",
+      "sig": "961e1c25ce038f813c3b48b3618171aa9f9491e296052d1f0fbffc620790ae549eb66885ac1978e653de1d25f56df1387cd0febcc35e50c59b25fd51fcd1f301"
+     }
+    }
+   ],
+   "name": "valid realm, relay and capability documents",
+   "now": 1761700010
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "result": "refused"
+     },
+     "record": {
+      "beat": {
+       "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+       "realm_id": "7x3sucepdd3tthum",
+       "record": {
+        "name": "Vector Realm",
+        "tags": [
+         "pve"
+        ]
+       },
+       "relay": "relay.example.org",
+       "seq": 100,
+       "status": {
+        "bots": 10,
+        "online": true,
+        "players": 4,
+        "uptime_s": 60
+       },
+       "ts": 1761700000,
+       "v": 1
+      },
+      "endpoints": [
+       {
+        "att": {
+         "auth_port": 40000,
+         "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+         "realm_id": "7x3sucepdd3tthum",
+         "relay": "relay.example.org",
+         "ts": 1761700000,
+         "v": 1,
+         "world_port": 40001,
+         "ws": true
+        },
+        "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+       }
+      ],
+      "kind": "realm",
+      "sig": "1b2722d8623333a6ee1a3acbbfe97243c864a1f17a6cb544e6324ff54680da6066655d01aa96472fd10e3b8ffbc35cfc3737a55dbf40919f9345f6ba71922b08"
+     }
+    }
+   ],
+   "name": "tampered: a changed byte breaks the signature",
+   "now": 1761700010
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "endpoints": 0,
+      "id": "r-7x3sucepdd3tthum",
+      "result": "ok",
+      "version": 100
+     },
+     "record": {
+      "beat": {
+       "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+       "realm_id": "7x3sucepdd3tthum",
+       "record": {
+        "name": "Vector Realm",
+        "tags": [
+         "pve"
+        ]
+       },
+       "relay": "relay.example.org",
+       "seq": 100,
+       "status": {
+        "bots": 10,
+        "online": true,
+        "players": 3,
+        "uptime_s": 60
+       },
+       "ts": 1761700000,
+       "v": 1
+      },
+      "endpoints": [
+       {
+        "att": {
+         "auth_port": 1,
+         "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+         "realm_id": "7x3sucepdd3tthum",
+         "relay": "relay.example.org",
+         "ts": 1761700000,
+         "v": 1,
+         "world_port": 40001,
+         "ws": true
+        },
+        "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+       }
+      ],
+      "kind": "realm",
+      "sig": "1b2722d8623333a6ee1a3acbbfe97243c864a1f17a6cb544e6324ff54680da6066655d01aa96472fd10e3b8ffbc35cfc3737a55dbf40919f9345f6ba71922b08"
+     }
+    }
+   ],
+   "name": "tampered endpoint: dropped, the realm stays",
+   "now": 1761700010
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "result": "refused"
+     },
+     "record": {
+      "beat": {
+       "pubkey": "91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a",
+       "realm_id": "7x3sucepdd3tthum",
+       "record": {
+        "name": "Vector Realm",
+        "tags": [
+         "pve"
+        ]
+       },
+       "relay": "relay.example.org",
+       "seq": 100,
+       "status": {
+        "bots": 10,
+        "online": true,
+        "players": 3,
+        "uptime_s": 60
+       },
+       "ts": 1761700000,
+       "v": 1
+      },
+      "endpoints": [],
+      "kind": "realm",
+      "sig": "478186938665d9c0880fdb2cad95faccef1f1066b3642b5b1af6505054acba8885c9bdd7982298bd0e74176e41eb21d44aefa4a2bbac731d6200d40075d65c01"
+     }
+    }
+   ],
+   "name": "a key claiming another realm's id",
+   "now": 1761700010
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "result": "refused"
+     },
+     "record": {
+      "beat": {
+       "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+       "realm_id": "7x3sucepdd3tthum",
+       "record": {
+        "name": "Vector Realm",
+        "tags": [
+         "pve"
+        ]
+       },
+       "relay": "relay.example.org",
+       "seq": 100,
+       "status": {
+        "bots": 10,
+        "online": true,
+        "players": 3,
+        "uptime_s": 60
+       },
+       "ts": 1761700000,
+       "v": 1
+      },
+      "endpoints": [
+       {
+        "att": {
+         "auth_port": 40000,
+         "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+         "realm_id": "7x3sucepdd3tthum",
+         "relay": "relay.example.org",
+         "ts": 1761700000,
+         "v": 1,
+         "world_port": 40001,
+         "ws": true
+        },
+        "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+       }
+      ],
+      "kind": "realm",
+      "sig": "1b2722d8623333a6ee1a3acbbfe97243c864a1f17a6cb544e6324ff54680da6066655d01aa96472fd10e3b8ffbc35cfc3737a55dbf40919f9345f6ba71922b08"
+     }
+    },
+    {
+     "expect": {
+      "result": "refused"
+     },
+     "record": {
+      "kind": "relay",
+      "node": {
+       "caps": {
+        "kbps": 256,
+        "realms": 25,
+        "streams": 512
+       },
+       "host": "relay.example.org",
+       "http": "https://relay.example.org",
+       "load": {
+        "realms": 1,
+        "streams": 4
+       },
+       "mesh": true,
+       "pubkey": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+       "region": "eu",
+       "seed": false,
+       "seq": 1761700000000,
+       "ts": 1761700000,
+       "v": 1,
+       "volunteer": true,
+       "ws": true
+      },
+      "sig": "94911218b2d466bf3c631214c4d94aa98e253b9f2c6f91c0923795502f58c3f1c539cfa608cabb37662c993e08fe4848ac79adfb85b60440a56b3cdaaa812c04"
+     }
+    },
+    {
+     "expect": {
+      "result": "refused"
+     },
+     "record": {
+      "info": {
+       "admin": "kilivhazfrwrkorp",
+       "languages": [
+        "en",
+        "de"
+       ],
+       "limits": {
+        "kbps": 256,
+        "realms": 25,
+        "record_bytes": 6000,
+        "streams": 512
+       },
+       "proto_max": 1,
+       "proto_min": 1,
+       "pubkey": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+       "region": "eu",
+       "restricted": [],
+       "role": "relay",
+       "rules_url": "https://relay.example.org/rules",
+       "seq": 1761700000000,
+       "software": "wurelay",
+       "supported": [
+        "listing",
+        "mesh",
+        "ws-bridge"
+       ],
+       "ts": 1761700000,
+       "v": 1,
+       "version": "2026.11"
+      },
+      "kind": "info",
+      "sig": "5edfb89b7a2de40ed397c97aaf6627d21a0a801c50ff6e51242a19ca6df24a043cfeb2dfa9fb0c46c2c0eb66c923f13635d5dc93f74113e6995337122f56ea05"
+     }
+    }
+   ],
+   "name": "expired: 15 minutes for realms, 30 for relays, a day for info",
+   "now": 1761786401
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "result": "refused"
+     },
+     "record": {
+      "beat": {
+       "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+       "realm_id": "7x3sucepdd3tthum",
+       "record": {
+        "name": "Vector Realm",
+        "tags": [
+         "pve"
+        ]
+       },
+       "relay": "relay.example.org",
+       "seq": 100,
+       "status": {
+        "bots": 10,
+        "online": true,
+        "players": 3,
+        "uptime_s": 60
+       },
+       "ts": 1761700000,
+       "v": 1
+      },
+      "endpoints": [
+       {
+        "att": {
+         "auth_port": 40000,
+         "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+         "realm_id": "7x3sucepdd3tthum",
+         "relay": "relay.example.org",
+         "ts": 1761700000,
+         "v": 1,
+         "world_port": 40001,
+         "ws": true
+        },
+        "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+       }
+      ],
+      "kind": "realm",
+      "sig": "1b2722d8623333a6ee1a3acbbfe97243c864a1f17a6cb544e6324ff54680da6066655d01aa96472fd10e3b8ffbc35cfc3737a55dbf40919f9345f6ba71922b08"
+     }
+    }
+   ],
+   "name": "from the future (beyond the 300 s skew)",
+   "now": 1761699699
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "endpoints": 0,
+      "id": "r-7x3sucepdd3tthum",
+      "result": "ok",
+      "version": 101
+     },
+     "record": {
+      "beat": {
+       "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+       "realm_id": "7x3sucepdd3tthum",
+       "record": {
+        "name": "Vector Realm",
+        "tags": [
+         "pve"
+        ]
+       },
+       "relay": "relay.example.org",
+       "seq": 101,
+       "status": {
+        "bots": 10,
+        "online": true,
+        "players": 3,
+        "uptime_s": 60
+       },
+       "ts": 1761700000,
+       "v": 1
+      },
+      "endpoints": [
+       {
+        "att": {
+         "auth_port": 40100,
+         "node": "91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a",
+         "realm_id": "7x3sucepdd3tthum",
+         "relay": "elsewhere.example.org",
+         "ts": 1761700000,
+         "v": 1,
+         "world_port": 40101,
+         "ws": false
+        },
+        "sig": "a526fb263fe55fcdfcf19a04fe00078b88c0e4fca825e01924239ca2e4c2c39e3bc6f64645b10ebeb033f70602d0ee0ed629c604d53396dc818249b8c7e4c10b"
+       }
+      ],
+      "kind": "realm",
+      "sig": "a5ab6a512226e832d603d94418442003832b126add65a906a3ebe0df632ef97e870ae08c7b13612f9dfa5f647c58b89e4d5adfc95652e1508e4befd8979c3a0b"
+     }
+    }
+   ],
+   "name": "wrong relay: an endpoint on a relay the realm never chose is dropped",
+   "now": 1761700010
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "endpoints": 1,
+      "id": "r-7x3sucepdd3tthum",
+      "keeps": [
+       "beat.x_future",
+       "beat.record.proto_max",
+       "x_hint"
+      ],
+      "result": "ok",
+      "version": 102
+     },
+     "record": {
+      "beat": {
+       "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+       "realm_id": "7x3sucepdd3tthum",
+       "record": {
+        "name": "Vector Realm",
+        "proto_max": 2,
+        "proto_min": 1,
+        "tags": [
+         "pve"
+        ]
+       },
+       "relay": "relay.example.org",
+       "seq": 102,
+       "status": {
+        "bots": 10,
+        "online": true,
+        "players": 3,
+        "uptime_s": 60
+       },
+       "ts": 1761700000,
+       "v": 1,
+       "x_future": {
+        "level": 2
+       }
+      },
+      "endpoints": [
+       {
+        "att": {
+         "auth_port": 40000,
+         "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+         "realm_id": "7x3sucepdd3tthum",
+         "relay": "relay.example.org",
+         "ts": 1761700000,
+         "v": 1,
+         "world_port": 40001,
+         "ws": true
+        },
+        "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+       }
+      ],
+      "kind": "realm",
+      "sig": "713429dfcb7fb0034ca798fc7eabfa42df2a61268f11709ed601bd922a68ed1145ff26cf76b635df1311dcbf855521ca9e764adc89af2e2cb7faf7940efe9b03",
+      "x_hint": "unsigned fields beside the record are kept too"
+     }
+    },
+    {
+     "expect": {
+      "id": "i-5ur5quysli5m74ty",
+      "keeps": [
+       "info.motd"
+      ],
+      "result": "ok",
+      "version": 1761700000001
+     },
+     "record": {
+      "info": {
+       "admin": "",
+       "languages": [],
+       "limits": {},
+       "motd": "fields from a newer spec are kept",
+       "proto_max": 3,
+       "proto_min": 1,
+       "pubkey": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+       "region": "",
+       "restricted": [],
+       "role": "relay",
+       "rules_url": "",
+       "seq": 1761700000001,
+       "software": "",
+       "supported": [
+        "mesh",
+        "quantum-relay"
+       ],
+       "ts": 1761700000,
+       "v": 1,
+       "version": ""
+      },
+      "kind": "info",
+      "sig": "2929fb14c02e6ad151a389facb6c28b5745d87f79224048017635b665b29f4f9e8b9751417b958940fddb2a044c5b249ad63c9fcdf6d5eef22c9024d5b1fdf03"
+     }
+    }
+   ],
+   "name": "tolerant reader: unknown fields are kept, signed and unsigned",
+   "now": 1761700010
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "result": "ignored"
+     },
+     "record": {
+      "kind": "probe",
+      "probe": {
+       "ok": true,
+       "rtt_ms": 31,
+       "target": "r-7x3sucepdd3tthum",
+       "v": 1
+      },
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    },
+    {
+     "expect": {
+      "result": "ignored"
+     },
+     "record": {
+      "beat": {
+       "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+       "realm_id": "7x3sucepdd3tthum",
+       "record": {
+        "name": "Vector Realm",
+        "tags": [
+         "pve"
+        ]
+       },
+       "relay": "relay.example.org",
+       "seq": 100,
+       "status": {
+        "bots": 10,
+        "online": true,
+        "players": 3,
+        "uptime_s": 60
+       },
+       "ts": 1761700000,
+       "v": 2
+      },
+      "endpoints": [
+       {
+        "att": {
+         "auth_port": 40000,
+         "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+         "realm_id": "7x3sucepdd3tthum",
+         "relay": "relay.example.org",
+         "ts": 1761700000,
+         "v": 1,
+         "world_port": 40001,
+         "ws": true
+        },
+        "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+       }
+      ],
+      "kind": "realm",
+      "sig": "1b2722d8623333a6ee1a3acbbfe97243c864a1f17a6cb544e6324ff54680da6066655d01aa96472fd10e3b8ffbc35cfc3737a55dbf40919f9345f6ba71922b08"
+     }
+    }
+   ],
+   "name": "tolerant reader: unknown kinds and newer document versions are ignored, not refused",
+   "now": 1761700010
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "result": "refused"
+     },
+     "record": {
+      "info": {
+       "admin": "",
+       "languages": [],
+       "limits": {},
+       "proto_max": 2,
+       "proto_min": 3,
+       "pubkey": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+       "region": "",
+       "restricted": [],
+       "role": "relay",
+       "rules_url": "",
+       "seq": 1761700000000,
+       "software": "",
+       "supported": [],
+       "ts": 1761700000,
+       "v": 1,
+       "version": ""
+      },
+      "kind": "info",
+      "sig": "5d8195d15a26488cc84b63fd287e89efe3448b220c0c2c826c51770324573d762f7187ce811362b5b4343d91ac9cb1d280de718a31f9e0273fdc41d7034ab80d"
+     }
+    }
+   ],
+   "name": "a capability document with proto_min above proto_max",
+   "now": 1761700010
+  },
+  {
+   "check": [
+    {
+     "expect": {
+      "result": "refused"
+     },
+     "record": {
+      "block": {
+       "expires": 1761786400,
+       "reason": "vector",
+       "staff": "0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc",
+       "target": "r-7x3sucepdd3tthum",
+       "ts": 1761700000,
+       "v": 1
+      },
+      "kind": "block",
+      "sig": "e1ec05cfc95e149fb3cf69c0a794effad9b7360bd5fc86901afd5818168a823807356f272d4e6e7862ab350ffd85b19dcbf15eae537fbd215892095d789fbf06"
+     }
+    },
+    {
+     "expect": {
+      "id": "b-r-7x3sucepdd3tthum",
+      "result": "ok",
+      "version": 1761700000
+     },
+     "record": {
+      "block": {
+       "expires": 1761786400,
+       "reason": "vector",
+       "staff": "0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc",
+       "target": "r-7x3sucepdd3tthum",
+       "ts": 1761700000,
+       "v": 1
+      },
+      "kind": "block",
+      "sig": "e1ec05cfc95e149fb3cf69c0a794effad9b7360bd5fc86901afd5818168a823807356f272d4e6e7862ab350ffd85b19dcbf15eae537fbd215892095d789fbf06"
+     },
+     "staff": [
+      "0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc"
+     ]
+    }
+   ],
+   "name": "a block counts only from a pinned staff key",
+   "now": 1761700010
+  },
+  {
+   "final": {
+    "r-7x3sucepdd3tthum": "edf4333aac0355339698e48a67dac46228b3ca0ea2db4a3c73fa10c9efe141cf0c8462417a4518934086bd11413ac94c1a1b6fbb543119efbc2446db20666c05"
+   },
+   "merge": [
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Equivocation A",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "seq": 200,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700000,
+      "v": 1
+     },
+     "endpoints": [],
+     "kind": "realm",
+     "sig": "2ed9d8d4a02c74b2d11bc2845b9741d6ccdb93cd796ccec698d1fce27dd76842d56fe4d10216794a8a22f9178b91da249889e55ff1f4cb6a8c21ed34c744b700"
+    },
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Equivocation B",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "seq": 200,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700000,
+      "v": 1
+     },
+     "endpoints": [],
+     "kind": "realm",
+     "sig": "edf4333aac0355339698e48a67dac46228b3ca0ea2db4a3c73fa10c9efe141cf0c8462417a4518934086bd11413ac94c1a1b6fbb543119efbc2446db20666c05"
+    }
+   ],
+   "name": "merge: equivocation keeps the smaller sha256(signature), in either order",
+   "now": 1761700010
+  },
+  {
+   "final": {
+    "r-7x3sucepdd3tthum": "edf4333aac0355339698e48a67dac46228b3ca0ea2db4a3c73fa10c9efe141cf0c8462417a4518934086bd11413ac94c1a1b6fbb543119efbc2446db20666c05"
+   },
+   "merge": [
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Equivocation B",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "seq": 200,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700000,
+      "v": 1
+     },
+     "endpoints": [],
+     "kind": "realm",
+     "sig": "edf4333aac0355339698e48a67dac46228b3ca0ea2db4a3c73fa10c9efe141cf0c8462417a4518934086bd11413ac94c1a1b6fbb543119efbc2446db20666c05"
+    },
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Equivocation A",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "seq": 200,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700000,
+      "v": 1
+     },
+     "endpoints": [],
+     "kind": "realm",
+     "sig": "2ed9d8d4a02c74b2d11bc2845b9741d6ccdb93cd796ccec698d1fce27dd76842d56fe4d10216794a8a22f9178b91da249889e55ff1f4cb6a8c21ed34c744b700"
+    }
+   ],
+   "name": "merge: equivocation, other order",
+   "now": 1761700010
+  },
+  {
+   "final": {
+    "r-7x3sucepdd3tthum": "d6342940d58157045f82d11ad22e3c636eb1024045fe48f3be2199e65e3ab6ea76546d1f48291a97170d243479b4cce2c11fd1360f0278aa4a05b576bb772208"
+   },
+   "final_endpoints": {
+    "r-7x3sucepdd3tthum": 2
+   },
+   "merge": [
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Vector Realm",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "relays": [
+       "two.example.org"
+      ],
+      "seq": 300,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700000,
+      "v": 1
+     },
+     "endpoints": [
+      {
+       "att": {
+        "auth_port": 40000,
+        "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+        "realm_id": "7x3sucepdd3tthum",
+        "relay": "relay.example.org",
+        "ts": 1761700000,
+        "v": 1,
+        "world_port": 40001,
+        "ws": true
+       },
+       "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+      }
+     ],
+     "kind": "realm",
+     "sig": "d6342940d58157045f82d11ad22e3c636eb1024045fe48f3be2199e65e3ab6ea76546d1f48291a97170d243479b4cce2c11fd1360f0278aa4a05b576bb772208"
+    },
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Vector Realm",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "relays": [
+       "two.example.org"
+      ],
+      "seq": 300,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700000,
+      "v": 1
+     },
+     "endpoints": [
+      {
+       "att": {
+        "auth_port": 41000,
+        "node": "91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a",
+        "realm_id": "7x3sucepdd3tthum",
+        "relay": "two.example.org",
+        "ts": 1761700000,
+        "v": 1,
+        "world_port": 41001,
+        "ws": false
+       },
+       "sig": "2ccbf9d298001aaea67dd8a04c699892997f1b501eb7015d276a0d9a7c94290627c0e4212914d6468c53ca6f9eb1278dd81e350e6d2bf42f8a0333335afbe80a"
+      }
+     ],
+     "kind": "realm",
+     "sig": "d6342940d58157045f82d11ad22e3c636eb1024045fe48f3be2199e65e3ab6ea76546d1f48291a97170d243479b4cce2c11fd1360f0278aa4a05b576bb772208"
+    }
+   ],
+   "name": "merge: the same beat from two relays merges their endpoints",
+   "now": 1761700070
+  },
+  {
+   "final": {
+    "r-7x3sucepdd3tthum": "c3663c16e70000d84bd35b4f23c647caf6a3b459b0ca7a0b30c17dc400baf61390e562300d83d569f94198cb980373172c03149c85c307e9ab652e154fcd0f08"
+   },
+   "merge": [
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Vector Realm",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "seq": 301,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700060,
+      "v": 1
+     },
+     "endpoints": [
+      {
+       "att": {
+        "auth_port": 40000,
+        "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+        "realm_id": "7x3sucepdd3tthum",
+        "relay": "relay.example.org",
+        "ts": 1761700000,
+        "v": 1,
+        "world_port": 40001,
+        "ws": true
+       },
+       "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+      }
+     ],
+     "kind": "realm",
+     "sig": "c3663c16e70000d84bd35b4f23c647caf6a3b459b0ca7a0b30c17dc400baf61390e562300d83d569f94198cb980373172c03149c85c307e9ab652e154fcd0f08"
+    },
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Vector Realm",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "relays": [
+       "two.example.org"
+      ],
+      "seq": 300,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700000,
+      "v": 1
+     },
+     "endpoints": [
+      {
+       "att": {
+        "auth_port": 40000,
+        "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+        "realm_id": "7x3sucepdd3tthum",
+        "relay": "relay.example.org",
+        "ts": 1761700000,
+        "v": 1,
+        "world_port": 40001,
+        "ws": true
+       },
+       "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+      }
+     ],
+     "kind": "realm",
+     "sig": "d6342940d58157045f82d11ad22e3c636eb1024045fe48f3be2199e65e3ab6ea76546d1f48291a97170d243479b4cce2c11fd1360f0278aa4a05b576bb772208"
+    }
+   ],
+   "name": "merge: newer seq wins, an older one after it changes nothing",
+   "now": 1761700070
+  },
+  {
+   "final": {
+    "b-r-7x3sucepdd3tthum": "e1ec05cfc95e149fb3cf69c0a794effad9b7360bd5fc86901afd5818168a823807356f272d4e6e7862ab350ffd85b19dcbf15eae537fbd215892095d789fbf06",
+    "r-7x3sucepdd3tthum": null
+   },
+   "merge": [
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Vector Realm",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "seq": 100,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700000,
+      "v": 1
+     },
+     "endpoints": [
+      {
+       "att": {
+        "auth_port": 40000,
+        "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+        "realm_id": "7x3sucepdd3tthum",
+        "relay": "relay.example.org",
+        "ts": 1761700000,
+        "v": 1,
+        "world_port": 40001,
+        "ws": true
+       },
+       "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+      }
+     ],
+     "kind": "realm",
+     "sig": "1b2722d8623333a6ee1a3acbbfe97243c864a1f17a6cb544e6324ff54680da6066655d01aa96472fd10e3b8ffbc35cfc3737a55dbf40919f9345f6ba71922b08"
+    },
+    {
+     "block": {
+      "expires": 1761786400,
+      "reason": "vector",
+      "staff": "0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc",
+      "target": "r-7x3sucepdd3tthum",
+      "ts": 1761700000,
+      "v": 1
+     },
+     "kind": "block",
+     "sig": "e1ec05cfc95e149fb3cf69c0a794effad9b7360bd5fc86901afd5818168a823807356f272d4e6e7862ab350ffd85b19dcbf15eae537fbd215892095d789fbf06"
+    },
+    {
+     "beat": {
+      "pubkey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "realm_id": "7x3sucepdd3tthum",
+      "record": {
+       "name": "Vector Realm",
+       "tags": [
+        "pve"
+       ]
+      },
+      "relay": "relay.example.org",
+      "seq": 100,
+      "status": {
+       "bots": 10,
+       "online": true,
+       "players": 3,
+       "uptime_s": 60
+      },
+      "ts": 1761700000,
+      "v": 1
+     },
+     "endpoints": [
+      {
+       "att": {
+        "auth_port": 40000,
+        "node": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+        "realm_id": "7x3sucepdd3tthum",
+        "relay": "relay.example.org",
+        "ts": 1761700000,
+        "v": 1,
+        "world_port": 40001,
+        "ws": true
+       },
+       "sig": "2a16063de62b7320ae09ddc11869aa31de4652200dd5c8c7851fbc307857888f4f2fe87a4517ed4551aa7d97223b8135fc8901c47b38c58906db0c57db0eec03"
+      }
+     ],
+     "kind": "realm",
+     "sig": "1b2722d8623333a6ee1a3acbbfe97243c864a1f17a6cb544e6324ff54680da6066655d01aa96472fd10e3b8ffbc35cfc3737a55dbf40919f9345f6ba71922b08"
+    }
+   ],
+   "name": "merge: a staff block drops the realm and refuses it after",
+   "now": 1761700010,
+   "staff": [
+    "0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc"
+   ]
+  }
+ ],
+ "format": "commonhold-v1-vectors",
+ "note": "Test keys are seeds 0x0b..0x0f repeated: never use them anywhere real.",
+ "proto": [
+  1,
+  1
+ ],
+ "spec": "docs/COMMONHOLD-V1.md"
+}

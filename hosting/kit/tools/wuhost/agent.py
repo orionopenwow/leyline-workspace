@@ -33,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 
-from wunet import domains, herokey, keys, mux, ws
+from wunet import domains, herokey, keys, mesh, mux, ws
 
 from . import cores
 from wunet.mux import CLOSE, DATA, OPEN
@@ -808,13 +808,50 @@ class Agent:
             beat["claim"] = self.cfg["claim"]
         return {"beat": beat, "sig": keys.sign_doc(self.secret, beat, keys.CTX_HEARTBEAT)}
 
+    def info(self, status=None):
+        """This realm's capability document (docs/COMMONHOLD-V1.md, F3), signed with the realm key: what it offers and
+        who to report abuse to (`admin_peer` in the realm's config, a Leyline peer id). Sent with a heartbeat now
+        and then; a relay that doesn't know it ignores the field."""
+        rec = self.cfg.get("record") if isinstance(self.cfg.get("record"), dict) else {}
+        sup = ["listing"]
+        if self.herokey_on():
+            sup.append("herokey")
+        if rec.get("direct"):
+            sup.append("direct")
+        lim = {}
+        if isinstance(rec.get("max_players"), int) and rec["max_players"] >= 0:
+            lim["players"] = rec["max_players"]
+        admin = self.cfg.get("admin_peer") or ""
+        restricted = []
+        if self.cfg.get("signups") == "invite":
+            restricted.append("invite")
+        if self.herokey_on():
+            restricted.append("herokey")
+        self.info_seq = max(getattr(self, "info_seq", 0) + 1, int(time.time() * 1000))
+        return mesh.info_record(self.secret, "host", self.info_seq, int(time.time()), supported=sup, limits=lim,
+                                admin=admin if mesh.PEER_RE.match(admin) else "", software="wuhost",
+                                version=str(VERSION)[:32], region=rec.get("region") or "",
+                                languages=[x for x in (rec.get("languages") or []) if isinstance(x, str)],
+                                restricted=restricted)
+
+    def beat_body(self, status, n):
+        """The heartbeat POST body: the beat, plus the capability document on the first beat and every hour."""
+        body = self.beat(status)
+        if n % 60 == 0:
+            try:
+                body["info"] = self.info(status)
+            except Exception as e:   # never let the extra document stop the beat
+                log.info("info document skipped: %s", e)
+        return body
+
     async def heartbeat_loop(self, every=60):
         while True:
             beat_now = self.cfg.get("visibility") == "public" and self.welcome and self.ws and not self.ws.closed
             if beat_now:
                 try:
                     status = await self.status()
-                    body = json.dumps(self.beat(status)).encode()
+                    self.beats_sent = getattr(self, "beats_sent", -1) + 1
+                    body = json.dumps(self.beat_body(status, self.beats_sent)).encode()
                     code, reply = await asyncio.to_thread(self.http_post, self.cfg["listing_url"], body)
                     self.save_state(listing_status=code, listing_reply=reply[:300].decode("utf-8", "replace"),
                                     players=status.get("players"), who=status.get("who"),

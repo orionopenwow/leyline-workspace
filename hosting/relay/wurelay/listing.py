@@ -518,6 +518,8 @@ class Listing:
             sess.listed_at = time.time()   # the first beat of this tunnel: "listed in N s" on the host's page
         if self.relay is not None and getattr(self.relay, "mesh", None):
             self.relay.mesh.local_beat(beat, sig, now)   # the Leyline mesh (off unless RELAY_MESH=1)
+            if "info" in doc:
+                self.relay.mesh.host_info(beat, doc["info"], now)   # the host's capability document, if it sent one
         return 200, {"ok": True, "listed": True, "next_in": 60, "claimed": bool(e.get("claimed_by"))}
 
     # ------------------------------------------------------------------ uptime

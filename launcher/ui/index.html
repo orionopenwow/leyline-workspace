@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leyline Launcher</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="listkit.css"><!-- the list kit: one look for every list (listkit.js, docs/LAUNCHER-LISTS.md) -->
 <link rel="stylesheet" href="simplehome.css"><!-- Simple mode: the four-button home (simplehome.js) -->
 <link rel="stylesheet" href="spin.css"><!-- the spinning mark: the header logo and every loading state (spin.js) -->
 <!-- themes (themes agent): Dark (style.css) or Light; the Themes section; themes.js applies the theme before paint -->
@@ -22,6 +23,7 @@
 <link rel="stylesheet" href="hostflow.css"><!-- Host: Private or Public, templates, the settings panel, Ask Claude (hostflow.js) -->
 <link rel="stylesheet" href="loadouts.css"><!-- Loadouts: Mods & Addons › Installed, the game folder cards, the realm offer (loadouts.js) -->
 <link rel="stylesheet" href="addons.css"><!-- the Leyline addons: Clients, Mods & Addons › Installed › Addons, the PLAY offer (addons.js) -->
+<link rel="stylesheet" href="modlists.css"><!-- the Mods page's lists on the list kit: Discover, Installed, Looks, Game modes -->
 <link rel="stylesheet" href="market.css"><!-- the addon marketplace in Mods & Addons › Discover › Addons (market.js) -->
 <link rel="stylesheet" href="home.css"><!-- Home: the hero gallery and the rows below it (home.js) -->
 <link rel="stylesheet" href="agents.css"><!-- Agents: your own AI assistant, the approval card on every page (agents.js) -->
@@ -88,29 +90,37 @@
 
 <aside class="side">
   <nav aria-label="Pages">
-    <!-- The website's side menu (stream/hub.py nav_items): Home, Realms, Mods & Addons, Host, Forum, News. Mods & Addons is one
-         page (the website's Mods and Addons): Installed and Discover (app.js TABS), each split into Mods and Addons (shelf.js:
-         one rule, docs/WORDS.md); one entry, not two, because both tabs hold both and a second entry would only repeat them.
-         Forum reads the website's forum (forum.js). Modes (modes.js, the page it adds) has its item under Realms, as the
-         website's menu gets Single player, Modes and Guides pages (4 Nov); Guides has no launcher page, so no item (Help
-         holds the launcher's own help).
+    <!-- The side menu (owner 12 Nov: "Home, Realm Mods, Host, Forum, News Discord and clean up the placement of the other
+         options make them folds"): the website's pages at the top level (stream/hub.py nav_items: Home, Realms, Mods, Host,
+         Forum, News), Join the Discord right under News, then folds (app.js "the side menu's folds"): Play (Single player,
+         the flagship, and Modes; open by default) here, and Launcher (Simple mode, Settings, Agents, Help) at the foot.
+         A fold opens by itself when its page is shown, remembers being opened or closed (leyline.navFolds), and while
+         closed its header carries the count of the badges inside it.
+         Mods is one page, Mods & Addons (the website's Mods and Addons): Installed and Discover (app.js TABS), each split
+         into Mods and Addons (shelf.js: one rule, docs/WORDS.md).
          Your Den (den.js) has no item (owner 2026-11-02: "only in the server drop up list next to play"): the play bar's
          realm list (app.js renderRealmMenu) and Home's banner lead there.
-         Single player (single.js, owner 4 Nov: the flagship, a top-level choice) has its item under Home, with the sword mark.
          Boss Rush (bossrush.js) has no item (owner 12 Nov: off the side menu): Home's Boss Rush row leads there.
-         Characters (characters.js, docs/SINGLE-PLAYER-ONE-CLICK.md) has no item (the menu matches the website's): the
-         Single player page's Characters button and Home's Single player row lead there. -->
+         Characters (characters.js) has no item: the Single player page's Characters button and Home's row lead there. -->
     <button class="nav" data-page="simple"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>Home</button>
     <button class="nav" data-page="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
-    <button class="nav" data-page="single"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/></svg>Single player</button>
     <button class="nav" data-page="realms"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Realms</button>
-    <button class="nav" data-page="modes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9h12a3 3 0 0 1 3 3v2a3 3 0 0 1-5.2 2L14 14h-4l-1.8 2A3 3 0 0 1 3 14v-2a3 3 0 0 1 3-3z"/><path d="M8 11v2M7 12h2M16 11.5h.01M17.5 13h.01"/></svg>Modes</button>
-    <button class="nav" data-page="mods"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mods &amp; Addons<span class="badge" id="nav-mods-count" hidden></span></button>
+    <button class="nav" data-page="mods" title="Mods &amp; Addons"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span class="nav-txt">Mods</span><span class="badge" id="nav-mods-count" hidden></span></button>
     <button class="nav" data-page="host"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Host</button>
     <button class="nav" data-page="forum"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M16 8h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1v3.5L15 17h-4a1 1 0 0 1-1-1v-1"/></svg>Forum</button>
     <button class="nav" data-page="news"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2M8 9h5M8 13h5"/></svg>News</button>
     <!-- owner 31 Oct 21:59: Join the Discord moves from the title bar to the side menu, under News -->
     <button type="button" class="nav nav-discord" id="tb-discord" data-link="discord" title="Find a group, voice chat and hear about new realms first"><svg class="dc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.028C.533 9.046-.32 13.58.099 18.058a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03ZM8.02 15.331c-1.183 0-2.157-1.086-2.157-2.42 0-1.333.956-2.418 2.157-2.418 1.21 0 2.176 1.095 2.157 2.419 0 1.333-.956 2.419-2.157 2.419Zm7.975 0c-1.183 0-2.157-1.086-2.157-2.42 0-1.333.955-2.418 2.157-2.418 1.21 0 2.176 1.095 2.157 2.419 0 1.333-.946 2.419-2.157 2.419Z"/></svg><span>Join the Discord</span></button>
+    <!-- Play: Single player first (owner 4 Nov: the flagship), with the sword mark; Modes (modes.js) -->
+    <div class="nav-fold" data-fold="play" id="fold-play">
+      <button type="button" class="nav-fold-head" id="fold-play-head" aria-expanded="true" aria-controls="fold-play-body"><span class="nf-name">Play</span><span class="nf-count" hidden></span><svg class="nf-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      <div class="nav-fold-body" id="fold-play-body" role="group" aria-labelledby="fold-play-head">
+        <div class="nav-fold-inner">
+          <button class="nav" data-page="single"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/></svg>Single player</button>
+          <button class="nav" data-page="modes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9h12a3 3 0 0 1 3 3v2a3 3 0 0 1-5.2 2L14 14h-4l-1.8 2A3 3 0 0 1 3 14v-2a3 3 0 0 1 3-3z"/><path d="M8 11v2M7 12h2M16 11.5h.01M17.5 13h.01"/></svg>Modes</button>
+        </div>
+      </div>
+    </div>
   </nav>
 
   <div class="side-label">YOUR REALMS</div>
@@ -118,10 +128,18 @@
   <button type="button" class="realm-add" data-page-go="realms"><span class="plus">+</span>Add a realm</button>
 
   <div class="side-foot">
-    <button type="button" class="nav plain" id="nav-simple-toggle" aria-pressed="false" title="Four big buttons: Play, Host, Visit, Back up"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><span>Simple mode</span></button>
-    <button class="nav plain" data-page="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</button>
-    <button class="nav plain" data-page="agents"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01M9.5 16.5h5M3 13v2M21 13v2"/></svg>Agents<span class="badge" id="nav-agents-count" hidden></span></button>
-    <button class="nav plain" data-page="help"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg>Help</button>
+    <!-- Launcher: the launcher's own things; Simple mode keeps Settings and Help in view (simplehome.css) -->
+    <div class="nav-fold" data-fold="launcher" id="fold-launcher">
+      <button type="button" class="nav-fold-head" id="fold-launcher-head" aria-expanded="false" aria-controls="fold-launcher-body"><span class="nf-name">Launcher</span><span class="nf-count" hidden></span><svg class="nf-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      <div class="nav-fold-body" id="fold-launcher-body" role="group" aria-labelledby="fold-launcher-head">
+        <div class="nav-fold-inner">
+          <button type="button" class="nav plain" id="nav-simple-toggle" aria-pressed="false" title="Four big buttons: Play, Host, Visit, Back up"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><span>Simple mode</span></button>
+          <button class="nav plain" data-page="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</button>
+          <button class="nav plain" data-page="agents"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01M9.5 16.5h5M3 13v2M21 13v2"/></svg>Agents<span class="badge" id="nav-agents-count" hidden></span></button>
+          <button class="nav plain" data-page="help"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg>Help</button>
+        </div>
+      </div>
+    </div>
   </div>
 </aside>
 
@@ -316,7 +334,7 @@
         </div>
         <p class="status" id="mods-status" role="status"></p>
         <ul class="problems" id="mods-problems" hidden></ul>
-        <div id="mods-list" class="cards mods-grid"></div>
+        <div id="mods-list" class="inst-list"></div>
         <p class="hint">No review, no signing: only add mods and addons from people you trust. Downloads must match their checksum, and anything holding game data or secrets is refused. Native mods (.dll, .asi) need a one-time OK. Removing a mod takes out exactly what Leyline put in.</p>
       </div>
       <div class="tabpane" id="pane-discover" role="tabpanel" aria-labelledby="tab-mods-discover" data-view="simple" data-tab="mods">
@@ -339,20 +357,21 @@
           <select class="client-pick dc-client" data-for="discover" aria-label="Install into"></select>
         </div>
         <div class="chips dc-smart dc-full" id="dc-smart" role="toolbar" aria-label="Show"></div>
-        <details class="dc-mf dc-full" id="dc-more">
-          <summary>More filters</summary>
-          <div class="toolbar dc-mf-row">
-            <label class="dc-pick"><span>Sort</span><select id="cat-sort" aria-label="Sort">
-              <option value="hot">Hot</option><option value="rising">Rising</option><option value="top">Top rated</option>
-              <option value="installs">Most installed</option><option value="installs30">This month</option>
-              <option value="new">New</option><option value="updated">Updated</option></select></label>
-            <label class="dc-fit" title="Only show mods made for the picked client"><input type="checkbox" id="cat-fit" checked><span>Only for the picked client</span></label>
-          </div>
+        <!-- the list kit's bar (app.js catListMake): Works with this game folder, Installed, Updates, Favourites, the game,
+             the Sort menu and the count -->
+        <div class="dc-kbar dc-full" id="dc-kbar">
+          <label class="lk-sort dc-sort"><span class="lk-sort-l">Sort</span><select id="cat-sort" class="lk-sort-s" aria-label="Sort">
+            <option value="hot">Popular</option><option value="rising">Rising</option><option value="top">Top rated</option>
+            <option value="installs">Most installed</option><option value="installs30">This month</option>
+            <option value="new">New</option><option value="updated">Recently updated</option><option value="name">Name</option></select></label>
+        </div>
+        <details class="dc-mf dc-full" id="dc-more" hidden>
+          <summary>More kinds</summary>
           <div id="dc-more-body"></div>
         </details>
         <p class="status" id="cat-status" role="status"></p>
         <div class="game-box dc-full" id="game-discover" hidden></div><!-- Mods › Game modes: the Leyline Modes (gamemods.js) -->
-        <div class="mod-grid dc-grid dc-full" id="cat-grid"></div>
+        <div class="dc-list dc-full" id="cat-grid"></div>
         <div class="row dc-more dc-full"><button type="button" class="btn small" data-link="mods">Mods on the website</button><button type="button" class="btn small" data-link="modders">Make a mod</button></div>
       </div>
       <!-- Game modes (owner 3 Nov: "Game modes as a section somewhere in mods and addons"): gamemods.js showSection -->
@@ -369,13 +388,12 @@
   <!-- REALMS -->
   <section class="page" id="page-realms">
     <div class="panel wide">
-      <!-- two lists (owner 2026-11-02): Official realms (ours, always up) and Community realms (players' Beacons);
-           search and filters work within the tab that is open (app.js rlTab) -->
+      <!-- the lists (owner 2026-11-02: Official realms, ours, always up, and Community realms, players' Beacons; 12 Nov:
+           the in-game Realm Selection's categories): All, Official, Community, Single player & Den, Friends' worlds,
+           Favourites. The tabs (#rl-tab-<id>), the search, the sort and the stars are the list kit's (listkit.js,
+           app.js rlList); search and filters work within the tab that is open -->
       <div class="panel-head"><h2>Realms</h2>
-        <div class="page-tabs rl-tabs" id="rl-tabs" role="tablist" aria-label="Realm lists">
-          <button type="button" class="page-tab" role="tab" id="rl-tab-official" data-rl-tab="official" aria-controls="rl-pane" aria-selected="true">Official realms</button>
-          <button type="button" class="page-tab" role="tab" id="rl-tab-community" data-rl-tab="community" aria-controls="rl-pane" aria-selected="false" tabindex="-1">Community realms</button>
-        </div></div>
+        <div class="page-tabs rl-tabs" id="rl-tabs" role="tablist" aria-label="Realm lists"></div></div>
       <div class="toolbar rl-tools">
         <input id="rl-q" type="search" placeholder="Find a realm" aria-label="Find a realm" autocomplete="off" spellcheck="false">
         <div class="rl-pop-wrap">
@@ -417,7 +435,7 @@
         <p class="status" id="rl-paste-status" role="status"></p>
       </form>
       <div class="rl-pane" id="rl-pane" role="tabpanel" aria-labelledby="rl-tab-official">
-        <p class="net-line" id="rl-net" aria-live="polite"></p>
+        <div class="rl-head-row"><p class="net-line" id="rl-net" aria-live="polite"></p><div class="rl-kbar" id="rl-kbar"></div></div>
         <p class="status" id="rl-status" role="status"></p>
         <div class="realm-list" id="rl-list"></div>
         <p class="rl-tab-note" id="rl-tab-note"></p>
@@ -469,6 +487,7 @@
   <section class="page" id="page-single">
     <div class="panel wide sv-panel" id="sv"></div>
     <div class="panel wide sp" id="sp"></div>
+    <div class="panel wide spd" id="spd" role="region" aria-label="Your Den"></div><!-- den.js: Your Den from here too (Open my Den, Invite a friend, its state) -->
     <div class="panel wide oc-set" id="oc-set" aria-label="Single player settings"></div><!-- oneclick.js: Stop the world when the game closes, Your world's settings -->
     <!-- The one Friends area: invite to your world, who keeps a character on it, the worlds you joined, your friends list -->
     <div class="panel wide spf" id="spf" role="region" aria-labelledby="spf-title">
@@ -735,9 +754,9 @@
       <label class="check"><input type="checkbox" id="set-backdrop"> Background picture: the website's picture behind the pages, under a soft wash
         (fetched from leylinelauncher.com when Leyline starts; the plain colour when it is off or offline)</label>
       <h3>Playing</h3>
-      <label class="check"><input type="checkbox" id="set-cover"> Hide the sign-in behind Leyline's screen: while Leyline signs you in
-        at the game's login screen, a "Logging you in…" screen covers the game until character select (Esc or Show the game
-        takes it away)</label>
+      <label class="check"><input type="checkbox" id="set-cover"> Hide the login behind Leyline's screen: while Leyline logs you in
+        at the game's login screen (the official realm, Single player and Your Den), a "Logging you in…" screen covers the
+        game until you're through (Esc or Show the game takes it away)</label>
       <p class="status" id="cover-status" role="status"></p>
       <h3>Updates</h3>
       <p class="lede">Leyline updates itself: it downloads new versions in the background, then says Update ready. Press Restart when you like, or it finishes the next time you open Leyline. It never restarts while your game is open.</p>
@@ -944,6 +963,7 @@
 </nav>
 
 </div>
+<script src="listkit.js"></script><!-- the list kit: search, tabs, sort, favourites, keys, empty states (window.LeylineList; before every list) -->
 <script src="friendly.js"></script><!-- never a raw error to the player: window.LeylineFriendly -->
 <script src="bugreport.js"></script><!-- Help › Report a bug and the launcher's recent log (window.LeylineBugReport; early, to keep the log) -->
 <script src="spin.js"></script>

@@ -1,0 +1,58 @@
+/* The Mods page's lists on the list kit (listkit.js, listkit.css, docs/LAUNCHER-LISTS.md): Discover's full list
+   (app.js catListMake), Installed (instListMake), Looks (looks.js) and Game modes (gamemods.js). The kit draws the bar,
+   the chips, the count, the empty words and the stars; this file only fits the Mods page's cards into it. Theme tokens
+   only (--t-*), so Dark, Light and every theme pack fit. */
+
+/* the cards' grids are the kit's bodies now */
+.lk-body.mod-grid { margin: 0; }
+.lk-body.dc-grid { gap: 14px; margin: 0 0 14px; }
+.lk-body.cards { gap: 10px; margin-top: 0; }
+.lk-body > .lk-empty, .lk-body > .lk-group { grid-column: 1 / -1; }
+#cat-grid, #mods-list { margin-top: 4px; }
+
+/* a chip group with nothing to pick but "All" says nothing: hidden (the Game chips when every mod is for one game) */
+.lk-chip-g:not(:has(.lk-chip ~ .lk-chip)) { display: none; }
+
+/* Discover's bar: the kit's chips, the Sort menu and the count on one line under the category chips */
+.dc-kbar { margin: 0 0 10px; }
+.dc-kbar .lk-chips { flex: 1 1 auto; }
+.dc-sort select { max-width: 190px; }
+/* the category chips (simple.js, market.js) wear the kit's chip */
+.dc-smart .chip-btn.lk-chip, .mk-more .chip-btn.lk-chip { height: 28px; }
+#dc-more[hidden] { display: none; }
+
+/* the star on a card's picture, top right; the update dot steps aside for it */
+.dc-thumb .dc-star {
+  position: absolute; right: 6px; top: 6px; z-index: 3; width: 30px; height: 30px; opacity: 0.9;
+  color: #fff; background: rgba(10, 12, 18, 0.5); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.dc-thumb .dc-star.on { color: #f2c14e; }
+.dc-thumb .dc-star:hover, .dc-thumb .dc-star:focus-visible { color: #f2c14e; background: rgba(10, 12, 18, 0.7); }
+.lk-row .dc-thumb .mk-dot { right: 44px; top: 16px; }
+
+/* Installed, or an update ready: a mark on the picture, under the category */
+.dc-have {
+  position: absolute; left: 8px; top: 34px; z-index: 2; padding: 3px 8px; border-radius: 99px;
+  font: 700 10.5px var(--t-font); color: #bff3d6; background: rgba(10, 12, 18, 0.62);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.dc-have::before { content: "\2713\00a0"; }
+.dc-have.upd { color: #ffd98a; }
+.dc-have.upd::before { content: "\2191\00a0"; }
+
+/* the card of what was just installed: lit, wherever it was installed from */
+.dc-card.just, .lk-card.just { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+.lk-row.dc-card:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 3px; }
+
+/* Installed: the star at the end of the card's top line */
+.cards .top .inst-star { margin-left: auto; width: 28px; height: 28px; }
+.cards .top .build + .inst-star { margin-left: 0; }
+.inst-empty { grid-column: 1 / -1; }
+
+/* Looks and Game modes: the kit's bar above their cards */
+#looks-list, #gm-list { margin-top: 6px; }
+.lk-body.lk-grid { gap: 12px; }
+.lk-card .lk-star { position: absolute; right: 8px; top: 8px; z-index: 3; color: #fff; background: rgba(10, 12, 18, 0.5); }
+.lk-card .lk-star.on { color: #f2c14e; }
+.lk-card { position: relative; }
+html.phone .dc-thumb .dc-star, html.phone .lk-card .lk-star { width: 40px; height: 40px; }

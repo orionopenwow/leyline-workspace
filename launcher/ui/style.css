@@ -289,6 +289,40 @@ svg { flex: none; }
 .realm-add:hover { color: var(--t-text); background: var(--t-surface); }
 .realm-add .plus { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--t-radius-xs); border: 1px dashed var(--t-border-strong); color: var(--t-text-2); font-weight: 600; }
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding-top: 8px; border-top: var(--t-border-w) solid var(--t-border); }
+/* the side menu's folds (app.js "the side menu's folds"): a quiet header (small capitals, a chevron that turns), then
+   the items, a little in from the edge on a thin guide line. Open and close slide (grid rows 0fr to 1fr); closed, the
+   items are out of reach (visibility hidden: no click, no Tab). Closed with the page shown inside: the header lights. */
+.nav-fold { display: flex; flex-direction: column; flex: none; }
+.side nav .nav-fold { margin-top: 10px; }
+.nav-fold-head {
+  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 9px 0 11px; flex: none;
+  border: 0; border-radius: var(--t-radius-sm); background: none; cursor: pointer; text-align: left;
+  font: 600 10.5px var(--t-font); letter-spacing: 0.09em; text-transform: uppercase; color: var(--t-muted);
+}
+.nav-fold-head .nf-name { flex: 1; min-width: 0; }
+.nav-fold-head:hover { color: var(--t-text); background: var(--t-surface); }
+.nav-fold-head:hover .nf-chev { stroke: var(--t-text); }
+.nav-fold-head:focus-visible { outline: 2px solid var(--t-accent); outline-offset: -2px; }
+.nf-chev { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--t-muted); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.2s ease; }
+.nav-fold-head[aria-expanded="true"] .nf-chev { transform: rotate(90deg); }
+.nf-count {
+  min-width: 18px; height: 17px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center;
+  font: 700 10px var(--t-font); letter-spacing: 0; color: var(--t-accent); background: var(--t-accent-soft);
+}
+.nf-count[hidden] { display: none; }
+.nav-fold.has-on .nav-fold-head[aria-expanded="false"] { color: var(--t-text); }
+.nav-fold.has-on .nav-fold-head[aria-expanded="false"] .nf-name::after {
+  content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 8px; vertical-align: 1px; border-radius: 50%; background: var(--t-accent);
+}
+.nav-fold-body { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 0.22s ease, visibility 0s linear 0.22s; }
+.nav-fold.open > .nav-fold-body { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 0.22s ease, visibility 0s; }
+.nav-fold-inner {
+  min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px;
+  margin-left: 19px; padding-left: 6px; border-left: 1px solid var(--t-border);
+}
+.nav-fold.open > .nav-fold-body > .nav-fold-inner { padding-top: 2px; }
+.nav-fold-inner .nav { padding-left: 9px; }
+@media (prefers-reduced-motion: reduce) { .nav-fold-body, .nav-fold.open > .nav-fold-body, .nf-chev { transition: none; } }
 
 /* ---------------------------------------------------------------- main, over the backdrop */
 .backdrop { grid-row: 1 / 3; grid-column: 2; min-width: 0; min-height: 0; pointer-events: none; background: var(--t-bg) var(--t-bg-image) center / cover no-repeat; }
@@ -979,6 +1013,31 @@ select.rl-client { field-sizing: content; width: auto; min-width: 0; max-width: 
 /* Official realms | Community realms: the open tab's own count line and one quiet line about the other list */
 .rl-tab-note { margin: 12px 0 0; font-size: 12.5px; color: var(--t-muted); }
 .rl-tab-note .link-s { font-size: 12.5px; }
+/* the Realms list on the list kit (app.js rlList, listkit.css): the six tabs wrap in the header strip, the network
+   line and the sort share a row, the population (Low, Medium, High, Full as in the game's own list) and bots under the
+   players, your friends on a realm, this PC's own worlds, and the star at the end of the buttons */
+#page-realms .panel-head .rl-tabs { flex-wrap: wrap; }
+#page-realms .rl-tabs .page-tab { padding: 0 12px; white-space: nowrap; }
+.rl-head-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px; margin: 0 0 10px; }
+.rl-head-row .net-line { margin: 0; }
+.rl-kbar { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.rl-kbar .lk-count { margin-left: 0; }
+#rl-list.lk { display: block; }
+#rl-list .lk-body { gap: 10px; }
+.rl-popl { font-size: 11.5px; color: var(--t-muted); white-space: nowrap; }
+.rl-lv { font-weight: 700; letter-spacing: 0.02em; }
+.rl-lv.lv-low { color: var(--t-ok); }
+.rl-lv.lv-medium { color: var(--t-warn); }
+.rl-lv.lv-high, .rl-lv.lv-full { color: var(--t-bad); }
+.rl-friends { font-size: 12px; font-weight: 600; color: var(--t-accent-strong); }
+.rl-friends::before { content: "● "; color: var(--t-ok); font-size: 9px; vertical-align: 1px; }
+.realm-card.rl > .pb-mark-ic { display: grid; place-items: center; color: var(--t-text-2); }
+.realm-card.rl > .pb-mark-ic svg { width: 26px; height: 26px; }
+.realm-card .state.is-local { color: var(--t-muted); }
+.rl-pop .state.is-local .dot { background: var(--t-muted); }
+.realm-card .acts .lk-star { margin-left: -2px; }
+#rl-list .lk-group { margin-top: 10px; }
+#rl-list .lk-group:first-child { margin-top: 0; }
 .rl-host-acts .rl-host-guide { margin-left: 4px; font-size: 12.5px; white-space: nowrap; }
 /* Host your own: one slim banner */
 .rl-host-banner {
@@ -1154,3 +1213,4 @@ html[data-base="light"] .rl-ic.crystal { background: radial-gradient(circle at 5
 .skel-card { min-height: 150px; border: 0; margin: 0 !important; }
 @keyframes skel-sheen { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+.rl-pop .state.is-local { padding: 3px 10px 3px 8px; border-radius: 999px; border: 1px solid var(--t-border-strong); background: color-mix(in srgb, var(--t-text) 6%, transparent); color: var(--t-text-2); }

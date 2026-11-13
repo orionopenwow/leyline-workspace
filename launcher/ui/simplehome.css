@@ -2,15 +2,21 @@
    Built from the launcher's own pieces (.panel with its header strip, .card with its header strip, .btn, label.check),
    so every theme dresses it the same way as the other pages. */
 
-/* While Simple mode is on: only the Simple page's item, the switch, Settings and Help in the side menu; no play bar. */
+/* While Simple mode is on: only the Simple page's item, the switch, Settings and Help in the side menu; no play bar.
+   The Play fold goes; the Launcher fold shows its items without its header (always open while Simple mode is on). */
 html.ll-simple .side nav .nav[data-page]:not([data-page="simple"]),
 html.ll-simple .side nav .nav-discord,
 html.ll-simple .side .side-label,
 html.ll-simple .side .realm-rows,
 html.ll-simple .side .realm-add,
 html.ll-simple .side-foot .nav[data-page="agents"],
+html.ll-simple .side nav .nav-fold,
+html.ll-simple .side-foot .nav-fold-head,
 html.ll-simple .playbar { display: none !important; }
 html:not(.ll-simple) .side nav .nav[data-page="simple"] { display: none; }
+html.ll-simple .side-foot .nav-fold > .nav-fold-body { grid-template-rows: 1fr; visibility: visible; transition: none; }
+html.ll-simple .side-foot .nav-fold-inner { margin-left: 0; padding-left: 0; border-left: 0; box-shadow: none; }
+html.ll-simple .side-foot .nav-fold-inner .nav { padding-left: 11px; }
 
 #nav-simple-toggle[aria-pressed="true"] { color: var(--t-accent-strong); }
 

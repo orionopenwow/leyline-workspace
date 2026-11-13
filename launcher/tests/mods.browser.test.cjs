@@ -116,8 +116,8 @@ test('Sort menu: every sort asks the core and shows its order', async () => {
   assert.ok(await page.isVisible('#pane-discover'), "the old page id 'discover' opens Mods › Discover");
   assert.equal(await page.getAttribute('#tab-mods-discover', 'aria-selected'), 'true');
   const tabs = await page.$$eval('#cat-sort option', (b) => b.map((x) => x.textContent));
-  assert.deepEqual(tabs, ['Hot', 'Rising', 'Top rated', 'Most installed', 'This month', 'New', 'Updated']);
-  assert.equal(await page.inputValue('#cat-sort'), 'hot', 'Hot by default');
+  assert.deepEqual(tabs, ['Popular', 'Rising', 'Top rated', 'Most installed', 'This month', 'New', 'Recently updated', 'Name']);
+  assert.equal(await page.inputValue('#cat-sort'), 'hot', 'Popular (the hub\'s hot order) by default');
   assert.equal(await page.locator('#cat-chips, #cat-sorts, #cat-kind').count(), 0, 'no chips, no separate Kind menu');
   // "Only mods for this client" is on: Old Bars (1.12) is hidden from the 3.3.5a client; Addons shows the addons only
   assert.deepEqual(await names(page), ['Bravo', 'Alpha']);
@@ -217,7 +217,7 @@ test('a leyline://install link opens that project and installs nothing by itself
   await page.waitForFunction(() => /From the hub: Old Bars/.test(document.getElementById('cat-status').textContent));
   assert.ok(await page.isVisible('#pane-discover'));
   assert.equal(await page.getAttribute('#pane-discover', 'data-shelf'), 'addons', 'an addon opens on the Addons tab');
-  assert.equal(await page.isChecked('#cat-fit'), false, 'shown even though it is for another build');
+  assert.equal(await page.getAttribute('#dc-kbar .lk-chip[data-lk-filter="fit"]', 'aria-pressed'), 'false', 'shown even though it is for another build');
   assert.ok(await card(page, 'mod:old-bars').evaluate((n) => n.classList.contains('linked')));
   assert.deepEqual(await calls(page, 'mod_install'), [], 'nothing installed without a click');
   assert.ok(await card(page, 'mod:old-bars').locator('.acts .btn').isDisabled(), "a 1.12 mod can't go into the 3.3.5a client");
@@ -237,6 +237,7 @@ test('offline rankings: the catalog order, the tabs and chips still work; Count 
   assert.deepEqual(await names(page), ['Golf Cart', '<img src=x onerror="window.__pwned=1">']);
   await page.click('#dc-smart .chip-btn:has-text("Game modes")');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 1);
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.nav[data-page="settings"]');
   assert.equal(await page.isChecked('#set-count'), true);
   await page.click('#set-count');
@@ -300,7 +301,7 @@ test('pictures: the catalog field, the Workshop screenshot, the drawn tile on er
   assert.deepEqual(await calls(page, 'mod_install'), [{ client: 'c335a-1', project: 'mod:bravo' }]);
   assert.equal((await calls(page, 'open_url')).length, 1, 'INSTALL does not open the page');
   // the client toggle: off shows the 1.12 mod, with its warning tag and a disabled INSTALL
-  await page.click('#cat-fit');
+  await page.click('#dc-kbar .lk-chip[data-lk-filter="fit"]');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 3);
   assert.equal(await card(page, 'mod:old-bars').locator('.dc-tag').textContent(), 'Not for 3.3.5a');
   assert.ok(await card(page, 'mod:old-bars').locator('.acts .btn').isDisabled());

@@ -747,7 +747,9 @@
     PS.missing = !g.ok;
     PS.v = g.ok && g.v && typeof g.v === "object" ? g.v : null;
     // a refusal is said once (no reading again in a loop); picking the world again or the page again retries
-    PS.failed = !!g.e;
+    // an empty answer counts as a refusal too: otherwise the paint below would read again at once, forever
+    PS.failed = !!g.e || (g.ok && !PS.v);
+    if (!g.e && g.ok && !PS.v) PS.line = ["Your world's settings didn't load.", "bad"];
     if (g.e) PS.line = [coded(g.e) ? coded(g.e).text : oops(g.e, "Your world's settings didn't load."), "bad"];
     paintSetting();
   }

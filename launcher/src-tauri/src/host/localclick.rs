@@ -12,6 +12,10 @@
 //! name box focused, so the launcher types the name and Enter (made in the game, exactly as a player does), then
 //! Enter World. Windows only; everything waits on a milestone and gives up after a timeout, leaving the game as it
 //! is. What it did is in `<world>/logs/local-click.log`. The password is never logged.
+//!
+//! The sign-in cover (crate::cover, Mode::Single) follows the same milestones: [`drive`] tells it how far the
+//! sign-in is and how it ended; where Leyline's login screen code signs in instead (crate::hybrid), [`follow`] only
+//! reads the milestones for it, typing nothing.
 
 use crate::denclick::{self as dc, Act, Driver, Ev, Game, Key};
 use crate::host::engine as eng;
@@ -92,6 +96,73 @@ impl Seen {
     }
 }
 
+/// How far the sign-in is, for the cover (crate::cover::DenStage, the Den's milestones' order).
+pub fn stage(seen: &Seen) -> crate::cover::DenStage {
+    use crate::cover::DenStage;
+    if seen.in_world.is_some() {
+        DenStage::Entering
+    } else if seen.char_enum.is_some() {
+        DenStage::CharSelect
+    } else if seen.auth_ok.is_some() {
+        DenStage::Realm
+    } else {
+        DenStage::None
+    }
+}
+
+/// How a [`drive`] went for the cover: through (in the world, or at character select with no character and no name
+/// to make one: the player chose the game's own create screen), or not.
+pub fn went_through(outcome: &str, seen: &Seen, chars: u32, name: Option<&str>) -> bool {
+    outcome == "in the world" || (seen.char_enum.is_some() && chars == 0 && name.is_none())
+}
+
+/// [`follow`]: the longest it reads (ms); the cover has its own, shorter limit.
+pub const FOLLOW_MAX: u64 = 120_000;
+/// [`follow`] to character select: the list draws a moment after the world takes the session (ms).
+pub const SELECT_GRACE: u64 = 900;
+
+/// [`follow`]'s decision at one read: Some(true) through, Some(false) given up, None: read again.
+/// `to_world`: our login screen code enters a character (else it stops at character select).
+pub fn follow_done(seen: &Seen, to_world: bool, start: u64, now: u64) -> Option<bool> {
+    if seen.in_world.is_some() {
+        return Some(true);
+    }
+    if !to_world {
+        if let Some(t) = seen.char_enum {
+            if now.saturating_sub(t) >= SELECT_GRACE {
+                return Some(true);
+            }
+        }
+    }
+    (now.saturating_sub(start) > FOLLOW_MAX).then_some(false)
+}
+
+/// Where Leyline's login screen code signs in (crate::hybrid): nothing typed, the world's database read once a second
+/// for the sign-in cover only, until the character is in the world (or character select, `to_world` false), the game
+/// closes, or [`FOLLOW_MAX`].
+pub fn follow(p: &eng::Paths, account: &str, pid: u32, to_world: bool, cover: &crate::cover::Signals) {
+    let start = dc::now_ms();
+    let Ok(sql) = row_sql(account) else {
+        return cover.finish(false);
+    };
+    let mut game = dc::Process(pid);
+    let mut seen = Seen::default();
+    loop {
+        let now = dc::now_ms();
+        if !game.alive() {
+            return cover.finish(false);
+        }
+        if let Some(r) = eng::query(p, "acore_auth", &sql).ok().and_then(|o| parse_row(&o)) {
+            seen.take(&r, start, now);
+        }
+        cover.set_stage(stage(&seen));
+        if let Some(ok) = follow_done(&seen, to_world, start, now) {
+            return cover.finish(ok);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1_000));
+    }
+}
+
 /// What to do at character select with no character yet: type the name (once), or wait for the game to make it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Create {
@@ -127,8 +198,9 @@ pub const CREATE_RETRY: u64 = 10_000;
 pub const CREATE_MAX: u64 = 60_000;
 
 /// Runs until the character is in the world, the game closes, or a step times out. `name` is Quick start's name
-/// for a first entry (None when the login has characters).
-pub fn drive(p: &eng::Paths, account: &str, password: &str, name: Option<&str>, pid: u32) -> String {
+/// for a first entry (None when the login has characters). `cover`: the sign-in cover's signals (crate::cover),
+/// told how far it is, when the login went, and how it ended.
+pub fn drive(p: &eng::Paths, account: &str, password: &str, name: Option<&str>, pid: u32, cover: Option<&crate::cover::Signals>) -> String {
     let start = dc::now_ms();
     let sql = match row_sql(account) {
         Ok(s) => s,
@@ -139,13 +211,18 @@ pub fn drive(p: &eng::Paths, account: &str, password: &str, name: Option<&str>, 
     let mut seen = Seen::default();
     let mut typed_at: Option<u64> = None;
     let mut log: Vec<(u64, String)> = Vec::new();
+    let mut last = Row::default();
     let outcome = loop {
         let now = dc::now_ms();
         if !game.alive() {
             break "the game closed".to_string();
         }
         let r = eng::query(p, "acore_auth", &sql).ok().and_then(|o| parse_row(&o)).unwrap_or_default();
+        last = r;
         seen.take(&r, start, now);
+        if let Some(c) = cover {
+            c.set_stage(stage(&seen));
+        }
         match create_step(&seen, &r, name, typed_at, now) {
             Create::Wait => {
                 std::thread::sleep(std::time::Duration::from_millis(500));
@@ -165,6 +242,10 @@ pub fn drive(p: &eng::Paths, account: &str, password: &str, name: Option<&str>, 
             Act::Send(k) => {
                 if !game.send(k, password) {
                     log.push((now - start, "the keys didn't reach the game window".into()));
+                } else if k == Key::Password {
+                    if let Some(c) = cover {
+                        c.keys_sent();
+                    }
                 }
             }
             Act::Done => break "in the world".to_string(),
@@ -178,6 +259,9 @@ pub fn drive(p: &eng::Paths, account: &str, password: &str, name: Option<&str>, 
         text.push_str(&format!("{t:>7} ms  {a}\n"));
     }
     text.push_str(&format!("outcome: {outcome}\n"));
+    if let Some(c) = cover {
+        c.finish(went_through(&outcome, &seen, last.chars, name));
+    }
     let _ = std::fs::create_dir_all(&p.logs);
     let _ = std::fs::write(p.logs.join(LOG), text);
     outcome
@@ -231,6 +315,41 @@ pub fn last_outcome(logs: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_cover_follows_the_same_milestones() {
+        use crate::cover::DenStage;
+        let mut s = Seen::default();
+        assert_eq!(stage(&s), DenStage::None);
+        s.auth_ok = Some(5_000);
+        assert_eq!(stage(&s), DenStage::Realm);
+        s.char_enum = Some(7_000);
+        assert_eq!(stage(&s), DenStage::CharSelect);
+        s.in_world = Some(12_000);
+        assert_eq!(stage(&s), DenStage::Entering);
+        // how a drive went: in the world, or the player's own create screen (Skip: no name), else not
+        let at_select = Seen { auth_ok: Some(1), char_enum: Some(2), in_world: None };
+        assert!(went_through("in the world", &Seen::default(), 1, None));
+        assert!(went_through("no character yet and no name to make one", &at_select, 0, None));
+        assert!(!went_through("the create screen didn't make the character", &at_select, 0, Some("Thrall")));
+        assert!(!went_through("the game closed", &Seen::default(), 0, None));
+        assert!(!went_through("timed out", &at_select, 2, None));
+    }
+
+    #[test]
+    fn follow_stops_in_the_world_or_at_character_select() {
+        let start = 1_000;
+        let mut s = Seen::default();
+        assert_eq!(follow_done(&s, true, start, 5_000), None);
+        s.auth_ok = Some(6_000);
+        s.char_enum = Some(8_000);
+        assert_eq!(follow_done(&s, true, start, 20_000), None, "a character is being entered: on to the world");
+        assert_eq!(follow_done(&s, false, start, 8_500), None, "the list is drawing");
+        assert_eq!(follow_done(&s, false, start, 8_000 + SELECT_GRACE), Some(true), "character select was the goal");
+        s.in_world = Some(14_000);
+        assert_eq!(follow_done(&s, true, start, 14_000), Some(true));
+        assert_eq!(follow_done(&Seen::default(), true, start, start + FOLLOW_MAX + 1), Some(false), "gives up");
+    }
 
     #[test]
     fn the_query_takes_only_a_plain_login() {

@@ -113,6 +113,7 @@ test('with a game folder: three steps (no Find your game files); Skip and Esc bo
   await page.click('#gd-tour-skip');
   assert.equal(await page.locator('#gd-tour').count(), 0);
   // Help › Show me again, from another page: back on Home, Esc ends it
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.side .nav[data-page="help"]');
   assert.equal(await page.locator('#page-help #guide-again').count(), 1);
   assert.equal((await page.textContent('#page-help #guide-again')).trim(), 'Show me again');
@@ -136,6 +137,7 @@ test('seen before: no tour on start; an older core (no Settings::seen): no tour,
   await page.waitForTimeout(900);
   assert.equal(await page.locator('#gd-tour').count(), 0);
   assert.equal(await page.evaluate(() => window.LeylineGuide.moment('mod')), false);
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('.side .nav[data-page="help"]');
   await page.click('#guide-again');
   assert.equal(await page.locator('#gd-tour, #gd-toast').count(), 0);

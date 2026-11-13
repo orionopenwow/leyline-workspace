@@ -382,6 +382,10 @@ test('one Friends area on the Single player page: invite, friends on your world,
   assert.equal(await page.$$eval('#spf h2', (h) => h.length), 1, 'one heading for the area');
   assert.match(await page.textContent('#pf'), /Invite a friend to your world/);
   assert.match(await page.textContent('#pf'), /Their character stays on your world/);
+  // the friends list is on the list kit (listkit.js): its tabs keep the page's ids; a core without friends says so in it
+  await page.waitForSelector('#lf-tab-all', { state: 'attached' });
+  assert.deepEqual(await page.$$eval('#lf [role="tab"]', (b) => b.map((x) => x.id)), ['lf-tab-all', 'lf-tab-on', 'lf-tab-req', 'lf-tab-near', 'lf-tab-fav']);
+  assert.equal(await page.$$eval('#lf-list.lk', (l) => l.length), 1);
   // the i button over the Friends area explains it, with both docs
   await page.$eval('#spf', (e) => e.scrollIntoView({ block: 'start' }));
   await page.click('#ll-info');

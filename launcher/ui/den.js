@@ -19,6 +19,9 @@
 // Shape the ground (host/forge.rs, host/terrain.rs): Forge, the Den's terrain editor (a GPL program of its own), is
 // got once ("Get Forge": the GPL notice and the source link first, once), then "Open in Forge" starts it on the Den's
 // tile; when it closes the launcher takes what it saved as the Den's ground and says "Terrain updated".
+// Single player's page has Your Den too (owner 12 Nov: "add the den feature to the single player tab as well"): a
+// card (#spd) drawn here from the same state and the same functions as this page: what it is, Open my Den (go), Invite
+// a friend (inviteFriends), its state and the last thing said, and Stop sharing while it is on the network.
 // Loaded after app.js (its LOCAL, playLocal, clientForRealm, addGameFolder, readKit) and hostconsole.js.
 "use strict";
 (() => {
@@ -37,6 +40,7 @@
   const page = byId("page-den");
   const root = byId("yd");
   if (!page || !root) return;
+  const spd = byId("spd");   // Single player's Your Den card (paintCard)
   const BUILD = "3.3.5a";
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } },
     set: (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (_) { /* private window */ } } };
@@ -72,6 +76,7 @@
     status.textContent = text || "";
     if (ver) status.append(" ", mk("span", "rl-ver sm", ver));   // the version as a chip, never in the sentence
     status.dataset.kind = kind || "";
+    paintCard();
   }
 
   // ---------------------------------------------------------------- what this PC has
@@ -961,13 +966,70 @@
     }));
     grid.append(tile("Share on the Workshop", "Put a saved Den on the Workshop for anyone to add.", ws));
     root.append(grid);
+    paintCard();
+  }
+
+  // ---------------------------------------------------------------- Single player's Your Den card
+  // The same Den, from Single player's page: one click in (go: Den Lite started, the game signed in and taken into
+  // your Den behind Leyline's cover), Invite a friend (inviteFriends: the link copied; a Den not set up yet opens its
+  // steps on the Den page), its state, the last line said, and Stop sharing. Everything else is on the Den page.
+  function paintCard() {
+    if (!spd) return;
+    const [kind, line] = stateLine();
+    const head = mk("div", "spd-head");
+    const chip = mk("span", "yd-chip " + kind, line);
+    chip.id = "spd-state";
+    head.append(mk("h2", "", "Your Den"), chip);
+    // TODO(owner): the words
+    const lede = mk("p", "spd-lede", "Your own private room on this PC to build in, with your companion. One click takes you in, no internet needed, and a friend can join with your link.");
+    const acts = mk("div", "yd-row spd-acts");
+    const play = btn(busy ? "Opening…" : "Open my Den", "btn primary", () => go());
+    play.id = "spd-play";
+    play.disabled = busy;
+    const inv = btn("Invite a friend", "btn", () => {
+      if (where() === "new" && window.LeylineNav) window.LeylineNav.show("den");   // its one-time steps are there
+      inviteFriends();
+    });
+    inv.id = "spd-invite";
+    inv.disabled = busy;
+    inv.title = where() === "new" ? "Friends join your Den on a server: a one-time setup on this PC"
+      : "Copies a link for one friend: your Den goes on the Leyline network from this PC";
+    const more = btn("More on Your Den", "link-s", () => { if (window.LeylineNav) window.LeylineNav.show("den"); });
+    more.id = "spd-more";
+    more.title = "Saved Dens, packs, Shape the ground, your friends and the Workshop";
+    acts.append(play, inv, more);
+    const said = status.cloneNode(true);
+    said.id = "spd-status";
+    said.className = "status spd-status";
+    const parts = [head, lede, acts, said];
+    if (net && net.running) {
+      const nl = mk("div", "yd-row spd-net");
+      nl.id = "spd-net";
+      nl.append(mk("span", "yd-hint", net.connected ? `On the Leyline network, private: friends with your link can join${net.streams ? ` (${Math.ceil(net.streams / 2)} playing)` : ""}.`
+        : net.last_error ? `Not reaching the network yet: ${net.last_error}` : "Connecting to the Leyline network…"));
+      const sb = btn("Stop sharing", "btn small", stopSharing);
+      sb.id = "spd-net-stop";
+      nl.append(sb);
+      parts.push(nl);
+    }
+    spd.replaceChildren(...parts);
+  }
+  // read again when Single player's page opens (quietly: a Den that isn't answering keeps its last state)
+  async function loadCard() {
+    try { st = await call("den_state"); } catch (_) { /* as it was */ }
+    try { net = await call("den_net_state"); } catch (_) { /* as it was */ }
+    paint();
+    if (net && net.running) followNet();
   }
 
   // ---------------------------------------------------------------- the entries: the side menu, Home, and this page
-  document.addEventListener("leyline:page", (e) => { if (e.detail && e.detail.page === "den") load(); });
+  document.addEventListener("leyline:page", (e) => {
+    if (e.detail && e.detail.page === "den") load();
+    else if (e.detail && e.detail.page === "single" && spd) loadCard();
+  });
   const homeGo = byId("hm-den-go");
   if (homeGo) homeGo.addEventListener("click", () => { if (window.LeylineNav) window.LeylineNav.show("den"); go(); });
-  window.LeylineDen = { go, load, state: () => st, where, addCode, skyIsland };
+  window.LeylineDen = { go, load, state: () => st, where, addCode, skyIsland, invite: inviteFriends, card: paintCard };
   // Your Den's state read once at the start too (not only on its page): the play bar's PLAY and the realm picker go by it
   if (page.classList.contains("on")) load(); else { paint(); call("den_state").then((x) => { if (!st) { st = x; paint(); } }).catch(() => { /* asked again on go() */ }); }
 })();

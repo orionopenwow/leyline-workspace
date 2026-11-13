@@ -56,6 +56,7 @@ async function open(opts) {
 const calls = (page, cmd) => page.evaluate((c) => window.__calls.filter(([x]) => x === c).map(([, a]) => a), cmd);
 async function fromHelp(page, before) {
   if (before) await page.evaluate((p) => window.LeylineNav.show(p, true), before);
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('aside .side-foot .nav[data-page="help"]');
   await page.click('#bug-open');
   await page.waitForSelector('#bug-dlg[open]');
@@ -63,6 +64,7 @@ async function fromHelp(page, before) {
 
 test('signed out: Log in, or the website\'s form; no form and nothing sent', async () => {
   const { page, errors } = await open();
+  await page.evaluate(() => window.LeylineNav.fold('launcher', true));   // Settings, Agents and Help are in the Launcher fold
   await page.click('aside .side-foot .nav[data-page="help"]');
   assert.match(await page.textContent('#page-help'), /Found a bug\?.*Report a bug ›/s);
   await page.click('#bug-open');

@@ -932,3 +932,6 @@
 1363c scripts  Realm scripts: the in-game realm list's protocol v2 (tabs, search, players and bots)
 1363d foreverui  The browser game's add-on: realm list, companion window and the Leyline tab in the game's look
 1363e addons  The same add-on for desktop players
+1364a sp-playtest  Single player playtest of the held update (side menu folds, Your Den on Single player, the login cover over single player): a test only, nothing ships until you say ship
+1364b sp-playtest  Single player playtest of the held update with the new lists (Realms, Friends, Mods on one list style): a test only, nothing ships until you say ship
+1364c ship  Save as Orion and release the launcher: side menu with Play and Launcher folds, Your Den on the Single player page, the login cover over single player, Realms, Friends and Mods on one list style (search, filters, sort, favourites) (playtested on this PC: all passed)

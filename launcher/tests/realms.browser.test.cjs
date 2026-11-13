@@ -114,7 +114,10 @@ test('Realms page: two tabs, Official first; the slim line, one tag, players, Re
   const hue = (i) => cards.nth(i).locator('.rl-ic').evaluate((e) => e.style.getPropertyValue('--h'));
   assert.match(await hue(0), /^\d+$/);
   assert.notEqual(await hue(0), await hue(1), 'a hue from the name');
-  assert.equal(await cards.nth(1).locator('.rl-pop').textContent(), '30 / 100');
+  assert.equal(await cards.nth(1).locator('.rl-pop .state').textContent(), '30 / 100');
+  assert.equal(await cards.nth(1).locator('.rl-pop .rl-popl').textContent(), 'Medium · 40 bots', 'the population, as in the game\'s own list, and the bots');
+  assert.equal(await cards.nth(0).locator('.rl-pop .rl-popl').textContent(), 'Low');
+  assert.equal(await cards.nth(2).locator('.rl-popl').count(), 0, 'offline: no population');
   assert.equal(await cards.nth(1).locator('.rl-pop .state').getAttribute('title'), '30 of 100 playing · 40 bots');
   assert.equal(await cards.nth(1).locator('.rl-bar i').evaluate((e) => e.style.width), '30%', 'players fill the bar');
   assert.ok(await cards.nth(2).evaluate((e) => e.classList.contains('off') && getComputedStyle(e).opacity < 1), 'an offline realm is dimmed');
@@ -166,16 +169,26 @@ test('Realms page: PLAY starts exactly the picked client; one that cannot play t
 
 test('Realms tabs: arrow keys, Home / End, the choice remembered; storage off still works', async () => {
   const { page, errors } = await open(false);
+  // the in-game Realm Selection's tabs, in its order
+  assert.deepEqual(await page.$$eval('#rl-tabs [role="tab"]', (b) => b.map((x) => x.id)),
+    ['rl-tab-all', 'rl-tab-official', 'rl-tab-community', 'rl-tab-mine', 'rl-tab-friends', 'rl-tab-fav']);
+  assert.deepEqual(await page.$$eval('#rl-tabs [role="tab"]', (b) => b.map((x) => x.textContent)),
+    ['All', 'Official', 'Community', 'Single player & Den', "Friends' worlds", 'Favourites']);
   await page.focus('#rl-tab-official');
   await page.keyboard.press('ArrowRight');
   assert.equal(await page.getAttribute('#rl-tab-community', 'aria-selected'), 'true');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'rl-tab-community', 'focus moves with the tab');
   assert.equal(await page.getAttribute('#rl-tab-community', 'tabindex'), '0');
   assert.equal(await page.getAttribute('#rl-tab-official', 'tabindex'), '-1', 'one tab stop');
+  await page.keyboard.press('Home');
+  assert.equal(await page.getAttribute('#rl-tab-all', 'aria-selected'), 'true');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.getAttribute('#rl-tab-fav', 'aria-selected'), 'true', 'wraps around');
   await page.keyboard.press('ArrowRight');
-  assert.equal(await page.getAttribute('#rl-tab-official', 'aria-selected'), 'true', 'wraps around');
+  assert.equal(await page.getAttribute('#rl-tab-all', 'aria-selected'), 'true', 'and back');
   await page.keyboard.press('End');
-  assert.equal(await page.getAttribute('#rl-tab-community', 'aria-selected'), 'true');
+  assert.equal(await page.getAttribute('#rl-tab-fav', 'aria-selected'), 'true');
+  await page.click('#rl-tab-community');
   assert.equal(await page.evaluate(() => localStorage.getItem('leyline.realmsTab')), 'community');
   await page.reload();
   await page.click('.nav[data-page="realms"]');
@@ -420,4 +433,101 @@ test('Hero Key sign-in: hidden with the flag off; on: live community realms only
   assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'play_realm_herokey' && a.slug === 'c-bbbbbbbbbbbbbbbb')));
   assert.ok(!(await page.evaluate(() => JSON.stringify(localStorage))).includes('Q7W8'), 'never kept in the page');
   assert.deepEqual(errors, []);
+});
+
+// The list kit's Realms (listkit.js; the in-game Realm Selection's tabs, WrathUnleashedUI Leyline.lua): All with
+// group headers, Single player & Den, Friends' worlds from the friends' commands, Favourites kept across a reload and
+// in the play bar's realm list, the sort, the marked search match, and the keys.
+test('Realms on the list kit: All, Single player & Den, Friends\' worlds, Favourites, sort, keys', async () => {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.addInitScript(FAKE, false);
+  await page.addInitScript(() => {
+    const inner = window.__TAURI__.core.invoke;
+    window.__TAURI__.core.invoke = async (cmd, args) => {
+      if (cmd === 'friends_state') return { friends: [{ name: 'Bo', online: true, playing: 'Busy Den' }, { name: 'Kai', online: false, playing: null }] };
+      if (cmd === 'friend_worlds') return [{ realm_id: 'zzzzzzzzzzzzzzzz', name: "Bo's world", at: 1 }];
+      if (cmd === 'join_friend_again') { window.__calls.push([cmd, args]); return { guest: { auto: true } }; }
+      return inner(cmd, args);
+    };
+  });
+  await page.goto(INDEX);
+  await page.click('.nav[data-page="realms"]');
+  await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card').length > 0);
+  // All: every realm, this PC's own worlds, a friend's world; grouped, offline last
+  await page.click('#rl-tab-all');
+  await page.waitForFunction(() => document.querySelector('#rl-list [data-lk-key="f:zzzzzzzzzzzzzzzz"]'));
+  assert.deepEqual(await names(page), ['Wrath Unleashed', 'Picked', 'Busy Den', 'Your Den', 'Single player', "Bo's world", 'Asleep']);
+  assert.deepEqual(await page.$$eval('#rl-list .lk-group .lk-group-l', (g) => g.map((x) => x.textContent)), ['Online', 'On this PC', "Friends' worlds", 'Offline']);
+  assert.equal(await page.textContent('#rl-net'), '4 realms · 32 playing');
+  assert.equal(await page.getAttribute('#rl-list .lk-body', 'role'), 'grid');
+  assert.equal(await page.getAttribute('#rl-list .realm-card >> nth=0', 'role'), 'row');
+  // Busy Den: your friend on it
+  assert.equal(await page.textContent('#rl-list .realm-card[data-realm-id="bbbbbbbbbbbbbbbb"] .rl-friends'), 'Bo is here');
+  // Single player & Den
+  await page.click('#rl-tab-mine');
+  assert.deepEqual(await names(page), ['Your Den', 'Single player']);
+  assert.equal(await page.textContent('#rl-net'), 'Your own worlds, on this PC');
+  // Friends' worlds: the realm Bo is on, and Bo's world with Join again
+  await page.click('#rl-tab-friends');
+  assert.deepEqual(await names(page), ['Busy Den', "Bo's world"]);
+  await page.click('#rl-list .realm-card.rl-fw .rl-play');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'join_friend_again'));
+  assert.deepEqual(await page.evaluate(() => window.__calls.find(([c]) => c === 'join_friend_again')[1]), { client: 'c335a-1', realmId: 'zzzzzzzzzzzzzzzz' });
+  assert.match(await page.textContent('#rl-status'), /signs you in by itself/);
+  // Favourites: empty, then a star on Community
+  await page.click('#rl-tab-fav');
+  assert.match(await page.textContent('#rl-list .rl-empty'), /No favourites yet/);
+  await page.click('#rl-tab-community');
+  const star = '#rl-list .realm-card[data-realm-id="bbbbbbbbbbbbbbbb"] .lk-star';
+  assert.equal(await page.getAttribute(star, 'aria-pressed'), 'false');
+  assert.equal(await page.getAttribute(star, 'aria-label'), 'Add Busy Den to favourites');
+  await page.click(star);
+  assert.equal(await page.getAttribute(star, 'aria-pressed'), 'true');
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('leyline.list.realms.fav'))), ['r:bbbbbbbbbbbbbbbb']);
+  await page.click('#rl-tab-fav');
+  assert.deepEqual(await names(page), ['Busy Den']);
+  assert.equal(await page.textContent('#rl-net'), '1 favourite');
+  // the play bar's realm list has it under Favourites
+  await page.click('#pb-realm-btn');
+  const menu = await page.$$eval('#pb-rmenu > li', (l) => l.map((x) => x.textContent));
+  const at = menu.indexOf('Favourites');
+  assert.ok(at > 0, 'a Favourites head');
+  assert.match(menu[at + 1], /^BBusy Den/, 'its icon letter, then its name');
+  await page.keyboard.press('Escape');
+  // kept across a reload
+  await page.reload();
+  await page.click('.nav[data-page="realms"]');
+  await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card').length > 0);
+  assert.equal(await page.getAttribute('#rl-tab-fav', 'aria-selected'), 'true', 'the tab too');
+  assert.deepEqual(await names(page), ['Busy Den']);
+  // the sort: by name, by players; offline stays last whatever the sort
+  await page.click('#rl-tab-community');
+  await page.selectOption('#rl-kbar .lk-sort-s', 'name');
+  assert.deepEqual(await names(page), ['Busy Den', 'Picked', 'Asleep']);
+  await page.selectOption('#rl-kbar .lk-sort-s', 'players');
+  assert.deepEqual(await names(page), ['Busy Den', 'Picked', 'Asleep']);
+  await page.selectOption('#rl-kbar .lk-sort-s', '');
+  assert.deepEqual(await names(page), ['Picked', 'Busy Den', 'Asleep'], 'Suggested: the network order');
+  // the search marks the match and narrows the tabs' counts
+  await page.fill('#rl-q', 'busy');
+  assert.equal(await page.textContent('#rl-list .realm-card .name mark.lk-hl'), 'Busy');
+  assert.equal(await page.textContent('#rl-tab-community .lk-tab-n'), '1');
+  assert.equal(await page.textContent('#rl-kbar .lk-count'), 'Showing 1 of 3');
+  await page.fill('#rl-q', '');
+  // keys: / goes to the search; Down from the search to the first row, Down again, Enter plays that realm
+  await page.click('#rl-net');
+  await page.keyboard.press('/');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'rl-q');
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.lkKey), 'r:dddddddddddddddd');
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.lkKey), 'r:bbbbbbbbbbbbbbbb');
+  assert.equal(await page.getAttribute('#rl-list [data-lk-key="r:bbbbbbbbbbbbbbbb"]', 'aria-selected'), 'true');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play_realm'));
+  assert.deepEqual(await page.evaluate(() => window.__calls.filter(([c]) => c === 'play_realm').map(([, a]) => a)), [{ client: 'c335a-1', slug: 'c-bbbbbbbbbbbbbbbb' }]);
+  assert.deepEqual(errors, []);
+  await page.close();
 });

@@ -1,7 +1,9 @@
 // The sign-in cover's page (cover.html; src-tauri/src/cover.rs). It asks the core what to show a few times a second
-// (cover_state: { id, title, steps, step, shown }) and draws the heading and the steps: those before the current one
-// done, the current one lit. "Show the game" or Esc hides the cover at once (cover_hide, for this start only). The
-// core places and hides the window itself; this page only draws.
+// (cover_state: { id, title, steps, step, shown, error }) and draws the heading and the steps: those before the
+// current one done, the current one lit; `error` (the sign-in didn't get through) is one short line shown for a moment
+// before the core hides it. "Show the game" or Esc hides the cover at once (cover_hide, for this start only). The core
+// places and hides the window itself and lets clicks through to the game except on "Show the game": this page tells it
+// where that link is (cover_link, in CSS pixels with the page's scale) whenever that changes.
 (function () {
   'use strict';
   const POLL_MS = 250;
@@ -9,11 +11,36 @@
   const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
   let id = 0;
   let drawn = '';
+  let linked = '';
+  let failed = '';
+
+  // where "Show the game" is, for the core's click-through (said again when the start, the size or the scale change)
+  function sayLink() {
+    const r = $('cv-show').getBoundingClientRect();
+    const box = { id, x: r.left, y: r.top, w: r.width, h: r.height, scale: window.devicePixelRatio || 1 };
+    const key = JSON.stringify(box);
+    if (!id || key === linked) return;
+    linked = key;
+    Promise.resolve().then(() => invoke('cover_link', box)).catch(() => { linked = ''; });
+  }
+
+  function showError(text) {
+    const line = typeof text === 'string' ? text : '';
+    if (line === failed) return;
+    failed = line;
+    const e = $('cv-error');
+    e.textContent = line;
+    e.hidden = !line;
+    $('cv-note').hidden = !!line;
+    document.body.classList.toggle('cv-failed', !!line);
+  }
 
   function render(v) {
     if (!v || typeof v !== 'object') return;
     id = Number(v.id) || 0;
     if (typeof v.title === 'string' && v.title) $('cv-title').textContent = v.title;
+    showError(v.error);
+    sayLink();
     const steps = Array.isArray(v.steps) ? v.steps.map(String) : [];
     const step = Math.max(0, Math.min(Number(v.step) || 0, Math.max(steps.length - 1, 0)));
     const key = JSON.stringify([steps, step]);
@@ -42,6 +69,7 @@
   }
 
   $('cv-show').addEventListener('click', showGame);
+  window.addEventListener('resize', sayLink);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); showGame(); } });
   window.LeylineCover = { render };
   poll();

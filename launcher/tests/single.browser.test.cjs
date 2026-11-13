@@ -162,7 +162,8 @@ async function wording(page) {
 test('Single player is a top-level choice: the side menu (sword mark), Home and the realm picker all lead to its page', async () => {
   const { page, ctx, errors } = await open({});
   const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.dataset.page));
-  assert.deepEqual(nav.slice(0, 2), ['play', 'single'], 'right under Home');
+  assert.equal(nav[nav.indexOf('news') + 1], 'single', 'first in the Play fold, under the website\'s pages (owner 12 Nov)');
+  assert.equal(await page.getAttribute('#fold-play-head', 'aria-expanded'), 'true', 'the Play fold starts open');
   assert.equal((await page.textContent('.nav[data-page="single"]')).trim(), 'Single player');
   assert.ok(await page.$('.nav[data-page="single"] svg path'), 'the sword mark');
   // Home: its own row, like Your Den's

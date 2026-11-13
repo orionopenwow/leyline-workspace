@@ -51,7 +51,7 @@
   const words = (p) => [(p.tags || []).map((t) => SUB_NAME[t] || t).join(" "), (p.addons || []).join(" "), p.folder_name || ""].join(" ");
 
   function chip(label, on, click, title) {
-    const b = el("button", "chip-btn" + (on ? " on" : ""), label);
+    const b = el("button", "chip-btn lk-chip" + (on ? " on" : ""), label);
     b.type = "button";
     b.setAttribute("aria-pressed", on ? "true" : "false");
     if (title) b.title = title;

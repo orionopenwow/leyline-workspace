@@ -82,8 +82,21 @@ cover_start` / `cover_watch` / `cover_window`; the Windows calls are `cover::win
   no world connection for 8 s (the realm list waits for the player), Esc (seen with `GetAsyncKeyState`, as the game has
   the keyboard) or a click on "Show the game", a newer start, or the limit: 25 s from the window (Den 45 s). A guard
   hides it even if its thread panics. When it goes, the game window is brought to the front.
-- **Setting:** Settings › Playing › "Hide the sign-in behind Leyline's screen" (`settings.signin_cover`, on by default;
-  `set_signin_cover`). The headless runs (`play-test`, `den-play --test`) have no cover.
+- **Single player (12 Nov):** the same cover over this PC's own world (`cover::Mode::Single`, `app.rs world_play_now`):
+  steps Starting your world → Signing in → Entering the world. The milestones come from the world's database, as
+  `host/localclick.rs` reads them (`last_login`, `account.online`, a character `online`): `localclick::drive` (the keys
+  on a stock game) tells the cover how far it is and how it ended; where our login screen code signs in instead,
+  `localclick::follow` only reads them for the cover. It goes when the character is in the world (character select
+  when no character is entered), the limit is 60 s. Boss Rush has none.
+- **Clicks go through it (12 Nov):** `WS_EX_LAYERED | WS_EX_TRANSPARENT` (alpha 255) on top of the above, so a click
+  lands on the game, except while the pointer is on "Show the game": the page tells the core where that link is
+  (`cover_link`, CSS box × devicePixelRatio, padded 6 px), the core compares it with `GetCursorPos` every look
+  (`cover::hit`) and drops `WS_EX_TRANSPARENT` only then. Esc works anywhere.
+- **Not through:** when it was up and the sign-in didn't get through (the keys failed, the limit, the login screen
+  answered, the realm list), one short line says so for 2.4 s (`cover::end_line`) before it goes; Esc cuts it short.
+- **Setting:** Settings › Playing › "Hide the login behind Leyline's screen" (`settings.signin_cover`, on by default;
+  `set_signin_cover`): the official realm, Single player and Your Den. The headless runs (`play-test`, `den-play
+  --test`, `sp-test`) have no cover.
 - **Log:** `<launcher data>/signin-cover.log`: each step and why it went, in ms from the start. Never a password.
 - **Only a real Windows run proves:** the window really doesn't take focus (WebView2 inside a `WS_EX_NOACTIVATE`
   window), it lines up on a scaled screen, the world port shows up in the connection table at character select, and

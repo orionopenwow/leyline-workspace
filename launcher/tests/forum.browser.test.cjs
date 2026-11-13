@@ -93,7 +93,7 @@ test('the Forum item: where Community was, with its icon; the categories and the
   assert.equal(await nav.count(), 1);
   assert.equal((await nav.textContent()).trim(), 'Forum');
   assert.equal(await nav.locator('svg path').count(), 2, 'the two speech bubbles');
-  assert.deepEqual(await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.dataset.page)), ['play', 'single', 'realms', 'modes', 'mods', 'host', 'forum', 'news']);
+  assert.deepEqual(await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.dataset.page)), ['play', 'realms', 'mods', 'host', 'forum', 'news', 'single', 'modes']);   // Single player and Modes in the Play fold (open)
   await nav.click();
   await page.waitForSelector('#fm-view .fm-cats');
   assert.deepEqual(await page.$$eval('#fm-view .fm-cats .fm-row-t > b', (b) => b.map((x) => x.textContent)), ['Share your realm', 'Mods & addons', 'Announcements']);

@@ -121,7 +121,7 @@ test('typing a search opens the full list with the words; ‹ Simple goes back',
   await page.close();
 });
 
-test('full view: Mods has its categories as chips, Addons the marketplace kinds; Sort waits under More filters', async () => {
+test('full view: Mods has its categories as chips, Addons the marketplace kinds; Sort and the count in the list kit\'s bar', async () => {
   const { page, errors } = await open();
   await page.click('#dc-rows .dc-srow[data-row="game"] .dc-srow-h .btn');
   await page.waitForFunction(() => document.getElementById('pane-discover').dataset.view === 'all');
@@ -132,7 +132,9 @@ test('full view: Mods has its categories as chips, Addons the marketplace kinds;
   await shot(page, 'launcher-mods-game-modes');
   await page.click('#dc-smart .chip-btn:text-is("All mods")');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 2);
-  assert.equal(await page.isVisible('#cat-sort'), false, 'Sort is under More filters');
+  assert.equal(await page.isVisible('#cat-sort'), true, 'Sort is in the list kit\'s bar (app.js catListMake)');
+  assert.equal(await page.textContent('#dc-kbar .lk-count'), '2 mods');
+  assert.equal(await page.isVisible('#dc-more'), false, 'no More kinds on Mods: every category fits the row');
   await tabTo(page, 'addons');
   assert.deepEqual(await page.$$eval('#dc-smart .chip-btn', (b) => b.map((x) => x.textContent)),
     ['All addons', 'Unit frames', 'Nameplates', 'Meters', 'Bags', 'Works on Wrath Unleashed']);
@@ -140,7 +142,7 @@ test('full view: Mods has its categories as chips, Addons the marketplace kinds;
   await page.click('#dc-smart .chip-btn:text-is("Bags")');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 1);
   assert.deepEqual(await names(page), ['Bagger']);
-  await page.click('#dc-more summary');
+  assert.equal(await page.textContent('#dc-kbar .lk-count'), '1 of 5 addons');
   await shot(page, 'launcher-more-filters');
   assert.equal(await page.isVisible('#cat-sort'), true);
   assert.equal(await page.locator('#cat-cat, #mk-bar').count(), 0, 'no Show menu, no second row of kinds');

@@ -1,7 +1,10 @@
 //! `leyline://` links: a hub page's "Install with Leyline" button opens `leyline://install/<catalog id>`.
 //!
 //! The scheme is registered by the installer (tauri.conf.json `plugins.deep-link.desktop.schemes`). On Windows and
-//! Linux the OS starts Leyline with the link as an argument; `from_args` finds it. A link never installs anything
+//! Linux the OS starts Leyline with the link as an argument; `from_args` finds it. When Leyline is already open, the
+//! single-instance plugin hands the new start's arguments to the open window instead of opening a second launcher
+//! (app.rs `run`), and on macOS every link arrives through the deep-link plugin's `on_open_url` (`from_urls`). Either
+//! way the link waits in one slot (`Inbox`) and the UI is told to take it (the `deep-link` event, ui/app.js). A link never installs anything
 //! by itself: the UI shows the project and the player clicks INSTALL (a web page can open a link, so the click is
 //! the consent). Only `install/<catalog id>`, `realm/<realm id or official>`, `host?<choices>` and `join?link=<invite>` are understood;
 //! anything else is ignored.
@@ -225,9 +228,79 @@ pub fn from_args<I: IntoIterator<Item = String>>(args: I) -> Option<Link> {
     args.into_iter().skip(1).take(8).find_map(|a| parse(&a))
 }
 
+/// The first `leyline://` link among the URLs the deep-link plugin hands over (macOS, and a link opened while Leyline
+/// runs).
+pub fn from_urls<I: IntoIterator<Item = S>, S: AsRef<str>>(urls: I) -> Option<Link> {
+    urls.into_iter().take(8).find_map(|u| parse(u.as_ref()))
+}
+
+/// How long the same link counts as one click: on Windows and Linux one click can reach the open launcher twice (the
+/// single-instance plugin's arguments and the deep-link plugin's event).
+pub const SAME_LINK_MS: u64 = 3_000;
+
+/// The one link waiting for the UI, and the last one taken in (so a double delivery shows once).
+#[derive(Debug, Default)]
+pub struct Inbox {
+    pub waiting: Option<Link>,
+    last: Option<(Link, u64)>,
+}
+
+impl Inbox {
+    pub fn new(start: Option<Link>) -> Self {
+        Inbox { waiting: start, last: None }
+    }
+    /// A link arrived at `now_ms`: true when it is new (the UI should be told), false for the same link again within
+    /// `SAME_LINK_MS`. A newer link replaces one the UI has not taken yet.
+    pub fn put(&mut self, link: Link, now_ms: u64) -> bool {
+        if let Some((l, t)) = &self.last {
+            if *l == link && now_ms.saturating_sub(*t) < SAME_LINK_MS {
+                return false;
+            }
+        }
+        self.last = Some((link.clone(), now_ms));
+        self.waiting = Some(link);
+        true
+    }
+    pub fn take(&mut self) -> Option<Link> {
+        self.waiting.take()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_link_reaching_the_open_launcher() {
+        // the second start's arguments (Windows, Linux), as the single-instance plugin passes them
+        let argv = ["C:\\Leyline\\leyline.exe".to_string(), "leyline://realm/official".to_string()];
+        assert_eq!(from_args(argv), Some(Link::Realm("official".into())));
+        // the deep-link plugin's URLs (macOS)
+        assert_eq!(from_urls(["leyline://install/mod%3Apings"]), Some(Link::Install("mod:pings".into())));
+        assert_eq!(from_urls(vec!["https://evil.example.com/".to_string(), "leyline://den/abcdefghij".into()]),
+            Some(Link::Den("abcdefghij".into())));
+        assert_eq!(from_urls(["leyline://run/x"]), None);
+        assert_eq!(from_urls(Vec::<String>::new()), None);
+    }
+
+    #[test]
+    fn the_inbox_shows_one_click_once() {
+        let a = Link::Realm("official".into());
+        let b = Link::Install("mod:pings".into());
+        let mut i = Inbox::new(None);
+        assert_eq!(i.take(), None);
+        assert!(i.put(a.clone(), 10_000));
+        assert!(!i.put(a.clone(), 10_500), "the same click delivered twice");
+        assert_eq!(i.take(), Some(a.clone()));
+        assert_eq!(i.take(), None, "taken once");
+        assert!(!i.put(a.clone(), 11_000), "still the same click");
+        assert_eq!(i.take(), None);
+        assert!(i.put(a.clone(), 10_000 + SAME_LINK_MS), "clicked again later");
+        assert!(i.put(b.clone(), 13_100), "a different link at once");
+        assert_eq!(i.take(), Some(b), "the newer link wins");
+        let mut s = Inbox::new(Some(a.clone()));
+        assert_eq!(s.take(), Some(a), "the link Leyline started with");
+    }
 
     #[test]
     fn parses_install_links() {

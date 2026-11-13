@@ -2227,12 +2227,7 @@ pub fn hero_login(p: &Paths, hero: &str) -> Result<String, String> {
     if !s.account_made {
         return Err(tag("login", format!("Set {} up first.", p.kind.title())));
     }
-    let pass = secret(12).map_err(|e| tag("other", e))?;
-    let mut salt = [0u8; 32];
-    use ring::rand::SecureRandom;
-    ring::rand::SystemRandom::new().fill(&mut salt).map_err(|_| tag("other", "This PC has no random source."))?;
-    sql(p, "acore_auth", &format!("{}{}", account_sql(hero, &pass, &salt)?, realm_sql_named(p.kind.realm_name())))
-        .map_err(|e| tag("login", format!("Your Hero Key's login couldn't be made in {} ({e}).", p.kind.title())))?;
+    let pass = login_password(p, hero)?;
     let hero = hero.to_ascii_uppercase();
     if !s.hero_accounts.contains(&hero) {
         s.hero_accounts.push(hero.clone());
@@ -2240,7 +2235,7 @@ pub fn hero_login(p: &Paths, hero: &str) -> Result<String, String> {
     if s.hero_moved_to.is_empty() {
         let mine = chars_of(p, &s.account).map_err(|e| tag("db", e))?;
         if !mine.is_empty() {
-            backup(p).map_err(|e| tag("db", format!("Your characters weren't moved to your Hero Key because the back-up before it failed ({e}).")))?;
+            backup_why(p, "before moving characters to your Hero Key").map_err(|e| tag("db", format!("Your characters weren't moved to your Hero Key because the back-up before it failed ({e}).")))?;
             sql(p, "acore_characters", &move_sql(&s.account, &hero)?).map_err(|e| tag("db", format!("Your characters couldn't be moved to your Hero Key ({e}).")))?;
             setup_log(p, &format!("{} characters moved to this PC's Hero Key login (a back-up was taken first)", mine.len()));
         }
@@ -2248,6 +2243,100 @@ pub fn hero_login(p: &Paths, hero: &str) -> Result<String, String> {
     }
     save_state(p, &s).map_err(|e| tag("disk", e))?;
     Ok(pass)
+}
+
+/// A fresh password for one of the player's logins in this world (made when it isn't there), for one Play only
+/// (returned, never stored or logged); the realm row pointed back at this PC. Local SQL only: no network.
+pub fn login_password(p: &Paths, user: &str) -> Result<String, String> {
+    use crate::host::oneclick::tag;
+    let pass = secret(12).map_err(|e| tag("other", e))?;
+    let mut salt = [0u8; 32];
+    use ring::rand::SecureRandom;
+    ring::rand::SystemRandom::new().fill(&mut salt).map_err(|_| tag("other", "This PC has no random source."))?;
+    sql(p, "acore_auth", &format!("{}{}", account_sql(user, &pass, &salt)?, realm_sql_named(p.kind.realm_name())))
+        .map_err(|e| tag("login", format!("Your login couldn't be set up in {} ({e}).", p.kind.title())))?;
+    Ok(pass)
+}
+
+/// The player's own logins in this world, in the order Play falls back to them: the Hero Key login the characters
+/// first moved to, the world's own login, then any other Hero Key login that played here on this PC.
+pub fn own_logins(s: &State) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    for u in std::iter::once(&s.hero_moved_to).chain(std::iter::once(&s.account)).chain(s.hero_accounts.iter()) {
+        let u = u.to_ascii_uppercase();
+        if !u.is_empty() && !v.contains(&u) {
+            v.push(u);
+        }
+    }
+    v
+}
+
+/// Which login a Play goes in on (owner: characters never "vanish" with the sign-in): the one holding `pick` when a
+/// character is named; else `want` (the signed-in Hero Key's, or the world's own) when it has characters here; else
+/// the first of the player's logins that has any (`logins`: each with its characters' names, in [`own_logins`]
+/// order); else `want` (a new world: Quick start makes the first character there).
+pub fn pick_login(want: &str, pick: Option<&str>, logins: &[(String, Vec<String>)]) -> String {
+    if let Some(n) = pick {
+        if let Some((u, _)) = logins.iter().find(|(_, c)| c.iter().any(|x| x.eq_ignore_ascii_case(n))) {
+            return u.clone();
+        }
+    }
+    if logins.iter().any(|(u, c)| u.eq_ignore_ascii_case(want) && !c.is_empty()) {
+        return want.to_string();
+    }
+    logins.iter().find(|(_, c)| !c.is_empty()).map(|(u, _)| u.clone()).unwrap_or_else(|| want.to_string())
+}
+
+/// `want` and the player's other logins here, each with its characters' names (the world must be running).
+pub fn logins_with_chars(p: &Paths, s: &State, want: &str) -> Result<Vec<(String, Vec<String>)>, String> {
+    let mut all = vec![want.to_ascii_uppercase()];
+    all.extend(own_logins(s).into_iter().filter(|u| !u.eq_ignore_ascii_case(want)));
+    all.into_iter().map(|u| chars_of(p, &u).map(|c| (u, c.into_iter().map(|x| x.name).collect()))).collect()
+}
+
+/// Move every one of the player's characters in this world onto one login (`to`: the signed-in Hero Key's login,
+/// or the world's own when signed out), inside a back-up taken first (no back-up, no move). Refused while one of them
+/// is in the game. Nothing is deleted. How many moved.
+pub fn gather_chars(p: &Paths, to: &str) -> Result<usize, String> {
+    use crate::host::oneclick::tag;
+    let mut s = load_state(p);
+    let to = to.to_ascii_uppercase();
+    let from: Vec<String> = own_logins(&s).into_iter().filter(|u| *u != to).collect();
+    let mut have: Vec<(String, usize)> = Vec::new();
+    for u in &from {
+        let n = chars_of(p, u).map_err(|e| tag("db", e))?.len();
+        if n > 0 {
+            have.push((u.clone(), n));
+        }
+    }
+    if have.is_empty() {
+        return Ok(0);
+    }
+    let names: Vec<&str> = have.iter().map(|(u, _)| u.as_str()).collect();
+    let list: Vec<String> = names.iter().map(|u| format!("'{u}'")).collect();
+    if !names.iter().all(|u| (3..=16).contains(&u.len()) && u.bytes().all(|b| b.is_ascii_alphanumeric())) {
+        return Err(tag("other", "That login doesn't look right."));
+    }
+    let online = query(p, "acore_characters", &format!("SELECT COUNT(*) FROM characters c JOIN acore_auth.account a ON a.id = c.account WHERE c.online <> 0 AND a.username IN ({})", list.join(", ")))
+        .map_err(|e| tag("db", e))?;
+    if online.trim() != "0" {
+        return Err(tag("other", "One of your characters is in the game: log out to character select first, then try again."));
+    }
+    backup_why(p, "before moving characters").map_err(|e| tag("db", format!("Nothing was moved: the back-up before it didn't work ({e}).")))?;
+    let mut n = 0;
+    for (u, c) in &have {
+        sql(p, "acore_characters", &move_sql(u, &to)?).map_err(|e| tag("db", format!("Your characters couldn't be moved ({e}).")))?;
+        n += c;
+    }
+    if to.starts_with("HK") {
+        s.hero_moved_to = to.clone();
+        if !s.hero_accounts.contains(&to) {
+            s.hero_accounts.push(to.clone());
+        }
+    }
+    save_state(p, &s).map_err(|e| tag("disk", e))?;
+    setup_log(p, &format!("{n} characters moved onto one login (a back-up was taken first)"));
+    Ok(n)
 }
 
 /// Friends playing in this world now: online characters on friends' logins (one-time `G` + 9, worldshare::new_guest,
@@ -3323,5 +3412,25 @@ mod tests {
         assert!(newest_backup_at(&p).is_some());
         // a name that isn't one of them is refused, nothing touched
         assert!(restore(&p, "../state/state.json").unwrap_err().contains("isn't there"));
+    }
+
+    #[test]
+    fn play_goes_to_the_login_that_holds_the_characters() {
+        let s = State { account: "SOLO".into(), hero_moved_to: "HKAAAAAAAAAAAAAA".into(), hero_accounts: vec!["HKAAAAAAAAAAAAAA".into(), "HKBBBBBBBBBBBBBB".into()], ..Default::default() };
+        assert_eq!(own_logins(&s), vec!["HKAAAAAAAAAAAAAA", "SOLO", "HKBBBBBBBBBBBBBB"]);
+        let l = |a: &[(&str, &[&str])]| a.iter().map(|(u, c)| (u.to_string(), c.iter().map(|x| x.to_string()).collect::<Vec<_>>())).collect::<Vec<_>>();
+        // signed out after the first Hero Key Play: the world's own login is empty, the characters are on the HK login
+        let logins = l(&[("SOLO", &[]), ("HKAAAAAAAAAAAAAA", &["Thrall"]), ("HKBBBBBBBBBBBBBB", &[])]);
+        assert_eq!(pick_login("SOLO", None, &logins), "HKAAAAAAAAAAAAAA");
+        // another Hero Key signed in on this PC: the same
+        let logins = l(&[("HKBBBBBBBBBBBBBB", &[]), ("HKAAAAAAAAAAAAAA", &["Thrall"]), ("SOLO", &[])]);
+        assert_eq!(pick_login("HKBBBBBBBBBBBBBB", None, &logins), "HKAAAAAAAAAAAAAA");
+        // the asked-for login has characters: it is used
+        let logins = l(&[("SOLO", &["Jaina"]), ("HKAAAAAAAAAAAAAA", &["Thrall"])]);
+        assert_eq!(pick_login("SOLO", None, &logins), "SOLO");
+        // a picked character: its own login, wherever it is
+        assert_eq!(pick_login("SOLO", Some("thrall"), &logins), "HKAAAAAAAAAAAAAA");
+        // a new world: nobody has any, Quick start goes on the asked-for login
+        assert_eq!(pick_login("SOLO", None, &l(&[("SOLO", &[]), ("HKAAAAAAAAAAAAAA", &[])])), "SOLO");
     }
 }

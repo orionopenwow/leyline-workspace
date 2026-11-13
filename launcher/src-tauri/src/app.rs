@@ -5946,7 +5946,7 @@ pub fn bossrush_play_test_cli(cli: crate::playtest::Cli) -> i32 {
         mods_lock: Arc::new(Mutex::new(())),
         games: Mutex::new(Vec::new()),
         upd: Mutex::new(UpdState::default()),
-        deep_link: Mutex::new(None),
+        deep_link: Mutex::new(crate::deeplink::Inbox::default()),
     };
     let p = bossrush_paths();
     // 1. the game folder

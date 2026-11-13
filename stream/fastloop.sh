@@ -71,6 +71,9 @@ had_survivors=""
 if [ -f "$WU/portal/survivors.py" ]; then cp -p "$WU/portal/survivors.py" "$BK/survivors.py"; had_survivors=1; fi
 # the showcase pages and Leyline on your phone (site_pages.py, mobile_page.py)
 for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
+# Leyline weekly (weekly.py + weekly.json), Den of the week, the den market, game modes and the brand file reader
+# (audit 12 Nov: the portal loads them but no deploy shipped them)
+for f in weekly.py weekly.json denweek.py denmarket.py gamemods.py brandfile.py; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_profiles=""
 if [ -f "$WU/portal/profiles.py" ]; then cp -p "$WU/portal/profiles.py" "$BK/profiles.py"; had_profiles=1; fi
 had_herokeys=""
@@ -130,6 +133,7 @@ put_back() {
   if [ -n "$had_boards" ]; then cp -p "$BK/boards.py" "$WU/portal/boards.py"; else rm -f "$WU/portal/boards.py"; fi
   if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
   for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
+  for f in weekly.py weekly.json denweek.py denmarket.py gamemods.py brandfile.py; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
@@ -266,6 +270,16 @@ if [ -f survivors.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.ar
 # the showcase pages (/wrath/guides, /wrath/press, /wrath/modes/<way>), Leyline on your phone (/wrath/mobile) and
 # Leyline Solo (/wrath/solo; its download shows only with WU_SOLO_RELEASED=1 in the portal's environment): optional
 for f in site_pages.py mobile_page.py solo_page.py phonelab.py; do
+  if [ -f "$f" ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$f" && install -m 644 "$f" "$WU/portal/$f"; fi
+done
+# Leyline weekly ("This week" on the front page and in the launcher's home.json): weekly.py and its picks, always as a pair
+if [ -f weekly.py ] && [ -f weekly.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' weekly.py weekly.json \
+    && install -m 644 weekly.py weekly.json "$WU/portal/"
+fi
+# Den of the week (denweek.py), the den market (/wrath/dens: denmarket.py, off until WU_DENS), game modes in Mods and the
+# realm lists (gamemods.py) and the fork brand file reader (brandfile.py, idle unless WU_BRAND_FILE): each optional
+for f in denweek.py denmarket.py gamemods.py brandfile.py; do
   if [ -f "$f" ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$f" && install -m 644 "$f" "$WU/portal/$f"; fi
 done
 # Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar): optional; its store is

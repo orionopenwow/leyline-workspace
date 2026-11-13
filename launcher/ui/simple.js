@@ -146,7 +146,7 @@
   }
 
   const chip = (label, on, click, cls, title) => {
-    const b = el("button", "chip-btn" + (on ? " on" : "") + (cls ? " " + cls : ""), label);
+    const b = el("button", "chip-btn lk-chip" + (on ? " on" : "") + (cls ? " " + cls : ""), label);
     b.type = "button";
     b.setAttribute("aria-pressed", on ? "true" : "false");
     if (title) b.title = title;
@@ -183,11 +183,11 @@
       }
       box.replaceChildren(...kids);
     }
-    // More filters opens by itself when something inside it is on (a sort, the client filter off)
+    // More kinds: only when the addon kinds don't all fit the row; it opens by itself when one inside it is on (the
+    // rest of the list's chips, the Sort menu and the count are the list kit's, app.js catListMake)
     const more = $("dc-more");
-    const mk = window.LeylineMarket ? window.LeylineMarket.state : { sub: "" };
-    const inside = (catFilter.sort && catFilter.sort !== "hot") || ($("cat-fit") && !$("cat-fit").checked)
-      || (sh === "addons" && mk.sub && !!(rest && rest.querySelector(".chip-btn.on")));
+    if (more) more.hidden = !(sh === "addons" && rest && !rest.hidden);
+    const inside = sh === "addons" && !!(rest && rest.querySelector(".chip-btn.on"));
     if (more && inside && !more.open) more.open = true;
   }
 

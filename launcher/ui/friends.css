@@ -9,14 +9,30 @@
 .lf-code { user-select: all; word-break: break-all; font-size: .85em; padding: 4px 6px; border-radius: 4px; background: var(--chip, rgba(127, 127, 127, .12)); }
 .lf-name { font-weight: 600; }
 .lf-sub { opacity: .75; font-size: .9em; }
-.lf-req .lf-sub, .lf-out .lf-sub { flex: 1; }
-.lf-near-row .lf-name { flex: 1; }
-.lf-friend { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line, rgba(127, 127, 127, .15)); }
-.lf-friend:first-of-type { border-top: 0; }
+/* the list (on the list kit: listkit.css draws the bar, tabs, groups, stars and empty states) */
+.lf-kit { gap: 6px; }
+.lf-kit .lk-body { gap: 4px; }
+.lf-friend, .lf-kit .lf-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-height: 44px; padding: 6px 8px;
+  border-radius: var(--t-radius-xs, 6px); border: var(--t-border-w, 1px) solid transparent;
+}
+.lf-friend:hover, .lf-kit .lf-row:hover { background: color-mix(in srgb, var(--t-text, #888) 5%, transparent); }
+.lf-friend[aria-selected="true"], .lf-kit .lf-row[aria-selected="true"] { background: var(--t-accent-soft, rgba(127, 127, 127, .12)); border-color: color-mix(in srgb, var(--t-accent, #888) 35%, transparent); }
+.lf-kit .lf-req { box-shadow: inset 3px 0 0 var(--t-accent, #3fb950); }
 .lf-dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(127, 127, 127, .5); flex: none; }
-.lf-friend.on .lf-dot { background: var(--ok, #3fb950); }
+.lf-friend.on .lf-dot { background: var(--ok, var(--t-ok, #3fb950)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-ok, #3fb950) 22%, transparent); }
 .lf-who { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.lf-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.lf-who .lf-name, .lf-who .lf-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lf-playing { color: var(--t-accent-strong, inherit); font-weight: 600; }
+.lf-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.lf-world { width: auto; min-width: 0; field-sizing: content; }
+.lf-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px; border-radius: 6px; background: var(--chip, rgba(127, 127, 127, .1)); box-shadow: inset 3px 0 0 var(--t-bad, #e5534b); }
+.lf-confirm p { margin: 0; font-size: 12.5px; }
+.lf-kit .lf-empty { opacity: 1; font-size: 13px; }
+.lf-kit.lf-none .lk-bar { display: none; }
+.lf-kit .lk-tab-b[hidden] { display: none; }   /* Requests and Near you, while they hold nobody */   /* nothing to search or sort before the first friend */
+html.phone .lf-friend, html.phone .lf-kit .lf-row { flex-wrap: wrap; }
+html.phone .lf-acts { width: 100%; justify-content: flex-start; }
 .lf-empty, .lf-note { opacity: .75; font-size: .9em; margin: 0; }
 .lf-profile summary { cursor: pointer; font-weight: 600; }
 .lf-field { display: flex; align-items: center; gap: 8px; }
@@ -32,8 +48,12 @@
 .spf > [hidden] { display: none; }
 .wf { display: grid; gap: 8px; }
 .wf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.wf-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.wf-kit { gap: 8px; }   /* #wf-list and #fw-list: the list kit (listkit.js) */
+.wf-kit .lk-body { gap: 6px; }
+.wf-kit.wf-none .lk-bar { display: none; }   /* nothing to search before the first friend */
 .wf-friend { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--line, rgba(127, 127, 127, .25)); border-radius: 8px; }
+.wf-friend[aria-selected="true"] { border-color: color-mix(in srgb, var(--t-accent, #888) 45%, transparent); background: var(--t-accent-soft, transparent); }
+.wf-note:empty { display: none; }
 .wf-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .wf-name { font-weight: 600; }
 .wf-sub { font-size: 12px; color: var(--t-muted); }

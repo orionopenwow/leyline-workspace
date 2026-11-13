@@ -69,6 +69,7 @@ const FAKE = ({ catalog, signed }) => {
       case 'addons_status': return { pack: { version: '1', addons: [] }, from_cache: false, error: null, prefs: { auto_update: true, dont_ask: false },
         clients: [{ client: 'c1', installed: true, update: false, missing: [] }] };
       case 'addons_should_offer': return false;
+      case 'world_settings_get': throw 'unknown world_settings_get';   // a null here keeps oneclick.js reading again
       default: return null;
     }
   } } };
@@ -83,6 +84,7 @@ async function open(opts = {}) {
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.addInitScript(FAKE, Object.assign({ catalog: CATALOG, signed: true }, opts));
   await page.addInitScript(([ok, bad]) => { window.__ok = ok; window.__bad = bad; }, [CHECK_OK, CHECK_BAD]);
+  await page.route(/^https?:\/\//, (r) => r.abort());   // no network in a test: a hung request held the page's load
   await page.goto(INDEX);
   // signed out, the sign-in screen (gate.js, gate.browser.test.cjs) covers the launcher: these tests are the launcher
   // behind it, as after its Continue without signing in

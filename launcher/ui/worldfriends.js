@@ -7,6 +7,8 @@
 //     plain words, on the row itself);
 //   * #fw, the friend's side: the friends' worlds this PC joined, with Join again (no new link: this PC's own key
 //     proves it's you) and Forget.
+// Both lists are on the list kit (listkit.js, docs/LAUNCHER-LISTS.md): a search, #wf's status filter (Invited / Can
+// come back / Needs a new invite), sort, the kit's keys (Enter on a world: Join again) and its empty / loading states.
 // A core without these commands (an older Leyline) hides both. Text only (textContent).
 "use strict";
 (() => {
@@ -85,72 +87,105 @@
     return ["Needs a new invite", "warn"];
   }
 
-  function paintHost() {
-    const root = byId("wf");
-    if (!root) return;
-    root.hidden = H.gone;
-    if (H.gone) { root.replaceChildren(); return; }
+  // The host's list, on the list kit (listkit.js, docs/LAUNCHER-LISTS.md): search (names and characters), a status
+  // filter (Invited / Can come back / Needs a new invite), sort by name or last seen, the kit's keys. Built once; each
+  // read repaints it in place (the scroll, the focus and an open question on a row stay).
+  const STATES = [["invited", "Invited"], ["back", "Can come back"], ["new", "Needs a new invite"]];
+  const stateOf = (f) => (f.trusted ? "back" : f.enabled ? "invited" : "new");
+  const HK = { list: null, sel: null, note: null, line: null };
+  function hostRow(f, ctx) {
+    const li = mk("div", "wf-friend");
+    li.dataset.user = f.user;
+    const top = mk("div", "wf-top");
+    const n = mk("span", "wf-name");
+    n.append(ctx.hl(who(f)));
+    const [ct, ck] = stateChip(f);
+    const chip = mk("span", "sp-dock wf-state " + ck, ct);
+    top.append(n, chip);
+    if (f.on_list) top.append(mk("span", "wf-sub", f.online ? "On your friends list, online" : "On your friends list"));
+    else if (f.seen) top.append(mk("span", "wf-sub", `Last here ${ago(f.seen)}`));
+    const sub = mk("p", "wf-chars");
+    sub.append(ctx.hl(charsText(f)));
+    const acts = mk("div", "wf-acts");
+    const off = H.busy === f.user;
+    const trust = btn(f.trusted ? "Stop trusting" : "Trust", "btn small wf-trust", () => act(f, f.trusted ? "untrust" : "trust"));
+    trust.title = f.trusted ? "They'll need a new invite after you stop sharing your world." : "They can come back any time your world is shared, with no new invite.";
+    const rm = btn("Remove", "btn small wf-remove", () => { H.ask = "remove:" + f.user; paintHost(); });
+    rm.title = "Their login stops working. Their characters stay: invite them again and they get them back.";
+    const del = btn("Remove and delete characters…", "btn small wf-delete", () => { H.ask = "delete:" + f.user; paintHost(); });
+    for (const x of [trust, rm, del]) x.disabled = off;
+    if (!H.running) { rm.disabled = true; del.disabled = true; }
+    acts.append(trust, rm, del);
+    li.append(top, sub, acts);
+    if (H.ask === "remove:" + f.user || H.ask === "delete:" + f.user) {
+      const deleting = H.ask.startsWith("delete:");
+      const nChars = (f.chars || []).length;
+      const box = mk("div", "wf-confirm" + (deleting ? " bad" : ""));
+      box.setAttribute("role", "alertdialog");
+      box.append(mk("p", "", deleting
+        ? `Delete ${who(f)}'s login and ${nChars ? (nChars === 1 ? "their character" : `all ${nChars} of their characters`) : "any characters they have"} on your world for good? This can't be undone.`
+        : `Remove ${who(f)} from your world? Their login stops working, and their characters stay here: invite them again and they get them back.`));
+      const yes = btn(deleting ? "Delete for good" : "Remove", deleting ? "btn small danger wf-yes" : "btn small primary wf-yes", () => act(f, deleting ? "delete" : "remove"));
+      const no = btn(deleting ? "Keep them" : "Cancel", "btn small wf-no", () => { H.ask = ""; paintHost(); if (HK.list) HK.list.focusRow(f.user); });
+      box.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); no.click(); } });
+      const r = mk("div", "wf-acts");
+      r.append(yes, no);
+      box.append(r);
+      li.append(box);
+      setTimeout(() => { if (no.isConnected) no.focus(); }, 0);
+    }
+    return li;
+  }
+  function buildHost(root) {
     const head = mk("div", "wf-head");
     const sel = mk("select", "oc-sel wf-kind");
     sel.id = "wf-kind";
     sel.setAttribute("aria-label", "Which world");
-    for (const [k, t] of WORLDS) { const o = mk("option", "", t); o.value = k; o.selected = k === H.kind; sel.append(o); }
+    for (const [k, t] of WORLDS) { const o = mk("option", "", t); o.value = k; sel.append(o); }
     sel.addEventListener("change", () => { H.kind = sel.value; H.list = null; H.ask = ""; H.line = ["", ""]; paintHost(); readHost(); });
     head.append(mk("h3", "oc-set-h", "Friends with a character on your world"), sel);
-    const nodes = [head];
-    if (!H.list) nodes.push(mk("p", "oc-fine", "Reading your world's friends…"));
-    else if (!H.list.length) {
-      nodes.push(mk("p", "oc-fine wf-empty", "No friend has a character here yet. A friend who joins with your invite keeps their login and characters on your world for next time."));
-    } else {
-      const ul = mk("ul", "wf-list");
-      ul.id = "wf-list";
-      for (const f of H.list) {
-        const li = mk("li", "wf-friend");
-        li.dataset.user = f.user;
-        const top = mk("div", "wf-top");
-        const n = mk("span", "wf-name", who(f));
-        const [ct, ck] = stateChip(f);
-        const chip = mk("span", "sp-dock wf-state " + ck, ct);
-        top.append(n, chip);
-        if (f.on_list) top.append(mk("span", "wf-sub", f.online ? "On your friends list, online" : "On your friends list"));
-        const sub = mk("p", "wf-chars", charsText(f));
-        const acts = mk("div", "wf-acts");
-        const off = H.busy === f.user;
-        const trust = btn(f.trusted ? "Stop trusting" : "Trust", "btn small wf-trust", () => act(f, f.trusted ? "untrust" : "trust"));
-        trust.title = f.trusted ? "They'll need a new invite after you stop sharing your world." : "They can come back any time your world is shared, with no new invite.";
-        const rm = btn("Remove", "btn small wf-remove", () => { H.ask = "remove:" + f.user; paintHost(); });
-        rm.title = "Their login stops working. Their characters stay: invite them again and they get them back.";
-        const del = btn("Remove and delete characters…", "btn small wf-delete", () => { H.ask = "delete:" + f.user; paintHost(); });
-        for (const b of [trust, rm, del]) b.disabled = off;
-        if (!H.running) { rm.disabled = true; del.disabled = true; }
-        acts.append(trust, rm, del);
-        li.append(top, sub, acts);
-        if (H.ask === "remove:" + f.user || H.ask === "delete:" + f.user) {
-          const deleting = H.ask.startsWith("delete:");
-          const nChars = (f.chars || []).length;
-          const box = mk("div", "wf-confirm" + (deleting ? " bad" : ""));
-          box.setAttribute("role", "alertdialog");
-          box.append(mk("p", "", deleting
-            ? `Delete ${who(f)}'s login and ${nChars ? (nChars === 1 ? "their character" : `all ${nChars} of their characters`) : "any characters they have"} on your world for good? This can't be undone.`
-            : `Remove ${who(f)} from your world? Their login stops working, and their characters stay here: invite them again and they get them back.`));
-          const yes = btn(deleting ? "Delete for good" : "Remove", deleting ? "btn small danger wf-yes" : "btn small primary wf-yes", () => act(f, deleting ? "delete" : "remove"));
-          const no = btn(deleting ? "Keep them" : "Cancel", "btn small wf-no", () => { H.ask = ""; paintHost(); });
-          const r = mk("div", "wf-acts");
-          r.append(yes, no);
-          box.append(r);
-          li.append(box);
-          setTimeout(() => no.focus(), 0);
-        }
-        ul.append(li);
-      }
-      nodes.push(ul);
-      if (!H.running) nodes.push(mk("p", "oc-fine", `Start ${titleOf(H.kind)} to remove a friend: your world makes the change.`));
-    }
-    const st = mk("p", "status wf-line" + (H.line[1] ? " " + H.line[1] : ""), H.line[0]);
+    const box = mk("div", "wf-kit");
+    box.id = "wf-list";
+    const note = mk("p", "oc-fine wf-note");
+    const st = mk("p", "status wf-line");
     st.id = "wf-line";
     st.setAttribute("role", "status");
-    nodes.push(st);
-    root.replaceChildren(...nodes);
+    root.replaceChildren(head, box, note, st);
+    HK.sel = sel; HK.note = note; HK.line = st;
+    HK.list = window.LeylineList.create(box, {
+      id: "worldfriends",
+      noun: ["friend", "friends"],
+      key: (f) => f.user,
+      nameOf: who,
+      label: "Friends with a character on your world",
+      render: hostRow,
+      search: { fields: (f) => [who(f), f.user, ...(f.chars || []).map((c) => c.name)], placeholder: "Find a friend or character", label: "Find a friend or character" },
+      filters: [{ id: "state", label: "Status", options: (rows) => STATES.map(([v, t]) => ({ value: v, label: `${t} · ${rows.filter((f) => stateOf(f) === v).length}` })),
+        test: (f, v) => stateOf(f) === v }],
+      filtersLabel: "Status",
+      sort: { none: "Suggested", options: [
+        { id: "name", label: "Name", compare: (a, b) => window.LeylineList.norm(who(a)).localeCompare(window.LeylineList.norm(who(b))) },
+        { id: "seen", label: "Last here", desc: true, compare: (a, b) => (a.online ? 1e12 : a.seen || 0) - (b.online ? 1e12 : b.seen || 0) },
+      ] },
+      classes: { empty: "wf-empty" },
+      empty: (info) => (info.reason === "none"
+        ? "No friend has a character here yet. A friend who joins with your invite keeps their login and characters on your world for next time."
+        : info.reason === "loading" ? "Reading your world's friends…" : null),
+      onChange: (view, l) => { box.classList.toggle("wf-none", !l.rows().length); },
+    });
+  }
+  function paintHost() {
+    const root = byId("wf");
+    if (!root) return;
+    root.hidden = H.gone;
+    if (H.gone) { root.replaceChildren(); HK.list && HK.list.destroy(); HK.list = null; return; }
+    if (!HK.list || !root.contains(HK.list.el)) buildHost(root);
+    HK.sel.value = H.kind || "single";
+    HK.note.textContent = H.list && H.list.length && !H.running ? `Start ${titleOf(H.kind)} to remove a friend: your world makes the change.` : "";
+    HK.line.textContent = H.line[0];
+    HK.line.className = "status wf-line" + (H.line[1] ? " " + H.line[1] : "");
+    HK.list.setLoading(!H.list);
+    HK.list.update(H.list || []);
   }
 
   // ---------------------------------------------------------------- the friend: friends' worlds you joined
@@ -199,35 +234,57 @@
     await readFriend();
   }
 
+  // Your friends' worlds, on the list kit: search, sort by name or when you joined, Enter = Join again.
+  const FK = { list: null, line: null };
+  function worldRow(w, ctx) {
+    const li = mk("div", "wf-friend fw-world");
+    li.dataset.realm = w.realm_id;
+    const top = mk("div", "wf-top");
+    const n = mk("span", "wf-name");
+    n.append(ctx.hl(w.name || "Your friend's world"));
+    top.append(n, mk("span", "wf-sub", w.at ? `joined ${ago(w.at)}` : ""));
+    const acts = mk("div", "wf-acts");
+    const go = btn(F.busy === w.realm_id ? "Joining…" : "Join again", "btn small primary fw-join", () => joinAgain(w));
+    const fg = btn("Forget", "btn small fw-forget", () => forget(w));
+    fg.title = "Take it off this list. Your character stays on your friend's world.";
+    go.disabled = fg.disabled = !!F.busy;
+    acts.append(go, fg);
+    li.append(top, acts);
+    return li;
+  }
+  function buildFriend(root) {
+    const box = mk("div", "wf-kit");
+    box.id = "fw-list";
+    const st = mk("p", "status wf-line");
+    st.id = "fw-line";
+    st.setAttribute("role", "status");
+    root.replaceChildren(mk("h3", "oc-set-h", "Your friends' worlds"),
+      mk("p", "oc-fine", "Worlds you joined keep your character. Join again needs no new link while your friend shares their world (or trusts you)."), box, st);
+    FK.line = st;
+    FK.list = window.LeylineList.create(box, {
+      id: "friendworlds",
+      noun: ["world", "worlds"],
+      key: (w) => w.realm_id,
+      nameOf: (w) => w.name || "Your friend's world",
+      label: "Your friends' worlds",
+      render: worldRow,
+      search: { fields: (w) => [w.name || "Your friend's world"], placeholder: "Find a world", label: "Find a friend's world" },
+      sort: { none: "Suggested", options: [
+        { id: "name", label: "Name", compare: (a, b) => window.LeylineList.norm(a.name || "Your friend's world").localeCompare(window.LeylineList.norm(b.name || "Your friend's world")) },
+        { id: "joined", label: "Joined", desc: true, compare: (a, b) => (a.at || 0) - (b.at || 0) },
+      ] },
+      primary: (w) => { if (!F.busy) joinAgain(w); },
+    });
+  }
   function paintFriend() {
     const root = byId("fw");
     if (!root) return;
     root.hidden = F.gone || !F.list || !F.list.length;
-    if (root.hidden) { root.replaceChildren(); return; }
-    const nodes = [mk("h3", "oc-set-h", "Your friends' worlds"),
-      mk("p", "oc-fine", "Worlds you joined keep your character. Join again needs no new link while your friend shares their world (or trusts you).")];
-    const ul = mk("ul", "wf-list fw-list");
-    ul.id = "fw-list";
-    for (const w of F.list) {
-      const li = mk("li", "wf-friend fw-world");
-      li.dataset.realm = w.realm_id;
-      const top = mk("div", "wf-top");
-      top.append(mk("span", "wf-name", w.name || "Your friend's world"), mk("span", "wf-sub", w.at ? `joined ${ago(w.at)}` : ""));
-      const acts = mk("div", "wf-acts");
-      const go = btn(F.busy === w.realm_id ? "Joining…" : "Join again", "btn small primary fw-join", () => joinAgain(w));
-      const fg = btn("Forget", "btn small fw-forget", () => forget(w));
-      fg.title = "Take it off this list. Your character stays on your friend's world.";
-      go.disabled = fg.disabled = !!F.busy;
-      acts.append(go, fg);
-      li.append(top, acts);
-      ul.append(li);
-    }
-    nodes.push(ul);
-    const st = mk("p", "status wf-line" + (F.line[1] ? " " + F.line[1] : ""), F.line[0]);
-    st.id = "fw-line";
-    st.setAttribute("role", "status");
-    nodes.push(st);
-    root.replaceChildren(...nodes);
+    if (root.hidden) { root.replaceChildren(); if (FK.list) FK.list.destroy(); FK.list = null; return; }
+    if (!FK.list || !root.contains(FK.list.el)) buildFriend(root);
+    FK.line.textContent = F.line[0];
+    FK.line.className = "status wf-line" + (F.line[1] ? " " + F.line[1] : "");
+    FK.list.update(F.list);
   }
 
   function refresh() { return Promise.all([readHost(), readFriend()]); }

@@ -184,7 +184,7 @@
     }
     const b = el("div", "lk-b");
     b.append(el("p", "lk-type", TYPES[lk.type] || "Look"), el("h3", "lk-name", p.name));
-    const chips = el("ul", "lk-chips");
+    const chips = el("ul", "lk-builds");
     chips.setAttribute("aria-label", "Works with");
     for (const v of p.builds || []) chips.append(el("li", v === build ? "on" : "", v));
     b.append(chips, el("p", "lk-desc", p.description));
@@ -219,17 +219,71 @@
     return c;
   }
 
+  // The page's parts are made once per box; the cards are the list kit's (listkit.js, docs/LAUNCHER-LISTS.md): the kinds
+  // as its tabs (All looks, Graphics packs, UI looks, Presets), a search, chips (Works with this game folder, In use,
+  // Favourites: the Mods page's one set of stars), Sort, the count, keys, and Enter for Install / Use or the author's page.
+  let parts = null;
+  function build() {
+    box.textContent = "";
+    const lede = el("p", "lk-lede", "Make your game look new: graphics packs, new interfaces and graphics presets, with credit to the people who made them. One click where Leyline can check it; the author's page for the rest.");
+    const head = el("div", "lks-top");
+    const tabs = el("div", "ly-tabs lk-filter");
+    tabs.setAttribute("aria-label", "Kind of look");
+    const msg = el("p", "lk-note-line");
+    msg.id = "looks-note";
+    msg.setAttribute("role", "status");
+    const noGame = el("p", "gfx-empty", "Add your game first to install a look: drop your game folder on the realm box below. You can still browse.");
+    const holder = el("div", "lks-list");
+    holder.id = "looks-list";
+    const more = el("p", "gfx-more", "Packs from other sites are made and hosted by their authors. Your game's settings one by one are on the Graphics tab.");
+    box.append(lede, head, tabs, msg, noGame, holder, more);
+    const fits = (p) => { const b = st ? st.build : ""; return !b || !(p.builds || []).length || p.builds.includes(b); };
+    let list = null;
+    list = window.LeylineList.create(holder, {
+      id: "looks",
+      key: (p) => p.id,
+      label: "Looks",
+      noun: ["look", "looks"],
+      render: (p, ctx) => {
+        const c = card(p, st ? st.build : "");
+        c.prepend(ctx.star());
+        if (ctx.query) for (const n of c.querySelectorAll(".lk-name, .lk-desc, .lk-credit")) window.LeylineList.mark(n, ctx.query);
+        return c;
+      },
+      search: { placeholder: "Search looks", fields: (p) => [p.name, p.author, p.description, p.credits, TYPES[p.look.type],
+        (p.look.changes || []).join(" "), (p.builds || []).join(" ")] },
+      tabs: { items: FILTERS.map(([k, label]) => ({ id: k || "all", label, long: label, suggest: k !== "", filter: (p) => !k || p.look.type === k,
+        empty: "No looks of that kind yet." })), value: "all", el: tabs, idPrefix: "looks-tab-", buttonClass: "ly-tab", remember: false,
+        label: "Kind of look", onChange: (t) => { type = t === "all" ? "" : t; } },
+      filters: [
+        { id: "fit", label: "Works with this game folder", test: fits },
+        { id: "on", label: "In use", test: isOn },
+        { id: "fav", label: "Favourites", test: (p) => !!(list && list.isFav(p)) },
+      ],
+      filtersLabel: "Show",
+      sort: { options: [{ id: "name", label: "Name", compare: (a, b) => a.name.localeCompare(b.name) }], none: "Suggested", label: "Sort" },
+      favourites: { id: "mods", label: "Favourites" },
+      primary: (p, node) => { const b = node.querySelector(".lk-go:not([disabled])") || node.querySelector(".lk-page"); if (b) b.click(); },
+      empty: (info) => (info.reason === "loading" ? "Loading the looks…" : null),
+      classes: { body: "lk-grid" },
+    });
+    list.body.id = "looks-grid";   // the old id: the cards are still #looks-grid .lk-card
+    for (const [k] of FILTERS) { const b = document.getElementById("looks-tab-" + (k || "all")); if (b) b.dataset.type = k; }
+    parts = { box, head, msg, noGame, list };
+  }
+
   function render() {
     if (!box) return;
-    box.textContent = "";
-    box.append(el("p", "lk-lede", "Make your game look new: graphics packs, new interfaces and graphics presets, with credit to the people who made them. One click where Leyline can check it; the author's page for the rest."));
-    const list = clients();
-    const head = el("div", "lk-head");
-    if (list.length) {
+    if (!window.LeylineList) return;
+    if (!parts || parts.box !== box || !box.contains(parts.head)) build();
+    const { head, msg, noGame, list } = parts;
+    const all = clients();
+    head.textContent = "";
+    if (all.length) {
       const pick = el("select", "gfx-client");
       pick.id = "looks-client";
       pick.setAttribute("aria-label", "Game client");
-      for (const c of list) { const o = el("option", "", c.name); o.value = c.id; if (c.id === client) o.selected = true; pick.append(o); }
+      for (const c of all) { const o = el("option", "", c.name); o.value = c.id; if (c.id === client) o.selected = true; pick.append(o); }
       pick.addEventListener("change", () => { client = pick.value; note = ["", ""]; load(); });
       head.append(el("span", "gfx-for", "Looks for"), pick);
     }
@@ -240,37 +294,20 @@
     back.disabled = !st || !st.changed || !!busy;
     back.addEventListener("click", reset);
     head.append(back);
-    box.append(head);
-    const fl = el("div", "ly-tabs lk-filter");
-    fl.setAttribute("role", "tablist");
-    fl.setAttribute("aria-label", "Kind of look");
-    for (const [k, label] of FILTERS) {
-      const b = el("button", "ly-tab", label);
-      b.type = "button";
-      b.dataset.type = k;
-      b.setAttribute("role", "tab");
-      b.setAttribute("aria-selected", String(k === type));
-      b.addEventListener("click", () => { type = k; render(); });
-      fl.append(b);
-    }
-    box.append(fl);
-    const msg = el("p", "lk-note-line " + (note[1] || ""), note[0]);
-    msg.id = "looks-note";
-    msg.setAttribute("role", "status");
-    box.append(msg);
-    if (!list.length) box.append(el("p", "gfx-empty", "Add your game first to install a look: drop your game folder on the realm box below. You can still browse."));
-    const build = st ? st.build : "";
-    const shown = looks.filter((p) => !type || p.look.type === type);
-    if (!looks.length) { box.append(el("p", "gfx-empty", "Loading the looks…")); return; }
-    if (!shown.length) { box.append(el("p", "gfx-empty", "No looks of that kind yet.")); return; }
-    const grid = el("div", "lk-grid");
-    grid.id = "looks-grid";
-    for (const p of shown) grid.append(card(p, build));
-    box.append(grid);
-    box.append(el("p", "gfx-more", "Packs from other sites are made and hosted by their authors. Your game's settings one by one are on the Graphics tab."));
+    msg.className = "lk-note-line " + (note[1] || "");
+    msg.textContent = note[0];
+    noGame.hidden = !!all.length;
+    if ((type || "all") !== list.tab()) list.setTab(type || "all");
+    list.setLoading(!looks.length);
+    list.update(looks);
     if (focusId) {
-      const f = grid.querySelector(`.lk-card[data-id="${CSS.escape(focusId)}"]`);
-      if (f) { f.scrollIntoView({ block: "center" }); const b = f.querySelector("button:not([disabled])"); if (b) b.focus(); }
+      const f = list.body.querySelector(`.lk-card[data-id="${CSS.escape(focusId)}"]`);
+      if (f) {
+        list.select(focusId);
+        f.scrollIntoView({ block: "center" });
+        const b = f.querySelector("button.lk-go:not([disabled]), button.lk-page");
+        if (b) b.focus();
+      }
       focusId = "";
     }
   }

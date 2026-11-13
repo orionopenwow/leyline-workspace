@@ -74,6 +74,7 @@ const FAKE = (opts) => {
       case 'addons_status': return { prefs: { auto_update: true, dont_ask: true }, clients: [], available: null };
       case 'addons_should_offer': return false;
       case 'addons_auto_update': return [];
+      case 'world_settings_get': throw 'unknown world_settings_get';   // a null here keeps oneclick.js reading again
       default: return null;
     }
   } } };
@@ -89,6 +90,7 @@ async function open(opts = {}) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.addInitScript(FAKE, opts);
+  await page.route(/^https?:\/\//, (r) => r.abort());   // no network in a test: a hung request held the page's load
   await page.goto(INDEX);
   if (!opts.link) {   // a link opens the page itself (app.js handleDeepLink)
     await page.evaluate(() => { const b = document.querySelector('.nav[data-page="mods"]'); if (b) b.click(); });
@@ -112,8 +114,8 @@ test('Looks: the tab, the cards, a preset, a pack in and out, a link, the filter
   assert.match(await page.textContent(max), /Changes: View distance, Shadows, Textures/);
   assert.match(await page.textContent(max), /Nothing to download/);
   assert.equal(await page.textContent(`${max} .lk-credit`), 'Max by Leyline · MIT · github.com');
-  assert.deepEqual(await page.$$eval(`${max} .lk-chips li`, (l) => l.map((x) => x.textContent)), ['1.12', '2.4.3', '3.3.5a']);
-  assert.equal(await page.$eval(`${max} .lk-chips li.on`, (x) => x.textContent), '3.3.5a', 'this game version marked');
+  assert.deepEqual(await page.$$eval(`${max} .lk-builds li`, (l) => l.map((x) => x.textContent)), ['1.12', '2.4.3', '3.3.5a']);
+  assert.equal(await page.$eval(`${max} .lk-builds li.on`, (x) => x.textContent), '3.3.5a', 'this game version marked');
   assert.ok(await page.isDisabled('#looks-reset'), 'nothing to put back yet');
   // each look its own drawing, the website's (stream/looks.py): Max, Classic, a UI look, a pack
   // our own pictures where a look has one (the bundled copy), the drawings for the rest

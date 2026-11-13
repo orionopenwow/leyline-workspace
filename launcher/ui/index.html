@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leyline Launcher</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="listkit.css"><!-- the list kit: one look for every list (listkit.js, docs/LAUNCHER-LISTS.md) -->
 <link rel="stylesheet" href="simplehome.css"><!-- Simple mode: the four-button home (simplehome.js) -->
 <link rel="stylesheet" href="spin.css"><!-- the spinning mark: the header logo and every loading state (spin.js) -->
 <!-- themes (themes agent): Dark (style.css) or Light; the Themes section; themes.js applies the theme before paint -->
@@ -22,6 +23,7 @@
 <link rel="stylesheet" href="hostflow.css"><!-- Host: Private or Public, templates, the settings panel, Ask Claude (hostflow.js) -->
 <link rel="stylesheet" href="loadouts.css"><!-- Loadouts: Mods & Addons › Installed, the game folder cards, the realm offer (loadouts.js) -->
 <link rel="stylesheet" href="addons.css"><!-- the Leyline addons: Clients, Mods & Addons › Installed › Addons, the PLAY offer (addons.js) -->
+<link rel="stylesheet" href="modlists.css"><!-- the Mods page's lists on the list kit: Discover, Installed, Looks, Game modes -->
 <link rel="stylesheet" href="market.css"><!-- the addon marketplace in Mods & Addons › Discover › Addons (market.js) -->
 <link rel="stylesheet" href="home.css"><!-- Home: the hero gallery and the rows below it (home.js) -->
 <link rel="stylesheet" href="agents.css"><!-- Agents: your own AI assistant, the approval card on every page (agents.js) -->
@@ -332,7 +334,7 @@
         </div>
         <p class="status" id="mods-status" role="status"></p>
         <ul class="problems" id="mods-problems" hidden></ul>
-        <div id="mods-list" class="cards mods-grid"></div>
+        <div id="mods-list" class="inst-list"></div>
         <p class="hint">No review, no signing: only add mods and addons from people you trust. Downloads must match their checksum, and anything holding game data or secrets is refused. Native mods (.dll, .asi) need a one-time OK. Removing a mod takes out exactly what Leyline put in.</p>
       </div>
       <div class="tabpane" id="pane-discover" role="tabpanel" aria-labelledby="tab-mods-discover" data-view="simple" data-tab="mods">
@@ -355,20 +357,21 @@
           <select class="client-pick dc-client" data-for="discover" aria-label="Install into"></select>
         </div>
         <div class="chips dc-smart dc-full" id="dc-smart" role="toolbar" aria-label="Show"></div>
-        <details class="dc-mf dc-full" id="dc-more">
-          <summary>More filters</summary>
-          <div class="toolbar dc-mf-row">
-            <label class="dc-pick"><span>Sort</span><select id="cat-sort" aria-label="Sort">
-              <option value="hot">Hot</option><option value="rising">Rising</option><option value="top">Top rated</option>
-              <option value="installs">Most installed</option><option value="installs30">This month</option>
-              <option value="new">New</option><option value="updated">Updated</option></select></label>
-            <label class="dc-fit" title="Only show mods made for the picked client"><input type="checkbox" id="cat-fit" checked><span>Only for the picked client</span></label>
-          </div>
+        <!-- the list kit's bar (app.js catListMake): Works with this game folder, Installed, Updates, Favourites, the game,
+             the Sort menu and the count -->
+        <div class="dc-kbar dc-full" id="dc-kbar">
+          <label class="lk-sort dc-sort"><span class="lk-sort-l">Sort</span><select id="cat-sort" class="lk-sort-s" aria-label="Sort">
+            <option value="hot">Popular</option><option value="rising">Rising</option><option value="top">Top rated</option>
+            <option value="installs">Most installed</option><option value="installs30">This month</option>
+            <option value="new">New</option><option value="updated">Recently updated</option><option value="name">Name</option></select></label>
+        </div>
+        <details class="dc-mf dc-full" id="dc-more" hidden>
+          <summary>More kinds</summary>
           <div id="dc-more-body"></div>
         </details>
         <p class="status" id="cat-status" role="status"></p>
         <div class="game-box dc-full" id="game-discover" hidden></div><!-- Mods › Game modes: the Leyline Modes (gamemods.js) -->
-        <div class="mod-grid dc-grid dc-full" id="cat-grid"></div>
+        <div class="dc-list dc-full" id="cat-grid"></div>
         <div class="row dc-more dc-full"><button type="button" class="btn small" data-link="mods">Mods on the website</button><button type="button" class="btn small" data-link="modders">Make a mod</button></div>
       </div>
       <!-- Game modes (owner 3 Nov: "Game modes as a section somewhere in mods and addons"): gamemods.js showSection -->
@@ -385,13 +388,12 @@
   <!-- REALMS -->
   <section class="page" id="page-realms">
     <div class="panel wide">
-      <!-- two lists (owner 2026-11-02): Official realms (ours, always up) and Community realms (players' Beacons);
-           search and filters work within the tab that is open (app.js rlTab) -->
+      <!-- the lists (owner 2026-11-02: Official realms, ours, always up, and Community realms, players' Beacons; 12 Nov:
+           the in-game Realm Selection's categories): All, Official, Community, Single player & Den, Friends' worlds,
+           Favourites. The tabs (#rl-tab-<id>), the search, the sort and the stars are the list kit's (listkit.js,
+           app.js rlList); search and filters work within the tab that is open -->
       <div class="panel-head"><h2>Realms</h2>
-        <div class="page-tabs rl-tabs" id="rl-tabs" role="tablist" aria-label="Realm lists">
-          <button type="button" class="page-tab" role="tab" id="rl-tab-official" data-rl-tab="official" aria-controls="rl-pane" aria-selected="true">Official realms</button>
-          <button type="button" class="page-tab" role="tab" id="rl-tab-community" data-rl-tab="community" aria-controls="rl-pane" aria-selected="false" tabindex="-1">Community realms</button>
-        </div></div>
+        <div class="page-tabs rl-tabs" id="rl-tabs" role="tablist" aria-label="Realm lists"></div></div>
       <div class="toolbar rl-tools">
         <input id="rl-q" type="search" placeholder="Find a realm" aria-label="Find a realm" autocomplete="off" spellcheck="false">
         <div class="rl-pop-wrap">
@@ -433,7 +435,7 @@
         <p class="status" id="rl-paste-status" role="status"></p>
       </form>
       <div class="rl-pane" id="rl-pane" role="tabpanel" aria-labelledby="rl-tab-official">
-        <p class="net-line" id="rl-net" aria-live="polite"></p>
+        <div class="rl-head-row"><p class="net-line" id="rl-net" aria-live="polite"></p><div class="rl-kbar" id="rl-kbar"></div></div>
         <p class="status" id="rl-status" role="status"></p>
         <div class="realm-list" id="rl-list"></div>
         <p class="rl-tab-note" id="rl-tab-note"></p>
@@ -961,6 +963,7 @@
 </nav>
 
 </div>
+<script src="listkit.js"></script><!-- the list kit: search, tabs, sort, favourites, keys, empty states (window.LeylineList; before every list) -->
 <script src="friendly.js"></script><!-- never a raw error to the player: window.LeylineFriendly -->
 <script src="bugreport.js"></script><!-- Help › Report a bug and the launcher's recent log (window.LeylineBugReport; early, to keep the log) -->
 <script src="spin.js"></script>

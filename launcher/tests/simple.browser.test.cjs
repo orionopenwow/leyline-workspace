@@ -26,7 +26,8 @@ const CATALOG = { categories: [{ id: 'addons', name: 'Addons and UI' }, { id: 's
     U('frames', 'Frames', ['unit-frames']), U('bags', 'Bagger', ['bags']), U('plates', 'Plates', ['nameplates']), U('meter', 'Meter', ['meters'])],
   from_cache: false, saved_at: 1, error: null };
 
-const FAKE = ({ catalog, view, tab }) => {
+const FAKE = ({ catalog, view, tab, failFirst }) => {
+  window.__catFail = !!failFirst;
   const calls = (window.__calls = []);
   try {
     localStorage.setItem('leyline.page', 'discover');
@@ -40,7 +41,7 @@ const FAKE = ({ catalog, view, tab }) => {
       case 'get_state': return { version: 'test', settings: { clients: [{ id: 'c1', name: 'My Wrath', path: '/x', build: '3.3.5a', realmlist: '' }],
         selected_client: 'c1', selected_realm: 'play.openvanilla.app', wine: { enabled: true, command: 'wine', prefix: '' }, count_installs: true },
         official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: false, data_dir: '/tmp' };
-      case 'mods_catalog': return catalog;
+      case 'mods_catalog': if (window.__catFail) throw 'timed out'; return catalog;
       case 'mods_ranked': throw 'offline';
       case 'mods_installed': return { client: 'c1', build: '3.3.5a', mods: [] };
       case 'deep_link_take': return null;
@@ -163,4 +164,31 @@ test('Browse everything from the Simple view; phone width keeps one column', asy
   assert.equal(await page.locator('#cat-grid .mod-card').count(), 5, 'every addon');
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('offline with nothing kept: the Simple view says why, with Try again; the offline line shows over a kept list', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.addInitScript(FAKE, { catalog: CATALOG, failFirst: 1 });
+  await page.goto(INDEX);
+  await page.waitForSelector('#dc-rows .dc-failed');
+  await shot(page, 'launcher-simple-offline');
+  assert.match(await page.textContent('#dc-rows .dc-failed'), /Can't load the mods list\..*You may be offline/);
+  assert.equal(await page.isVisible('#dc-rows .dc-failed button'), true, 'Try again');
+  assert.equal(await page.isVisible('#cat-status'), false, 'the empty state says it once');
+  await page.evaluate(() => { window.__catFail = false; });   // back online
+  await page.click('#dc-rows .dc-failed button');
+  await page.waitForSelector('#dc-rows .dc-srow .mod-card');
+  assert.equal(await page.locator('#dc-rows .dc-failed').count(), 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+  // a list kept from before: the offline line is visible in the Simple view too
+  const cached = Object.assign({}, CATALOG, { from_cache: true, saved_at: 1762900000 });
+  const { page: p2 } = await open({ catalog: cached });
+  await p2.waitForSelector('#dc-rows .dc-srow');
+  assert.equal(await p2.getAttribute('#pane-discover', 'data-view'), 'simple');
+  assert.equal(await p2.isVisible('#cat-status'), true);
+  assert.match(await p2.textContent('#cat-status'), /^Offline: showing the mods as they were /);
+  await p2.close();
 });

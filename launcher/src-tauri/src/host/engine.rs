@@ -2360,6 +2360,31 @@ pub fn gather_chars(p: &Paths, to: &str) -> Result<usize, String> {
     Ok(n)
 }
 
+/// The host's "Give their characters to…" on a friend's row (a friend who lost their Leyline key, reinstalled, or
+/// plays from a second PC comes back as a new login): every character of the friend's login `from` moves to the
+/// friend's login `to`, inside a back-up taken first (no back-up, no move). Both must be friends' logins; refused
+/// while one of `from`'s characters is in the game. Nothing is deleted. How many moved.
+pub fn give_chars(p: &Paths, from: &str, to: &str) -> Result<usize, String> {
+    use crate::host::oneclick::tag;
+    use crate::host::worldfriends::friend_login_ok;
+    if !friend_login_ok(from) || !friend_login_ok(to) || from == to {
+        return Err(tag("other", "Pick another friend to give the characters to."));
+    }
+    let n = chars_of(p, from).map_err(|e| tag("db", e))?.len();
+    if n == 0 {
+        return Ok(0);
+    }
+    let online = query(p, "acore_characters", &format!("SELECT COUNT(*) FROM characters c JOIN acore_auth.account a ON a.id = c.account WHERE c.online <> 0 AND a.username = '{from}'"))
+        .map_err(|e| tag("db", e))?;
+    if online.trim() != "0" {
+        return Err(tag("other", "One of those characters is in the game now: wait until they log out, then try again."));
+    }
+    backup_why(p, "before giving a friend's characters").map_err(|e| tag("db", format!("Nothing was moved: the back-up before it didn't work ({e}).")))?;
+    sql(p, "acore_characters", &move_sql(from, to)?).map_err(|e| tag("db", format!("The characters couldn't be moved ({e}).")))?;
+    setup_log(p, &format!("{n} characters given from one friend's login to another (a back-up was taken first)"));
+    Ok(n)
+}
+
 /// Friends playing in this world now: online characters on friends' logins (one-time `G` + 9, worldshare::new_guest,
 /// and lasting `G` + 15, worldfriends::name_for), never the player's own or the bots'.
 pub const FRIENDS_SQL: &str = "SELECT COUNT(*) FROM characters c JOIN acore_auth.account a ON a.id = c.account \

@@ -127,6 +127,45 @@ async fn pick(app: AppHandle, title: &'static str, file: bool, mods_filter: bool
     .map(|p| p.display().to_string())
 }
 
+/// Settings › Save my Leyline network key: the key file written where the player picks (never shown, never logged).
+/// None: the save was cancelled.
+#[tauri::command]
+async fn peer_key_export(app: AppHandle) -> Result<Option<String>, String> {
+    let text = crate::identity::export_text(&settings::app_dir())?;
+    let to = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().set_title("Save your Leyline network key").set_file_name("leyline-network-key.txt").add_filter("Text", &["txt"]).blocking_save_file()
+    })
+    .await
+    .ok()
+    .flatten()
+    .and_then(|p| p.into_path().ok());
+    let Some(to) = to else { return Ok(None) };
+    std::fs::write(&to, text.as_bytes()).map_err(|e| format!("The key wasn't saved: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(Some("Saved. Keep that file private: whoever has it is you to your friends. Bring it back here on a new PC or after a reinstall.".into()))
+}
+
+/// Settings › Bring back my Leyline network key: a saved key file picked, this PC becomes that identity (the key it
+/// had is kept aside). None: cancelled.
+#[tauri::command]
+async fn peer_key_import(app: AppHandle) -> Result<Option<String>, String> {
+    let Some(from) = pick(app, "Pick your saved Leyline network key", true, false).await else { return Ok(None) };
+    blocking(move || {
+        let meta = std::fs::metadata(&from).map_err(|e| e.to_string())?;
+        if meta.len() > 4096 {
+            return Err("That file isn't a saved Leyline network key.".to_string());
+        }
+        let text = std::fs::read_to_string(&from).map_err(|_| "That file isn't a saved Leyline network key.".to_string())?;
+        let short = crate::identity::import(&settings::app_dir(), &text)?;
+        Ok(Some(format!("Done: this PC is Hero {short} again to your friends. Restart Leyline to finish. The key it had is kept aside in Leyline's folder.")))
+    })
+    .await
+}
+
 #[tauri::command]
 fn detect_client(path: String) -> Result<Detection, String> {
     clients::detect(&PathBuf::from(path)).map_err(|e| e.to_string())
@@ -3046,6 +3085,25 @@ async fn world_friends(kind: String) -> Result<Vec<WorldFriendView>, String> {
 #[tauri::command]
 async fn world_friend(kind: String, user: String, action: String) -> Result<String, String> {
     blocking(move || {
+        // "give:<login>": the host gives this friend's characters to another friend's login (a friend who came back
+        // with a new Leyline key: a reinstall, a new PC), on the Built-in engine's worlds
+        if let Some(to) = action.strip_prefix("give:") {
+            use crate::host::engine as eng;
+            if kind == "solo" {
+                return Err("Giving characters to another friend works on Single player and the original world.".to_string());
+            }
+            let k = world_kind(&kind)?;
+            let p = world_paths(k);
+            if !eng::status(&p).running {
+                return Err("Your world has to be running for that (start it, then try again).".to_string());
+            }
+            let book = crate::host::worldfriends::load(&crate::host::worldshare::dir(&p.root));
+            if !book.friends.iter().any(|f| f.user == to) {
+                return Err("That friend isn't on this world.".to_string());
+            }
+            let n = eng::give_chars(&p, &user, to)?;
+            return Ok(if n == 0 { "They have no characters here to give.".to_string() } else { format!("{n} characters given. A back-up was taken first.") });
+        }
         let w = if kind == "solo" { classic_friends_here() } else { world_friends_here(world_kind(&kind)?) };
         let w = w.ok_or("Invite a friend first: this world has no friends yet.")?;
         crate::host::worldfriends::set_friend(&w, &user, &action)
@@ -5062,6 +5120,8 @@ pub fn run() {
             world_repair,
             set_world_stop_on_exit,
             set_world_stop_on_close,
+            peer_key_export,
+            peer_key_import,
             close_leyline,
             local_characters,
             online_characters,

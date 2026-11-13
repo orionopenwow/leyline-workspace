@@ -2,6 +2,7 @@
 #include "BossfightsLogic.h"
 
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 
 using namespace LeylineBF;
@@ -48,8 +49,8 @@ int main()
     bool fenced = true, unique = true, sized = true;
     for (BossDef const& b : Bosses())
     {
-        float dx = b.x - b.fenceX, dy = b.y - b.fenceY;
-        fenced = fenced && dx * dx + dy * dy < b.fenceR * b.fenceR && b.z > b.fenceMinZ;
+        fenced = fenced && InsideFence(b, b.x, b.y, b.z) && (!HasFence(b) || b.z > b.fenceMinZ)
+            && (!b.hx || InsideFence(b, b.hx, b.hy, b.hz));
         sized = sized && b.size == 10 && b.mapId != 0 && b.bossEntry != 0 && b.zone != 0 && b.startHint && *b.startHint;
         for (BossDef const& c : Bosses())
             if (&b != &c && std::string(b.key) == c.key)
@@ -63,7 +64,8 @@ int main()
     check("catalog: no brand words in raid names or hints", clean);
     check("the featured fight stays first", &Bosses().front() == ft);
     check("FindBossOnMap tells the citadel's fights apart", FindBossOnMap(631, 12) == ft && FindBossOnMap(631, 0) == FindBoss("bone-lord")
-        && FindBossOnMap(631, 1) == FindBoss("cult-mistress") && FindBossOnMap(631, 7) == nullptr && FindBossOnMap(724, 6) == FindBoss("twilight-destroyer"));
+        && FindBossOnMap(631, 1) == FindBoss("cult-mistress") && FindBossOnMap(631, 7) == FindBoss("icc-council")
+        && FindBossOnMap(631, 14) == nullptr && FindBossOnMap(724, 6) == FindBoss("twilight-destroyer"));
     check("Halion's intro goes through the script (Zarithrian, 1), the others quietly", FindBoss("twilight-destroyer")->scripted == std::vector<std::uint32_t>{ 1 }
         && FindBoss("twilight-destroyer")->prereq == std::vector<std::uint32_t>({ 0, 2 }));
     check("the solo Sanctum leaves the drakes out; the three-drake one keeps them", FindBoss("obsidian-sanctum")->prereq.size() == 3
@@ -77,7 +79,8 @@ int main()
 
     // arguments
     check("difficulty", ParseDifficulty("normal") == DIFF_NORMAL && ParseDifficulty("HEROIC") == DIFF_HEROIC
-        && ParseDifficulty("10h") == DIFF_HEROIC && ParseDifficulty("25") == DIFF_NONE && ParseDifficulty("") == DIFF_NONE);
+        && ParseDifficulty("10h") == DIFF_HEROIC && ParseDifficulty("25") == DIFF_NORMAL && ParseDifficulty("heroic25") == DIFF_HEROIC
+        && ParseDifficulty("mythic") == DIFF_NONE && ParseDifficulty("") == DIFF_NONE);
     check("mode", ParseMode("bots") == MODE_BOTS && ParseMode("group") == MODE_GROUP && ParseMode("group-only") == MODE_GROUP_ONLY
         && ParseMode("Group-Only") == MODE_GROUP_ONLY && ParseMode("x") == MODE_NONE);
     check("mode names round-trip", ParseMode(ModeName(MODE_BOTS)) == MODE_BOTS && ParseMode(ModeName(MODE_GROUP)) == MODE_GROUP
@@ -141,6 +144,154 @@ int main()
     check("messages fit an addon message (255 with the prefix)",
         std::strlen(ADDON_PREFIX) + 1 + MsgQueued("frozen-throne", 1, 2, 10, 10, 1800).size() < 255);
     check("time format", FormatMs(312345) == "5:12.3" && FormatMs(0) == "0:00.0" && FormatMs(3600000) == "60:00.0");
+
+
+    // ---- start anywhere (BossfightsStarts.h; docs/BOSS-RUSH.md "Start anywhere") ----------------------------------
+    {
+        // every citadel boss has a start (the gauntlet and the ambush are steps, not starts)
+        char const* icc[] = { "bone-lord", "cult-mistress", "icc-gunship", "icc-deathbringer", "icc-bloat", "icc-ooze",
+                              "icc-professor", "icc-council", "icc-blood-queen", "icc-dreamwalker", "icc-frost-queen", "frozen-throne" };
+        std::uint32_t ids[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12 };
+        bool all = true;
+        for (int i = 0; i < 12; ++i)
+            all = all && FindBoss(icc[i]) && FindBoss(icc[i])->bossData == ids[i] && FindBoss(icc[i])->mapId == 631 && !IsPrereq(*FindBoss(icc[i]), ids[i]);
+        check("start anywhere: every citadel boss is a start, on its own boss id, never its own prerequisite", all);
+        // each boss's earlier bosses: the instance script's checks (CheckLowerSpire / Plagueworks / CrimsonHalls / FrostwingHalls)
+        auto has = [](char const* k, std::vector<std::uint32_t> want) {
+            BossDef const* b = FindBoss(k);
+            if (!b) return false;
+            for (std::uint32_t w : want) if (!IsPrereq(*b, w)) return false;
+            return true;
+        };
+        check("start anywhere: earlier bosses as the raid script checks them",
+            has("icc-deathbringer", { 0, 1, 2 }) && has("icc-bloat", { 0, 1, 2, 3 }) && has("icc-professor", { 0, 1, 2, 3, 4, 5 })
+            && has("icc-council", { 0, 1, 2, 3, 14 }) && has("icc-blood-queen", { 0, 1, 2, 3, 14, 7 })
+            && has("icc-dreamwalker", { 0, 1, 2, 3, 9 }) && has("icc-frost-queen", { 0, 1, 2, 3, 9, 10, 13 })
+            && FindBoss("bone-lord")->prereq.empty());
+        check("start anywhere: the lab's door (trap event done), the wyrms killed for the queen, the ships brought in",
+            FindBoss("icc-professor")->data.size() == 1 && FindBoss("icc-professor")->data[0] == std::make_pair(254u, 3u)
+            && FindBoss("icc-frost-queen")->kill == std::vector<std::uint32_t>({ 37533, 37534 })
+            && FindBoss("icc-gunship")->scripted == std::vector<std::uint32_t>{ 1 } && FindBoss("icc-gunship")->hx != 0.0f
+            && !HasFence(*FindBoss("icc-gunship")));
+        // the starts stand outside their rooms: each one farther from its boss than the door is (the boss's spot is the fence's middle)
+        bool outside = true;
+        for (char const* k : { "bone-lord", "icc-bloat", "icc-ooze", "icc-professor", "icc-council", "icc-blood-queen", "icc-dreamwalker", "icc-frost-queen", "icc-deathbringer" })
+        {
+            BossDef const* b = FindBoss(k);
+            float dx = b->x - b->fenceX, dy = b->y - b->fenceY;
+            outside = outside && dx * dx + dy * dy > 40.0f * 40.0f && InsideFence(*b, b->x, b->y, b->z);
+        }
+        check("start anywhere: the bosses' starts are outside their rooms (40+ yards) and inside the fence", outside);
+        // facing the boss: the start's orientation points at the fence's middle (within 10 degrees)
+        bool facing = true;
+        for (BossDef const& b : Bosses())
+        {
+            if (!HasFence(b) || std::string(b.key) == "frozen-throne" || std::string(b.key) == "spell-weaver")
+                continue;
+            float want = std::atan2(b.fenceY - b.y, b.fenceX - b.x);
+            float d = std::fabs(std::remainder(want - b.o, 6.2831853f));
+            facing = facing && d < 0.18f;
+            if (d >= 0.18f) std::printf("     facing: %s %.2f\n", b.key, d);
+        }
+        check("start anywhere: everyone lands facing the boss", facing);
+
+        // the tree
+        RaidDef const& r = Raids().front();
+        check("raids: the citadel first, with its five wings and its gate", std::string(r.key) == "icc" && r.wings.size() == 5
+            && r.areatrigger == 5670 && std::string(r.whole) == "icc-raid");
+        bool fightsKnown = true, keysOk = true, clean2 = true;
+        for (RaidDef const& rr : Raids())
+        {
+            for (char const* f : rr.fights)
+                fightsKnown = fightsKnown && FindFight(f) && FindFight(f)->mapId == rr.mapId;
+            for (WingDef const& w : rr.wings)
+            {
+                fightsKnown = fightsKnown && FindFight(w.from);
+                for (StepDef const& st : w.steps)
+                    fightsKnown = fightsKnown && (!*st.fight || FindFight(st.fight));
+                keysOk = keysOk && std::strlen(w.key) <= 17;
+                clean2 = clean2 && !hasBrandWord(w.title) && !hasBrandWord(w.hint);
+            }
+            keysOk = keysOk && std::strlen(rr.whole) <= 17;
+            clean2 = clean2 && !hasBrandWord(rr.title) && !hasBrandWord(rr.wholeHint);
+        }
+        std::size_t inRaids = 0;
+        for (RaidDef const& rr : Raids())
+            inRaids += rr.fights.size();
+        check("raids: every fight is in exactly one raid's list, on its map", fightsKnown && inRaids == Bosses().size());
+        check("raids: keys fit a hero's waiting go, no brand words", keysOk && clean2);
+        // the go text of the longest key and difficulty fits the table's column (64)
+        std::size_t longest = 0;
+        for (BossDef const& b : Bosses()) longest = std::max(longest, std::strlen(b.key));
+        for (BossDef const& b : Scopes()) longest = std::max(longest, std::strlen(b.key));
+        check("a waiting go fits its column", 3 + longest + 1 + 8 + 1 + 10 <= 64);
+
+        // the scopes
+        BossDef const* spire = FindBoss("icc-spire");
+        BossDef const* plague = FindBoss("icc-plague");
+        BossDef const* frost = FindBoss("icc-frostwing");
+        BossDef const* raid = FindBoss("icc-raid");
+        check("scopes: four citadel wings and three whole raids", Scopes().size() == 7 && spire && plague && frost && FindBoss("icc-crimson")
+            && raid && FindBoss("rs-raid") && FindBoss("voa-raid") && !FindBoss("os-raid"));
+        check("scopes: a wing starts at its first boss with its earlier bosses (and the ships) done, ends on its last",
+            spire->scope == SCOPE_WING && spire->x == FindBoss("bone-lord")->x && IsPrereq(*spire, 2) && !IsPrereq(*spire, 0)
+            && spire->bossData == 3 && spire->chain == std::vector<std::uint32_t>({ 0, 1, 3 }) && !HasFence(*spire)
+            && plague->prereq == FindBoss("icc-bloat")->prereq && plague->bossData == 6 && plague->data.empty()
+            && frost->chain == std::vector<std::uint32_t>({ 10, 13, 11 }) && IsPrereq(*frost, 9) && frost->kill.empty());
+        check("scopes: the whole raid from the gate, ending on the final fight's end cast",
+            raid->scope == SCOPE_RAID && raid->x == r.ex && raid->prereq == std::vector<std::uint32_t>{ 2 } && raid->bossData == 12
+            && raid->endSpell == 72350 && raid->bossEntry == 36597 && raid->chain.size() == 13 && raid->chain.back() == 12
+            && InChain(*raid, 9) && !InChain(*raid, 2) && raid->scripted.empty() && raid->heroic);
+        check("scopes: the sanctum's whole raid keeps its intro to the script (no quiet prerequisites)",
+            FindBoss("rs-raid")->prereq.empty() && FindBoss("rs-raid")->scripted.empty() && FindBoss("rs-raid")->bossData == 6);
+        check("scopes: only with AllFights, and joinable", !ParseJoin("icc-raid", "normal", "bots", false).error.empty()
+            && ParseJoin("icc-plague", "heroic25", "group", true).error.empty() && ParseJoin("icc-plague", "heroic25", "group", true).size == 25
+            && ParseJoin("voa-raid", "heroic", "bots", true).error == "Vault of Archavon has no heroic: play it on normal");
+
+        // retry: the first boss still standing, else the nearest earlier step with a start
+        std::vector<std::uint32_t> down;
+        auto done = [&down](std::uint32_t id) { return std::find(down.begin(), down.end(), id) != down.end(); };
+        check("retry: a wing's first boss when nothing is down", RetrySpot(*plague, done) == FindBoss("icc-bloat"));
+        down = { 4 };
+        check("retry: the next boss standing", RetrySpot(*plague, done) == FindBoss("icc-ooze"));
+        down = { 10 };
+        check("retry: the gauntlet (no start) goes back to the dreamer's", RetrySpot(*frost, done) == FindBoss("icc-dreamwalker"));
+        down = { 10, 13 };
+        check("retry: then the queen", RetrySpot(*frost, done) == FindBoss("icc-frost-queen"));
+        down = {};
+        check("retry: the sanctum's lesser dragons have no starts: the run's own (the door)", RetrySpot(*FindBoss("rs-raid"), done) == nullptr);
+        check("retry: a single fight stays at its own start", RetrySpot(*FindBoss("icc-council"), done) == nullptr);
+        down = { 0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 13, 11 };
+        check("retry: the raid's last step: the throne", RetrySpot(*raid, done) == FindBoss("frozen-throne"));
+        check("progress: done of the chain", Progress(*raid, done) == std::make_pair(std::size_t(12), std::size_t(13))
+            && Progress(*FindBoss("icc-council"), done) == std::make_pair(std::size_t(1), std::size_t(1)));
+
+        // sizes and seats
+        check("size: 25 from its words, else 10", ParseSize("heroic25") == 25 && ParseSize("25") == 25 && ParseSize("10h") == 10 && ParseSize("heroic") == 10
+            && DiffToken(DIFF_HEROIC, 25) == "heroic25" && DiffToken(DIFF_NORMAL, 10) == "normal");
+        check("size: the core's raid difficulty", RaidDifficultyIndex(DIFF_NORMAL, 10) == 0 && RaidDifficultyIndex(DIFF_NORMAL, 25) == 1
+            && RaidDifficultyIndex(DIFF_HEROIC, 10) == 2 && RaidDifficultyIndex(DIFF_HEROIC, 25) == 3);
+        RoleCount c25 = CountRoles(DefaultSeats25()), c10 = CountRoles(DefaultSeats());
+        check("seats: 25 is 3 tanks, 6 healers, 16 damage; 10 is 2, 3, 5", DefaultSeats25().size() == 25 && c25.tank == 3 && c25.heal == 6 && c25.dps == 16
+            && c10.tank == 2 && c10.heal == 3 && c10.dps == 5);
+        std::vector<Seat> b25 = BotSeats(SeatsFor(25, DefaultSeats()), { ROLE_HEAL }, 25);
+        RoleCount cb = CountRoles(b25);
+        check("seats: a healer and 24 companions", b25.size() == 24 && cb.heal == 5 && cb.tank == 3 && cb.dps == 16);
+        check("seats: two friends (a tank and damage) and 8 companions", BotSeats(DefaultSeats(), { ROLE_TANK, ROLE_DPS }, 10).size() == 8);
+
+        // the playtest's marks and status line
+        check("phase marks: the final fight's transitions and its end", PhaseMarks(36597).size() == 4 && PhaseMarks(36597).back().spell == 72350
+            && PhaseMarks(36612).empty());
+        RushState st;
+        st.key = "frozen-throne"; st.diff = "normal"; st.phase = "ready"; st.leader = "Kalinra"; st.map = 631; st.instance = 7;
+        st.x = 517.0f; st.y = -2124.6f; st.z = 840.9f; st.dist = 1.2f; st.members = 10; st.bots = 9; st.inside = 10; st.step = "frozen-throne";
+        st.done = 0; st.of = 1; st.marks = "transition1,quake"; st.ms = 1234;
+        std::string line = RushLine(st);
+        check("status line", line == "bfrush run key=frozen-throne diff=normal phase=ready leader=Kalinra map=631 inst=7 x=517.0 y=-2124.6 z=840.9 dist=1.2 "
+            "members=10 bots=9 inside=10 step=frozen-throne done=0/1 boss=0 wipes=0 clears=0 marks=transition1,quake last=- ms=1234");
+        st.leader = "a b=c";
+        check("status line: a value never breaks the words", RushLine(st).find("leader=a_b_c ") != std::string::npos);
+    }
 
     std::printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

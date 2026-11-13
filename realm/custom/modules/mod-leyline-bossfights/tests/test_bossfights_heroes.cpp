@@ -141,7 +141,8 @@ int main()
         && EquipSlotsFor(17, true, true).size() == 2);
     check("slots: relics and ranged", EquipSlotsFor(28, false, false) == std::vector<std::uint8_t>{ 17 } && EquipSlotsFor(15, false, false)[0] == 17);
     check("slots: bags and ammo are not equipment here", EquipSlotsFor(18, false, false).empty() && EquipSlotsFor(24, false, false).empty());
-    check("instance mode mask", InstanceModeMask(DIFF_NORMAL) == 0 && InstanceModeMask(DIFF_HEROIC) == 0x20);
+    check("instance mode mask", InstanceModeMask(DIFF_NORMAL) == 0 && InstanceModeMask(DIFF_HEROIC) == 0x20
+        && InstanceModeMask(DIFF_NORMAL, 25) == 0x10 && InstanceModeMask(DIFF_HEROIC, 25) == 0x30);
 
     // the console command
     HeroPick p = ParseHeroPick({ "mage", "fire" });
@@ -162,6 +163,9 @@ int main()
     check("LYBF H: the hero you are on", MsgHero("Kalinra", 8, "fire", "frost", 1) == "H\tKalinra\tmage\tfire\tfrost\t1");
     BossDef const* ft = FindBoss("frozen-throne");
     check("go text", HeroGo(*ft, DIFF_HEROIC, MODE_GROUP_ONLY) == "bf:frozen-throne:heroic:group-only");
+    check("go text: a wing start at 25 (Boss Rush)", HeroGo(*FindBoss("icc-frostwing"), DIFF_HEROIC, MODE_GROUP_ONLY, 25) == "bf:icc-frostwing:heroic25:group-only"
+        && ParseHeroGo("bf:icc-frostwing:heroic25:group-only").size == 25 && ParseHeroGo("bf:icc-frostwing:heroic25:group-only").boss == FindBoss("icc-frostwing")
+        && ParseHeroGo("bf:frozen-throne:heroic:group").size == 10);
     JoinArgs g = ParseHeroGo("bf:frozen-throne:heroic:group");
     check("go text back", g.error.empty() && g.boss == ft && g.diff == DIFF_HEROIC && g.mode == MODE_GROUP);
     check("go text: bad ones", !ParseHeroGo("arena:1v1").error.empty() && !ParseHeroGo("bf:frozen-throne:normal").error.empty()

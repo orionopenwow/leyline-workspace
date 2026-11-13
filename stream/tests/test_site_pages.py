@@ -178,6 +178,8 @@ shutil.rmtree(os.path.join(ART, "slots"))
 
 # ---------------------------------------------------------------- guides
 st, _, page = get("/wrath/guides")
+check("guides: no \"Video coming soon\" placeholders, and no promise of videos while there are none",
+      "Video coming soon" not in page and "coming soon" not in page.lower() and ("Each has a video" in page) == any(sp._guide_video(g) for g in sp.guides()))
 check("guides: every episode linked", all(f'href="/wrath/guides/{s}"' in page for s in EP))
 for g in sp.guides():
     st, _, page = get(f"/wrath/guides/{g['slug']}")
@@ -185,7 +187,8 @@ for g in sp.guides():
     check(f"guide {g['n']}: steps, Stuck?, the Discord", "<h2 id=\"gd-steps\">Steps</h2>" in page and "Stuck?" in v
           and re.search(r'href="https://discord\.gg/[^"]+"[^>]*>Discord</a>', page), g["slug"])
     check(f"guide {g['n']}: at least 4 steps and 2 stuck lines", len(g["steps"]) >= 4 and len(g["stuck"]) >= 2)
-    check(f"guide {g['n']}: a video slot", 'data-video="soon"' in page or "<video" in page)
+    check(f"guide {g['n']}: no placeholder: the video when its file is there, else no \"Video coming soon\" (audit 12 Nov)",
+          ("<video" in page) == sp._guide_video(g) and "Video coming soon" not in page and 'data-video="soon"' not in page)
     check(f"guide {g['n']}: links to the next and previous", (g["n"] == 12 or f'href="/wrath/guides/{EP[g["n"]]}"' in page)
           and (g["n"] == 1 or f'href="/wrath/guides/{EP[g["n"] - 2]}"' in page))
     for t, h in g.get("docs", []):

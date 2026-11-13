@@ -699,6 +699,17 @@
       b.append(mk("p", "oc-line", `${title}'s setup was interrupted.`),
         row(btn("Continue", "btn small primary", () => answer(true), "oc-resume-go"), btn("Not now", "btn small", () => answer(false), "oc-resume-no")));
       nodes.push(head("Pick up where it stopped"), b);
+    } else if (v === "closing") {
+      // Leyline is closing with friends in the world (app.rs close_with_world): the player decides
+      const c = S.closing || {};
+      const n = Number(c.friends) || 1;
+      const b = mk("div", "oc-body");
+      b.append(mk("p", "oc-line", `${n === 1 ? "A friend is" : `${n} friends are`} playing in ${c.title || "your world"} right now. Closing Leyline stops it: everyone is saved first.`),
+        mk("p", "oc-fine", "Keep it running and your world stays up, but friends who came through Leyline lose their way in until you open Leyline again."),
+        row(btn("Stop it and close Leyline", "btn small primary", () => { S.view = ""; paint(); call("close_leyline", { stop: true }).catch(() => {}); }, "oc-close-stop"),
+          btn("Keep it running and close", "btn small", () => { S.view = ""; paint(); call("close_leyline", { stop: false }).catch(() => {}); }, "oc-close-keep"),
+          btn("Cancel", "btn small", () => close(), "oc-close-cancel")));
+      nodes.push(head("Friends are in your world"), b);
     } else if (v === "done") nodes.push(head(title), doneNode());
     card.dataset.view = v;
     card.replaceChildren(x, ...nodes);
@@ -734,7 +745,8 @@
 
   // ---------------------------------------------------------------- 8. Single player's settings
   const setRoot = byId("oc-set");
-  const stopOnExit = () => { const s = appState(); const v = s && s.settings ? s.settings.world_stop_on_exit : undefined; return v === undefined ? true : !!v; };
+  // a Settings switch that is on by default (a settings file from before it: on)
+  const flag = (key) => { const s = appState(); const v = s && s.settings ? s.settings[key] : undefined; return v === undefined ? true : !!v; };
   // the world settings on the page: { kind, v, line: [text, kind], restart, busy, missing }
   const PS = { kind: "single", v: null, line: ["", ""], restart: false, busy: false, missing: false, loading: false };
   async function loadWorldSettings() {
@@ -771,14 +783,18 @@
     PS.busy = false;
     paintSetting();
   }
-  async function restartWorld() {
+  // stop (everyone saved) and start again: the settings' Restart now, and the mods panel's (spmods.js)
+  async function restartKind(kind) {
     const w = W();
+    if (w) await w.stopWorld(kind);
+    await call("world_start", { kind });
+  }
+  async function restartWorld() {
     PS.busy = true;
     PS.line = ["Restarting… Everyone is saved first.", ""];
     paintSetting();
     try {
-      if (w) await w.stopWorld(PS.kind);
-      await call("world_start", { kind: PS.kind });
+      await restartKind(PS.kind);
       PS.restart = false;
       PS.line = ["Restarting with your settings. It's ready in a few seconds.", "ok"];
     } catch (e) { PS.line = [oops(e, "It didn't restart. Press Play to start it."), "bad"]; }
@@ -788,31 +804,42 @@
   function paintSetting() {
     if (!setRoot) return;
     const h = mk("h3", "oc-set-h", "Single player settings");
-    const lab = mk("label", "check oc-set-row");
-    const box = mk("input");
-    box.type = "checkbox";
-    box.id = "oc-stop-exit";
-    box.checked = stopOnExit();
     const line = mk("p", "status oc-set-status");
     line.id = "oc-set-status";
-    box.addEventListener("change", async () => {
-      const on = box.checked;
-      box.disabled = true;
-      try {
-        await call("set_world_stop_on_exit", { on });
-        const s = appState();
-        if (s && s.settings) s.settings.world_stop_on_exit = on;
-        line.textContent = on ? "Your world stops (and saves) when the game closes." : "Your world keeps running after the game closes.";
-        line.className = "status oc-set-status ok";
-      } catch (e) {
-        box.checked = !on;
-        line.textContent = oops(e, "That setting needs a newer Leyline. Update Leyline, then try again.");
-        line.className = "status oc-set-status bad";
-      }
-      box.disabled = false;
-    });
-    lab.append(box, document.createTextNode("Stop the world when the game closes"));
-    const nodes = [h, lab, mk("p", "oc-fine", "On: everyone is saved and the world stops when you close the game. Off: it keeps running, so friends can stay."), line];
+    // one switch of Settings (settings.json): its command, its key, the label, and what on and off mean
+    const toggle = (id, cmd, key, label, onLine, offLine) => {
+      const lab = mk("label", "check oc-set-row");
+      const box = mk("input");
+      box.type = "checkbox";
+      box.id = id;
+      box.checked = flag(key);
+      box.addEventListener("change", async () => {
+        const on = box.checked;
+        box.disabled = true;
+        try {
+          await call(cmd, { on });
+          const s = appState();
+          if (s && s.settings) s.settings[key] = on;
+          line.textContent = on ? onLine : offLine;
+          line.className = "status oc-set-status ok";
+        } catch (e) {
+          box.checked = !on;
+          line.textContent = oops(e, "That setting needs a newer Leyline. Update Leyline, then try again.");
+          line.className = "status oc-set-status bad";
+        }
+        box.disabled = false;
+      });
+      lab.append(box, document.createTextNode(label));
+      return lab;
+    };
+    const nodes = [h,
+      toggle("oc-stop-exit", "set_world_stop_on_exit", "world_stop_on_exit", "Stop the world when the game closes",
+        "Your world stops (and saves) when the game closes.", "Your world keeps running after the game closes."),
+      mk("p", "oc-fine", "On: everyone is saved and the world stops when you close the game. Off: it keeps running, so friends can stay."),
+      toggle("oc-stop-close", "set_world_stop_on_close", "world_stop_on_close", "Stop the world when Leyline closes",
+        "Closing Leyline saves and stops your world (it asks first when friends are in it).", "Your world keeps running after Leyline closes, until you restart the PC."),
+      mk("p", "oc-fine", "On: closing Leyline saves everyone and stops your world, so nothing keeps running unwatched. Leyline asks first when friends are in it. Off: the world keeps running, but friends can't join without Leyline open."),
+      line];
     // the world's own settings (host/spsettings.rs), for later changes
     if (!PS.missing && PS.unsupported) nodes.push(mk("p", "oc-fine", "Your world's companion and population settings are for the Built-in engine, on Windows PCs."));
     if (!PS.missing && !PS.unsupported) {
@@ -959,6 +986,16 @@
   paintSetting();
   paintFriends();
   setTimeout(() => { paintHome(); resume(); }, 300);
+  // Leyline closing with friends in a world (app.rs close_with_world): asked on the card
+  function closingAsk(d) {
+    S.closing = d && typeof d === "object" ? d : {};
+    S.view = "closing"; S.hidden = false;
+    paint();
+  }
+  try {
+    const ev = window.__TAURI__ && window.__TAURI__.event;
+    if (ev && ev.listen) ev.listen("leyline:close-world", (e) => closingAsk(e && e.payload));
+  } catch (_) { /* a preview page */ }
 
-  window.LeylineOneClick = { play, resume, askWorld, coded, phaseOf, PHASES, STEPS, FIRST_LINE, cfg, friends: () => ({ state: friendState(), link: PF.link, kind: PF.kind }), state: () => ({ view: S.view, hidden: S.hidden, busy: !!S.flow, kind: S.kind }) };
+  window.LeylineOneClick = { play, resume, askWorld, restart: restartKind, coded, phaseOf, PHASES, STEPS, FIRST_LINE, cfg, friends: () => ({ state: friendState(), link: PF.link, kind: PF.kind }), state: () => ({ view: S.view, hidden: S.hidden, busy: !!S.flow, kind: S.kind }), closingAsk };
 })();

@@ -1,0 +1,56 @@
+/* Leaderboards (boards.js, docs/LEADERBOARDS.md) on the list kit's look (listkit.css): only the theme's tokens
+   (style.css --t-*), so Dark, Light and every theme pack fit. */
+.lb-panel { margin-top: 14px; }
+.lb { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; max-width: 100%; }
+.lb-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.lb-head h3 { margin: 0; font: 700 16px var(--t-font); }
+.lb-feat { margin: 0; flex: 1; color: var(--t-accent-strong, var(--t-accent)); font: 600 13px var(--t-font); }
+.lb-feat:empty { display: none; }
+.lb-tabs { justify-self: start; }
+.lb-controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.lb-sel { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; color: var(--t-muted); font: 600 12px var(--t-font); }
+.lb-sel select { height: 30px; width: auto; min-width: 0; max-width: 100%; padding: 0 26px 0 10px; font: 600 12.5px var(--t-font); }
+/* a narrow window: each picker on its own line, as wide as the panel (long fight names stay inside it) */
+@media (max-width: 600px) { .lb-sel { flex: 1 1 100%; } .lb-sel select { flex: 1 1 auto; width: 100%; } }
+.lb-list { min-width: 0; }
+.lb-row {
+  display: grid; grid-template-columns: 2.4em minmax(150px, 1.4fr) 6.5em minmax(110px, 1fr) minmax(170px, 1.2fr) 6.5em auto;
+  align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--t-radius-sm);
+  background: var(--t-surface); border: var(--t-border-w) solid var(--t-border); font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.lb-row + .lb-row { margin-top: 4px; }
+.lb-row.lb-me { border-color: var(--t-accent); box-shadow: 0 0 0 1px var(--t-accent) inset; background: var(--t-accent-soft); }
+.lb-rank { color: var(--t-muted); font-weight: 700; text-align: right; }
+.lb-row.p1 .lb-rank { color: var(--t-gold, #e6b84a); }
+.lb-row.p2 .lb-rank, .lb-row.p3 .lb-rank { color: var(--t-text-2); }
+.lb-who { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.lb-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+.lb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-class { color: var(--t-muted); font-size: 11.5px; white-space: nowrap; }
+.lb-you { padding: 1px 7px; border-radius: 99px; background: var(--t-accent); color: var(--t-on-accent); font: 700 10.5px var(--t-font); }
+.lb-val { font: 700 14px var(--t-font); font-variant-numeric: tabular-nums; text-align: right; }
+.lb-sub { color: var(--t-muted); font-size: 12px; }
+.lb-mark { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--t-text-2); font-size: 12px; }
+.lb-mark .lb-ok {
+  flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--t-good, #2e8b57); color: #fff; font: 800 10px var(--t-font);
+}
+.lb-mark.local .lb-ok { background: var(--t-muted); }
+.lb-mark small { color: var(--t-muted); }
+.lb-realm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-date { color: var(--t-muted); font-size: 12px; }
+.lb-mebtn {
+  height: 26px; padding: 0 10px; border-radius: 99px; border: var(--t-border-w) solid var(--t-border-strong); background: var(--t-surface-2);
+  color: var(--t-text-2); font: 600 11.5px var(--t-font); cursor: pointer; white-space: nowrap;
+}
+.lb-mebtn:hover { border-color: var(--t-accent); color: var(--t-text); }
+.lb-mebtn[aria-pressed="true"] { background: var(--t-accent-soft); color: var(--t-accent-strong, var(--t-accent)); }
+.lb-note { margin: 0; color: var(--t-muted); font-size: 12px; }
+.br-chip.week { background: var(--t-accent); color: var(--t-on-accent); }
+.br-share-run { height: 24px; padding: 0 10px; }
+@media (max-width: 900px) {
+  .lb-row { grid-template-columns: 2em minmax(120px, 1fr) 6em auto; }
+  .lb-sub, .lb-date { display: none; }
+  .lb-mark { grid-column: 2 / 4; }
+}
+html.phone .lb-mebtn { height: 34px; }

@@ -19,6 +19,11 @@
 //!   `<client>/Leyline/backup/` first, and Remove puts it back.
 //! * Preferences (`PREFS_FILE` in the launcher's own folder): update on start (on by default) and "don't ask
 //!   again" for the PLAY prompt on the official realm.
+//! * Right before every PLAY on a 3.3.5a client (`prepare_for_play`; 12 Nov: the owner's game folder still had the
+//!   companions addon of 6 Nov after the pack was republished): the last good listing when it is fresh, else the
+//!   release asked for at most `PLAY_LISTING_TIMEOUT`; a pack Leyline installed that is behind is updated there and
+//!   then, and the play bar says so. A hand-made copy of our folders is still never replaced without an OK: the
+//!   launcher asks once per version ("Your in-game Leyline add-on is out of date: update it?").
 //!
 //! Never game data: the pack holds our own Lua, TOC and XML files, our font (DejaVu Sans Mono, its licence beside
 //! it) and our own textures. Forever UI is not ours and is never part of it.
@@ -175,11 +180,14 @@ pub struct Prefs {
     pub auto_update: bool,
     /// PLAY on the official realm does not offer them again.
     pub dont_ask: bool,
+    /// "<client id>@<pack version>": the player was asked once whether to update their own (out of date) copy of
+    /// our folders for that version, before PLAY (`PlayPrep::outdated_own`). A newer version asks once again.
+    pub asked_own: Vec<String>,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { auto_update: true, dont_ask: false }
+        Prefs { auto_update: true, dont_ask: false, asked_own: Vec::new() }
     }
 }
 
@@ -342,6 +350,11 @@ fn replace_confirm(names: &[String]) -> String {
 /// Download (from the release only), check and install `d` into `client`. `replace_ok`: the player said yes to
 /// moving their own folders of the same names aside (else the error starts with `REPLACE_CONFIRM`).
 pub fn install(client: &Path, build: Build, d: &Descriptor, scratch: &Path, replace_ok: bool) -> Result<Done, String> {
+    install_timed(client, build, d, scratch, replace_ok, net::TIMEOUT, Duration::from_secs(30))
+}
+
+/// `install` with the download's own time limits (`connect`, `read`): the one right before PLAY uses short ones.
+pub fn install_timed(client: &Path, build: Build, d: &Descriptor, scratch: &Path, replace_ok: bool, connect: Duration, read: Duration) -> Result<Done, String> {
     if build != Build::V335a {
         return Err(format!("The Leyline addons are for {}'s client, not this one.", crate::realms::SAMPLE_NAME));
     }
@@ -377,7 +390,7 @@ pub fn install(client: &Path, build: Build, d: &Descriptor, scratch: &Path, repl
     if !cfg!(test) && !d.download.starts_with("https://") {
         return Err("Leyline only downloads over https.".into());
     }
-    let (_, sha) = net::download(&d.download, &zip, MAX_PACK, net::TIMEOUT, Duration::from_secs(30)).map_err(|e| format!("Download failed: {e}"))?;
+    let (_, sha) = net::download(&d.download, &zip, MAX_PACK, connect, read).map_err(|e| format!("Download failed: {e}"))?;
     if sha != d.sha256 {
         return Err("The Leyline addons download does not match its checksum, so nothing was installed. Try again later.".into());
     }
@@ -527,6 +540,148 @@ pub fn auto_update(clients: &[ClientProfile], d: &Descriptor, scratch: &Path) ->
         .collect()
 }
 
+// ------------------------------------------------------------------------------------------------ right before PLAY
+
+/// The listing right before PLAY: asked again only when the last good copy is older than this (seconds).
+pub const PLAY_FRESH_SECS: u64 = 10 * 60;
+/// Right before PLAY the listing gets this long to answer, else the last good copy is used: PLAY never waits long.
+pub const PLAY_LISTING_TIMEOUT: Duration = Duration::from_secs(3);
+/// The pack's own download right before PLAY (connect, read): it is a few hundred KB.
+pub const PLAY_DOWNLOAD: (Duration, Duration) = (Duration::from_secs(3), Duration::from_secs(10));
+
+/// What the check right before PLAY did, for the play bar ("In-game add-ons updated") and the launcher's one-time
+/// question about the player's own out-of-date copy.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct PlayPrep {
+    pub client: String,
+    /// Updated (or put in) just now: the new version.
+    pub updated: Option<String>,
+    /// An update was due and did not go in (the game folder is as it was; tried again next PLAY).
+    pub error: Option<String>,
+    /// Folders named like ours that Leyline did not put there and that are not the listed files (an old hand-made
+    /// copy, say): never replaced without the player's OK, so the launcher asks.
+    pub outdated_own: Vec<String>,
+    /// The listing's version (when there is one).
+    pub version: Option<String>,
+    /// The player was asked about `outdated_own` for this version already (the launcher doesn't ask twice).
+    pub asked: bool,
+}
+
+fn cache_age_secs(app_dir: &Path) -> Option<u64> {
+    let m = fs::metadata(app_dir.join(CACHE_FILE)).ok()?.modified().ok()?;
+    Some(SystemTime::now().duration_since(m).map(|d| d.as_secs()).unwrap_or(0))
+}
+
+/// The listing for PLAY: the last good copy when it is fresh (`PLAY_FRESH_SECS`), else the release asked with a
+/// short time limit, falling back to the last good copy.
+pub fn listing_for_play(app_dir: &Path, url: &str, timeout: Duration) -> Option<Descriptor> {
+    if cache_age_secs(app_dir).is_some_and(|a| a < PLAY_FRESH_SECS) {
+        if let Some(d) = cached(app_dir) {
+            return Some(d);
+        }
+    }
+    let cache = app_dir.join(CACHE_FILE);
+    match net::get_json(url, timeout).ok().and_then(|v| from_json(&v)) {
+        Some(d) => {
+            if let Ok(b) = serde_json::to_vec_pretty(&d) {
+                let _ = crate::settings::write_atomic(&cache, &b);
+            }
+            Some(d)
+        }
+        None => cached(app_dir),
+    }
+}
+
+/// Is this folder of the player's own something other than the listed files of that addon?
+fn own_copy_differs(addons: &Path, name: &str, d: &Descriptor) -> bool {
+    let Some(dir) = find_ci(addons, name) else { return false };
+    let prefix = format!("{name}/");
+    d.files.iter().filter(|(rel, _)| rel.starts_with(&prefix)).any(|(rel, want)| {
+        let mut at = Some(dir.clone());
+        for part in rel[prefix.len()..].split('/') {
+            at = at.and_then(|p| find_ci(&p, part));
+        }
+        at.map(|p| net::sha256_file(&p).unwrap_or_default() != *want).unwrap_or(true)
+    })
+}
+
+/// Right before PLAY on a 3.3.5a client (official, community, Single player, Your Den): when updating is on and
+/// the pack Leyline installed here is behind the listing (or one of its folders went), update it now, quickly
+/// (`PLAY_LISTING_TIMEOUT`, `PLAY_DOWNLOAD`). `install_missing`: put the pack in when it isn't here at all (the
+/// first Single player setup). Folders of ours that Leyline did not put there are never touched: when they differ
+/// from the listing, `outdated_own` names them for the launcher's one-time question. Never an error: what went wrong
+/// is in `error`, and PLAY goes on.
+pub fn prepare_for_play(app_dir: &Path, p: &ClientProfile, url: &str, install_missing: bool) -> PlayPrep {
+    let mut out = PlayPrep { client: p.id.clone(), ..Default::default() };
+    let pr = prefs(app_dir);
+    if p.build != Build::V335a || !pr.auto_update {
+        return out;
+    }
+    let Some(d) = listing_for_play(app_dir, url, PLAY_LISTING_TIMEOUT) else { return out };
+    out.version = Some(d.version.clone());
+    out.asked = pr.asked_own.iter().any(|k| *k == format!("{}@{}", p.id, d.version));
+    let s = client_status(p, Some(&d));
+    let addons = addons_folder(&p.path);
+    let differs = |n: &String| addons.as_ref().is_some_and(|a| own_copy_differs(a, n, &d));
+    let due = if s.installed.is_some() { s.update || !s.missing.is_empty() } else { install_missing && s.foreign.is_empty() };
+    if due {
+        let (c, r) = PLAY_DOWNLOAD;
+        match install_timed(&p.path, p.build, &d, app_dir, false, c, r) {
+            Ok(done) if !done.already => out.updated = Some(done.version),
+            Ok(_) => {}
+            Err(e) if e.starts_with(REPLACE_CONFIRM) => {}
+            Err(e) => out.error = Some(e),
+        }
+    }
+    // asked again after an install: a folder of ours still there that Leyline did not put there
+    let s = if due { client_status(p, Some(&d)) } else { s };
+    out.outdated_own = s.foreign.iter().filter(|n| differs(n)).cloned().collect();
+    out
+}
+
+/// The player answered the one-time question for this client and version (either way).
+pub fn mark_asked_own(app_dir: &Path, client: &str, version: &str) -> Result<Prefs, String> {
+    let mut p = prefs(app_dir);
+    let k = format!("{client}@{version}");
+    if !p.asked_own.contains(&k) {
+        p.asked_own.push(k);
+        let n = p.asked_own.len();
+        if n > 50 {
+            p.asked_own.drain(..n - 50);
+        }
+        save_prefs(app_dir, &p)?;
+    }
+    Ok(p)
+}
+
+/// The last update made right before a PLAY, for the play bar (taken once).
+static PLAY_NOTE: std::sync::Mutex<Option<PlayPrep>> = std::sync::Mutex::new(None);
+
+pub fn note_play(prep: &PlayPrep) {
+    if let Ok(mut g) = LAST_PREP.lock() {
+        *g = Some((prep.client.clone(), std::time::Instant::now()));
+    }
+    if prep.updated.is_some() {
+        if let Ok(mut g) = PLAY_NOTE.lock() {
+            *g = Some(prep.clone());
+        }
+    }
+}
+
+/// The game folder whose add-ons were last brought up to date before a PLAY, and when.
+static LAST_PREP: std::sync::Mutex<Option<(String, std::time::Instant)>> = std::sync::Mutex::new(None);
+/// A second check right after the page's own (addons.js beforePlay, then the PLAY itself) is skipped within this.
+pub const PREP_AGAIN: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The add-ons of game folder `client` were checked before a PLAY in the last [`PREP_AGAIN`].
+pub fn checked_recently(client: &str) -> bool {
+    LAST_PREP.lock().ok().and_then(|g| g.clone()).is_some_and(|(c, t)| c == client && t.elapsed() < PREP_AGAIN)
+}
+
+pub fn take_play_note() -> Option<PlayPrep> {
+    PLAY_NOTE.lock().ok().and_then(|mut g| g.take())
+}
+
 /// Should PLAY on the official realm offer the addons for this client?
 pub fn should_offer(p: &ClientProfile, prefs: &Prefs) -> bool {
     !prefs.dont_ask && p.build == Build::V335a && mods::load(&p.path).get(KEY).is_none()
@@ -634,6 +789,36 @@ pub(crate) mod commands {
                 .collect())
         })
         .await
+    }
+
+    /// Right before any PLAY on a 3.3.5a client (addons.js beforePlay): the quick update where Leyline installed
+    /// the pack, and the player's own out-of-date copy named for the one-time question. Skipped (an empty answer)
+    /// while another install holds the mod lock: PLAY never waits for it.
+    #[tauri::command]
+    pub async fn addons_before_play(core: Core<'_>, client: String) -> Result<PlayPrep, String> {
+        let p = core.client(&client)?;
+        let dir = core.dir.clone();
+        let lock = core.mods_lock.clone();
+        blocking(move || {
+            let Ok(_g) = lock.try_lock() else { return Ok(PlayPrep { client: p.id.clone(), ..Default::default() }) };
+            let r = prepare_for_play(&dir, &p, DESCRIPTOR_URL, false);
+            note_play(&r);
+            Ok(r)
+        })
+        .await
+    }
+
+    /// The last update made right before a PLAY (by addons_before_play or by the PLAY itself), taken once: the play
+    /// bar's "In-game add-ons updated".
+    #[tauri::command]
+    pub fn addons_play_note() -> Option<PlayPrep> {
+        take_play_note()
+    }
+
+    /// The one-time question about the player's own copy was answered (yes or no) for this client and version.
+    #[tauri::command]
+    pub fn addons_mark_asked(core: Core<'_>, client: String, version: String) -> Result<Prefs, String> {
+        mark_asked_own(&core.dir, &client, &version)
     }
 
     /// Settings: update on start, and the PLAY prompt's "don't ask again".
@@ -914,7 +1099,113 @@ mod tests {
         assert_eq!(cached(t.path()), a.pack);
         let p = prefs(t.path());
         assert!(p.auto_update && !p.dont_ask);
-        save_prefs(t.path(), &Prefs { auto_update: false, dont_ask: true }).unwrap();
-        assert_eq!(prefs(t.path()), Prefs { auto_update: false, dont_ask: true });
+        save_prefs(t.path(), &Prefs { auto_update: false, dont_ask: true, ..Prefs::default() }).unwrap();
+        assert_eq!(prefs(t.path()), Prefs { auto_update: false, dont_ask: true, asked_own: Vec::new() });
+        // an older prefs file (no asked_own) still reads
+        fs::write(t.path().join(PREFS_FILE), br#"{"auto_update":true,"dont_ask":false}"#).unwrap();
+        assert_eq!(prefs(t.path()), Prefs::default());
+    }
+
+    fn save_cache(app: &Path, d: &Descriptor) {
+        fs::write(app.join(CACHE_FILE), serde_json::to_vec(d).unwrap()).unwrap();
+    }
+
+    /// 12 Nov: the owner's game folder kept the companions addon of 6 Nov after the pack was republished. Right
+    /// before PLAY, a pack Leyline installed that is behind is updated there and then, from the fresh listing copy
+    /// without asking the release again.
+    #[test]
+    fn play_updates_a_pack_that_is_behind() {
+        let (_t, client, app) = setup();
+        let p = profile(&client, Build::V335a);
+        let (d1, z1) = pack("2026.1106.1200", &entries(LUA));
+        install(&client, Build::V335a, &served(&d1, z1), &app, false).unwrap();
+        let (d2, z2) = pack("2026.1112.0900", &entries(b"WrathUnleashedUI = { v = 2 }\n"));
+        save_cache(&app, &served(&d2, z2));
+        let dead = crate::net::testserver::dead_url();
+        let r = prepare_for_play(&app, &p, &dead, false);
+        assert_eq!(r.updated.as_deref(), Some("2026.1112.0900"), "{r:?}");
+        assert_eq!((r.error.as_ref(), r.outdated_own.len()), (None, 0));
+        assert_eq!(fs::read(client.join("Interface/AddOns/WrathUnleashedUI/WrathUnleashedUI.lua")).unwrap(), b"WrathUnleashedUI = { v = 2 }\n");
+        // the play bar's line, taken once
+        note_play(&r);
+        assert_eq!(take_play_note().and_then(|n| n.updated).as_deref(), Some("2026.1112.0900"));
+        assert!(take_play_note().is_none());
+        // up to date: nothing done, nothing said
+        let again = prepare_for_play(&app, &p, &dead, false);
+        assert_eq!((again.updated, again.error), (None, None));
+        // a deleted folder of ours comes back
+        fs::remove_dir_all(client.join("Interface/AddOns/OVQoL")).unwrap();
+        assert!(prepare_for_play(&app, &p, &dead, false).updated.is_some());
+        assert!(client.join("Interface/AddOns/OVQoL/OVQoL.toc").is_file());
+        // updating off (Settings): left as it is
+        let (d3, z3) = pack("2026.1113.0900", &entries(b"WrathUnleashedUI = { v = 3 }\n"));
+        save_cache(&app, &served(&d3, z3));
+        save_prefs(&app, &Prefs { auto_update: false, ..Prefs::default() }).unwrap();
+        assert_eq!(prepare_for_play(&app, &p, &dead, false), PlayPrep { client: "c1".into(), ..Default::default() });
+        // another client version: never
+        save_prefs(&app, &Prefs::default()).unwrap();
+        assert!(prepare_for_play(&app, &profile(&client, Build::V1121), &dead, true).version.is_none());
+    }
+
+    /// A hand-made copy of our folder that is out of date is never replaced by itself: PLAY names it for the
+    /// launcher's one-time question. A copy that is the listed files exactly is not named. Install-missing (the first
+    /// Single player setup) puts the pack in where there is none.
+    #[test]
+    fn play_names_an_out_of_date_own_copy_and_installs_when_missing() {
+        let (_t, client, app) = setup();
+        let p = profile(&client, Build::V335a);
+        let (d, z) = pack("2026.1112.0900", &entries(LUA));
+        let d = served(&d, z);
+        save_cache(&app, &d);
+        let dead = crate::net::testserver::dead_url();
+        // nothing here, not asked to install: nothing done
+        let r = prepare_for_play(&app, &p, &dead, false);
+        assert_eq!((r.updated.as_ref(), r.outdated_own.len(), r.version.as_deref()), (None, 0, Some("2026.1112.0900")));
+        assert!(!client.join("Interface/AddOns/WrathUnleashedUI").exists());
+        // an old hand-made copy: named, untouched, even with install_missing
+        touch(&client, "Interface/AddOns/WrathUnleashedUI/WrathUnleashedUI.toc", TOC);
+        touch(&client, "Interface/AddOns/WrathUnleashedUI/WrathUnleashedUI.lua", b"-- 6 Nov\n");
+        let r = prepare_for_play(&app, &p, &dead, true);
+        assert_eq!(r.outdated_own, ["WrathUnleashedUI"]);
+        assert!(r.updated.is_none() && !r.asked);
+        assert_eq!(fs::read(client.join("Interface/AddOns/WrathUnleashedUI/WrathUnleashedUI.lua")).unwrap(), b"-- 6 Nov\n");
+        // asked once for this version
+        mark_asked_own(&app, "c1", "2026.1112.0900").unwrap();
+        mark_asked_own(&app, "c1", "2026.1112.0900").unwrap();
+        assert_eq!(prefs(&app).asked_own, ["c1@2026.1112.0900"]);
+        assert!(prepare_for_play(&app, &p, &dead, false).asked);
+        // the same files exactly (a copy of this very version): not named
+        touch(&client, "Interface/AddOns/WrathUnleashedUI/WrathUnleashedUI.lua", LUA);
+        assert!(prepare_for_play(&app, &p, &dead, false).outdated_own.is_empty());
+        // gone: install_missing puts the whole pack in
+        fs::remove_dir_all(client.join("Interface/AddOns/WrathUnleashedUI")).unwrap();
+        let r = prepare_for_play(&app, &p, &dead, true);
+        assert_eq!(r.updated.as_deref(), Some("2026.1112.0900"), "{r:?}");
+        assert!(mods::load(&client).get(KEY).is_some());
+    }
+
+    /// The listing before PLAY: a fresh copy is used as it is, a stale one asks the release (short time limit) and
+    /// falls back to the copy when the release doesn't answer.
+    #[test]
+    fn play_listing_is_quick() {
+        let t = tempfile::tempdir().unwrap();
+        let (d1, _) = pack("2026.1106.1200", &entries(LUA));
+        let d1 = Descriptor { download: "http://127.0.0.1:9/pack.zip".into(), ..d1 };
+        let d2 = Descriptor { version: "2026.1112.0900".into(), ..d1.clone() };
+        let base = serve_routes(vec![("/addonpack.json", "200 OK", serde_json::to_vec(&d2).unwrap())]);
+        let url = format!("{base}/addonpack.json");
+        let dead = crate::net::testserver::dead_url();
+        assert!(listing_for_play(t.path(), &dead, PLAY_LISTING_TIMEOUT).is_none(), "no copy, no answer");
+        save_cache(t.path(), &d1);
+        // fresh: the copy, the release not asked
+        assert_eq!(listing_for_play(t.path(), &url, PLAY_LISTING_TIMEOUT).map(|d| d.version).as_deref(), Some("2026.1106.1200"));
+        // stale: the release's newer one (and kept as the copy)
+        let old = SystemTime::now() - Duration::from_secs(PLAY_FRESH_SECS + 60);
+        fs::File::options().write(true).open(t.path().join(CACHE_FILE)).unwrap().set_modified(old).unwrap();
+        assert_eq!(listing_for_play(t.path(), &url, PLAY_LISTING_TIMEOUT).map(|d| d.version).as_deref(), Some("2026.1112.0900"));
+        assert_eq!(cached(t.path()).map(|d| d.version).as_deref(), Some("2026.1112.0900"));
+        // stale and no answer: the copy
+        fs::File::options().write(true).open(t.path().join(CACHE_FILE)).unwrap().set_modified(old).unwrap();
+        assert_eq!(listing_for_play(t.path(), &dead, PLAY_LISTING_TIMEOUT).map(|d| d.version).as_deref(), Some("2026.1112.0900"));
     }
 }

@@ -31,10 +31,24 @@ R.MORE = {
     end },
 }
 
+-- Which guide: a world on the player's own PC has its own (RealmGuideLocal.lua, W.REALM_GUIDES by the kind its realm
+-- names in its hello, W.RealmKind); a shared Leyline realm has the official realm's (RealmGuideData.lua). A local
+-- world with no guide of its own (Boss Rush: its own windows) has none: nil.
+function R.Guide()
+    local k = W.RealmKind
+    if k then
+        local g = W.REALM_GUIDES and W.REALM_GUIDES[k]
+        if g then return g.pages or {}, g.title end
+        return nil
+    end
+    return W.REALM_GUIDE or {}, W.REALM_GUIDE_TITLE
+end
+function R.Data() return (R.Guide()) or {} end
+
 -- every page's pages plus Commands and More
 function R.Pages()
     local list = {}
-    for _, p in ipairs(W.REALM_GUIDE or {}) do list[#list + 1] = p end
+    for _, p in ipairs(R.Data()) do list[#list + 1] = p end
     list[#list + 1] = { key = "commands", name = "All commands", icon = "keys", heading = "All commands", all = true }
     list[#list + 1] = { key = "more", name = "More", icon = "menu", heading = "More", more = true }
     return list
@@ -51,7 +65,7 @@ local function cmdLine(c) return GOLD .. c[1] .. "|r   " .. MUTED .. c[2] .. "|r
 function R.Text(p)
     if p.all then
         local out = {}
-        for _, q in ipairs(W.REALM_GUIDE or {}) do
+        for _, q in ipairs(R.Data()) do
             for _, c in ipairs(q.commands or {}) do out[#out + 1] = cmdLine(c) end
         end
         return table.concat(out, "\n")
@@ -86,7 +100,9 @@ end
 
 local function build()
     local pages = R.Pages()
+    local _, title = R.Guide()
     win = CreateFrame("Frame", "LeylineRealmGuide", UIParent)
+    win.kind = W.RealmKind or ""
     local h = math.max(WIN_H, 52 + #pages * 30 + 40)
     win:SetWidth(WIN_W); win:SetHeight(h)
     win:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
@@ -103,7 +119,7 @@ local function build()
     win.mark:SetTexture(S().MARK)
     win.mark:SetWidth(18); win.mark:SetHeight(18)
     win.mark:SetPoint("TOPLEFT", PAD, -10)
-    win.title = S().EdLabel(win, W.REALM_GUIDE_TITLE or "Guide", true, "TOPLEFT", PAD + 24, -12)
+    win.title = S().EdLabel(win, title or "Guide", true, "TOPLEFT", PAD + 24, -12)
     win.close = S().EdChip(win, "x", 28, function() R.Show(false) end, "TOPRIGHT", -8, -8)
     win.close.edLabel = "Close (Esc)"
     win.list = {}
@@ -146,17 +162,27 @@ local function build()
     win:Hide()
 end
 
+-- The window as it is for this realm: built again when the realm's kind arrived after it was first built.
+local function ready()
+    if win and win.kind ~= (W.RealmKind or "") then
+        win:Hide()
+        win = nil
+        R.page = 1
+    end
+    if not win then build() end
+end
+
 function R.Go(n)
+    ready()
     local pages = R.Pages()
     if type(n) == "string" then n = R.Index(n) or 1 end
     R.page = math.max(1, math.min(#pages, tonumber(n) or 1))
-    if not win then build() end
     paint()
     return R.page
 end
 
 function R.Show(on, page)
-    if not win then build() end
+    ready()
     if page then R.Go(page) end
     if on then win:Show(); paint() else win:Hide() end
     return win:IsShown()
@@ -174,6 +200,8 @@ end
 
 function R.ShowButton()
     if not Minimap or db().guideNoMinimap then return end
+    -- a local world without a guide of its own: no button (never the official realm's guide there)
+    if not R.Guide() then if R.mini then R.mini:Hide() end return end
     local b = R.mini
     if not b then
         b = CreateFrame("Button", "LeylineGuideMinimapButton", Minimap)

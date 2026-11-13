@@ -650,14 +650,31 @@ end
 -- One line for both ways to have your own place: the Den (the launcher's Your Den, on your PC) and hosting (/host).
 -- TODO(owner): his words for this line
 local HOST_INVITE = "Your own Den: a room to build in on your PC (the launcher's Your Den). Host it for friends: |cffffff00/host|r."
+-- hub: only where the hub is on (OV_QOL_HUB); online: only on a shared realm, never a world on the player's own PC
 local TIPS = {
-    { text = "In Dalaran, |cffffff00.hub|r shows the duel corner, the 1v1 arena, transmog and keystone dungeons." },
-    { text = "At 80, |cffffff00.guide|r shows where to go: dungeons, gear, raids, PvP.", min = MAX_LEVEL },
-    { text = "|cffffff00/golf|r for minigolf, |cffffff00/modes|r for minigames with friends." },
+    { text = "In Dalaran, |cffffff00.hub|r shows the duel corner, the 1v1 arena, transmog and keystone dungeons.", hub = true },
+    { text = "At 80, |cffffff00.guide|r shows where to go: dungeons, gear, raids, PvP.", min = MAX_LEVEL, online = true },
+    { text = "|cffffff00/golf|r for minigolf, |cffffff00/modes|r for minigames with friends.", online = true },
     { text = "Found a bug? |cffffff00.bug|r and what happened. Stuck? |cffffff00.stuck|r takes you home." },
     { text = "|cffffff00.ov|r: free faction, race and appearance changes. |cffffff00.qol|r: what's switched on here." },
 }
 table.insert(TIPS, { text = "Dungeons scale to the group you bring, even just you: |cffffff00.solo|r shows which to run.", min = 10 })
+
+-- A world on the player's own PC (the launcher's Single player or original world: OV_REALM_KIND single / original,
+-- host/engine.rs world_env): its own tips, about the bots, the Bots window and the world itself.
+local function localWorld()
+    local k = os.getenv("OV_REALM_KIND")
+    return k == "single" or k == "original"
+end
+-- TODO(owner): his words for these
+local LOCAL_TIPS = {
+    { text = "Bots: press |cffffff00Ctrl-B|r or click the Bots button by the minimap to bring companions and dungeon buddies." },
+    { text = "|cffffff00/comp|r opens the Bots window. |cffffff00.recruit party|r fills a group; |cffffff00.buddy|r brings one levelling buddy." },
+    { text = "Your world is saved as you play. Leyline stops it a minute after the game closes and backs it up once a day." },
+    { text = "This world runs on your PC: it plays offline, and the launcher's Single player page has Repair and Restore if anything goes wrong." },
+}
+-- The very first login of a character on a local world: one line about the Bots window, companions on or off.
+local FIRST_LOGIN = "Your own world. Bots join you from the Bots window: press |cffffff00Ctrl-B|r or click the Bots button by the minimap."
 
 -- .solo (owner 4 Nov, the Wrath+ sprint): every dungeon and raid already scales to the group (mod-autobalance, minimum
 -- one player) and the Dungeon Finder queues one player alone (mod-solo-lfg); this says so, with the dungeons for your
@@ -697,7 +714,11 @@ local function loginTip(player)
         return HOST_INVITE
     end
     local list = {}
-    for _, t in ipairs(TIPS) do list[#list + 1] = t end
+    local here = localWorld()
+    for _, t in ipairs(TIPS) do
+        if not (t.hub and not hubOn()) and not (t.online and here) then list[#list + 1] = t end
+    end
+    if here then for _, t in ipairs(LOCAL_TIPS) do list[#list + 1] = t end end
     -- other scripts add theirs to the shared OV_EXTRA_TIPS ({ text =, min = }; ov_events.lua: .events)
     for _, t in ipairs(rawget(_G, "OV_EXTRA_TIPS") or {}) do
         if type(t) == "table" and type(t.text) == "string" then list[#list + 1] = t end
@@ -717,7 +738,8 @@ end
 local function onLogin(event, player)
     if not player or isBot(player) then return end
     if welcomeOn() then showWelcome(player) end
-    local tip = restedText(player) or (welcomeOn() and loginTip(player)) or nil
+    local first = localWorld() and welcomeOn() and (tonumber(try(player, "GetTotalPlayedTime")) or 1) == 0
+    local tip = (first and FIRST_LOGIN) or restedText(player) or (welcomeOn() and loginTip(player)) or nil
     if tip then say(player, tip) end
     if autolearnOn() then startLearn(player, "login", LEARN_LOGIN_DELAY_MS) end
 end
@@ -794,5 +816,5 @@ RegisterPlayerEvent(13, onLevelChange) -- PLAYER_EVENT_ON_LEVEL_CHANGE
 RegisterPlayerEvent(42, onCommand)     -- PLAYER_EVENT_ON_COMMAND
 
 -- for tests/test_ov_qol.lua (read only)
-OV_QOL_TEST = { TIPS = TIPS, HOST_INVITE = HOST_INVITE, loginTip = loginTip, showWelcome = showWelcome, classSpells = classSpells, schema = function() return schema end, TEACHES = TEACHES,
+OV_QOL_TEST = { TIPS = TIPS, LOCAL_TIPS = LOCAL_TIPS, FIRST_LOGIN = FIRST_LOGIN, onLogin = onLogin, HOST_INVITE = HOST_INVITE, loginTip = loginTip, showWelcome = showWelcome, classSpells = classSpells, schema = function() return schema end, TEACHES = TEACHES,
     LEARN_BATCH = LEARN_BATCH, PLAYER_FLAGS = PLAYER_FLAGS, NO_XP = PLAYER_FLAGS_NO_XP_GAIN }

@@ -388,7 +388,7 @@
     busy = true;
     paint();
     try {
-      say(update ? "Getting the new engine…" : "Starting Single player…");
+      say(update ? "Updating your world's engine… Your world is backed up first; your characters and settings stay." : "Starting Single player…");
       await call("engine_setup", update ? { client: c.id, update: true } : { client: c.id });
       job = ENGINE_JOB();
       say("");
@@ -438,7 +438,11 @@
       try { await call("engine_start"); job = ENGINE_JOB(); say(""); paint(); follow(true); } catch (e) { say(oops(e, "Single player didn't start. Try again."), "bad"); }
       return;
     }
-    try { const r = await call("engine_play", { client: c.id }); say((r && r.message) || "Started.", "ok"); }
+    try {
+      if (window.LeylineAddons) await window.LeylineAddons.beforePlay(c, { offer: false });   // companions' addon up to date (addons.js)
+      const r = await call("engine_play", { client: c.id }); say((r && r.message) || "Started.", "ok");
+      if (window.LeylineAddons) window.LeylineAddons.afterPlay();
+    }
     catch (e) { say(oops(e, "The game didn't start."), "bad"); }
   }
   async function stop(b) {
@@ -471,9 +475,20 @@
     catch (e) { say(oops(e, "The back-up didn't work. Try again."), "bad"); }
     paint();
   }
+  // the world's own login password: an older core puts it in the status; a newer one gives it only when asked
+  let shownPw = "";
+  async function password() {
+    if (es && es.password) return es.password;
+    if (shownPw) return shownPw;
+    try { shownPw = String(await call("world_password", { kind: "single" }) || ""); } catch (e) { say(oops(e, "The password couldn't be read. Try again."), "bad"); }
+    return shownPw;
+  }
+  async function showPassword() { await password(); paint(); }
   async function copyLogin() {
-    try { await navigator.clipboard.writeText(es.password); say("Password copied. Paste it on the login screen.", "ok"); }
-    catch (_) { say(`Your password: ${es.password}`); }
+    const pw = await password();
+    if (!pw) return;
+    try { await navigator.clipboard.writeText(pw); say("Password copied. Paste it on the login screen.", "ok"); }
+    catch (_) { say(`Your password: ${pw}`); }
   }
   async function showLogs(force) {
     if (logs !== null && !force) { logs = null; paint(); return; }
@@ -513,11 +528,6 @@
       const bk = btn("Back up", "btn small", (ev) => backUp(ev.currentTarget)); bk.id = "sp-backup";
       bk.title = "A copy of your characters and their bots, kept in Leyline's folder";
       acts.append(bk);
-      if (es.update) {
-        const u = btn("Update the engine", "btn small", () => startBuiltin(true)); u.id = "sp-update";
-        u.disabled = starting;
-        acts.append(u);
-      }
     } else {
       const se = btn("Settings", "btn small", settings); se.id = "sp-settings";
       se.title = "The Host page, with Single player picked";
@@ -529,10 +539,27 @@
       // the login made for them (host/engine.rs: generated, kept on this PC): the name is filled in on the login screen
       const lr = mk("p", "sp-line sp-login");
       lr.id = "sp-login";
-      lr.append(mk("span", "", "Your login: "), mk("b", "", es.account), mk("span", "", " · password "), mk("code", "", es.password), mk("span", "", " "));
+      const pw = es.password || shownPw;
+      lr.append(mk("span", "", "Your login: "), mk("b", "", es.account), mk("span", "", " · password "));
+      if (pw) lr.append(mk("code", "", pw));
+      else { const sh = btn("Show", "link-s", showPassword); sh.id = "sp-login-show"; lr.append(sh); }
+      lr.append(mk("span", "", " "));
       const cp = btn("Copy", "link-s", copyLogin); cp.id = "sp-login-copy";
       lr.append(cp);
       card.append(lr);
+    }
+    const W = window.LeylineWorlds;
+    if (built && W && W.updateNode) {
+      // a newer world engine (vanilla.js checkUpdate): offered here, backed up first, the saves and settings kept
+      if (es.update) {
+        const n = W.updateNode("single", { busy: starting || busy, onUpdate: () => startBuiltin(true) });
+        const u = n.querySelector("button");
+        if (u) u.id = "sp-update";
+        card.append(n);
+      }
+      const ch = W.charsNode("single", { say: (t, k) => say(t, k), after: () => readEngine().then(paint) });
+      if (ch) card.append(ch);
+      card.append(W.backupsNode("single", { say: (t, k) => say(t, k), after: () => readEngine().then(paint) }));
     }
     if (window.LeylineSingleUpdate) card.append(window.LeylineSingleUpdate.node((t, k) => say(t, k)));   // the bots (singleupdate.js)
     if (job && !job.idle && (job.running || job.code !== 0)) card.append(progress());
@@ -606,6 +633,11 @@
     if (L && L.readKit) await L.readKit();
     await Promise.all([checkDocker(false), readConsole(), readEngine()]);
     paint();
+    // a newer world engine looked for (twice a day at most, 5 s at most, in the background): offered on the card
+    const W = window.LeylineWorlds;
+    if (managed() === "builtin" && es && es.set_up && !es.update && W && W.checkUpdate) {
+      W.checkUpdate("single").then((n) => { if (n && n.update) { es = n; if (isOn()) paint(); } });
+    }
     // a start still running (begun here, or on the Host page for Docker): followed here too
     if (!jobTimer) {
       // only Single player's own line (the original world and Boss Rush have theirs: vanilla.js, bossrush.js)

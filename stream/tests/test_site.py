@@ -366,7 +366,8 @@ check("realms: the old Back link is gone", 'class="keylink" href="/wrath">Back' 
 st, _, md = get("/wrath/modes")
 go = re.findall(r'class="md-go" href="(/wrath/[hqb]/[^"]+)"', md)
 sh = re.findall(r'<code tabindex="0">https://play\.example(/wrath/[hqb]/[^<]+)</code>', md)
-check("modes: a share box on every card, with that card's link", len(go) > 50 and go == sh, (len(go), len(sh)))
+check("modes: a share box on every card, with that card's link (Duels and the raids' doors; Dungeons and Hangouts off the page)",
+      len(go) > 30 and go == sh, (len(go), len(sh)))
 st, _, sheet = get("/wrath/armory/Arthas")
 check("armory: the sheet's share link", 'href="/wrath/u/Arthas"' in sheet and "https://play.example/wrath/u/Arthas</code>" in sheet)
 check("armory: last updated shown", "Updated every 5 minutes (last: " in sheet)

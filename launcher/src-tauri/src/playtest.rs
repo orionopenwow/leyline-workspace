@@ -67,6 +67,18 @@ pub struct Cli {
     pub sp_checks: Vec<crate::sptest::Check>,
     /// `--level <n>` with `--single`: the level the levelup check goes to.
     pub level_to: u8,
+    /// `--bossrush`: Boss Rush's playtest (start anywhere and a full boss fight; crate::sptest Check::BossStart /
+    /// BossFight; app.rs bossrush_play_test_cli). Its checks are in `sp_checks`.
+    pub bossrush: bool,
+    /// `--boss <start>`: the boss, wing or whole raid it starts at (host/bossrush.rs); the final fight by default.
+    pub boss: String,
+    /// `--size <10|25>` and `--diff <normal|heroic>` with `--bossrush`.
+    pub br_size: u8,
+    pub br_heroic: bool,
+    /// `--hero <class>-<spec>`: the hero the test plays (on the bots' own AI during the fight).
+    pub hero: String,
+    /// `--fight-max <s>`: how long the fight is watched at most.
+    pub fight_max: u64,
 }
 
 impl Default for Cli {
@@ -82,6 +94,12 @@ impl Default for Cli {
             single: None,
             sp_checks: Vec::new(),
             level_to: crate::sptest::LEVEL_TO,
+            bossrush: false,
+            boss: "frozen-throne".into(),
+            br_size: 10,
+            br_heroic: false,
+            hero: "mage-fire".into(),
+            fight_max: crate::sptest::FIGHT_MAX_S,
         }
     }
 }
@@ -132,8 +150,47 @@ pub fn parse_cli(args: &[String]) -> Option<Result<Cli, String>> {
                 _ => return Some(Err("--game needs the game folder".into())),
             },
             "--hold" => c.hold = it.next().and_then(|h| h.parse().ok()).unwrap_or(30).min(HOLD_MAX),
+            "--bossrush" => c.bossrush = true,
+            "--boss" => match it.next() {
+                Some(b) if crate::host::bossrush::start(b).is_some() => c.boss = b.clone(),
+                _ => return Some(Err("--boss takes a boss, a wing or a whole raid of Boss Rush (frozen-throne, icc-plague, icc-raid...)".into())),
+            },
+            "--size" => match it.next().map(String::as_str) {
+                Some("10") => c.br_size = 10,
+                Some("25") => c.br_size = 25,
+                _ => return Some(Err("--size takes 10 or 25".into())),
+            },
+            "--diff" => match it.next().map(String::as_str) {
+                Some("normal") => c.br_heroic = false,
+                Some("heroic") => c.br_heroic = true,
+                _ => return Some(Err("--diff takes normal or heroic".into())),
+            },
+            "--hero" => match it.next() {
+                Some(h) if h.split_once('-').is_some_and(|(cl, sp)| crate::host::bossrush::check("frozen-throne", "normal", cl, sp, "exact").is_ok()) => c.hero = h.clone(),
+                _ => return Some(Err("--hero takes <class>-<spec>, e.g. mage-fire or paladin-holy".into())),
+            },
+            "--fight-max" => match it.next().and_then(|n| n.parse::<u64>().ok()) {
+                Some(n) if (60..=3600).contains(&n) => c.fight_max = n,
+                _ => return Some(Err("--fight-max takes 60 to 3600 seconds".into())),
+            },
             other => return Some(Err(format!("play-test doesn't take {other:?}"))),
         }
+    }
+    if c.bossrush {
+        if c.official || c.single.is_some() {
+            return Some(Err("play-test plays one thing: --bossrush, --single or --official".into()));
+        }
+        c.sp_checks = match list.as_deref() {
+            Some(l) => match crate::sptest::parse_boss_checks(l) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            },
+            None => crate::sptest::BOSS_ALL.to_vec(),
+        };
+        if c.sp_checks.contains(&crate::sptest::Check::BossFight) && crate::host::bossrush::start(&c.boss).map(|s| s.0) == Some(crate::host::bossrush::Scope::Raid) {
+            return Some(Err("bossfight fights one boss: pick a boss or a wing with --boss".into()));
+        }
+        return Some(Ok(c));
     }
     if c.single.is_some() {
         if c.official {
@@ -417,6 +474,25 @@ mod tests {
         assert!(parse_cli(&args(&["play-test", "--single", "single", "--official"])).unwrap().is_err());
         assert!(parse_cli(&args(&["play-test", "--single", "single", "--checks", "levelup,fly"])).unwrap().is_err());
         assert!(parse_cli(&args(&["play-test", "--single", "single", "--level", "1"])).unwrap().is_err());
+    }
+
+    #[test]
+    fn boss_rush_line() {
+        use crate::sptest::Check;
+        let c = parse_cli(&args(&["play-test", "--fresh", "--game", "C:\\W", "--bossrush", "--checks", "bossstart,bossfight", "--hold", "20"])).unwrap().unwrap();
+        assert!(c.bossrush && c.fresh && c.single.is_none());
+        assert_eq!((c.boss.as_str(), c.br_size, c.br_heroic, c.hero.as_str()), ("frozen-throne", 10, false, "mage-fire"));
+        assert_eq!(c.sp_checks, vec![Check::BossStart, Check::BossFight]);
+        let d = parse_cli(&args(&["play-test", "--bossrush", "--boss", "icc-plague", "--size", "25", "--diff", "heroic", "--hero", "paladin-holy", "--fight-max", "900"])).unwrap().unwrap();
+        assert_eq!((d.boss.as_str(), d.br_size, d.br_heroic, d.hero.as_str(), d.fight_max), ("icc-plague", 25, true, "paladin-holy", 900));
+        assert_eq!(d.sp_checks, crate::sptest::BOSS_ALL.to_vec(), "both checks by default");
+        assert!(parse_cli(&args(&["play-test", "--bossrush", "--boss", "nope"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--bossrush", "--size", "20"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--bossrush", "--hero", "mage-bear"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--bossrush", "--checks", "levelup"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--bossrush", "--official"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--bossrush", "--boss", "icc-raid", "--checks", "bossfight"])).unwrap().is_err());
+        assert!(parse_cli(&args(&["play-test", "--bossrush", "--boss", "icc-raid", "--checks", "bossstart"])).unwrap().is_ok());
         assert!(parse_cli(&args(&["play-test", "--single", "single", "--level", "x"])).unwrap().is_err());
         assert!(parse_cli(&args(&["play-test", "--official", "--checks", "levelup"])).unwrap().is_err(), "the list is single player's");
         assert!(parse_cli(&args(&["play-test", "--single", "single", "--password", "x"])).unwrap().is_err());

@@ -80,7 +80,20 @@ text-decoration:none;color:#1a1030!important;background:linear-gradient(180deg,#
 .md-hint{font-size:13px;color:var(--ly-dim);margin:8px 0 0}
 .md-steps{margin:8px 0 0;padding-left:1.2rem}.md-steps li{margin:4px 0}
 .ly code{background:rgba(5,6,20,.8);border:1px solid var(--ly-line);border-radius:4px;padding:1px 5px}
+.md-two{grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.md-feature{padding:18px 18px 16px;gap:10px;background:linear-gradient(160deg,rgba(40,30,90,.75),rgba(14,18,48,.8))}
+.md-feature h3{font-size:26px}
+.md-how{margin:0;padding-left:1.25rem;color:var(--ly-ink);font-size:14px}.md-how li{margin:3px 0}
+.md-board{border:1px dashed var(--ly-line);border-radius:6px;padding:8px 10px;background:rgba(5,6,20,.45)}
+.md-board .md-hint{margin:0}
+.md-more{text-align:center;margin-top:14px}
+.md-all{margin:6px 0 0}.md-all>summary{cursor:pointer;color:var(--ly-cyan);font:600 13px/1.4 system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;text-align:center;padding:8px}
 """
+
+# The sections of /wrath/modes beyond Duels and Boss Rush (owner 12 Nov: "make them duels and boss rush only as we build
+# out the larger feature set"). Their data, share links (/wrath/q/, /wrath/h/, /wrath/b/) and the go intent all keep
+# working; set one True to show its section again.
+SHOW = {"dungeons": False, "hangouts": False}
 
 
 def _tag(text: str, cls: str = "") -> str:
@@ -213,12 +226,15 @@ def page(css: str, art_url, have, card_meta, realm_name: str = "WrathUnleashed",
             hint = f'<p class="md-hint">{e(r["hint"])}</p>' if r.get("hint") else ""
             raids_html.append(f'<div class="md-raid">{head}{body}{hint}</div>')
     bosses = (
-        '<section class="ly-panel" id="bosses" aria-labelledby="md-bosses"><h2 id="md-bosses">Boss fights</h2>'
+        '<section class="ly-panel" id="bosses" aria-labelledby="md-bosses"><h2 id="md-bosses">Boss Rush</h2>'
         + _shot("bosses", art_url, have)
-        + '<p class="md-lede">Every raid, from Molten Core to the Frozen Throne. Go takes your character to the '
-        'raid\'s door. Raids need a raid group (Party &rarr; Convert to Raid works with just one friend), and '
-        'new characters can boost to 80 with <code>.boost</code>.</p>'
-        + _featured_bosses() + "".join(raids_html) + '</section>')
+        + '<p class="md-lede">Straight onto a raid\'s final fight, the clock running. New characters can boost to 80 '
+        'with <code>.boost</code>.</p>'
+        + _featured_bosses()
+        + '<details class="md-all"><summary>Or walk in from a raid\'s door</summary>'
+        '<p class="md-lede">Every raid, from Molten Core to the Frozen Throne. Go takes your character to the '
+        'raid\'s door. Raids need a raid group (Party &rarr; Convert to Raid works with just one friend).</p>'
+        + "".join(raids_html) + '</details></section>')
 
     # Dungeons
     dung_html = []
@@ -255,11 +271,12 @@ def page(css: str, art_url, have, card_meta, realm_name: str = "WrathUnleashed",
 
     body = (
         '<div class="ly-wrap"><header class="ly-hero"><h1>Modes</h1>'
-        f'<p class="ly-lede">Duels, boss fights, dungeons and hangouts on {e(realm_name)}. Every card is one click: '
+        f'<p class="ly-lede">Duels and Boss Rush on {e(realm_name)}. Every card is one click: '
         'log in, and your character is taken there.</p>'
-        '<nav class="md-jump" aria-label="Modes">' + ('<a href="#games">Games</a>' if games else '') + '<a href="#duels">Duels</a><a href="#bosses">Boss fights</a>'
-        '<a href="#dungeons">Dungeons</a><a href="#hangouts">Hangouts</a></nav></header>'
-        + games + duels + bosses + dungeons + hangouts
+        '<nav class="md-jump" aria-label="Modes">' + ('<a href="#games">Modes</a>' if games else '') + '<a href="#duels">Duels</a><a href="#bosses">Boss Rush</a>'
+        + ('<a href="#dungeons">Dungeons</a>' if SHOW["dungeons"] else '') + ('<a href="#hangouts">Hangouts</a>' if SHOW["hangouts"] else '')
+        + '</nav></header>'
+        + games + duels + bosses + (dungeons if SHOW["dungeons"] else '') + (hangouts if SHOW["hangouts"] else '')
         + '<p class="ly-fine">Go works for a character of the right level that is out of combat and not inside an '
         'instance; it waits for your next login for 30 minutes. In the browser, places outside the streamed areas '
         'need your own game files.</p></div>')

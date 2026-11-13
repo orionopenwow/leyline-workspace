@@ -14,3 +14,22 @@
 .md-card .md-cmd { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
 .md-card .md-cmd code { color: var(--t-accent, inherit); }
 .md-invite { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+
+/* Duels and Boss Rush (owner 12 Nov): two wide cards, each with what it is, how to start, the board mount and Play */
+.md-list:has(.md-feature) { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+.md-card.md-feature { display: flex; flex-direction: column; gap: 6px; padding: 18px 18px 16px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--t-accent) 12%, transparent), transparent 60%), var(--t-panel, transparent); }
+.md-feature .top .name { font-size: 20px; }
+.md-feature .md-kick { margin: 0; color: var(--t-accent); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.md-feature .md-sub { margin: 6px 0 0; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.md-feature .md-steps { margin: 0; padding-left: 1.2rem; font-size: 13px; line-height: 1.45; }
+.md-feature .md-steps li { margin: 2px 0; }
+.md-board { margin: 6px 0 4px; padding: 8px 10px; border: var(--t-border-w, 1px) dashed var(--t-border); border-radius: 8px; }
+.md-board-row { display: flex; gap: 18px; }
+.md-board .md-stat { display: grid; gap: 2px; }
+.md-board .md-stat small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.md-board .md-stat b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.md-board-note { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.md-feature .acts { margin-top: auto; padding-top: 6px; }
+.md-more { color: var(--muted); font-size: 13px; margin: 14px 0 0; text-align: center; }
+.md-more:empty { display: none; }

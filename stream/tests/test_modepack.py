@@ -210,10 +210,12 @@ ok(st == 200 and h["duel-ladder"] == {"id": "duel-ladder", "realms": 1, "live": 
    f"hosted.json: players on realms running each mode, and its forks ({h.get('duel-ladder')})")
 ok(h["den"]["live"] == 0 and h["den"]["realms"] == 1, "an offline realm counts, not its players")
 st, _, body = get("/wrath/modes")
-page = body.decode()
-ok(st == 200 and 'id="host-modes"' in page and "Host a mode" in page and 'href="/wrath/modes/minigolf-night"' in page,
-   "/wrath/modes has the Host a mode section")
+ok(st == 200 and 'id="host-modes"' not in body.decode(), "/wrath/modes: Duels and Boss Rush only, Host a mode is off it (owner 12 Nov)")
+page = wp.modepacks.section()
+ok('id="host-modes"' in page and "Host a mode" in page and 'href="/wrath/modes/minigolf-night"' in page,
+   "the Host a mode section still renders (to put back)")
 ok("1 live · 7 playing" in page, "with the players on realms running each mode")
+ok(get("/wrath/modes/minigolf-night")[0] == 200 and get("/wrath/modes/jam")[0] == 200, "the templates' pages and the jam still answer")
 rec = wp.clean_listing_record({"name": "X", "state": "live", "community": {"realmId": "eeeeeeeeeeeeeeee"}, "mode": dict(m, extra="x")})
 ok(rec["mode"]["id"] == "duel-ladder" and "extra" not in rec["mode"], "the portal keeps a realm's mode from the listing, checked")
 for p in ("/wrath/modes/jam/", "/wrath/modes/a", "/wrath/modes/../x", "/wrath/modes/den/picture.gif"):

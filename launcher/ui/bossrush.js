@@ -40,6 +40,8 @@
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } },
     set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* private window */ } } };
 
+  let featured = null;     // this week's featured fight (boards.js, from boards_get: the catalog in turn, one a week)
+  let shareMsg = ["", ""];  // the last Share's answer
   let cat = null;          // bossrush_catalog
   let board = null;        // bossrush_board
   let job = null;          // engine_progress while Boss Rush's exact engine sets up or starts
@@ -131,6 +133,7 @@
       if (f.light) tags.append(mk("span", "br-chip lite", "Light too"));
       const best = board && board.bests.find((r) => r.fight === f.key && r.engine === pick.engine);
       if (best) tags.append(mk("span", "br-chip best", "Best " + best.clock));
+      if (featured && f.key === featured) tags.append(mk("span", "br-chip week", "This week"));
       b.append(mk("b", "", f.title), mk("span", "br-raid", f.raid), mk("span", "br-blurb", f.blurb), tags);
       g.append(b);
     }
@@ -284,12 +287,47 @@
     if (!list.length) box.append(mk("p", "br-line", "No clears yet. Your fastest kill of each fight shows here (kept on this PC)."));
     else {
       const t = mk("table", "br-table");
+      const B = window.LeylineBoards;
       for (const r of list) {
         const tr = mk("tr", "");
         tr.append(mk("td", "", r.title), mk("td", "", r.difficulty === "heroic" ? "Heroic" : "Normal"), mk("td", "br-clock", r.clock), mk("td", "", r.class === "-" ? "" : r.class));
+        // Share: onto the website's local-run board, only when pressed (a run on this PC is never on a realm's board)
+        const td = mk("td", "");
+        if (B && r.cleared) {
+          const sh = btn("Share", "btn small br-share-run", async () => {
+            const name = byId("br-share-name");
+            sh.disabled = true;
+            try { shareMsg = [await B.share(r, name ? name.value : ""), "ok"]; }
+            catch (e) { shareMsg = [oops(e, "That run couldn't be shared."), "bad"]; }
+            sh.disabled = false;
+            paint();
+          });
+          sh.dataset.fight = r.fight;
+          sh.title = "Put this run on the website's local-run board (marked: played on your PC, not checked by a server)";
+          td.append(sh);
+        }
+        tr.append(td);
         t.append(tr);
       }
       box.append(t);
+      if (B) {
+        const row = mk("div", "br-share-row");
+        const lab = mk("label", "br-line", "Name on the boards ");
+        const inp = mk("input", "br-code");
+        inp.id = "br-share-name";
+        inp.maxLength = 12;
+        inp.placeholder = "2 to 12 letters";
+        inp.value = B.name() || "";
+        inp.addEventListener("input", () => { try { localStorage.setItem("leyline.boards.name", JSON.stringify(inp.value)); } catch (_) { /* private window */ } });
+        lab.append(inp);
+        row.append(lab);
+        box.append(row);
+        if (shareMsg[0]) {
+          const m = mk("p", "br-line " + shareMsg[1], shareMsg[0]);
+          m.id = "br-share-msg";
+          box.append(m);
+        }
+      }
     }
     return box;
   }
@@ -332,6 +370,12 @@
     p.append(mk("span", "", "Log in with "), mk("b", "", last.account), mk("span", "", " and the password "), mk("b", "", last.password), mk("span", "", ". Your hero is on the character list."));
     return p;
   }
+
+  document.addEventListener("leyline:boards", (ev) => {
+    const d = ev.detail || {};
+    const f = typeof d.featured_local === "string" ? d.featured_local : null;
+    if (f !== featured) { featured = f; if (cat && page.classList.contains("on")) paint(); }
+  });
 
   function paint() {
     const nodes = [head()];

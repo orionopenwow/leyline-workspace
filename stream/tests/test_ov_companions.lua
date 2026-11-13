@@ -143,10 +143,15 @@ local function player(over)
     end
     function p:GetSelection() return self.sel end
     function p:GetEquippedItemBySlot(slot)
+        if self.worn and self.worn[slot] then return self.worn[slot] end
         if not self.ilvl or slot == 3 or slot == 18 then return nil end
         local lv = self.ilvl
-        return { GetItemLevel = function() return lv end }
+        return { GetItemLevel = function() return lv end, GetEntry = function() return 30000 + slot end,
+            GetQuality = function() return 3 end, GetName = function() return "Worn " .. slot end }
     end
+    -- bags: self.bags["<bag>:<slot>"] = item (bag 255 slots 23-38, bags 19-22); a bag item answers GetBagSize
+    function p:GetItemByPos(bag, slot) return self.bags and self.bags[bag .. ":" .. slot] end
+    function p:CanEquipItem(it, slot) return not (self.cannot and self.cannot[slot]) end
     -- mod-playerbots' PlayerbotAI through mod-ale (bots only; noai = an older mod-ale without GetBotAI)
     do
         function p:GetBotAI()
@@ -757,6 +762,13 @@ end
 local function told(p, bot, text) for _, w in ipairs(p.whispers) do if w.to == bot and w.text == text then return true end end; return false end
 local function strat(bot, change) for _, x in ipairs(bot.strategies or {}) do if x == change then return true end end; return false end
 
+local function head(p)
+    local all = replies(p, "roster")
+    for line in (all[#all] or ""):gmatch("[^\n]+") do
+        if line:sub(1, 2) == "H\t" then local f = {}; for v in (line .. "\t"):gmatch("([^\t]*)\t") do f[#f + 1] = v end; return f end
+    end
+    return {}
+end
 clock = clock + 31
 local wp = player({ guid = 200, level = 80, spec = "dps" })
 winPlayers[#winPlayers + 1] = wp
@@ -844,6 +856,100 @@ check("prepare for raid: maintenance, autogear and rebuff for each", (function()
 win(wp, "prepare", "")
 check("prepare: a cooldown", said(wp):match("Again in %d+ s"))
 
+-- regroup, flee, drink
+local function item(entry, lv, inv, q, nm)
+    return { GetEntry = function() return entry end, GetItemLevel = function() return lv end, GetInventoryType = function() return inv end,
+        GetQuality = function() return q or 3 end, GetName = function() return nm or ("Item " .. entry) end }
+end
+dmgBot.dist = 80
+local rb = #wp.whispers
+win(wp, "order", "regroup all")
+check("regroup: everyone follows; only the far bot is summoned", told(wp, tankBot, "follow") and told(wp, dmgBot, "summon")
+    and not (function() for i = rb + 1, #wp.whispers do local w = wp.whispers[i]
+        if w.to == tankBot and w.text == "summon" then return true end end end)() and said(wp) == "Regrouping on you.")
+dmgBot.dist = nil
+win(wp, "order", "flee all")
+r = roster(wp)
+check("flee: mod-playerbots' flee; they follow and turn passive", told(wp, dmgBot, "flee") and r.by[dmgBot.name].status == "passive"
+    and said(wp):match("^Running with you"))
+win(wp, "order", "active all")
+win(wp, "order", "drink all")
+check("drink: every bot told", told(wp, dmgBot, "drink") and told(wp, tankBot, "drink"))
+
+-- tactics: by role, kept in the roster head, given to bots that join later
+local healBot
+for _, b in ipairs(wbots) do if roster(wp).by[b.name].role == "healer" then healBot = b end end
+win(wp, "order", "waitpull all")
+check("tank pulls first: damage waits and watches threat; the tank doesn't", strat(dmgBot, "0:+wait for attack")
+    and strat(dmgBot, "1:+threat") and told(wp, dmgBot, "wait for attack time 3") and not strat(tankBot, "0:+wait for attack")
+    and head(wp)[11] == "1")
+win(wp, "order", "healtank all")
+check("heal the tank first: the healer focuses the tank bot", told(wp, healBot, "focus heal " .. tankBot.name:lower())
+    and not told(wp, dmgBot, "focus heal " .. tankBot.name:lower()) and head(wp)[12] == "1")
+win(wp, "order", "savemana all")
+check("save mana: healers only", strat(healBot, "0:+save mana") and not strat(dmgBot, "0:+save mana") and head(wp)[13] == "1")
+win(wp, "order", "aoe all")
+check("spread damage: damage +dps aoe", strat(dmgBot, "0:+dps aoe") and head(wp)[14] == "1")
+win(wp, "order", "noaoe all")
+check("focus again: +dps assist (they replace each other)", strat(dmgBot, "1:+dps assist") and head(wp)[14] == "0")
+win(wp, "order", "nowaitpull all")
+win(wp, "order", "nohealtank all")
+check("tactics off", strat(dmgBot, "0:-wait for attack") and strat(dmgBot, "0:-threat") and told(wp, healBot, "focus heal none")
+    and head(wp)[11] == "0" and head(wp)[12] == "0" and head(wp)[13] == "1")
+check("tactics for a bot that joins later", (function()
+    local nb = player({ guid = 299, bot = true, name = "Latey", class = 8 })
+    T.applyTactics(wp, nb, "dps")
+    T.orders[wp.guid].aoe = true
+    T.applyTactics(wp, nb, "dps")
+    local hb = player({ guid = 298, bot = true, name = "Healey", class = 5 })
+    T.applyTactics(wp, hb, "healer")
+    return strat(nb, "0:+dps aoe") and strat(hb, "0:+save mana") and not strat(hb, "0:+dps aoe")
+end)())
+win(wp, "order", "noaoe all")
+
+-- the gear window: what it wears, the upgrades in its bags, equip one, equip all
+dmgBot.ilvl = 200
+dmgBot.bags = { ["255:23"] = item(40001, 213, 1, 4, "Better Hood"), ["255:24"] = item(40002, 150, 1, 2, "Old Hood"),
+    ["255:19"] = { GetBagSize = function() return 4 end }, ["19:2"] = item(40003, 226, 11, 4, "Big Ring"),
+    ["19:3"] = item(40004, 230, 7, 4, "Leggings For Others") }
+dmgBot.cannot = { [6] = true }
+win(wp, "inspect", dmgBot.name)
+local gl = replies(wp, "gear")[1] or ""
+local g = {}
+for line in gl:gmatch("[^\n]+") do local f = {}; for v in (line .. "\t"):gmatch("([^\t]*)\t") do f[#f + 1] = v end; g[#g + 1] = f end
+check("inspect: a head line, then what it wears", g[1] and g[1][1] == "G" and g[1][2] == dmgBot.name and g[1][4] == "80" and g[1][6] == "bot"
+    and gl:find("I\t0\t30000\t200\t3\tWorn 0", 1, true) ~= nil and not gl:find("I\t3\t", 1, true))
+check("inspect: upgrades from its bags (the better hood, a ring), not worse ones nor what it can't wear",
+    gl:find("U\t0\t40001\t213\t4\tBetter Hood\t200", 1, true) and gl:find("U\t10\t40003\t226\t4\tBig Ring\t200", 1, true)
+    and not gl:find("40002", 1, true) and not gl:find("40004", 1, true))
+win(wp, "equip", dmgBot.name .. "\t40002")
+check("equip: what it carries only", told(wp, dmgBot, "e |Hitem:40002:0|h") and said(wp):match("puts on Old Hood"))
+clock = clock + 11
+win(wp, "equip", dmgBot.name .. "\t99999")
+check("equip: not in its bags: refused", said(wp):match("doesn't carry") and not told(wp, dmgBot, "e |Hitem:99999:0|h"))
+win(wp, "equip", dmgBot.name .. "\t40001; .server shutdown")
+check("equip: odd text refused", not told(wp, dmgBot, "e |Hitem:40001:0|h"))
+wp.combat = true
+win(wp, "upgrade", dmgBot.name)
+check("upgrade: not in combat", said(wp):match("out of combat") and not told(wp, dmgBot, "equip upgrade"))
+wp.combat = false
+clock = clock + 11
+win(wp, "upgrade", dmgBot.name)
+check("upgrade: mod-playerbots' equip upgrade, the count said", told(wp, dmgBot, "equip upgrade") and said(wp):match("2 upgrades"))
+clock = clock + 11
+win(wp, "upgrade", tankBot.name)
+check("upgrade: nothing better in its bags", said(wp):match("nothing better") and not told(wp, tankBot, "equip upgrade"))
+win(wp, "inspect", "Nobody")
+check("inspect: not your bot", said(wp):match("isn't with you"))
+check("upgrades: two-slot items go in the weaker slot", (function()
+    local b = player({ guid = 297, bot = true })
+    b.worn = { [12] = item(1, 200, 12), [13] = item(2, 180, 12) }
+    b.bags = { ["255:23"] = item(3, 190, 12) }
+    local up = T.upgrades(b)
+    return up[13] and up[13].entry == 3 and up[13].now == 180 and not up[12]
+end)())
+dmgBot.ilvl, dmgBot.bags, dmgBot.cannot = 200, nil, nil
+
 -- spec and role on a known class
 clock = clock + 31
 local wd = player({ guid = 210, level = 80 })
@@ -927,13 +1033,6 @@ check("window answers never go to the chat while the window drives", (function()
     return true end)())
 
 -- the window's tabs: picks, pull, alts, buddy, dungeons ------------------------------------------------------------
-local function head(p)
-    local all = replies(p, "roster")
-    for line in (all[#all] or ""):gmatch("[^\n]+") do
-        if line:sub(1, 2) == "H\t" then local f = {}; for v in (line .. "\t"):gmatch("([^\t]*)\t") do f[#f + 1] = v end; return f end
-    end
-    return {}
-end
 local PK = T.parsePicks("tank=druid:bear pve,healer=shaman,dps=mage:fire pve,dps=any,tank=mage,healer=priest:shadow pve,dps=bard,heals=paladin")
 check("picks: class and spec per slot", PK.tank[1].word == "druid" and PK.tank[1].spec == "bear pve" and PK.healer[1].word == "shaman"
     and PK.healer[1].spec == nil and PK.dps[1].word == "mage" and PK.dps[1].spec == "fire pve" and PK.dps[2].word == nil)

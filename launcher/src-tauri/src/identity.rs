@@ -3,8 +3,9 @@
 //! friends (host side: keyed on the friend's peer id) all stand on it; no website and no server is needed.
 //!
 //! * `peer.key`: 64 hex characters, the Ed25519 seed (the same shape as a Den's `realm.key`, host/litenet.rs), made
-//!   once with the system's random source, owner-only on Mac and Linux. Settings export, if one is added, carries
-//!   it (it is the only thing that makes "you" you to your friends).
+//!   once with the system's random source, owner-only on Mac and Linux. Settings › Your Leyline network key saves it
+//!   to a file and brings it back ([`export_text`], [`import`]): it is the only thing that makes "you" you to your
+//!   friends, so a reinstall or a new PC keeps your characters on their worlds. Never shown, never logged.
 //! * **Peer id** = base32(sha256(public key))[..16], lower case: the mesh's id rule (p2p/mesh.rs `realm_id`), so a
 //!   record can't claim someone else's id.
 //! * **Signatures**: Ed25519 over `context + "\n" + canonical JSON` (sorted keys, no spaces), as every mesh record.
@@ -205,6 +206,46 @@ pub fn load_or_create(app: &Path) -> Result<PeerIdentity, String> {
         }
         Err(e) => Err(format!("Leyline couldn't read its network key: {e}")),
     }
+}
+
+/// The first line of a saved key file: what it is and the warning, in plain words.
+pub const EXPORT_HEAD: &str = "# Leyline network key: whoever has this file is you to your friends and on their worlds. Keep it private and never send it to anyone.";
+
+/// The key file's text for Settings › Save my key (made first when this PC has none yet).
+pub fn export_text(app: &Path) -> Result<String, String> {
+    load_or_create(app)?;
+    let seed = unhex32(std::fs::read_to_string(key_path(app)).map_err(|e| e.to_string())?.trim()).ok_or("Your Leyline network key doesn't look right.")?;
+    Ok(format!("{EXPORT_HEAD}\n{}\n", hex(&seed)))
+}
+
+/// The seed in a saved key file (its comment lines skipped), or a bare key.
+pub fn parse_export(text: &str) -> Option<[u8; 32]> {
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#'))?;
+    unhex32(line)
+}
+
+/// Settings › Bring back my key: this PC becomes the identity in `text` (a file saved by [`export_text`]). The key
+/// it had is kept beside it (`peer.key.before-<unix seconds>`), never deleted. The new peer id's first four
+/// characters (what friends see as "Hero XXXX"), or why not.
+pub fn import(app: &Path, text: &str) -> Result<String, String> {
+    let seed = parse_export(text).ok_or("That file isn't a saved Leyline network key.")?;
+    let id = PeerIdentity::from_seed(seed)?;
+    let path = key_path(app);
+    if let Ok(t) = std::fs::read_to_string(&path) {
+        if unhex32(t.trim()) == Some(seed) {
+            return Ok(id.peer_id.chars().take(4).collect::<String>().to_ascii_uppercase());
+        }
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        std::fs::copy(&path, app.join(format!("{KEY_FILE}.before-{now}"))).map_err(|e| format!("Your current key couldn't be kept aside, so nothing changed: {e}"))?;
+    }
+    std::fs::create_dir_all(app).map_err(|e| e.to_string())?;
+    crate::settings::write_atomic(&path, (hex(&seed) + "\n").as_bytes()).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(id.peer_id.chars().take(4).collect::<String>().to_ascii_uppercase())
 }
 
 /// This PC's identity, in the normal app data folder.
@@ -471,6 +512,31 @@ fn open_with(secret: &[u8; 32], mine: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_saved_key_brings_the_same_identity_back_and_keeps_the_old_one() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let me = load_or_create(a.path()).unwrap();
+        let text = export_text(a.path()).unwrap();
+        assert!(text.starts_with("# Leyline network key") && text.contains("Keep it private"), "the warning comes with it");
+        assert_eq!(parse_export(&text).map(|s| PeerIdentity::from_seed(s).unwrap().peer_id), Some(me.peer_id.clone()));
+        // a new PC that already made its own key: the saved one replaces it, the old one is kept aside
+        let other = load_or_create(b.path()).unwrap();
+        assert_ne!(other.peer_id, me.peer_id);
+        let short = import(b.path(), &text).unwrap();
+        assert_eq!(short, me.peer_id[..4].to_ascii_uppercase());
+        assert_eq!(load_or_create(b.path()).unwrap().peer_id, me.peer_id, "the same you to your friends");
+        assert!(std::fs::read_dir(b.path()).unwrap().flatten().any(|e| e.file_name().to_string_lossy().starts_with("peer.key.before-")));
+        // again: nothing changes; a file that isn't one: refused, nothing touched
+        assert!(import(b.path(), &text).is_ok());
+        assert!(import(b.path(), "hello").is_err());
+        assert!(import(b.path(), &"z".repeat(64)).is_err());
+        assert_eq!(load_or_create(b.path()).unwrap().peer_id, me.peer_id);
+        // never shown: the identity's debug view has no seed
+        assert!(!format!("{me:?}").contains(&text.lines().nth(1).unwrap()[..16]));
+    }
+
     use super::*;
 
     fn h32(s: &str) -> [u8; 32] {

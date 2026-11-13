@@ -84,7 +84,7 @@ A realm mod may only use what it declares. Undeclared use is an error; declared 
 
 ## Assets
 
-Only files you made or may redistribute. Every file in `assets/` is listed in `assets/CREDITS.txt` (name, author, licence, source). Blizzard game data is never allowed anywhere in a package: `.mpq .blp .m2 .wmo .adt .dbc` (and `.skin .anim .wdt .wdl .db2 .bls`), by extension or by file signature. Use `.tga` for addon textures. Limits: 10 MB a file, 50 MB a package, 2000 files.
+Only files you made or may redistribute. Every file in `assets/` is listed in `assets/CREDITS.txt` (name, author, licence, source). The game's own data is never allowed anywhere in a package: `.mpq .blp .m2 .wmo .adt .dbc` (and `.skin .anim .wdt .wdl .db2 .bls .mdx .phys .bone .lit .wlw .wlq .wlm .zmp`, and server map data `.vmtree .vmtile .mmap .mmtile` or `0001234.map`), by extension, by file signature, or by a path copied from a game install (`DBFilesClient/`, `World/Maps/`, `Interface/Icons/`, `Data/<locale>/`, `vmaps/`, `mmaps/`, `patch-*.mpq`). Use `.tga` for addon textures. Limits: 10 MB a file, 50 MB a package, 2000 files.
 
 ## Packing and install
 
@@ -274,3 +274,15 @@ our own `/wrath/art/looks/`; otherwise a drawn placeholder and a link to the aut
 of anyone's pack: nothing is hosted, ever. Words follow the site rules: no brand words, no client numbers (the chips say
 which clients, in the hub's era words on the site).
 
+
+## Hard lines (checked)
+
+`wu-mod.py check` also refuses, as errors (see CONTRIBUTING.md at the repo root):
+
+* `brand-word`: the game's or its maker's names in text players read: `mod.json` name, description and links, the
+  top-level README and CHANGELOG, `.toc` `##` lines, XML `text`/`title` attributes, and Lua string literals. The legal
+  line ("not affiliated with or endorsed by ...") is allowed, and so are the client's own code names
+  (`Blizzard_CombatLog`, `BlizzardOptionsPanel_...`). The list is `BRAND_WORDS` in wu-mod.py.
+* `money-link`: donation, tip, support or shop links (Patreon, Ko-fi, PayPal, GitHub Sponsors and the like) anywhere,
+  and words such as "donate" or "buy me a coffee" in the manifest, README, CHANGELOG and `.toc`.
+* `licence-file`: no `LICENSE`, `LICENSE.txt` or `LICENSE.md` at the top of the package.

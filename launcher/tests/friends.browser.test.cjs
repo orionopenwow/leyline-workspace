@@ -233,11 +233,10 @@ async function shot(page, name, sel) {
     await (el || page).screenshot({ path: path.join(SHOTS, `lists-friends-${name}.png`) });
   } catch (_) { /* screenshots are a nicety */ }
 }
-// the launcher's look for the screenshots: its theme tokens and buttons
-async function themed(page) {
-  await page.addStyleTag({ path: path.join(UI, 'style.css') }).catch(() => {});
-  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.body.style.padding = '16px'; document.body.style.font = '14px var(--t-font, system-ui)'; document.body.style.color = 'var(--t-text)'; document.body.style.background = 'var(--t-bg, #111)'; document.getElementById('auto').style.maxWidth = '760px'; });
-}
+// the launcher's whole look for the screenshots: every stylesheet index.html links and its art, the section in the
+// Single player page's Friends panel (.panel.wide.spf), so a shot shows what the app shows
+const { appLook } = require('./fixtures/app-look.cjs');
+const themed = (page, o) => appLook(page, Object.assign({ root: '#auto', panel: 'spf' }, o));
 const visibleNames = (page) => page.$$eval('#auto .lf-kit .lk-body > [data-lk-key] .lf-name', (e) => e.map((x) => x.textContent));
 
 test('the kit: tabs, groups (Requests, Online, Offline, Near you), counts, ids', async () => {
@@ -413,8 +412,7 @@ test('screenshots: the remove question, an empty list, the phone', async () => {
   } finally { await browser2.close(); }
   const ph = await open({ size: { width: 390, height: 900 } });
   try {
-    await themed(ph.page);
-    await ph.page.evaluate(() => document.documentElement.classList.add('phone'));
+    await themed(ph.page, { phone: true, width: 390 });
     await shot(ph.page, 'phone', '#auto .lf-list');
   } finally { await ph.browser.close(); }
 });

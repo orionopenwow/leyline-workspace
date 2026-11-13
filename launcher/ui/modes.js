@@ -32,7 +32,34 @@
       play: "art/modes/azeroth-survivors-play.webp", playAlt: "Azeroth Survivors in play: a mage in the middle of a horde, spells flying.",
       title: "Azeroth Survivors", alt: "Azeroth Survivors key art: the title over a band of heroes and a moonlit castle." },
   };
-  const FEATURED = "azeroth-survivors";   // TODO(owner): the mode featured on Home
+  // Duels and Boss Rush only (owner 12 Nov: "remove the silly modes from modes and make them duels and boss rush only as
+  // we build out the larger feature set"). The catalog marks the others "listed": false (stream/playmodes.json): the
+  // site's /wrath/modes.json leaves them out, but the copy built into Leyline still has them and the core does not pass
+  // the flag on, so the same ids are left out here (launcher/tests/modes.browser.test.cjs keeps the two equal). To bring
+  // one back, delete its "listed": false in the catalog and its id here. window.LEYLINE_MODES_HIDDEN: a test's own list.
+  const HIDDEN = new Set(Array.isArray(window.LEYLINE_MODES_HIDDEN) ? window.LEYLINE_MODES_HIDDEN : [
+    "minigolf", "bumper-balls", "coin-dash", "community", "brawl", "azeroth-survivors", "hordes-of-azeroth",
+    "arena-1v1", "keystones", "transmog", "hardcore"]);
+  const listed = (m) => !!m && m.listed !== false && !HIDDEN.has(m.id);
+  const ORDER = ["arena-queue", "frozen-throne"];   // TODO(owner): the order on the page
+  const byOrder = (a, b) => (ORDER.indexOf(a.id) + 1 || 99) - (ORDER.indexOf(b.id) + 1 || 99);
+  // The two modes' fuller cards: what it is, how to start, the Play label, and the leaderboard mount (data-board). A
+  // listed mode without an entry gets the plain card. TODO(owner): the words, yours (the site has the same steps:
+  // stream/playmodes.py DETAILS).
+  const DETAILS = {
+    "arena-queue": { kick: "1 v 1 · Level 80", play: "Queue now", board: "duels",
+      how: ["Play logs you in and puts your character in the 1v1 queue at level 80. New characters can boost with .boost.",
+        "Or meet at the duel spot in Dalaran: target someone and type /duel.",
+        "Rated games: type .q1v1 rated in the game."] },
+    "frozen-throne": { kick: "Raid finale · Companions fill", play: "Fight now", board: "bossrush", local: true,
+      how: ["Fight now logs you in and takes your hero straight onto the platform; companions fill the raid of 10.",
+        "Or pick any fight of any raid and play it here: Boss Rush on this PC, with your own clock and board.",
+        "In the game, /bf opens the Boss fights window: Heroic, or queue with players."] },
+  };
+  // TODO(owner): the line under the two modes, your words
+  const MORE = "More modes are on the way as the bigger features land. News comes first on the Discord.";
+  const HOST_INVITE = false;   // "Run it with friends on your own world": for the minigames; back on with them
+  const FEATURED = HIDDEN.has("azeroth-survivors") ? null : "azeroth-survivors";   // TODO(owner): the mode featured on Home (none while it is hidden)
   function artImg(id, cls) {
     const a = ART[id];
     if (!a) return null;
@@ -54,7 +81,7 @@
   page.innerHTML = `
     <div class="panel wide md">
       <h2>Modes</h2>
-      <p class="lede">Minigames and game modes. PLAY signs you in and starts the game once your character is in the world.</p>
+      <p class="lede">Duels and Boss Rush. PLAY signs you in and starts the game once your character is in the world.</p>
       <div class="toolbar">
         <label class="inline">Play with <select class="client-pick" data-for="modes"></select></label>
         <span class="md-how" id="md-how"></span>
@@ -63,7 +90,10 @@
       <p class="net-line" id="md-net" aria-live="polite"></p>
       <p class="status" id="md-status" role="status"></p>
       <div class="md-list" id="md-list"></div>
-    </div>`;
+      <p class="md-more" id="md-more"></p>
+    </div>
+    <!-- Leaderboards (boards.js mounts here: Boss Rush and Duels, signed by the realms; docs/LEADERBOARDS.md) -->
+    <div class="panel wide lb-panel" id="md-boards" data-board="bossrush"></div>`;
   const main = document.querySelector("main");
   const realmsPage = document.getElementById("page-realms");
   if (realmsPage) realmsPage.after(page); else if (main) main.appendChild(page);
@@ -88,6 +118,7 @@
 
   // ---------------------------------------------------------------- the list
   let modes = [];
+  let every = [];   // the list as it came, hidden modes too (their names, for a realm that still lists one)
   let loaded = false;
 
   async function load() {
@@ -97,9 +128,10 @@
     let l;
     try { l = await invoke("modes_list"); }
     catch (e) { loaded = false; $("md-net").textContent = ""; say(oops(e), "bad"); return; }   // opening the page tries again
-    modes = Array.isArray(l.modes) ? l.modes : [];
+    every = Array.isArray(l.modes) ? l.modes : [];
+    modes = every.filter(listed).sort(byOrder);
     const live = modes.filter((m) => m.status === "live").length;
-    let line = `${live} to play · ${modes.length - live} coming soon`;
+    let line = `${live} to play` + (modes.length - live ? ` · ${modes.length - live} coming soon` : "");
     if (l.builtin) line += " · offline: the list built into Leyline";
     else if (l.from_cache) line += " · offline: the last list Leyline saw";
     $("md-net").textContent = line;
@@ -118,6 +150,9 @@
       art.addEventListener("error", () => { art.remove(); c.classList.remove("has-art"); });
       c.append(art);
     }
+    const d = DETAILS[m.id] || null;
+    if (d) { c.classList.add("md-feature"); c.dataset.board = d.board; }
+    if (d && d.kick) c.append(el("p", "md-kick", d.kick));
     const top = el("div", "top");
     top.append(el("span", "name", m.title));
     if (m.status === "coming") top.append(el("span", "tag warn", "Coming soon"));
@@ -126,6 +161,28 @@
     tags.append(el("span", "tag", KIND[m.kind] || m.kind), el("span", "tag", playersText(m.players)));
     if (m.credit) tags.append(el("span", "tag gold", "Community made"));
     c.append(tags, el("p", "desc", m.line));
+    if (d && d.how) {
+      c.append(el("p", "md-sub", "How to start"));
+      const ol = el("ol", "md-steps");
+      for (const x of d.how) ol.append(el("li", "", x));
+      c.append(ol);
+    }
+    if (d && d.board) {
+      // The leaderboard mount (docs/MODES.md, "Leaderboard mounts"): a leaderboards module fills it; until then it says
+      // what will be there. It is rebuilt with the list: fill it again on "leyline:modes".
+      const box = el("div", "md-board");
+      box.id = "md-board-" + d.board;
+      box.dataset.board = d.board;
+      box.setAttribute("aria-live", "polite");
+      const row = el("div", "md-board-row");
+      for (const [k, v] of [["Your best", "—"], ["Your rank", "—"]]) {
+        const cell = el("span", "md-stat");
+        cell.append(el("small", "", k), el("b", "", v));
+        row.append(cell);
+      }
+      box.append(row, el("p", "md-board-note", "The full leaderboard is below."));
+      c.append(box);
+    }
     if (m.kind === "in-game" && m.start && m.start.cmd) {
       // an NPC in Dalaran: PLAY opens the game, this line says how to find it there
       const how = el("p", "md-cmd");
@@ -139,7 +196,7 @@
     }
     const acts = el("div", "acts");
     if (m.status === "live" && (m.kind === "realm" || m.kind === "offline" || m.kind === "in-game")) {
-      const b = el("button", "btn small md-play", "Play");
+      const b = el("button", "btn small md-play" + (d ? " primary" : ""), (d && d.play) || "Play");
       b.type = "button";
       b.addEventListener("click", () => play(m, b));
       acts.append(b);
@@ -170,6 +227,14 @@
       });
       acts.append(b);
     });
+    if (d && d.local && document.getElementById("page-bossrush")) {
+      // Boss Rush on this PC (bossrush.js): any fight of any raid, on its own small realm here
+      const b = el("button", "btn small md-local", "Boss Rush on this PC");
+      b.type = "button";
+      b.title = "Pick any fight of any raid and play it on this PC";
+      b.addEventListener("click", () => { if (window.LeylineNav) window.LeylineNav.show("bossrush"); });
+      acts.append(b);
+    }
     // Play solo first, beside Play (solo.js): on this PC, with your own game files; or why it's online only
     const solo = window.LeylineSolo ? window.LeylineSolo.attach(acts, null, window.LeylineSolo.forMode(m)) : null;
     if (acts.childNodes.length) c.append(acts);
@@ -181,6 +246,7 @@
   const INVITE_KEY = "leyline.hostInvite.modes";
   let inviteToday = null;   // shown in this session already: it stays through a Refresh
   function hostInvite() {
+    if (!HOST_INVITE) return null;
     const today = new Date().toISOString().slice(0, 10);
     if (inviteToday !== today) {
       let last = null;
@@ -206,6 +272,7 @@
     if (old) old.remove();
     const inv = modes.length ? hostInvite() : null;
     if (inv) { inv.id = "md-invite"; box.after(inv); }
+    $("md-more").textContent = modes.length ? MORE : "";
   }
 
   // ---------------------------------------------------------------- PLAY
@@ -235,6 +302,7 @@
       const ready = m.kind === "in-game" ? `In game, type ${m.start.cmd}.` : await invoke("mode_prepare_desktop", { client: c.id, id: m.id });
       const started = await invoke("play", { client: c.id, realm: state.official_realm || OFFICIAL });
       say(`${started} ${ready}`, "ok");
+      if (window.LeylineAddons) window.LeylineAddons.afterPlay();
     } catch (e) {
       say(oops(e), "bad");
     } finally {
@@ -265,5 +333,8 @@
   // whenever the page opens (show("modes"), or the page remembered from last time): load once, then keep "PLAY …" current
   new MutationObserver(() => { if (page.classList.contains("on")) { if (!loaded) load(); else renderHow(); } }).observe(page, { attributes: true, attributeFilter: ["class"] });
 
-  window.LeylineModes = { load, ensure, modes: () => modes, show, open: openPage, play, ART, FEATURED, artImg, KIND, playersText };
+  // boards(): the leaderboard mounts on the page now ([data-board] duels | bossrush; docs/MODES.md)
+  const boards = () => Array.from(document.querySelectorAll("#md-list .md-board[data-board]"));
+  window.LeylineModes = { load, ensure, modes: () => modes, all: () => every, show, open: openPage, play, ART, FEATURED, artImg, KIND, playersText,
+    listed, HIDDEN, DETAILS, boards };
 })();

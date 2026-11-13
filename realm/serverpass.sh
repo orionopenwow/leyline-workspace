@@ -51,6 +51,12 @@
 #      Boss fight settings (realm/profiles/main.env): AC_PLAYERBOTS_ENABLE_ICCBUFFS = 0 (no bot-module assist
 #      auras, so times compare), AC_AUTO_BALANCE_DISABLE_PER_INSTANCE = 631 (a fixed 10-player fight),
 #      LEYLINE_BOSSFIGHT_BOTS = 1 (the module may add bots to its own fights only; the owner's call).
+#   1h. The signed leaderboards (docs/LEADERBOARDS.md), when boards-export.py rides along: makes ov_boards.lua's two
+#      tables (boards-export.py --schema), installs /srv/wrath/boards-export.py and ed25519_pure.py beside it, which
+#      sign the realm's board with the realm's own Ed25519 key (/srv/wrath/leyline/board-realm.key, made 0600 on the
+#      first run, never printed, never leaves the server) into /srv/wrath/portal/duels/boards/<realm id>.json from
+#      cron every 5 minutes, and runs it once (it prints the realm id and public key, which are public).
+#      OV_BOARDS = 1 and OV_BOARDS_FIGHTS = frozen-throne (main.env): deaths in boss fights, 1v1 arena results.
 #   4. Announces a restart (SERVERPASS_WARN_MIN, default 5) and recreates the world server; if only the Lua
 #      changed, a live "reload ale" instead.
 # Never prints a password: MySQL runs in its container with the container's own root password.
@@ -197,6 +203,32 @@ if [ -f "$T/bossfights-export.py" ]; then
     else echo "  NOTE: the first boss fights export failed (${out:0:200}); cron tries again in 5 minutes"; fi
   else
     echo "  NOTE: bossfights-export.py doesn't parse; skipped"
+  fi
+fi
+
+# The signed leaderboards' export (see 1h above). Safe to run again: CREATE TABLE IF NOT EXISTS, install, one cron
+# file; the key is made once and kept (a backup copy goes into the pass's backup folder, root only).
+if [ -f "$T/boards-export.py" ]; then
+  echo "== 1h. signed leaderboards export"
+  sed -i 's/\r$//' "$T/boards-export.py"
+  [ -f "$T/ed25519_pure.py" ] && sed -i 's/\r$//' "$T/ed25519_pure.py"
+  if python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$T/boards-export.py"; then
+    [ -f /srv/wrath/boards-export.py ] && cp -p /srv/wrath/boards-export.py "$BK/boards-export.py"
+    [ -f /etc/cron.d/wu-boards ] && cp -p /etc/cron.d/wu-boards "$BK/cron.wu-boards"
+    python3 -I "$T/boards-export.py" --schema | docker exec -i ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -N -B acore_characters' \
+      || die "could not make the leaderboard tables"
+    install -m 755 "$T/boards-export.py" /srv/wrath/boards-export.py
+    [ -f "$T/ed25519_pure.py" ] && install -m 644 "$T/ed25519_pure.py" /srv/wrath/ed25519_pure.py
+    install -d -m 700 /srv/wrath/leyline
+    [ -f /srv/wrath/leyline/board-realm.key ] && (umask 077; cp -p /srv/wrath/leyline/board-realm.key "$BK/board-realm.key")
+    install -d -m 755 /srv/wrath/portal/duels
+    printf '*/5 * * * * root python3 -I /srv/wrath/boards-export.py >/dev/null 2>&1\n' > /etc/cron.d/wu-boards
+    chmod 644 /etc/cron.d/wu-boards
+    if out=$(python3 -I /srv/wrath/boards-export.py 2>&1); then echo "  $out (cron every 5 min)"
+    else echo "  NOTE: the first boards export failed (${out:0:200}); cron tries again in 5 minutes"; fi
+    python3 -I /srv/wrath/boards-export.py --whoami | sed 's/^/  /' || true
+  else
+    echo "  NOTE: boards-export.py doesn't parse; skipped"
   fi
 fi
 

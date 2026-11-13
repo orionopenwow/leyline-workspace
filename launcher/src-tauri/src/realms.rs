@@ -494,10 +494,20 @@ fn has_realms(v: &Value) -> Result<(), String> {
 }
 
 /// The first of `urls` that answers with a listing (the last one falls back to the cache).
+/// All of them share one budget (`net::REALMS_BUDGET`): a site that is down never makes the list wait for each source
+/// and name in turn.
 pub fn fetch_network(urls: &[&str], app_dir: &Path) -> RealmList {
+    fetch_network_within(urls, app_dir, net::REALMS_BUDGET)
+}
+
+fn fetch_network_within(urls: &[&str], app_dir: &Path, budget: Duration) -> RealmList {
     let cache = cache_path(app_dir);
+    let deadline = std::time::Instant::now() + budget;
     for u in &urls[..urls.len().saturating_sub(1)] {
-        let got = net::get(u, net::TIMEOUT).and_then(|body| {
+        // keep part of the budget (up to 4 s) for the last source
+        let keep = (budget * 2 / 5).min(Duration::from_secs(4));
+        let mine = deadline.checked_sub(keep).unwrap_or(deadline).min(std::time::Instant::now() + net::TIMEOUT);
+        let got = net::get_by(u, mine).and_then(|body| {
             let v: Value = serde_json::from_str(&body).map_err(|e| format!("not JSON: {e}"))?;
             has_realms(&v)?;
             Ok((body, v))
@@ -509,9 +519,17 @@ pub fn fetch_network(urls: &[&str], app_dir: &Path) -> RealmList {
         }
     }
     match urls.last() {
-        Some(u) => fetch_all_from(u, app_dir),
+        Some(u) => fetch_all_within(u, app_dir, net::left(deadline)),
         None => list_of(&Value::Null, false, None, Some("no listing".into())),
     }
+}
+
+/// The realm list as last fetched, without the network: the Realms page shows it at once while the fresh one loads
+/// (app.rs realms_list_cached). None before the first fetch.
+pub fn cached_list(app_dir: &Path) -> Option<RealmList> {
+    let (doc, saved_at) = net::read_cache(&cache_path(app_dir))?;
+    has_realms(&doc).ok()?;
+    Some(list_of(&doc, true, saved_at, None))
 }
 
 /// The network listing's `sample` block names the official realm: the Sample Hangout's name (temporary) while it
@@ -557,7 +575,11 @@ fn list_of(doc: &Value, from_cache: bool, saved_at: Option<u64>, error: Option<S
 }
 
 pub fn fetch_all_from(url: &str, app_dir: &Path) -> RealmList {
-    match net::fetch_json(url, &cache_path(app_dir), net::TIMEOUT, has_realms) {
+    fetch_all_within(url, app_dir, net::TIMEOUT)
+}
+
+fn fetch_all_within(url: &str, app_dir: &Path, timeout: Duration) -> RealmList {
+    match net::fetch_json(url, &cache_path(app_dir), timeout, has_realms) {
         Ok(f) => list_of(&f.value, f.from_cache, f.saved_at, f.error),
         Err(e) => list_of(&Value::Null, false, None, Some(e)),
     }
@@ -748,6 +770,33 @@ mod tests {
         assert_eq!(none.realms.len(), 1);
         assert!(none.error.is_some());
         assert_eq!(cached(d.path()).len(), 3);
+    }
+
+    #[test]
+    fn a_hanging_site_gives_up_within_the_budget_and_shows_the_kept_list() {
+        let d = tempfile::tempdir().unwrap();
+        let base = serve_routes(vec![("/api/listing/realms.json", "200 OK", LISTING.as_bytes().to_vec())]);
+        let _ = fetch_all_from(&format!("{base}/api/listing/realms.json"), d.path());   // a kept copy
+        // two servers that take the connection and never answer
+        let hang = || {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = l.local_addr().unwrap().port();
+            std::thread::spawn(move || {
+                let mut held = vec![];
+                for s in l.incoming().flatten() {
+                    held.push(s);
+                }
+            });
+            format!("http://127.0.0.1:{port}/x.json")
+        };
+        let (a, b) = (hang(), hang());
+        let t = std::time::Instant::now();
+        let l = fetch_network_within(&[&a, &b], d.path(), Duration::from_millis(1500));
+        assert!(t.elapsed() < Duration::from_millis(2600), "{:?}", t.elapsed());
+        assert!(l.from_cache && l.realms.len() == 3, "the kept list");
+        let c = cached_list(d.path()).unwrap();
+        assert!(c.from_cache && c.realms.len() == 3 && c.realms[0].official);
+        assert!(cached_list(tempfile::tempdir().unwrap().path()).is_none(), "nothing kept yet");
     }
 
     #[test]

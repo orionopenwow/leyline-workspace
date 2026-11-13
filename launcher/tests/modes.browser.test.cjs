@@ -4,6 +4,8 @@
 // browser (mode_open_browser by id), PLAY on the desktop (mode_prepare_desktop, then play on the official realm, with
 // the client picked on the page), a client of another build refused, HOST IT for a realm type, the offline notice,
 // the page remembered from last time loading by itself, and catalog text shown as text, never markup.
+// Since 12 Nov the page lists Duels and Boss Rush only (the rest are "listed": false in the catalog and in modes.js
+// HIDDEN); the tests of the other cards run with every mode listed again ({ all: true }).
 //
 //   NODE_PATH=$(npm root -g) node --test launcher/tests/modes.browser.test.cjs
 'use strict';
@@ -16,14 +18,16 @@ const { chromium } = require('playwright');
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const CATALOG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'playmodes.json'), 'utf8'));
 
-const FAKE = ({ modes, extra, offline, browser, page, invited }) => {
+const FAKE = ({ modes, extra, offline, browser, page, invited, all }) => {
   const calls = (window.__calls = []);
+  if (all) window.LEYLINE_MODES_HIDDEN = [];   // every mode listed again: the cards' machinery, for when they come back
   try {
     if (invited) localStorage.setItem('leyline.hostInvite.modes', new Date().toISOString().slice(0, 10));
     localStorage.setItem('leyline.mode', browser ? 'browser' : 'online');
     if (page) localStorage.setItem('leyline.page', page); else localStorage.removeItem('leyline.page');
   } catch (_) { /* fine */ }
-  const list = modes.concat(extra || []);
+  // the core's modes_list never carries "listed" (modes.rs Mode has no such field): modes.js HIDDEN does the hiding
+  const list = modes.concat(extra || []).map((m) => { const c = Object.assign({}, m); delete c.listed; return c; });
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
     calls.push([cmd, args]);
     switch (cmd) {
@@ -63,15 +67,17 @@ const card = (page, id) => page.locator(`#md-list .md-card[data-mode="${id}"]`);
 const calls = (page, name) => page.evaluate((n) => window.__calls.filter(([c]) => c === n).map(([, a]) => a), name);
 
 test('Modes page: its menu item under Realms, Realms › MODES opens it, cards, credit, Coming soon', async () => {
-  const { page, errors } = await open();
+  const { page, errors } = await open({ all: true });
   const navs = await page.$$eval('aside nav .nav', (b) => b.map((x) => x.dataset.page));
   // 4 Nov: the website's menu gets a Modes page, and the launcher's menu matches it
-  assert.equal(navs[navs.indexOf('realms') + 1], 'modes', 'Modes is in the side menu, under Realms');
+  assert.ok(navs.includes('modes'), 'Modes is in the side menu');   // (its place there moved since; not this file's business)
   await page.click('.nav[data-page="realms"]');
   await page.click('#page-realms [data-page-go="modes"]');
   assert.ok(await page.isVisible('#page-modes'));
   const names = await page.$$eval('#md-list .md-card .name', (n) => n.map((x) => x.textContent));
-  assert.deepEqual(names, CATALOG.modes.map((m) => m.title));
+  const first = ['arena-queue', 'frozen-throne'];
+  assert.deepEqual(names, first.map((i) => CATALOG.modes.find((m) => m.id === i).title)
+    .concat(CATALOG.modes.filter((m) => !first.includes(m.id)).map((m) => m.title)), 'Duels and Boss Rush first');
   assert.equal(await page.textContent('#md-net'), '11 to play · 2 coming soon');
   const golf = await card(page, 'minigolf').textContent();
   assert.match(golf, /1-8 players/); assert.match(golf, /On our realm/); assert.match(golf, /Play/);
@@ -97,7 +103,7 @@ test('Modes page: its menu item under Realms, Realms › MODES opens it, cards, 
 });
 
 test('PLAY on the desktop: the pick, then play on the official realm', async () => {
-  const { page, errors } = await open();
+  const { page, errors } = await open({ all: true });
   await card(page, 'minigolf').locator('.md-play').click();
   await page.waitForFunction(() => /Started/.test(document.getElementById('md-status').textContent));
   assert.deepEqual(await calls(page, 'mode_prepare_desktop'), [{ client: 'c335a-1', id: 'minigolf' }]);
@@ -117,7 +123,7 @@ test('PLAY on the desktop: the pick, then play on the official realm', async () 
 });
 
 test('In-game modes: the .hub command on the card, PLAY just opens the game', async () => {
-  const { page, errors } = await open();
+  const { page, errors } = await open({ all: true });
   const tm = await card(page, 'transmog').textContent();
   assert.match(tm, /In game/); assert.match(tm, /In game, type \.hub transmog to find it\./);
   assert.equal(await card(page, 'transmog').locator('code').textContent(), '.hub transmog');
@@ -131,28 +137,18 @@ test('In-game modes: the .hub command on the card, PLAY just opens the game', as
   await page.close();
 });
 
-test('Host your own: one line under the list, once a day, opens the Host page', async () => {
-  const { page, errors } = await open();
-  assert.match(await page.textContent('#md-invite'), /Run it with friends on your own world, your rules\. Host your own ›/);
-  await page.click('#md-refresh');
-  await page.waitForFunction(() => document.getElementById('md-net').textContent.includes('to play'));
-  assert.equal(await page.locator('#md-invite').count(), 1, 'still there after a Refresh, once');
-  await page.click('#md-invite button');
-  assert.ok(await page.isVisible('#page-host'));
-  assert.equal(await page.evaluate(() => localStorage.getItem('leyline.hostInvite.modes')), new Date().toISOString().slice(0, 10));
+test('Host your own: the minigames\' once-a-day line is off with them (HOST_INVITE)', async () => {
+  const { page, errors } = await open({ all: true });
+  assert.equal(await page.locator('#md-invite').count(), 0);
+  assert.equal(await page.evaluate(() => localStorage.getItem('leyline.hostInvite.modes')), null, 'nothing remembered either');
   assert.deepEqual(errors, []);
   await page.close();
-  // the same day, a new start of Leyline: not again
-  const again = await open({ invited: true });
-  assert.equal(await again.page.locator('#md-invite').count(), 0, 'once a day');
-  assert.deepEqual(again.errors, []);
-  await again.page.close();
 });
 
 test('PLAY in the browser, offline list, remembered page, text not markup', async () => {
   const evil = { id: 'evil', title: '<img src=x onerror="window.__pwned=1">', line: '<b>bold</b> & more', kind: 'realm',
     players: { min: 1, max: 2 }, status: 'live', start: { go: 'mode:evil' }, credit: { by: '<i>x</i>', license: 'MIT', source: 'https://example.org/x' } };
-  const { page, errors } = await open({ browser: true, offline: true, page: 'modes', extra: [evil] });
+  const { page, errors } = await open({ browser: true, offline: true, page: 'modes', extra: [evil], all: true });
   assert.match(await page.textContent('#md-net'), /offline: the list built into Leyline/);
   assert.match(await page.textContent('#md-how'), /opens your web browser/);
   await card(page, 'bumper-balls').locator('.md-play').click();
@@ -171,7 +167,7 @@ test('Key art: on the Azeroth Survivors card and as the featured slide of Home\'
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.addInitScript(FAKE, { modes: CATALOG.modes });
+  await page.addInitScript(FAKE, { modes: CATALOG.modes, all: true });
   await page.goto(INDEX);
   const slide = page.locator('#page-play #hero .hero-slide[data-key="mode"]');
   await page.waitForFunction(() => { const i = document.querySelector('#hero .hero-slide[data-key="mode"] img'); return i && i.complete && i.naturalWidth > 0; });
@@ -198,7 +194,7 @@ test('Key art missing: no featured slide on Home, the card as before', async () 
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.route('**/art/modes/**', (r) => r.abort());
-  await page.addInitScript(FAKE, { modes: CATALOG.modes });
+  await page.addInitScript(FAKE, { modes: CATALOG.modes, all: true });
   await page.goto(INDEX);
   await page.waitForFunction(() => window.LeylineHome && !window.LeylineHome.slides().includes('mode'));
   await page.evaluate(() => window.LeylineNav.show('modes'));
@@ -206,6 +202,53 @@ test('Key art missing: no featured slide on Home, the card as before', async () 
   await page.waitForFunction(() => !document.querySelector('#md-list .md-card[data-mode="azeroth-survivors"] img'));
   assert.equal(await card(page, 'azeroth-survivors').evaluate((c) => c.classList.contains('has-art')), false);
   assert.match(await card(page, 'azeroth-survivors').textContent(), /Coming soon/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// ---------------------------------------------------------------- Duels and Boss Rush only (owner 12 Nov)
+test('Duels and Boss Rush only: two rich cards, how to start, board mounts, Play, more coming; hidden = the catalog', async () => {
+  const { page, errors } = await open();
+  const hidden = CATALOG.modes.filter((m) => m.listed === false).map((m) => m.id);
+  assert.deepEqual(await page.evaluate(() => Array.from(window.LeylineModes.HIDDEN)), hidden, 'modes.js HIDDEN = the catalog\'s listed: false');
+  assert.deepEqual(CATALOG.modes.filter((m) => m.listed !== false).map((m) => m.title).sort(), ['Boss Rush', 'Duels']);
+  assert.deepEqual(await page.$$eval('#md-list .md-card', (n) => n.map((x) => x.dataset.mode)), ['arena-queue', 'frozen-throne']);
+  assert.deepEqual(await page.$$eval('#md-list .md-card .name', (n) => n.map((x) => x.textContent)), ['Duels', 'Boss Rush']);
+  assert.equal(await page.textContent('#md-net'), '2 to play');
+  assert.match(await page.textContent('#page-modes .lede'), /^Duels and Boss Rush\./);
+  const text = await page.textContent('#page-modes');
+  assert.doesNotMatch(text, /Minigolf|Bumper Balls|Coin Dash|Community modes|Brawl|Survivors|Hordes|Keystone|Transmog|Hardcore/);
+  for (const [id, board, play] of [['arena-queue', 'duels', 'Queue now'], ['frozen-throne', 'bossrush', 'Fight now']]) {
+    const c = card(page, id);
+    assert.equal(await c.getAttribute('data-board'), board);
+    assert.equal(await c.locator('.md-steps li').count(), 3, `${id}: how to start, three steps`);
+    assert.equal(await c.locator(`.md-board#md-board-${board}[data-board="${board}"]`).count(), 1, `${id}: the board mount`);
+    assert.match(await c.locator('.md-board').textContent(), /Your best.*Your rank.*(show here soon|full leaderboard is below)/);
+    assert.equal(await c.locator('.md-play').textContent(), play);
+  }
+  assert.equal(await page.evaluate(() => window.LeylineModes.boards().map((b) => b.dataset.board).join()), 'duels,bossrush');
+  assert.match(await card(page, 'arena-queue').textContent(), /\/duel/);
+  assert.match(await page.textContent('#md-more'), /More modes are on the way/);
+  // Boss Rush: Fight now plays the realm mode; Boss Rush on this PC opens the Boss Rush page
+  await card(page, 'frozen-throne').locator('.md-play').click();
+  await page.waitForFunction(() => /Started/.test(document.getElementById('md-status').textContent));
+  assert.deepEqual(await calls(page, 'mode_prepare_desktop'), [{ client: 'c335a-1', id: 'frozen-throne' }]);
+  await card(page, 'frozen-throne').locator('.md-local').click();
+  assert.ok(await page.isVisible('#page-bossrush'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Duels and Boss Rush only: Home has no featured Survivors slide, its What\'s on row is the two', async () => {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.addInitScript(FAKE, { modes: CATALOG.modes });
+  await page.goto(INDEX);
+  await page.waitForFunction(() => window.LeylineHome && window.LeylineHome.slides().length > 0);
+  await page.waitForTimeout(300);
+  assert.ok(!(await page.evaluate(() => window.LeylineHome.slides())).includes('mode'), 'no featured mode slide');
+  assert.equal(await page.evaluate(() => window.LeylineModes.FEATURED), null);
   assert.deepEqual(errors, []);
   await page.close();
 });

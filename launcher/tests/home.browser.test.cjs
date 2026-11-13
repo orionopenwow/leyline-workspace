@@ -18,8 +18,15 @@ const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const PICTURE = path.join(__dirname, '..', 'ui', 'art', 'leyline-bg.webp');   // the site's backdrop, stood in
 const MODES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'playmodes.json'), 'utf8')).modes;
 
-const FAKE = ({ empty, browser, ms, modes, noClients, forumDown, forumWait }) => {
+const FAKE = ({ empty, browser, ms, modes, noClients, forumDown, forumWait, hidden }) => {
   const calls = (window.__calls = []);
+  // Modes lists Duels and Boss Rush only since 12 Nov (modes.js HIDDEN): these tests list every mode again for the
+  // gallery's and rows' machinery, unless a test asks for the real list ({ hidden: true })
+  if (hidden !== true) {
+    window.LEYLINE_MODES_HIDDEN = [];
+    // the core never passes the catalog's "listed" on (modes.rs): as if every mode were listed
+    modes = (modes || []).map((m) => { const c = Object.assign({}, m); delete c.listed; return c; });
+  }
   try {
     localStorage.removeItem('leyline.page');
     localStorage.setItem('leyline.mode', browser ? 'browser' : 'online');
@@ -128,7 +135,7 @@ test('the gallery: every slide with its data, a title, one line and one button; 
   const hang = page.locator('.hero-slide[data-key="hangout"]');
   assert.equal(await hang.locator('.hs-title').textContent(), 'Join Wrath Unleashed');
   assert.deepEqual(await hang.locator('.hs-body button').allTextContents(), ['Play now', 'Join the Discord']);
-  assert.match(await hang.locator('.hs-line').textContent(), /\/golf and \/modes/);
+  assert.match(await hang.locator('.hs-line').textContent(), /a duel or Boss Rush/);
   assert.deepEqual(await hang.locator('.hs-lineup .hs-rl-n b').allTextContents(), ['Wrath Unleashed'], 'the official lineup: the Hangout (no Vanilla Remastered record here)');
   const mode = page.locator('.hero-slide[data-key="mode"]');
   assert.equal(await mode.locator('img.hs-art').getAttribute('src'), 'art/modes/azeroth-survivors.webp');
@@ -338,7 +345,7 @@ test('the launch slide is full: live counts, the lineup, three modes with pictur
   // live realms with an offered build: the Hangout 5, Busy Den 30, Old Keep 3, Quiet Glade (no count), Fifth Live 1
   assert.deepEqual(await hang.locator('.hs-chip').allTextContents(), ['5 on Wrath Unleashed now', '39 playing on 5 realms']);
   assert.deepEqual(await hang.locator('.hs-mt').evaluateAll((b) => b.map((x) => [x.dataset.mode, x.querySelector('i').textContent, x.querySelector('.hs-mt-pic b').textContent])),
-    [['minigolf', '/golf', 'M'], ['bumper-balls', '/modes', 'B'], ['coin-dash', '/modes', 'C']], 'live modes on the realm, each with its colour and initial (no screenshots listed)');
+    [['arena-queue', '.q1v1', 'D'], ['frozen-throne', '/bf', 'B'], ['minigolf', '/golf', 'M']], 'live modes on the realm, Duels and Boss Rush first, each with its way in, colour and initial (no screenshots listed)');
   // forum strings are text: the title's tag is shown, not made; three at most
   const rows = await hang.locator('.hs-forum .hs-fr').evaluateAll((b) => b.map((x) => [x.querySelector('b').textContent, x.querySelector('i').textContent]));
   assert.equal(rows[0][0], 'Golf night <img src=x onerror="window.__xss=1">');
@@ -353,7 +360,7 @@ test('the launch slide is full: live counts, the lineup, three modes with pictur
   assert.deepEqual(await page.evaluate(() => window.LeylineForum.view()), { kind: 'thread', id: 8 });
   await page.evaluate(() => window.LeylineNav.show('play'));
   await showKey(page, 'hangout');
-  await hang.locator('.hs-mt[data-mode="bumper-balls"]').click();
+  await hang.locator('.hs-mt[data-mode="frozen-throne"]').click();
   assert.equal((await where(page)).page, 'page-modes');
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -454,6 +461,52 @@ test('Den of the week: from the site\'s home.json, as text; Visit shows a leylin
   await web.page.waitForFunction(() => window.LeylineHome.slides().includes('denweek'));
   assert.equal(await web.page.locator('.hero-slide[data-key="denweek"] .hs-go').textContent(), 'See it on the website');
   await web.ctx.close();
+});
+
+test('THIS WEEK: one featured pick per mode from home.json, as text, until its time; a card opens its mode', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const week = { format: 1, at: now, items: [
+    { mode: 'brawl', title: 'Brawl <b>night</b>', line: 'Everyone starts at 80 in Dalaran.', visit: '', until: now + 3 * 86400 },
+    { mode: 'brawl', title: 'A second brawl pick', line: '', visit: '', until: now + 3 * 86400 },
+    { mode: 'keystones', title: "This week's twist", line: 'Timed dungeons with a key that gets harder.', visit: '', until: now + 2 * 86400 },
+    { mode: 'minigolf', title: 'Last week', line: 'Over.', visit: '', until: now - 60 },
+    { mode: 'future-mode', title: 'Something new', line: 'A mode this launcher does not know yet.', visit: 'javascript:alert(1)', until: now + 86400 },
+    { mode: 'Bad Mode!', title: 'Bad id', until: now + 86400 },
+  ] };
+  const { page, ctx, errors } = await open({ ms: 600000, homeArt: { slides: {}, this_week: week } });
+  await page.waitForFunction(() => !document.getElementById('hm-week').hidden);
+  const cards = page.locator('#hm-week-row .hm-card.hm-wk');
+  assert.deepEqual(await cards.evaluateAll((cs) => cs.map((c) => c.dataset.mode)), ['brawl', 'keystones', 'future-mode'],
+    'one per mode, the first kept; the past and a bad id left out');
+  assert.equal(await cards.first().locator('.hm-name').textContent(), 'Brawl <b>night</b>', 'shown as text, never HTML');
+  assert.equal(await page.locator('#hm-week-row b b').count(), 0);
+  assert.equal(await cards.first().locator('.hm-kick').textContent(), MODES.find((m) => m.id === 'brawl').title, 'the mode\'s own name');
+  assert.match(await cards.first().locator('.hm-until').textContent(), /^Until (Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{1,2}$/);
+  assert.equal(await cards.nth(2).locator('.hm-kick').textContent(), 'Future mode', 'an unknown mode by its id, in words');
+  assert.deepEqual(await page.evaluate(() => window.LeylineHome.thisWeek().map((x) => x.visit)), ['', '', ''], 'only https or leyline:// links');
+  assert.deepEqual(await page.evaluate(() => window.LeylineHome.readThisWeek({ this_week: { format: 2, items: [] } })), []);
+  if (process.env.SHOT_DIR) {   // the gallery: the seed picks in stream/weekly.json, as the site would send them
+    const seed = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'weekly.json'), 'utf8')).items
+      .map((x, i) => ({ mode: x.mode, title: x.title, line: x.line, visit: x.visit, until: now + (3 - (i % 3)) * 86400 }));
+    const g = await open({ ms: 600000, homeArt: { slides: {}, this_week: { format: 1, at: now, items: seed } } });
+    await g.page.waitForFunction(() => !document.getElementById('hm-week').hidden);
+    await g.page.locator('#hm-week').scrollIntoViewIfNeeded();
+    await g.page.locator('#hm-week').screenshot({ path: path.join(process.env.SHOT_DIR, 'weekly-home-row.png') });
+    await g.page.screenshot({ path: path.join(process.env.SHOT_DIR, 'weekly-home.png') });
+    await g.ctx.close();
+  }
+  await cards.nth(1).click();
+  assert.equal((await where(page)).page, 'page-modes', 'a known mode opens on Modes');
+  await page.evaluate(() => window.LeylineNav.show('play'));
+  await cards.nth(2).click();
+  assert.equal((await where(page)).page, 'page-modes', 'an unknown one opens the Modes page');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+
+  const none = await open({ ms: 600000, homeArt: { slides: {}, this_week: { format: 1, items: [{ mode: 'brawl', title: 'Gone', until: now - 1 }] } } });
+  await none.page.waitForTimeout(400);
+  assert.ok(await none.page.evaluate(() => document.getElementById('hm-week').hidden), 'nothing live: no row');
+  await none.ctx.close();
 });
 
 test('every slide fits at 1100 px and 1400 px: words, panel and picture apart, nothing off the slide; motion only when allowed', async () => {
@@ -564,6 +617,18 @@ test('the first slide is never bare at start: Leyline\'s own night sky at once, 
   assert.equal(await page.getAttribute('.hero-slide[data-key="hangout"] .hs-photo', 'src'), 'https://leylinelauncher.com/wrath/art/home/hangout.webp');
   // the site says there is none any more: forgotten for next time
   await page.waitForFunction(() => !localStorage.getItem('leyline.homeArt'), null, { timeout: 15000 });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Duels and Boss Rush only (owner 12 Nov): no featured Survivors slide; What\'s on and the Modes row are the two', async () => {
+  const { page, ctx, errors } = await open({ ms: 600000, hidden: true });
+  await page.waitForFunction(() => document.querySelector('.hero-slide[data-key="hangout"] .hs-mt'));
+  assert.ok(!(await keys(page)).includes('mode'), 'no featured mode slide while Survivors is hidden');
+  assert.deepEqual(await page.locator('.hero-slide[data-key="hangout"] .hs-mt').evaluateAll((b) => b.map((x) => [x.dataset.mode, x.querySelector('i').textContent])),
+    [['arena-queue', '.q1v1'], ['frozen-throne', '/bf']]);
+  await page.waitForFunction(() => document.querySelectorAll('#hm-modes-row .hm-card').length > 0);
+  assert.deepEqual(await page.$$eval('#hm-modes-row .hm-card', (c) => c.map((x) => x.dataset.mode)), ['arena-queue', 'frozen-throne']);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

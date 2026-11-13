@@ -38,6 +38,18 @@ def check(name, ok, extra=""):
         failed += 1; print("FAIL", name, extra)
 
 
+class relist:
+    """Bring hidden modes back for a moment (stream/playmodes.json "listed": false), as deleting the line would."""
+    def __init__(self, *mids): self.mids, self.saved = mids, {}
+    def __enter__(self):
+        for m in (wp.playmodes.CATALOG or {}).get("modes", []):
+            if m["id"] in self.mids: self.saved[m["id"]] = m.pop("listed", None)
+        return self
+    def __exit__(self, *a):
+        for m in (wp.playmodes.CATALOG or {}).get("modes", []):
+            if self.saved.get(m["id"]) is False: m["listed"] = False
+
+
 BANNED = re.compile(r"(?i)world\s*of\s*warcraft|\bwow\b|warcraft|lich\s*king|blizzard")
 
 
@@ -291,7 +303,7 @@ check("front page: four feature sections only (launcher, looks, host, modes; Mod
 fs = re.findall(FS_RE, allf, re.S)
 check("feature sections: one per part of Leyline, in the recommended order", [f[1] for f in fs] == [
       "launcher", "looks", "host", "realms", "modes", "mods", "forge", "agents", "community"] and [f[2] for f in fs] == [
-      "Desktop launcher", "Looks", "Host your own server", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
+      "Desktop launcher", "Looks", "Host your own server", "Realms &amp; hopping", "Duels &amp; Boss Rush", "Mods",
       "Forge", "Agents", "Community hub"], [f[1:3] for f in fs])
 lks = re.findall(r'<a class="hb-lk ([a-z-]+)" href="/wrath/looks#look-([a-z0-9-]+)"><span class="lk-art ([a-z- ]+)"[^>]*>(.*?)</span><b>([^<]+)</b><span>([^<]+)</span></a>', front)
 check("front page: the Looks tiles show our own pictures where a look has one (Max, Balanced, Classic, Forever UI), never wider than the picture",
@@ -314,11 +326,12 @@ check("feature sections: a heading, a lede, points and a first link each", all(f
       and ('class="hb-cta sm"' in f[6] or (f[1] == "launcher" and 'class="ly-btn dlp-main"' in f[6])) for f in fs))
 hrefs = [re.findall(r'href="([^"]+)"', f[6]) for f in fs]
 check("feature sections: links to pages that exist, nothing paid", [h[0] for h in hrefs][1:] == [
-      "/wrath/looks", "/wrath/host", "/wrath/leyline-preview/realms", "/wrath?go=mode:minigolf", "/wrath/leyline-preview/catalog?sort=hot",
+      "/wrath/looks", "/wrath/host", "/wrath/leyline-preview/realms", "/wrath?go=bf:frozen-throne:normal:bots", "/wrath/leyline-preview/catalog?sort=hot",
       "/wrath/leyline-preview/forge", "/wrath/leyline-preview/agents", "/wrath/leyline/forum"] and hrefs[0][0].startswith("https://github.com/orionopenwow/Leyline/releases")
       and not re.search(r"(?i)support|donat|\bvip\b|\bshop\b", " ".join(f[6] for f in fs)))
 check("feature sections: a TODO(owner) to reorder them", "TODO(owner): the order of the products" in open(HB.__file__).read())
-check("feature sections: the game modes line from playmodes.json, Hero Key as coming", "Minigolf" in fs[4][4]
+check("feature sections: the game modes line from playmodes.json (Duels and Boss Rush), Hero Key as coming", "Duels and Boss Rush now" in fs[4][4]
+      and "Minigolf" not in fs[4][4]
       and "Hero Key sign-in across community realms (coming)" in fs[3][5])
 check("feature sections: every one has its icon", allf.count('<span class="hb-ico"><svg viewBox="0 0 24 24" aria-hidden="true">') == 9)
 feats = allf
@@ -359,9 +372,13 @@ for path, want in (("/realms", ["Realms"]), ("/catalog", ["Mods"]), ("/addons", 
           and hd.count('aria-current="page"') == len([w for w in want if w != "More"]) + 2 * len(sub_on), (labels, on, sub_on))   # (the dropdown's and the phone sheet's copy: one shows)
 modes = req("/wrath/leyline-preview/modes")[2].decode()
 mode_ids = [m["id"] for m in wp.playmodes.entries()]
-check("modes page: every mode in playmodes.json, live realm modes one click", all(f'id="mode-{i}"' in modes for i in mode_ids)
-      and 'class="hb-play" href="/wrath?go=mode:minigolf"' in modes and "Azeroth Survivors" in modes
-      and 'go=mode:azeroth-survivors' not in modes and "Coming soon" in modes and 'href="/wrath/host">Host it' in modes)
+check("modes page: Duels and Boss Rush only, each one click, its how-to and its board mount", mode_ids == ["arena-queue", "frozen-throne"]
+      and all(f'id="mode-{i}"' in modes for i in mode_ids)
+      and 'class="hb-play" href="/wrath?go=arena:1v1">Queue now<' in modes and 'class="hb-play" href="/wrath?go=bf:frozen-throne:normal:bots">Fight now<' in modes
+      and modes.count('<ol class="hb-how">') == 2 and 'data-board="duels"' in modes and 'data-board="bossrush"' in modes
+      and 'id="hb-more-coming"' in modes)
+check("modes page: the hidden modes are not on it", not any(f'id="mode-{i}"' in modes for i in wp.playmodes.hidden_ids())
+      and not re.search(r"Minigolf|Azeroth Survivors|Host it", visible(modes)))
 check("modes page: no script", "<script" not in modes)
 news = req("/wrath/leyline-preview/news")[2].decode()
 check("news page: empty says so", "No news posts yet." in news)
@@ -915,7 +932,7 @@ HB.hub.portal = portal_gal
 check("gallery: a game shot missing from the art folder is never a broken image (the flat tile instead)",
       'id="g-leyline"' in req("/wrath/leyline-preview/gallery")[2].decode() and not os.path.isdir(wp.ART_DIR))
 check("modes page: a mode's key art missing from the art folder is no picture at all (never a broken image)",
-      'id="mode-azeroth-survivors"' in req("/wrath/leyline-preview/modes")[2].decode()
+      'id="mode-frozen-throne"' in req("/wrath/leyline-preview/modes")[2].decode()
       and 'class="hb-mode-art"' not in req("/wrath/leyline-preview/modes")[2].decode())
 check("featured modpack: missing from the art folder, no section and no tile", 'id="featured-mod"' not in req("/wrath/leyline-preview")[2].decode())
 ART_WAS = wp.ART_DIR
@@ -1032,7 +1049,7 @@ check("killswitch on: one flat Leyline tile with the mark instead, still In game
       and fk_tiles[1][1] == "mods" and fk_tiles[2][1] == "launcher", [t[:3] for t in fk_tiles][:4])
 check("killswitch on: no featured modpack section and no modpack tile; its picture answers 410",
       'id="featured-mod"' not in fk and "g-project-reforged" not in fk and req("/wrath/art/leyline-shot-project-reforged.webp")[0] == 410)
-check("killswitch on: Game modes shows the launcher's Modes page instead of the Minigolf loop (and the loop answers 410)",
+check("killswitch on: Duels & Boss Rush shows the launcher's Modes page (and the old Minigolf loop answers 410)",
       "<video" not in fk and re.search(r'id="f-modes".*?<img src="/wrath/art/leyline-ui-modes\.webp"', fk, re.S)
       and req("/wrath/art/leyline-shot-minigolf.mp4")[0] == 410 and req("/wrath/art/leyline-shot-minigolf.webm")[0] == 410)
 os.remove(FLAG)
@@ -1153,11 +1170,12 @@ check("realm list: in Realms & hopping (off the front page since 1 Nov), our own
 check("realm list: stacks on a phone", "@media (max-width:560px){" in HB.HUB_CSS and ".hb-rlx-cols{display:none}" in HB.HUB_CSS)
 
 # ---------------------------------------------------------------- the Minigolf loop in Game modes (owner: "in here show the minigolf gif")
-vid = re.search(r'<figure class="hb-shot hb-vid">.*?</figure>', fp, re.S)
-vid = vid.group(0) if vid else ""
-check("game modes: the Minigolf recording, muted, looped, inline, nothing loaded until it plays, the poster first",
-      re.search(r'id="f-modes".*?<figure class="hb-shot hb-vid">', fp, re.S)
-      and '<video muted loop playsinline preload="none" poster="/wrath/art/leyline-shot-minigolf.webp" width="820" height="596" data-hb-vid' in vid
+# Duels and Boss Rush only (owner 12 Nov): the section shows the launcher's Modes page; the loop (modes_art) is kept
+check("Duels & Boss Rush: the launcher's Modes page, not the Minigolf loop", '<figure class="hb-shot hb-vid">' not in fp
+      and re.search(r'id="f-modes".*?<img src="/wrath/art/leyline-ui-modes\.webp"', fp, re.S))
+vid = HB.hub.modes_art(lambda n, a: "")
+check("game modes (kept for later): the Minigolf recording, muted, looped, inline, nothing loaded until it plays, the poster first",
+      '<video muted loop playsinline preload="none" poster="/wrath/art/leyline-shot-minigolf.webp" width="820" height="596" data-hb-vid' in vid
       and vid.find('<source src="/wrath/art/leyline-shot-minigolf.webm" type="video/webm">')
       < vid.find('<source src="/wrath/art/leyline-shot-minigolf.mp4" type="video/mp4">') and "autoplay" not in vid)
 check("game modes: caption and a Play link to the mode (works without script)", "<span>Minigolf, on our own realm</span>" in vid
@@ -1193,9 +1211,10 @@ check("game modes: a range past the end is 416; a picture ignores ranges", range
 check("game modes: the page's CSP lets our own media play", "media-src 'self'" in req("/wrath/leyline-preview")[1].get("content-security-policy", ""))
 
 # ---------------------------------------------------------------- the modes' key art (Azeroth Survivors)
-mp = req("/wrath/leyline-preview/modes")[2].decode()
+with relist("azeroth-survivors"):
+    mp = req("/wrath/leyline-preview/modes")[2].decode()
 sv = re.search(r'<article class="hb-mode art" id="mode-azeroth-survivors">.*?</article>', mp, re.S)
-check("modes page: Azeroth Survivors shows its key art (served, sized, alt), the others none",
+check("modes page (Azeroth Survivors listed again): it shows its key art (served, sized, alt), the others none",
       sv and re.search(r'<img class="hb-mode-art" src="/wrath/art/leyline-mode-azeroth-survivors-play\.webp" alt="[^"]{20,}" width="483" height="298"', sv.group(0))
       and mp.count('class="hb-mode-art"') == 1 and "leyline-mode-azeroth-survivors-play.webp" in wp.ART_TYPES
       and os.path.isfile(os.path.join(HERE, "www-files", "art", "leyline-mode-azeroth-survivors-play.webp")))
@@ -1592,7 +1611,7 @@ gm = gm.decode()
 check("game modes: its own tab with the modes to play, Your Den, the Leyline Modes and the way to /modes",
       st_gm == 200 and '<a href="/wrath/leyline-preview/game-modes" class="on" aria-current="page">Game modes</a>' in gm
       and 'id="gm-den"' in gm and 'href="/wrath?go=' in gm and 'href="/wrath/leyline-preview/modes"' in gm
-      and 'href="/wrath/survivors"' in gm and not BANNED.search(visible(gm)), gm[:400])
+      and 'href="/wrath/survivors"' not in gm and "Minigolf" not in visible(gm) and not BANNED.search(visible(gm)), gm[:400])
 st_lo, _h, lo = req("/wrath/leyline-preview/loadouts")
 lo = lo.decode()
 raider = re.search(r'<article class="hb-mode hb-lo" id="lo-raider">.*?</article>', lo, re.S)
@@ -1776,12 +1795,17 @@ check("Submit a mod or an addon: the category says which it is (Addon first, the
 st, h, _ = req("/wrath/leyline-preview/catalog?view=game")
 check("the old Game mods tab (catalog?view=game) sends a 301 to Mods › Game modes", st == 301
       and h.get("location") == "/wrath/leyline-preview/catalog?group=game", (st, h.get("location")))
+gmp_now = req("/wrath/leyline-preview/catalog?group=game")[2].decode()
+check("Mods › Game modes: the Leyline Modes are Duels and Boss Rush only, no minigames",
+      'data-id="mode:arena-queue"' in gmp_now and 'data-id="mode:frozen-throne"' in gmp_now and "mode:minigolf" not in gmp_now)
+_relist = relist(*wp.playmodes.hidden_ids())   # the machinery below, with the minigames listed again
+_relist.__enter__()
 gmp = req("/wrath/leyline-preview/catalog?group=game")[2].decode()
 gcards = re.findall(r'<article class="hb-card hb-gm".*?</article>', gmp, re.S)
 gids = re.findall(r'data-id="([^"]+)"', " ".join(gcards))
 check("Mods › Game modes: the Leyline Modes, each saying what it adds, that it needs a realm that allows it, and where to play it",
-      gids[:4] == ["mode:minigolf", "mode:bumper-balls", "mode:coin-dash", "mode:community"]
-      and all("Needs a realm that allows it" in c and f"<b>Play it on:</b> {HB.HANGOUT_NAME}" in c for c in gcards[:4])
+      gids[:6] == ["mode:arena-queue", "mode:frozen-throne", "mode:minigolf", "mode:bumper-balls", "mode:coin-dash", "mode:community"]
+      and all("Needs a realm that allows it" in c and f"<b>Play it on:</b> {HB.HANGOUT_NAME}" in c for c in gcards[:6])
       and '<a class="hb-play sm" href="/wrath?go=mode:minigolf">Play</a>' in gmp
       and 'href="/wrath/leyline-preview/catalog?group=game" aria-current="true">Game modes</a>' in gmp
       and '<h1 id="hb-pg-h">Mods</h1>' in gmp, gids)
@@ -1805,6 +1829,7 @@ check("Mods › Game modes: Play it on lists the live realms whose listing names
       f"<b>Play it on:</b> {HB.HANGOUT_NAME}, Frost Haven</p>" in golf and "<b>Play it on:</b> Frost Haven</p>" in dash
       and "Sleepy" not in g2 and "No live realm runs it right now" in bump and 'href="/wrath?go=mode:bumper-balls"' not in bump, golf[-400:])
 HB.hub.realm_rows = real_rows
+_relist.__exit__()
 
 # ---- realms declare their mods (docs/GAME-MODS.md): "Uses 3 mods" on realm rows, and the launcher line
 rmh = HB.hub.realm_mods_html({"mods": [{"id": "mode:minigolf"}, {"id": "up:skada", "version": "r1"}, {"id": "https://evil.example/x"},
@@ -1815,8 +1840,8 @@ check("realm row: Uses N mods, named (ids the Workshop doesn't know by their id)
 check("realm row: no list, no line", HB.hub.realm_mods_html({}) == "" and HB.hub.realm_mods_html({"mods": "mod:x"}) == "")
 rl = req("/wrath/leyline-preview/realms")[2].decode()
 home = re.search(r'<li class="hb-rl home.*?</li>\s*(?=<li|</ul>)', rl, re.S)
-check("realm list: our realm says which mods it uses (from its own config)", home and "<summary>Uses " in home.group(0)
-      and "<li>Minigolf</li>" in home.group(0), home.group(0)[:300] if home else rl[:200])
+check("realm list: our realm says which mods it uses (from its own config): Duels and Boss Rush", home and "<summary>Uses " in home.group(0)
+      and "<li>Duels</li>" in home.group(0) and "<li>Minigolf</li>" not in home.group(0), home.group(0)[:300] if home else rl[:200])
 
 # ---- realm rows at a desktop window narrower than a full row (owner, 31 Oct, 800px: the name squeezed to a letter a
 # line, the meta one word a line, the actions keeping the whole row): the name stays on one line, no sideways scroll

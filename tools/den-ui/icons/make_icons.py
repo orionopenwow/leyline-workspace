@@ -640,6 +640,49 @@ def _(p):   # an eye over a ground line: the view from up high
     p.dot(32, 26, 6)
 
 
+# ---------------------------------------------------------------- the builder's comforts (12 Nov, qol.rs)
+@icon("circle")
+def _(p):   # a plain ring: the circle select drawn on the screen (stretched, tinted gold)
+    p.circle(32, 32, 28, w=8)
+
+
+@icon("magnet")
+def _(p):   # two blocks meeting edge to edge, a small arrow pulling one in
+    p.rect(6, 22, 28, 44, r=3)
+    p.rect(34, 22, 56, 44, r=3)
+    p.line((14, 12), (40, 12))
+    p.head(42, 12, 0, 8)
+
+
+@icon("slope")
+def _(p):   # a block leaning on a hillside
+    p.line((4, 56), (60, 28))
+    p.poly((22, 44), (40, 35), (46, 47), (28, 56))
+
+
+@icon("fill")
+def _(p):   # a row of three boxes between two posts
+    p.line((6, 14), (6, 52))
+    p.line((58, 14), (58, 52))
+    for x in (14, 27, 40):
+        p.rect(x, 26, x + 10, 40, r=2)
+
+
+@icon("nudge")
+def _(p):   # the four arrow keys
+    p.rect(24, 8, 40, 24, r=3)
+    p.rect(6, 30, 22, 46, r=3)
+    p.rect(24, 30, 40, 46, r=3)
+    p.rect(42, 30, 58, 46, r=3)
+
+
+@icon("coach")
+def _(p):   # a signpost: the first build's tour
+    p.line((32, 8), (32, 58))
+    p.poly((14, 14), (46, 14), (54, 21), (46, 28), (14, 28))
+    p.line((18, 52), (46, 52))
+
+
 def tga(im: Image.Image) -> bytes:
     """An uncompressed 32-bit TGA: type 2, bottom-up rows (descriptor 0x08: 8 alpha bits, origin bottom-left)."""
     w, h = im.size

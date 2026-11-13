@@ -1,0 +1,129 @@
+{
+  "about": "The in-game guide on the original world (a world on the player's own PC): generated into WrathUnleashedUI/RealmGuideLocal.lua by tools/realm-guide/make_guide.py. Plain words, no brand words, only what this world has. TODO(owner): his words.",
+  "title": "Original world notes",
+  "intro": "The original world as it first was, to level 60, on your PC.",
+  "pages": [
+    {
+      "key": "start",
+      "name": "Welcome",
+      "icon": "guide",
+      "heading": "Welcome to the original world",
+      "lines": [
+        "The original world as it first was, to level 60, running on your PC.",
+        "The first era's races and classes, as they were then.",
+        "Experience is 2x, unless you changed it in the launcher (the Single player page, Your world).",
+        "Bots: press Ctrl-B or click the Bots button by the minimap."
+      ],
+      "commands": [
+        [
+          "/guide",
+          "this guide"
+        ],
+        [
+          "/comp",
+          "the Bots window"
+        ],
+        [
+          ".qol",
+          "what is switched on here"
+        ]
+      ]
+    },
+    {
+      "key": "bots",
+      "name": "Bots",
+      "icon": "invite",
+      "heading": "Your bots",
+      "lines": [
+        "Open the Bots window with Ctrl-B, the Bots button by the minimap, or /comp.",
+        "Companions follow you, fight with you and pass on loot: the loot is yours.",
+        "From the window: bring bots, pick their roles and specs, see their gear, or send them home.",
+        "Want bots to join by themselves when you log in? Turn on companions in the launcher: the Single player page, Your world."
+      ],
+      "commands": [
+        [
+          "/comp",
+          "the Bots window"
+        ],
+        [
+          ".recruit party",
+          "fill a 5-player group: a tank, a healer, damage"
+        ],
+        [
+          ".buddy",
+          "one levelling buddy at your level"
+        ],
+        [
+          ".dismiss all",
+          "send every bot home"
+        ],
+        [
+          ".companions",
+          "your bots and the limits"
+        ]
+      ]
+    },
+    {
+      "key": "dungeons",
+      "name": "Dungeons",
+      "icon": "dojo",
+      "heading": "Dungeons with bots",
+      "lines": [
+        "Walk into a 5-player dungeon and dungeon buddies fill your party; they go home when you leave.",
+        "Rather pick them yourself? Fill the party from the Bots window first, or recruit by role.",
+        "Raids: .recruit raid fills a 10-player raid around you."
+      ],
+      "commands": [
+        [
+          ".recruit raid",
+          "fill a 10-player raid"
+        ],
+        [
+          ".recruit tank",
+          "one tank (healer and dps work the same way)"
+        ]
+      ]
+    },
+    {
+      "key": "friends",
+      "name": "Friends",
+      "icon": "invite",
+      "heading": "Play with a friend",
+      "lines": [
+        "Type /together (or open Friends, the Leyline tab) and press Invite a friend: the launcher makes a link. Send it to your friend.",
+        "Your friend needs Leyline and their own game folder. No Hero Key, no account to make.",
+        "On the same network they join straight in; anywhere else, through the Leyline relay.",
+        "Their character stays in your world, theirs to keep: invite them again and it's there."
+      ],
+      "commands": [
+        [
+          "/together",
+          "invite a friend"
+        ]
+      ]
+    },
+    {
+      "key": "world",
+      "name": "Your world",
+      "icon": "guide",
+      "heading": "Your world, on your PC",
+      "lines": [
+        "Your world is saved as you play.",
+        "Leyline stops it a minute after the game closes, and when Leyline closes (both can be switched off in the launcher).",
+        "A back-up is made once a day, and before every engine update and Repair. Restore is on the launcher's Single player page.",
+        "After the first setup it plays offline. The internet is only for updates and for inviting friends through the relay.",
+        "Something wrong? Repair on the Single player page checks the engine and keeps your saves."
+      ],
+      "commands": [
+        [
+          ".qol",
+          "what is switched on here"
+        ],
+        [
+          ".learnall",
+          "learn every spell for your level now"
+        ]
+      ]
+    }
+  ]
+}

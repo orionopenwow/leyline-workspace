@@ -154,7 +154,7 @@ pub const TOOLS: &[Tool] = &[
 
 /// What agents can never do: there is no tool for any of it. (Shown on the Agents page; the tests check none exists.)
 pub const NEVER: &[&str] = &[
-    "Sign in, see or change a password, a Hero Key or your account",
+    "Log in as you, see or change a password, a Hero Key or your account",
     "Anything with money",
     "Delete files, remove a game client, wipe a realm",
     "Make your realm public, open its sign-up, or make invites",
@@ -367,8 +367,34 @@ pub fn audit(app_dir: &Path, line: &AuditLine) {
 
 /// The newest `n` audit lines, newest first.
 pub fn read_audit(app_dir: &Path, n: usize) -> Vec<AuditLine> {
-    let text = fs::read_to_string(dir(app_dir).join("audit.jsonl")).unwrap_or_default();
+    let text = read_tail(&dir(app_dir).join("audit.jsonl"), AUDIT_TAIL);
     text.lines().rev().filter_map(|l| serde_json::from_str(l).ok()).take(n).collect()
+}
+
+/// How much of the end of `audit.jsonl` the Agents page reads: plenty for its last 100 lines, and never the whole file
+/// of a long-lived PC (the page asks every few seconds).
+pub const AUDIT_TAIL: u64 = 256 * 1024;
+
+/// The last `max` bytes of a file, from the first whole line in them (the whole file when it is smaller); "" when it
+/// can't be read.
+pub fn read_tail(path: &Path, max: u64) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = fs::File::open(path) else { return String::new() };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let start = len.saturating_sub(max);
+    if start > 0 && f.seek(SeekFrom::Start(start)).is_err() {
+        return String::new();
+    }
+    let mut b = Vec::new();
+    if f.take(max).read_to_end(&mut b).is_err() {
+        return String::new();
+    }
+    let text = String::from_utf8_lossy(&b).into_owned();
+    if start > 0 {
+        // the first line was cut: start after it
+        return text.split_once('\n').map(|(_, rest)| rest.to_string()).unwrap_or_default();
+    }
+    text
 }
 
 // ------------------------------------------------------------------------------------------------ scrubbing
@@ -912,6 +938,29 @@ pub fn conn_state(path: &Path, exe: &str) -> Conn {
     Conn { state, path: p }
 }
 
+/// `conn_state`, read again only when the file changed (its size or time): `~/.claude.json` can be several MB and the
+/// Agents page asks every few seconds.
+pub fn conn_state_cached(path: &Path, exe: &str) -> Conn {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    type Seen = HashMap<PathBuf, (Option<(u64, std::time::SystemTime)>, String, Conn)>;
+    static SEEN: OnceLock<Mutex<Seen>> = OnceLock::new();
+    let stamp = fs::metadata(path).ok().and_then(|m| Some((m.len(), m.modified().ok()?)));
+    let seen = SEEN.get_or_init(|| Mutex::new(HashMap::new()));
+    if let (Some(st), Ok(m)) = (stamp, seen.lock()) {
+        if let Some((Some(was), e, c)) = m.get(path) {
+            if *was == st && e == exe {
+                return c.clone();
+            }
+        }
+    }
+    let c = conn_state(path, exe);
+    if let Ok(mut m) = seen.lock() {
+        m.insert(path.to_path_buf(), (stamp, exe.to_string(), c.clone()));
+    }
+    c
+}
+
 /// Add (or point again) Leyline's entry in an MCP config file, after a backup copy next to it. `claude_code` adds the
 /// `type: stdio` Claude Code writes. A file that isn't a JSON object is left alone.
 pub fn connect(path: &Path, exe: &str, claude_code: bool) -> Result<String, String> {
@@ -993,18 +1042,24 @@ pub(crate) mod commands {
         now: u64,
     }
 
-    /// Everything the Agents page and the approval card show.
+    /// Everything the Agents page and the approval card show. Async, the files read on a worker thread: never on the
+    /// window's own thread (the page asks every few seconds while agents are on).
     #[tauri::command]
-    pub fn agents_state(core: Core<'_>) -> View {
+    pub async fn agents_state(core: Core<'_>) -> Result<View, String> {
+        let dir = core.dir.clone();
+        tauri::async_runtime::spawn_blocking(move || view(&dir)).await.map_err(|e| e.to_string())
+    }
+
+    fn view(dir: &Path) -> View {
         let e = exe();
         View {
-            allow: config(&core.dir).allow,
-            pending: pending(&core.dir),
-            audit: read_audit(&core.dir, 100),
+            allow: config(dir).allow,
+            pending: pending(dir),
+            audit: read_audit(dir, 100),
             command: claude_code_command(&e),
             json: generic_json(&e),
-            claude_code: claude_code_config().map(|p| conn_state(&p, &e)),
-            desktop: desktop_config().map(|p| conn_state(&p, &e)),
+            claude_code: claude_code_config().map(|p| conn_state_cached(&p, &e)),
+            desktop: desktop_config().map(|p| conn_state_cached(&p, &e)),
             tools: TOOLS.iter().map(|t| json!({"name": t.name, "title": t.title, "tier": t.tier})).collect(),
             never: NEVER,
             exe: e,
@@ -1355,5 +1410,31 @@ mod tests {
         assert_eq!(fs::read_to_string(&h).unwrap(), "{oops");
         assert_eq!(claude_code_command("C:\\L\\Leyline.exe"), "claude mcp add --scope user leyline -- \"C:\\L\\Leyline.exe\" mcp");
         assert!(generic_json("/x").contains("\"mcp\""));
+    }
+
+    #[test]
+    fn the_audit_is_read_from_its_end_only() {
+        let t = tempfile::tempdir().unwrap();
+        let f = t.path().join("a.jsonl");
+        assert_eq!(read_tail(&f, 100), "", "no file");
+        fs::write(&f, "one\ntwo\n").unwrap();
+        assert_eq!(read_tail(&f, 100), "one\ntwo\n", "small: all of it");
+        let long: String = (0..1000).map(|i| format!("line {i:04}\n")).collect();
+        fs::write(&f, &long).unwrap();
+        let tail = read_tail(&f, 100);
+        assert!(tail.len() <= 100 && tail.ends_with("line 0999\n"), "{tail}");
+        assert!(tail.lines().all(|l| l.len() == 9 && l.starts_with("line ")), "whole lines only: {tail}");
+    }
+
+    #[test]
+    fn a_connection_is_read_again_only_when_its_file_changes() {
+        let t = tempfile::tempdir().unwrap();
+        let f = t.path().join("claude.json");
+        assert_eq!(conn_state_cached(&f, "/x/Leyline").state, "no");
+        fs::write(&f, r#"{"mcpServers":{"leyline":{"command":"/x/Leyline"}}}"#).unwrap();
+        assert_eq!(conn_state_cached(&f, "/x/Leyline").state, "connected");
+        assert_eq!(conn_state_cached(&f, "/y/Leyline").state, "other", "another program: asked again");
+        fs::write(&f, r#"{"mcpServers":{}}"#).unwrap();
+        assert_eq!(conn_state_cached(&f, "/x/Leyline").state, "no", "a changed file is read again");
     }
 }

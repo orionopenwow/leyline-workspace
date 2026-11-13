@@ -433,7 +433,12 @@ pub fn changed(answer: &str) -> Result<(), String> {
 }
 
 pub type Console = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
-pub type WithChars = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
+/// The friend-shaped logins that have characters on the world, read now. An error (the world's database didn't
+/// answer, mysql.exe blocked by a virus scanner) means nothing is known: every deletion is skipped then (fail closed).
+pub type WithChars = Arc<dyn Fn() -> Result<Vec<String>, String> + Send + Sync>;
+/// After a claim's login is ready (made, or its password set): the login the friend's game uses instead, made with
+/// the same password (Boss Rush: the friend's hero account, app.rs bossrush_friend_login). None: the login itself.
+pub type LoginFor = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
 
 /// A world as its claims need it: its realm id and invite secret, its share folder, its console, and the
 /// friend-shaped logins that have characters there.
@@ -445,6 +450,7 @@ pub struct World {
     pub era: Era,
     pub console: Console,
     pub with_chars: WithChars,
+    pub login_for: Option<LoginFor>,
 }
 
 fn run(w: &World, line: &str) -> Result<(), String> {
@@ -463,7 +469,7 @@ pub fn handle(w: &World, chal: &str, sealed: &str) -> Result<String, String> {
     let o = open_claim(&w.realm_id, &w.secret, chal, sealed)?;
     let _g = BOOK_LOCK.lock().map_err(|_| "busy")?;
     let mut b = load(&w.share);
-    fold(&mut b, &(w.with_chars)(), now());
+    fold(&mut b, &(w.with_chars)().unwrap_or_default(), now());
     let g = admit(&mut b, &w.realm_id, &o, now())?;
     let lines = if g.create { create_lines(w.era, &g.user, &o.pass)? } else { vec![password_line(&g.user, &o.pass)?] };
     for (i, l) in lines.iter().enumerate() {
@@ -476,7 +482,10 @@ pub fn handle(w: &World, chal: &str, sealed: &str) -> Result<String, String> {
         }
     }
     save(&w.share, &b)?;
-    Ok(g.user)
+    match &w.login_for {
+        Some(f) => f(&g.user, &o.pass),
+        None => Ok(g.user),
+    }
 }
 
 /// A random password nobody holds: the login can't be used until its friend's next claim.
@@ -485,14 +494,25 @@ fn scramble(w: &World, user: &str) -> Result<(), String> {
     run(w, &password_line(user, &r)?)
 }
 
+/// The one-time logins of `due` that may be deleted now, given a fresh, successful read of who has characters
+/// (`with`): never one of those (a removed friend's earlier login with characters is not folded back in, so it is
+/// checked here too). The callers skip deleting altogether when the read failed.
+pub fn deletable(due: Vec<String>, with: &[String]) -> Vec<String> {
+    due.into_iter().filter(|u| !with.contains(u)).collect()
+}
+
 /// Sharing stopped: every lasting login disabled (a password nobody holds), not invited any more unless trusted;
-/// one-time logins with no characters deleted (one with characters kept as an earlier friend's). How many logins
+/// one-time logins with no characters deleted (one with characters kept as an earlier friend's). When the world
+/// couldn't say who has characters, no login is deleted (fail closed). How many logins
 /// were disabled or deleted.
 pub fn share_stopped(w: &World) -> usize {
     let Ok(_g) = BOOK_LOCK.lock() else { return 0 };
     let mut b = load(&w.share);
     let t = now();
-    fold(&mut b, &(w.with_chars)(), t);
+    let with = (w.with_chars)();
+    if let Ok(v) = &with {
+        fold(&mut b, v, t);
+    }
     let mut n = 0;
     for f in b.friends.iter_mut().filter(|f| !f.legacy) {
         f.enabled = false;
@@ -500,25 +520,32 @@ pub fn share_stopped(w: &World) -> usize {
             n += 1;
         }
     }
-    for u in due_tickets(&mut b, t, true) {
-        if delete_line(&u).and_then(|l| run(w, &l)).is_ok() {
-            n += 1;
+    // the world couldn't say who has characters: nothing deleted (sharing is off, so nobody can reach them); the
+    // one-time logins stay in the book and the next look with a good read deletes the empty ones
+    if let Ok(v) = &with {
+        for u in deletable(due_tickets(&mut b, t, true), v) {
+            if delete_line(&u).and_then(|l| run(w, &l)).is_ok() {
+                n += 1;
+            }
         }
     }
     let _ = save(&w.share, &b);
     n
 }
 
-/// One-time logins out of time removed (those with characters kept as earlier friends' logins).
+/// One-time logins out of time removed (those with characters kept as earlier friends' logins; none at all when
+/// the world couldn't say who has characters).
 pub fn sweep(w: &World) -> usize {
     let Ok(_g) = BOOK_LOCK.lock() else { return 0 };
     let mut b = load(&w.share);
     let t = now();
-    fold(&mut b, &(w.with_chars)(), t);
     let mut n = 0;
-    for u in due_tickets(&mut b, t, false) {
-        if delete_line(&u).and_then(|l| run(w, &l)).is_ok() {
-            n += 1;
+    if let Ok(v) = (w.with_chars)() {
+        fold(&mut b, &v, t);
+        for u in deletable(due_tickets(&mut b, t, false), &v) {
+            if delete_line(&u).and_then(|l| run(w, &l)).is_ok() {
+                n += 1;
+            }
         }
     }
     let _ = save(&w.share, &b);
@@ -535,7 +562,7 @@ fn world_down(e: String) -> String {
 pub fn set_friend(w: &World, user: &str, action: &str) -> Result<String, String> {
     let _g = BOOK_LOCK.lock().map_err(|_| "busy")?;
     let mut b = load(&w.share);
-    fold(&mut b, &(w.with_chars)(), now());
+    fold(&mut b, &(w.with_chars)().unwrap_or_default(), now());
     let i = b.friends.iter().position(|f| f.user == user).ok_or("That friend isn't on this world.")?;
     let msg = match action {
         "trust" => {
@@ -751,6 +778,15 @@ pub const INGAME_TABLES: &str = "CREATE TABLE IF NOT EXISTS ov_world_share (k VA
     CREATE TABLE IF NOT EXISTS ov_world_asks (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, kind VARCHAR(16) NOT NULL, \
     account INT UNSIGNED NOT NULL DEFAULT 0, made INT UNSIGNED NOT NULL DEFAULT 0, done TINYINT NOT NULL DEFAULT 0, \
     answer VARCHAR(255) NOT NULL DEFAULT '');";
+
+/// Asks older than two minutes that nobody ran (the launcher was closed): answered, never run late (a link nobody
+/// is waiting for any more). The realm script does the same while the launcher is away.
+pub fn expire_sql(t: u64) -> String {
+    format!(
+        "UPDATE ov_world_asks SET done = 1, answer = 'err:The Leyline launcher was closed, so nobody answered. Ask again.' WHERE done = 0 AND made > 0 AND made < {};",
+        t.saturating_sub(120)
+    )
+}
 
 /// The asks waiting (oldest first, a few at a time).
 pub const ASKS_SQL: &str = "SELECT id, kind FROM ov_world_asks WHERE done = 0 ORDER BY id LIMIT 4";
@@ -1041,8 +1077,33 @@ mod tests {
                 log.lock().unwrap().push(l.to_string());
                 Ok(if l.starts_with("account create") { "Account created".into() } else if l.starts_with("account set password") { "The password was changed".into() } else { "ok".into() })
             }),
-            with_chars: Arc::new(Vec::<String>::new),
+            with_chars: Arc::new(|| Ok(Vec::<String>::new())),
+            login_for: None,
         }
+    }
+
+    #[test]
+    fn a_world_may_answer_with_another_login() {
+        // Boss Rush: the friend's game signs in to the hero made for them, with the claim's own password
+        let d = tempfile::tempdir().unwrap();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut w = world(d.path(), log.clone());
+        let seen = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+        let s2 = seen.clone();
+        w.login_for = Some(Arc::new(move |u: &str, p: &str| {
+            s2.lock().unwrap().push((u.to_string(), p.to_string()));
+            Ok(format!("HERO{}", &u[1..5]))
+        }));
+        add_ticket(d.path(), "GTICKET234", "TPASS2345678", now()).unwrap();
+        let a = peer(14);
+        let got = handle(&w, "ab", &make_claim(&a, RID, SECRET, "ab", Some(("GTICKET234", "TPASS2345678")), "PASSWORD2345", &[]).unwrap()).unwrap();
+        let lasting = name_for(RID, &a.peer_id);
+        assert_eq!(got, format!("HERO{}", &lasting[1..5]));
+        assert_eq!(seen.lock().unwrap().clone(), vec![(lasting.clone(), "PASSWORD2345".to_string())], "after the lasting login is made");
+        assert!(log.lock().unwrap().iter().any(|l| l == &format!("account create {lasting} PASSWORD2345")));
+        // a hook that fails: the claim is refused with its words
+        w.login_for = Some(Arc::new(|_: &str, _: &str| Err("no fight picked".to_string())));
+        assert_eq!(handle(&w, "ab", &make_claim(&a, RID, SECRET, "ab", None, "PASSWORD3456", &[]).unwrap()).unwrap_err(), "no fight picked");
     }
 
     #[test]
@@ -1138,12 +1199,40 @@ mod tests {
         assert_eq!(config_ticket(g.path()), None);
     }
     #[test]
+    fn a_failed_character_read_deletes_no_login() {
+        let d = tempfile::tempdir().unwrap();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut w = world(d.path(), log.clone());
+        // an old launcher's friend plays on their one-time login itself and has characters there; the world's
+        // database doesn't answer (a virus scanner blocking mysql.exe) while its console still does
+        w.with_chars = Arc::new(|| Err("mysql didn't start".to_string()));
+        add_ticket(d.path(), "GOLD234567", "TPASS2345678", now()).unwrap();
+        add_ticket(d.path(), "GEMPTY2345", "TPASS2345678", now() - TICKET_DAYS * 86_400 - 10).unwrap();
+        share_stopped(&w);
+        sweep(&w);
+        assert!(!log.lock().unwrap().iter().any(|l| l.starts_with("account delete")), "{:?}", log.lock().unwrap());
+        assert_eq!(load(d.path()).tickets.len(), 2, "kept in the book for a look with a good read");
+        // a good read: the empty one goes, the one with characters becomes a kept friend's login
+        w.with_chars = Arc::new(|| Ok(vec!["GOLD234567".to_string()]));
+        share_stopped(&w);
+        let l = log.lock().unwrap().clone();
+        assert!(l.iter().any(|x| x.starts_with("account delete GEMPTY2345")), "{l:?}");
+        assert!(!l.iter().any(|x| x.starts_with("account delete GOLD234567")), "{l:?}");
+        assert!(load(d.path()).friends.iter().any(|f| f.user == "GOLD234567" && f.legacy));
+    }
+
+    #[test]
+    fn a_removed_friends_earlier_login_with_characters_is_never_deleted() {
+        assert_eq!(deletable(vec!["GOLD234567".into(), "GEMPTY2345".into()], &["GOLD234567".to_string()]), vec!["GEMPTY2345".to_string()]);
+    }
+
+    #[test]
     fn a_removed_friend_stays_removed_and_comes_back_to_their_characters() {
         let d = tempfile::tempdir().unwrap();
         let log = Arc::new(Mutex::new(Vec::new()));
         let mut w = world(d.path(), log.clone());
         // an earlier one-time friend with characters, and a lasting one
-        w.with_chars = Arc::new(|| vec!["GOLD234567".to_string()]);
+        w.with_chars = Arc::new(|| Ok(vec!["GOLD234567".to_string()]));
         let a = peer(11);
         add_ticket(d.path(), "GTICKET234", "TPASS2345678", now()).unwrap();
         let chal = "00ff";

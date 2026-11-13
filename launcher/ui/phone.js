@@ -97,6 +97,19 @@
   }
   // the browser game, full screen in the app; no WebGPU: the one line and Open in Chrome
   function goGame(url) {
+    // offline: the game page comes from the website, so say so here instead of a blank page (audit 12 Nov)
+    const off = $("ph-offline");
+    if (navigator.onLine === false) {
+      if (off) {
+        off.hidden = false;
+        off.textContent = url.includes("go=solo")
+          ? "You're offline. Play solo opens from leylinelauncher.com, so it needs the internet: connect, then tap it again. Your world stays on this phone."
+          : "You're offline. The game opens from leylinelauncher.com: connect to Wi-Fi or mobile data, then tap Play again.";
+      }
+      show("phone");
+      return false;
+    }
+    if (off) off.hidden = true;
     const no = $("ph-nogpu");
     if (!canDraw()) {
       if (no) no.hidden = false;
@@ -227,6 +240,8 @@
     }));
     const pb = $("ph-play");
     if (pb) pb.addEventListener("click", play);
+    // back online: the offline line goes by itself
+    window.addEventListener("online", () => { const off = $("ph-offline"); if (off) off.hidden = true; });
     const sb = $("ph-solo");
     if (sb) sb.addEventListener("click", solo);
     const pj = $("ph-paste-join");

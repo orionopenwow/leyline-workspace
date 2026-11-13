@@ -120,6 +120,8 @@ const FAKE = (o) => {
       case 'world_choices': return { races: window.__o.races, first_era: false, name: 'Wren' };
       case 'world_play': return Object.assign({ message: 'Started.', kind: args.kind, auto: true, account: 'SOLO', password: '', made: args.quick ? (args.quick.name || 'Wren') : '', hero: false }, window.__o.play || {});
       case 'set_world_stop_on_exit': st.settings.world_stop_on_exit = args.on; return null;
+      case 'set_world_stop_on_close': st.settings.world_stop_on_close = args.on; return null;
+      case 'close_leyline': return null;
       // the folder picker and the add path (app.js clientImport)
       case 'pick_folder': { const q = window.__o.picks || []; return q.length ? q.shift() : null; }
       case 'client_import_check': return { kind: 'folder', name: 'Wrath', unpacks: false, default_folder: '' };
@@ -403,6 +405,34 @@ test('the setting: Stop the world when the game closes, on by default; a core wi
   await page.click('#oc-stop-exit');   // it springs back: the core can't keep it
   await page.waitForFunction(() => /newer Leyline/.test(document.getElementById('oc-set-status').textContent));
   assert.equal(await page.isChecked('#oc-stop-exit'), true);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Leyline closing: the setting Stop the world when Leyline closes (on by default); with friends in the world the card asks first', async () => {
+  const { page, ctx, errors } = await open({});
+  await page.evaluate(() => window.LeylineNav.show('single'));
+  await page.waitForSelector('#oc-stop-close');
+  assert.equal(await page.isChecked('#oc-stop-close'), true, 'a settings file from before it: on');
+  assert.match(await page.textContent('#oc-set'), /Stop the world when Leyline closes/);
+  await page.uncheck('#oc-stop-close');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'set_world_stop_on_close'));
+  assert.deepEqual(await callsOf(page, 'set_world_stop_on_close'), [{ on: false }]);
+  await page.waitForFunction(() => /keeps running after Leyline closes/.test(document.getElementById('oc-set-status').textContent));
+  // the core's leyline:close-world (app.rs close_with_world): two friends are in it
+  await page.evaluate(() => window.LeylineOneClick.closingAsk({ kind: 'single', title: 'Single player', friends: 2 }));
+  await page.waitForSelector('#oc-close-stop');
+  assert.match(await page.textContent('#oc'), /2 friends are playing in Single player/);
+  await page.click('#oc-close-cancel');
+  assert.equal((await callsOf(page, 'close_leyline')).length, 0, 'Cancel closes nothing');
+  await page.evaluate(() => window.LeylineOneClick.closingAsk({ kind: 'single', title: 'Single player', friends: 1 }));
+  await page.click('#oc-close-stop');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'close_leyline'));
+  assert.deepEqual(await callsOf(page, 'close_leyline'), [{ stop: true }]);
+  await page.evaluate(() => window.LeylineOneClick.closingAsk({ kind: 'single', title: 'Single player', friends: 1 }));
+  await page.click('#oc-close-keep');
+  await page.waitForFunction(() => window.__calls.filter(([c]) => c === 'close_leyline').length === 2);
+  assert.deepEqual((await callsOf(page, 'close_leyline'))[1], { stop: false });
   assert.deepEqual(errors, []);
   await ctx.close();
 });

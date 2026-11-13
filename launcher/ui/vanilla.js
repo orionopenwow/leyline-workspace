@@ -81,42 +81,148 @@
         // o.resume: an interrupted setup goes on with the folder it started with (world_setup client "")
         await call(st && st.set_up ? "world_start" : "world_setup", st && st.set_up ? { kind } : { client: o.resume ? "" : c.id, kind });
       }
-      // follow its progress line until it is done
-      for (;;) {
-        await sleep(o.pollMs || 2000);
-        let p = null;
-        try { p = await call("engine_progress"); } catch (_) { p = null; }
-        if (p && p.kind && p.kind !== w.job) {
-          // another world's line: ours isn't going (it was running already, or didn't start)
-          if (p.running) continue;
-          const now = await status(kind);
-          if (now && now.running) break;
-          throw `${w.title} didn't start. Press Play again.`;
-        }
-        if (o.job) o.job(p && !p.idle ? p : null);
-        if (p && p.running) continue;
-        if (p && !p.idle && p.code !== 0) throw p.problem || `${w.title} didn't start.`;
-        break;
-      }
-      if (o.job) o.job(null);
+      await followJob(kind, o);
+      // a cold start: the release looked at for a newer engine (twice a day at most, in the background: never in the
+      // way of this Play); the world's card offers it after
+      checkUpdate(kind).catch(() => {});
     }
     say(o.quick ? "Making your character and taking you in…" : "Taking you in…");
     const args = { client: c.id, kind };
     if (o.pick) args.pick = o.pick;
     if (o.quick) args.quick = o.quick;
     if (o.first) args.first = true;   // the world's first entry: no characters yet, the Quick start one made and entered
-    return call("world_play", args);
+    // the Leyline addons (companions, the bot bar) up to date first; never stops the play (addons.js)
+    if (window.LeylineAddons) await window.LeylineAddons.beforePlay(c, { offer: false });
+    const r = await call("world_play", args);
+    noteElsewhere(kind, r);
+    if (window.LeylineAddons) window.LeylineAddons.afterPlay();
+    return r;
   }
+  // Follow a world's progress line (engine_progress, its own kind) until its job is done; throws its problem.
+  async function followJob(kind, o) {
+    o = o || {};
+    const w = WORLDS[kind];
+    for (;;) {
+      await sleep(o.pollMs || 2000);
+      let p = null;
+      try { p = await call("engine_progress"); } catch (_) { p = null; }
+      if (p && p.kind && p.kind !== w.job) {
+        // another world's line: ours isn't going (it was running already, or didn't start)
+        if (p.running) continue;
+        const now = await status(kind);
+        if (now && now.running) break;
+        throw `${w.title} didn't start. Press Play again.`;
+      }
+      if (o.job) o.job(p && !p.idle ? p : null);
+      if (p && p.running) continue;
+      if (p && !p.idle && p.code !== 0) throw p.problem || `${w.title} didn't start.`;
+      break;
+    }
+    if (o.job) o.job(null);
+  }
+
+  // ---------------------------------------------------------------- engine updates, back-ups, characters (any world)
+  // The engine every world shares is looked at against its release (app.rs world_update_check: twice a day at most,
+  // 5 s at most); a newer one is offered on the world's card, never installed unasked. Updating backs the world up
+  // first and keeps its maps, saves and settings (host/engine.rs begin_update).
+  async function checkUpdate(kind, force) {
+    try { const s = await call("world_update_check", force ? { kind, force: true } : { kind }); return s && typeof s === "object" ? s : null; } catch (_) { return null; }
+  }
+  async function updateWorld(kind, o) {
+    o = o || {};
+    const w = WORLDS[kind];
+    const say = o.say || (() => {});
+    say(`Updating ${w.title}'s engine… Your world is backed up first.`);
+    const m = await call("world_update", { kind });
+    if (/up to date/i.test(String(m || ""))) { say(String(m), "ok"); return false; }
+    await followJob(kind, o);
+    say(`${w.title} is updated and running. Your characters and settings are as you left them.`, "ok");
+    return true;
+  }
+  // The card's update line: what it is, that nothing of theirs changes, and the one button.
+  function updateNode(kind, o) {
+    o = o || {};
+    const box = mk("div", "wt-update");
+    box.id = `wt-update-${kind}`;
+    box.append(mk("p", "sp-line", "An update for your world's engine is ready (fixes for bots, companions and quests). Your characters, your friends' characters and your settings stay as they are, and your world is backed up first."));
+    const b = btn(o.busy ? "Updating…" : "Update your world engine", "btn small primary", () => { if (o.onUpdate) o.onUpdate(); }, `wt-update-go-${kind}`);
+    b.disabled = !!o.busy;
+    box.append(b);
+    return box;
+  }
+  // Back-ups and Restore: the newest first (when, why), each with Restore (asked once more). o: { say, after }.
+  const BK = {};
+  function backupsNode(kind, o) {
+    o = o || {};
+    const say = o.say || (() => {});
+    const st = BK[kind] || (BK[kind] = { open: false, list: null, ask: null, busy: false });
+    const box = mk("div", "wt-backups");
+    box.id = `wt-backups-${kind}`;
+    const t = btn(st.open ? "Hide back-ups" : "Back-ups and Restore", "btn small", async () => {
+      st.open = !st.open; st.ask = null;
+      if (st.open) { st.list = null; repaint(); try { st.list = await call("world_backups", { kind }); } catch (_) { st.list = []; } }
+      repaint();
+    }, `wt-backups-open-${kind}`);
+    t.setAttribute("aria-expanded", String(st.open));
+    box.append(t);
+    function repaint() { const old = byId(`wt-backups-${kind}`); if (old) old.replaceWith(backupsNode(kind, o)); }
+    if (!st.open) return box;
+    if (!st.list) { box.append(mk("p", "sp-fine", "Reading the back-ups…")); return box; }
+    if (!st.list.length) { box.append(mk("p", "sp-fine", "No back-ups yet. Leyline makes one a day when your world stops, and before every engine update or Repair.")); return box; }
+    const ul = mk("ul", "wt-backup-list");
+    for (const b of st.list.slice(0, 10)) {
+      const li = mk("li", "wt-backup");
+      li.append(mk("span", "", `${b.at} (UTC)`), mk("span", "sp-fine", ` · ${b.why || "by hand"}`));
+      if (st.ask === b.name) {
+        const r = mk("div", "sp-row");
+        r.append(mk("span", "sp-line", "Put your world back to this? It's backed up as it is now first, so you can undo it."),
+          btn(st.busy ? "Restoring…" : "Restore", "btn small primary", async (ev) => {
+            ev.currentTarget.disabled = true; st.busy = true; say("Restoring… Your world stops for it (everyone is saved).");
+            try { say(String(await call("world_restore", { kind, name: b.name })), "ok"); st.ask = null; st.list = await call("world_backups", { kind }).catch(() => []); }
+            catch (e) { say(oops(e, "That back-up wasn't restored. Your world is as it was."), "bad"); }
+            st.busy = false; repaint(); if (o.after) o.after();
+          }, `wt-restore-go-${kind}`),
+          btn("Cancel", "btn small", () => { st.ask = null; repaint(); }));
+        li.append(r);
+      } else {
+        li.append(btn("Restore", "link-s", () => { st.ask = b.name; repaint(); }));
+      }
+      ul.append(li);
+    }
+    box.append(ul, mk("p", "sp-fine", "Back-ups hold the characters (yours and your friends'), their bots and logins. Leyline keeps the newest 10."));
+    return box;
+  }
+  // After a Play that went in on the login holding the characters (signed out, or another Hero Key): a note on the
+  // card with one button that moves them all onto the login Play uses now (app.rs world_gather_chars, backed up first).
+  const ELSE_KEY = (kind) => `leyline.elsewhere.${kind}`;
+  function noteElsewhere(kind, r) { if (r && typeof r === "object" && "elsewhere" in r) store.set(ELSE_KEY(kind), r.elsewhere ? "1" : "0"); }
+  function charsNode(kind, o) {
+    o = o || {};
+    if (store.get(ELSE_KEY(kind)) !== "1") return null;
+    const say = o.say || (() => {});
+    const box = mk("div", "wt-chars");
+    box.id = `wt-chars-${kind}`;
+    box.append(mk("p", "sp-line", "Your characters here are on this PC's earlier login (from before you logged in, or another Hero Key), so Play goes in on that one. Nothing is lost."),
+      btn("Move them to the login I use now", "btn small", async (ev) => {
+        ev.currentTarget.disabled = true;
+        try { say(String(await call("world_gather_chars", { kind })), "ok"); store.set(ELSE_KEY(kind), "0"); }
+        catch (e) { say(oops(e, "They weren't moved: they're safe where they are."), "bad"); }
+        if (o.after) o.after();
+      }, `wt-chars-go-${kind}`));
+    return box;
+  }
+
   // The line after a play: signed in by itself (with the Hero Key, or the world's own login), or the login to type
   // once (login() gives it to a Copy button; the password is shown to the player, never logged).
   function played(r, title) {
     if (!r) return ["Taking you in…", "ok"];
     if (r.auto === false && r.password) return [`Log in once with ${r.account}, password ${r.password}. Leyline made it for you and keeps it on this PC.`, "warn"];
     const into = r.made ? `Making ${r.made} and taking you into ${title}…` : "Taking you in…";
+    if (r.elsewhere) return [`Your characters are on this PC's earlier login, so Leyline used it. ${into}`, "ok"];
     return [r.hero ? `Logged in with your Hero Key. ${into}` : into, "ok"];
   }
   const login = (r) => (r && r.auto === false && r.password ? { account: r.account || "", password: r.password } : null);
-  window.LeylineWorlds = { WORLDS, folder, status, run, played, login, stopWorld, otherOf, bySerde };
+  window.LeylineWorlds = { WORLDS, folder, status, run, played, login, stopWorld, otherOf, bySerde, followJob, checkUpdate, updateWorld, updateNode, backupsNode, charsNode };
 
   // ---------------------------------------------------------------- the original world's card (#sv)
   const page = byId("page-single");
@@ -157,6 +263,16 @@
     const r = choices.races.find((x) => x.id === pick.race) || choices.races[0];
     pick.race = r.id;
     if (!r.classes.some((c) => c[0] === pick.class)) pick.class = r.classes[0][0];
+  }
+
+  let updating = false;
+  async function update() {
+    if (busy || updating) return;
+    updating = true; busy = true; paint();
+    try { await updateWorld(KIND, { say: (t, k) => say(t, k), job: (p) => { job = p; paint(); } }); }
+    catch (e) { say(oops(e, "The update didn't finish. Your world is as it was: press Play, or try the update again."), "bad"); }
+    job = null; updating = false; busy = false;
+    await read();
   }
 
   async function go(quick, stopOther) {
@@ -292,6 +408,12 @@
     // every world's characters, this one's and the online ones (characters.js), from here: no side menu item
     row.append(btn("Characters", "btn small", () => nav("characters"), "sv-chars"));
     card.append(row);
+    if (st && st.set_up && st.supported !== false) {
+      if (st.update) card.append(updateNode(KIND, { busy: busy || updating, onUpdate: update }));
+      const ch = charsNode(KIND, { say: (t, k) => say(t, k), after: read });
+      if (ch) card.append(ch);
+      card.append(backupsNode(KIND, { say: (t, k) => say(t, k), after: read }));
+    }
     if (quickOpen) card.append(quickNode());
     if (job) card.append(progressNode());
     if (known && !st.supported) {
@@ -313,6 +435,8 @@
   // a start already under way (begun on the Characters page, or before the page was opened) is followed here too
   async function load() {
     await read();
+    // a newer engine looked for (twice a day at most, in the background); the card offers it
+    if (st && st.set_up && st.supported !== false && !st.update) checkUpdate(KIND).then((n) => { if (n && n.update && !busy) { st = n; paint(); } });
     if (busy) return;
     let p = null;
     try { p = await call("engine_progress"); } catch (_) { p = null; }

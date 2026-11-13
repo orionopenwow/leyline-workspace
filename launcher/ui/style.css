@@ -599,6 +599,10 @@ html[data-base="light"] .pb-menu { box-shadow: 0 -10px 30px rgba(16, 24, 40, 0.1
 #pb-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; font-size: 12px; letter-spacing: 0; color: var(--t-text-2); }
 #pb-detail:empty { display: none; }
 .pb-status .status { margin: 0 0 0 auto; font-size: 12px; font-weight: 500; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
+/* "In-game add-ons updated" under the realm box, after a PLAY that updated them (addons.js afterPlay) */
+.pb-addons { padding-left: 2px; font: 500 11.5px/1.3 var(--t-font); color: var(--t-ok); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-addons::before { content: "\2713  "; }
+.pb-addons[hidden] { display: none; }
 .pb-realm[aria-expanded="false"] .pb-caret { transform: rotate(180deg); }
 .pb-rmenu { width: 100%; min-width: 340px; max-height: min(700px, calc(100vh - 130px)); }   /* room for the game client part too */
 .pb-head { padding: 8px 16px 4px; font: 700 10.5px var(--t-font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--t-muted); }
@@ -812,7 +816,13 @@ select.dc-client { field-sizing: content; width: auto; min-width: 0; max-width: 
 .dc-empty { grid-column: 1 / -1; padding: 28px 0; text-align: center; }
 /* Discover, made simple (simple.js): the Simple view (one search box, short rows of big cards) or the full catalog
    (one search box, a few smart chips, More filters for the rest) */
-#pane-discover[data-view="simple"] .dc-full, #pane-discover[data-view="simple"] #cat-status { display: none !important; }
+#pane-discover[data-view="simple"] .dc-full { display: none !important; }
+/* the Simple view keeps the status line only for what the player must know (offline, a failure: audit 12 Nov), and not
+   when its own empty state already says why with Try again */
+#pane-discover[data-view="simple"] #cat-status:not(.warn):not(.bad),
+#pane-discover[data-view="simple"]:has(.dc-failed) #cat-status { display: none !important; }
+.dc-failed { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.dc-failed p { margin: 0; }
 #pane-discover:not([data-view="simple"]) #dc-simple { display: none; }
 .dc-sbar { gap: 8px; margin: 0 0 4px; }
 .dc-sbar input[type="search"] { flex: 1 1 260px; height: 42px; font-size: 14px; }

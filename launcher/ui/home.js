@@ -59,7 +59,7 @@
     // named link. TODO(owner): the kicker and the line, his words.
     if (App.playHangout) {
       out.push({ key: "hangout", kicker: "Open now · " + App.HANGOUT.kind, title: "Join " + App.HANGOUT.name,
-        line: "Start at level 1 or boost to 80. Say hello, then try /golf and /modes.",
+        line: "Start at level 1 or boost to 80. Say hello, then try a duel or Boss Rush.",
         chips: hangoutChips, photo: true, side: hangoutSide, cta: "Play now", run: () => App.playHangout(),
         cta2: "Join the Discord", run2: () => App.openLink("discord") });
     }
@@ -147,6 +147,7 @@
   // the slide keeps its plain gradient. Several files for a slide take turns, one a day.
   let HOME_ART = SITE_ORIGIN + "/wrath/art/home/";   // the old name instead when the new one can't be reached (loadHomeArt)
   let homeArt = null;
+  let thisWeek = [];      // home.json's "this_week" (stream/weekly.py), checked here: [{ mode, title, line, visit, until }]
   let denWeek = null;      // home.json's "den_week" (stream/denweek.py), checked here: { title, by, line, shots, visit }      // null: not read (yet, or it failed); else { id: [{ url, alt, credit }] }
   const ART_FILE = /^[a-z0-9][a-z0-9-]{0,40}\.(?:webp|jpg)$/;
   const clip = (v, n) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, n) : "");
@@ -174,6 +175,7 @@
       HOME_ART = kept.base;
       homeArt = readHomeArt(kept.j);
       denWeek = readDenWeek(kept.j);
+      thisWeek = readThisWeek(kept.j);
     }
   } catch (_) { homeArt = null; }
   async function loadHomeArt() {
@@ -189,6 +191,8 @@
       const j = await r.json();
       homeArt = readHomeArt(j);
       denWeek = readDenWeek(j);
+      thisWeek = readThisWeek(j);
+      renderWeek();
       try { localStorage.setItem(ART_KEY, JSON.stringify({ base: HOME_ART, j })); } catch (_) { /* storage may be off */ }
     } catch (_) { return; }
     build();
@@ -219,7 +223,8 @@
     if (a.credit) s.append(el("small", "hs-credit", a.credit));
   }
 
-  const SLASH = { minigolf: "/golf" };   // the rest start from /modes (the Hangout's line); TODO(owner): each mode's own command
+  // each mode's own way in, in the game (the rest: /modes); TODO(owner): each mode's own command
+  const SLASH = { minigolf: "/golf", "frozen-throne": "/bf", "arena-queue": ".q1v1" };
 
   // a mode tile's picture: its screenshot from the site (home.json "mode-<id>"), else its colour and initial
   function modePic(m) {
@@ -451,6 +456,27 @@
     const shots = (Array.isArray(d.shots) ? d.shots : []).filter((u) => typeof u === "string" && /^https:\/\/[^\s"<>]{1,300}$/.test(u)).slice(0, 4);
     const visit = typeof d.visit === "string" && /^(?:https:\/\/[^\s"<>]{1,300}|leyline:\/\/realm\/[a-z2-7]{16})$/.test(d.visit) ? d.visit : "";
     return { title, by, line: clip(d.line, 140), shots, visit };
+  }
+  // Leyline weekly from home.json: one pick per mode, plain short text only, each until its time (unix seconds); a pick
+  // whose time has passed is left out here too, so a launcher on an old cached home.json never shows last week's row
+  function readThisWeek(j, now) {
+    const w = j && typeof j === "object" && j.this_week && typeof j.this_week === "object" ? j.this_week : null;
+    if (!w || w.format !== 1 || !Array.isArray(w.items)) return [];
+    const t = (now === undefined ? Date.now() : now) / 1000;
+    const seen = new Set();
+    const out = [];
+    for (const x of w.items.slice(0, 24)) {
+      if (!x || typeof x !== "object") continue;
+      const mode = typeof x.mode === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(x.mode) ? x.mode : "";
+      const title = clip(x.title, 40);
+      const until = typeof x.until === "number" && isFinite(x.until) ? x.until : 0;
+      if (!mode || !title || until <= t || seen.has(mode)) continue;
+      seen.add(mode);
+      const visit = typeof x.visit === "string" && /^(?:https:\/\/[^\s"<>]{1,300}|leyline:\/\/realm\/[a-z2-7]{16})$/.test(x.visit) ? x.visit : "";
+      out.push({ mode, title, line: clip(x.line, 120), visit, until });
+      if (out.length >= 6) break;
+    }
+    return out;
   }
   // the Den of the week slide's right side: who made it, where the screenshots are, how to visit
   function denWeekSide() {
@@ -761,6 +787,27 @@
     }));
   }
 
+  // THIS WEEK (Leyline weekly): a card per featured mode; it opens that mode on Modes (or the Modes page when this
+  // launcher doesn't know the mode yet)
+  function renderWeek() {
+    const now = Date.now() / 1000;
+    const M = Modes();
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    fill("hm-week", thisWeek.filter((x) => x.until > now).map((x) => {
+      const m = M ? M.modes().find((y) => y.id === x.mode) : null;
+      const name = m ? m.title : x.mode.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
+      const c = card("hm-wk", () => (m ? M.show(m.id) : go("modes")), `${x.title}: open ${name}`);
+      c.dataset.mode = x.mode;
+      const d = new Date(x.until * 1000);
+      const t = el("span", "hm-txt");
+      t.append(el("small", "hm-kick", name), el("b", "hm-name", x.title));
+      if (x.line) t.append(el("span", "hm-line", x.line));
+      t.append(el("span", "hm-until", `Until ${days[d.getDay()]} ${d.getDate()}`));
+      c.append(t);
+      return c;
+    }));
+  }
+
   function renderNewsRow() {
     fill("hm-news", App.news().slice(0, 2).map((n) => {
       const c = card("hm-news", () => go("news"), "Open News");
@@ -794,7 +841,7 @@
   // ---------------------------------------------------------------- data in
   document.addEventListener("leyline:realms", () => { realmsIn = true; renderRealms(); build(); });
   document.addEventListener("leyline:catalog", () => { build(); renderMods(); });
-  document.addEventListener("leyline:modes", () => { build(); renderModes(); });
+  document.addEventListener("leyline:modes", () => { build(); renderModes(); renderWeek(); });
   document.addEventListener("leyline:news", () => { build(); renderNewsRow(); });   // the website's news feed came in (app.js loadNews)
   document.addEventListener("leyline:page", (e) => { if ((e.detail || {}).page === "play") loadForum(); });
   build();
@@ -804,8 +851,10 @@
   renderRealms();
   renderMods();
   renderModes();
+  renderWeek();
   renderNewsRow();
   if (Modes()) Modes().ensure();
 
-  window.LeylineHome = { slides: () => slides.map((s) => s.key), index: () => index, show, build, autoOn, AUTO_MS, thumbUrl, readHomeArt, HOME_ART };
+  window.LeylineHome = { slides: () => slides.map((s) => s.key), index: () => index, show, build, autoOn, AUTO_MS, thumbUrl, readHomeArt, HOME_ART,
+    readThisWeek, thisWeek: () => thisWeek.slice() };
 })();

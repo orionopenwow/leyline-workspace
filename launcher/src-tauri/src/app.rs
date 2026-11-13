@@ -36,8 +36,8 @@ pub(crate) struct Core {
     games: Mutex<Vec<Child>>,
     /// The launcher's own update: what the last check said, and a downloaded update waiting for "Restart".
     upd: Mutex<UpdState>,
-    /// A `leyline://install/<id>` link Leyline was started with, until the UI takes it (deeplink.rs).
-    deep_link: Mutex<Option<crate::deeplink::Link>>,
+    /// A `leyline://` link Leyline was started with or was handed while open, until the UI takes it (deeplink.rs).
+    deep_link: Mutex<crate::deeplink::Inbox>,
 }
 
 impl Core {
@@ -125,6 +125,45 @@ async fn pick(app: AppHandle, title: &'static str, file: bool, mods_filter: bool
     .flatten()
     .and_then(|p| p.into_path().ok())
     .map(|p| p.display().to_string())
+}
+
+/// Settings › Save my Leyline network key: the key file written where the player picks (never shown, never logged).
+/// None: the save was cancelled.
+#[tauri::command]
+async fn peer_key_export(app: AppHandle) -> Result<Option<String>, String> {
+    let text = crate::identity::export_text(&settings::app_dir())?;
+    let to = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().set_title("Save your Leyline network key").set_file_name("leyline-network-key.txt").add_filter("Text", &["txt"]).blocking_save_file()
+    })
+    .await
+    .ok()
+    .flatten()
+    .and_then(|p| p.into_path().ok());
+    let Some(to) = to else { return Ok(None) };
+    std::fs::write(&to, text.as_bytes()).map_err(|e| format!("The key wasn't saved: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(Some("Saved. Keep that file private: whoever has it is you to your friends. Bring it back here on a new PC or after a reinstall.".into()))
+}
+
+/// Settings › Bring back my Leyline network key: a saved key file picked, this PC becomes that identity (the key it
+/// had is kept aside). None: cancelled.
+#[tauri::command]
+async fn peer_key_import(app: AppHandle) -> Result<Option<String>, String> {
+    let Some(from) = pick(app, "Pick your saved Leyline network key", true, false).await else { return Ok(None) };
+    blocking(move || {
+        let meta = std::fs::metadata(&from).map_err(|e| e.to_string())?;
+        if meta.len() > 4096 {
+            return Err("That file isn't a saved Leyline network key.".to_string());
+        }
+        let text = std::fs::read_to_string(&from).map_err(|_| "That file isn't a saved Leyline network key.".to_string())?;
+        let short = crate::identity::import(&settings::app_dir(), &text)?;
+        Ok(Some(format!("Done: this PC is Hero {short} again to your friends. Restart Leyline to finish. The key it had is kept aside in Leyline's folder.")))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -327,10 +366,43 @@ fn den_ground_root(core: &Core, realm: &str) -> Option<PathBuf> {
     None
 }
 
+/// Leyline's in-game addons brought up to date right before a PLAY on a 3.3.5a client (crate::addons::
+/// prepare_for_play; 12 Nov: updates only on launcher start never reached the owner's game folder). Quick (the last
+/// good listing when fresh, else 3 s for the release), never an error, skipped while another install holds the mod
+/// lock. What it updated is the play bar's "In-game add-ons updated" (addons_play_note). `install_missing`: put the
+/// pack in where it isn't (the first Single player setup).
+fn addons_before_launch_now(core: &Core, client: &str, install_missing: bool) {
+    let Ok(p) = core.client(client) else { return };
+    // the page checked them a moment ago (addons.js beforePlay): one check per Play
+    if p.build != clients::Build::V335a || (!install_missing && crate::addons::checked_recently(&p.id)) {
+        return;
+    }
+    let Ok(_g) = core.mods_lock.try_lock() else { return };
+    let r = crate::addons::prepare_for_play(&core.dir, &p, crate::addons::DESCRIPTOR_URL, install_missing);
+    crate::addons::note_play(&r);
+}
+
+/// `addons_before_launch_now` off the async runtime's own threads.
+async fn addons_before_launch(core: &Core, client: &str, install_missing: bool) {
+    let Ok(p) = core.client(client) else { return };
+    if p.build != clients::Build::V335a || (!install_missing && crate::addons::checked_recently(&p.id)) {
+        return;
+    }
+    let (dir, lock) = (core.dir.clone(), core.mods_lock.clone());
+    let _ = blocking(move || {
+        let Ok(_g) = lock.try_lock() else { return Ok(()) };
+        let r = crate::addons::prepare_for_play(&dir, &p, crate::addons::DESCRIPTOR_URL, install_missing);
+        crate::addons::note_play(&r);
+        Ok(())
+    })
+    .await;
+}
+
 /// Point the client at the realm, then start it. On the official realm, signed in on Home, the game signs in by
 /// itself and opens at character select (`play_official`).
 #[tauri::command]
 async fn play(app: AppHandle, core: State<'_, Core>, client: String, realm: String) -> Result<String, String> {
+    addons_before_launch(&core, &client, false).await;
     if crate::addresses::is_official_realm(realm.trim()) {
         return play_official(&core, &client, &realm, Some(&app)).await;
     }
@@ -548,6 +620,7 @@ async fn play_realm(app: AppHandle, core: State<'_, Core>, client: String, slug:
         let s = core.snapshot();
         realms::pick_client(&realm, &s.clients, Some(&client))?.id.clone()
     };
+    addons_before_launch(&core, &client, false).await;
     let r2 = realm.clone();
     let addr = blocking(move || realms::desktop_address(&r2, |relay| format!("https://{relay}"))).await?;
     let mut msg = if realm.official { play_official(&core, &client, &addr, Some(&app)).await? } else { point_and_play(&core, &client, &addr, true)? };
@@ -573,6 +646,7 @@ async fn play_realm_herokey(core: State<'_, Core>, client: String, slug: String)
         let s = core.snapshot();
         realms::pick_client(&realm, &s.clients, Some(&client))?.id.clone()
     };
+    addons_before_launch(&core, &client, false).await;
     let d2 = dir.clone();
     let login = blocking(move || crate::herokey::sign_in(&d2, &rid)).await.map_err(|e| {
         if e == "signed_out" { "Log in to Leyline first: Log In, in the title bar.".to_string() } else { e }
@@ -1245,9 +1319,20 @@ fn den_lite_up(game: &Path) -> Result<bool, String> {
     if !l.available() {
         lite::install(&app)?; // first use: the release's program, its sha256 checked (host/lite.rs)
         l = lite::Binary::find(&app);
+    } else if !l.status().running && lite::swap_in_next(&app) {
+        // a newer Den Lite downloaded in the background since the last start: in place now, before it starts
+        l = lite::Binary::find(&app);
     }
+    // the release asked for a newer one (at most every 12 hours, in the background): it is used at the next start
+    lite::update_in_background(&app);
     let l = l.with_client(game);
     let was = l.status().running;
+    // a local world on this PC holds the same login port: said by name (never stopped unasked)
+    if !was {
+        if let Some(k) = running_world() {
+            return Err(format!("{} is running on this PC and uses the same login port as Your Den. Stop it on the Single player page (everyone is saved), then press Play again.", k.title()));
+        }
+    }
     l.start()?;
     for _ in 0..50 {
         if l.status().running {
@@ -1457,6 +1542,7 @@ async fn den_play_lite(app: AppHandle, core: State<'_, Core>, client: String) ->
     if profile.build != crate::clients::Build::V335a {
         return Err("Your Den plays with a different game folder: pick or add it in the play bar, where its version shows.".into());
     }
+    addons_before_launch(&core, &client, false).await;
     let game = profile.path.clone();
     blocking(move || den_lite_up(&game)).await?;
     let (play, st) = den_launch(&core, &client)?;
@@ -1484,7 +1570,7 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
         mods_lock: Arc::new(Mutex::new(())),
         games: Mutex::new(Vec::new()),
         upd: Mutex::new(UpdState::default()),
-        deep_link: Mutex::new(None),
+        deep_link: Mutex::new(crate::deeplink::Inbox::default()),
     };
     let root = lite::root(&settings::app_dir());
     let fail = |why: String| {
@@ -1591,7 +1677,7 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
         mods_lock: Arc::new(Mutex::new(())),
         games: Mutex::new(Vec::new()),
         upd: Mutex::new(UpdState::default()),
-        deep_link: Mutex::new(None),
+        deep_link: Mutex::new(crate::deeplink::Inbox::default()),
     };
     let same = |a: &std::path::Path, b: &std::path::Path| a.to_string_lossy().trim_end_matches(['\\', '/']).eq_ignore_ascii_case(b.to_string_lossy().trim_end_matches(['\\', '/']));
     // --game a folder the launcher doesn't have yet (a fresh data folder has none): added as Find your game files does
@@ -1970,6 +2056,8 @@ async fn world_status(kind: String) -> Result<crate::host::engine::EngineStatus,
 async fn world_setup(core: State<'_, Core>, client: String, kind: String) -> Result<String, String> {
     let k = world_kind(&kind)?;
     let profile = world_client(&core, k, &client)?;
+    // the first setup puts the Leyline addons in too (companions, the bot bar): the world plays with them
+    addons_before_launch(&core, &profile.id, true).await;
     blocking(move || world_setup_with(k, &profile)).await
 }
 
@@ -2004,6 +2092,37 @@ async fn world_settings_get(kind: String) -> Result<crate::host::spsettings::Wor
         w.set_up = st.set_up;
         w.running = st.running;
         Ok(w)
+    })
+    .await
+}
+
+/// The mods in a single player world (host/worldmods.rs): the engine's own modules as its server gets them at its next
+/// start, read from disk (no network). The Single player page's "Mods in this world" lists them beside the game folder's.
+#[tauri::command]
+async fn world_mods_get(kind: String) -> Result<crate::host::worldmods::WorldMods, String> {
+    use crate::host::{engine as eng, worldmods as wm};
+    let k = world_kind(&kind)?;
+    if !wm::supports(k) {
+        return Err(tag_other(format!("{} has no world mods.", k.title())));
+    }
+    blocking(move || {
+        let p = world_paths(k);
+        let st = eng::status(&p);
+        Ok(wm::WorldMods { kind: k.word().into(), mods: wm::list(&p), set_up: st.set_up, running: st.running })
+    })
+    .await
+}
+
+/// Turn one of a world's optional modules off or on (its realm.env); a running world takes it at its next start
+/// (`restart`: the page offers Restart now).
+#[tauri::command]
+async fn world_mods_set(kind: String, id: String, on: bool) -> Result<crate::host::worldmods::Saved, String> {
+    use crate::host::{engine as eng, worldmods as wm};
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        let p = world_paths(k);
+        let running = eng::status(&p).running;
+        wm::set(&p, &id, on, running).map_err(tag_other)
     })
     .await
 }
@@ -2174,6 +2293,73 @@ fn world_repair_now(core: &Core, k: crate::host::engine::Kind, client: &str) -> 
     crate::host::engine::begin_repair(&settings::app_dir(), k, Some(profile.path))
 }
 
+/// A local world whose servers run on this PC now (the one this launcher started first).
+fn running_world() -> Option<crate::host::engine::Kind> {
+    use crate::host::engine as eng;
+    let order = eng::active().into_iter().chain(eng::KINDS);
+    order.into_iter().find(|k| eng::status(&world_paths(*k)).running)
+}
+
+/// The page answered "close Leyline with my world running" (or there was nothing to ask): the next close goes through.
+static CLOSE_ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Leyline's main window is closing (Settings › world_stop_on_close, on by default): with a world running and no
+/// friend in it, the window goes and the world is saved and stopped, then Leyline exits; with friends in it, the
+/// page asks first (`leyline:close-world`, answered by close_leyline). True: the close waits (prevented).
+fn close_with_world(window: &tauri::Window) -> bool {
+    use crate::host::engine as eng;
+    if CLOSE_ASKED.load(std::sync::atomic::Ordering::SeqCst) || !settings::load(&settings::app_dir()).world_stop_on_close {
+        return false;
+    }
+    let Some(k) = running_world() else { return false };
+    let friends = eng::friends_online(&world_paths(k)).unwrap_or(0);
+    if friends > 0 {
+        use tauri::Emitter;
+        let _ = window.emit("leyline:close-world", serde_json::json!({ "kind": k.word(), "title": k.title(), "friends": friends }));
+        return true;
+    }
+    let _ = window.hide();
+    close_stopping(window.app_handle().clone(), Some(k));
+    true
+}
+
+/// Save and stop `k` (sharing ends with it), tell friends Leyline is offline, then exit.
+fn close_stopping(app: AppHandle, k: Option<crate::host::engine::Kind>) {
+    use crate::host::engine as eng;
+    CLOSE_ASKED.store(true, std::sync::atomic::Ordering::SeqCst);
+    std::thread::spawn(move || {
+        if let Some(k) = k {
+            let p = world_paths(k);
+            eng::setup_log(&p, "Leyline is closing: saving and stopping the world");
+            world_share_off(k);
+            let _ = eng::stop(&p);
+        }
+        if let Some(h) = crate::p2p::friendnet::current() {
+            crate::p2p::friendnet::stop(&h);
+        }
+        app.exit(0);
+    });
+}
+
+/// The page's answer to `leyline:close-world`: `stop` saves and stops the world, then closes Leyline; false closes
+/// Leyline and leaves the world running (friends who came through the launcher are cut off).
+#[tauri::command]
+fn close_leyline(app: AppHandle, stop: bool) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
+    close_stopping(app, if stop { running_world() } else { None });
+}
+
+/// Settings › Stop my world when Leyline closes.
+#[tauri::command]
+fn set_world_stop_on_close(core: State<Core>, on: bool) -> Result<(), String> {
+    core.update(|s| {
+        s.world_stop_on_close = on;
+        Ok(())
+    })
+}
+
 /// Settings › Stop my world when the game closes.
 #[tauri::command]
 fn set_world_stop_on_exit(core: State<Core>, on: bool) -> Result<(), String> {
@@ -2204,6 +2390,91 @@ async fn world_logs(kind: String, lines: Option<usize>) -> Result<String, String
 async fn world_backup(kind: String) -> Result<String, String> {
     let k = world_kind(&kind)?;
     blocking(move || crate::host::engine::backup(&world_paths(k)).map(|p| p.display().to_string())).await
+}
+
+/// "Move my characters here": every one of the player's characters in a world onto the login Play uses now (the
+/// signed-in Hero Key's, else the world's own), inside a back-up taken first. The world must be running. How many.
+#[tauri::command]
+async fn world_gather_chars(core: State<'_, Core>, kind: String) -> Result<String, String> {
+    use crate::host::{engine as eng, oneclick::tag};
+    let k = world_kind(&kind)?;
+    if k == eng::Kind::BossRush {
+        return Err(tag("other", "Boss Rush's heroes stay on its own login."));
+    }
+    let dir = core.dir.clone();
+    blocking(move || {
+        let p = world_paths(k);
+        if !eng::status(&p).running {
+            return Err(tag("other", format!("Start {} first (press Play), then move your characters.", k.title())));
+        }
+        let to = match crate::host::oneclick::hero_identity(&dir) {
+            Some(h) => {
+                eng::hero_login(&p, &h)?;
+                h
+            }
+            None => eng::load_state(&p).account,
+        };
+        let n = eng::gather_chars(&p, &to)?;
+        Ok(if n == 0 { "Your characters are all on this login already.".to_string() } else { format!("{n} characters moved: they're on the login Play uses now. A back-up was taken first.") })
+    })
+    .await
+}
+
+/// The world's own login password, when the player asks for it (Show, Copy on the Manage card): never in the status
+/// the pages poll.
+#[tauri::command]
+async fn world_password(kind: String) -> Result<String, String> {
+    use crate::host::engine as eng;
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        let s = eng::load_state(&world_paths(k));
+        if !s.account_made {
+            return Err(format!("Set {} up first.", k.title()));
+        }
+        Ok(s.password)
+    })
+    .await
+}
+
+/// A world's back-ups, newest first (when, why), for its Restore list.
+#[tauri::command]
+async fn world_backups(kind: String) -> Result<Vec<crate::host::engine::BackupInfo>, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || Ok(crate::host::engine::backups_info(&world_paths(k)))).await
+}
+
+/// Put one of a world's back-ups back (its name from world_backups): the world as it is now backed up first, the
+/// world stopped (sharing with friends ends with it), the back-up loaded; Play starts it again.
+#[tauri::command]
+async fn world_restore(kind: String, name: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        world_share_off(k);
+        crate::host::engine::restore(&world_paths(k), &name)
+    })
+    .await
+}
+
+/// Ask the release for a newer world engine (the engine every world shares) when the last look is over 12 hours old
+/// (`force`: now), waiting 5 s at most; the world's status after (its `update`).
+#[tauri::command]
+async fn world_update_check(kind: String, force: Option<bool>) -> Result<crate::host::engine::EngineStatus, String> {
+    use crate::host::engine as eng;
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        let p = world_paths(k);
+        eng::check_update_cached(&p, if force.unwrap_or(false) { 0 } else { eng::UPDATE_CHECK_EVERY });
+        Ok(eng::status(&p))
+    })
+    .await
+}
+
+/// Update a world's engine (a background job on engine_progress, as setup): its saves backed up first, the new
+/// engine put in place, the world started again. The maps, saves and settings stay.
+#[tauri::command]
+fn world_update(kind: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    crate::host::engine::begin_update(&settings::app_dir(), k)
 }
 
 #[derive(Serialize)]
@@ -2249,6 +2520,9 @@ struct WorldPlay {
     made: String,
     /// Played on the Hero Key's own login in this world (signed in); false: the world's own login.
     hero: bool,
+    /// Played on another of the player's logins here, the one that holds the characters (signed out, or another Hero
+    /// Key signed in): the page offers "Move my characters here" (world_gather_chars).
+    elsewhere: bool,
 }
 
 /// Play a world that is running: the game signed in by itself (the hybrid login, as Your Den and Boss Rush do: the
@@ -2280,6 +2554,8 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     use crate::host::{bossrush as br, engine as eng, localworld as lw, oneclick::tag};
     let profile = world_client(core, k, client)?;
     let client = profile.id.as_str();
+    // `first`: the first entry from one click, so the addons go in if they aren't yet
+    addons_before_launch_now(core, client, first);
     let p = world_paths(k);
     let st = eng::status(&p);
     if !st.set_up {
@@ -2296,7 +2572,8 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     }
     let s = eng::load_state(&p);
     let mut is_hero = false;
-    let (user, pass) = if k == eng::Kind::BossRush {
+    let mut elsewhere = false;
+    let (mut user, mut pass) = if k == eng::Kind::BossRush {
         // the heroes' account (bossrush_play makes it with the first fight); its password set again, as there
         if s.hero_password.len() < 8 {
             return Err(tag("other", "Pick a fight on the Boss Rush page first: it makes your hero."));
@@ -2319,6 +2596,22 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
             None => (s.account.clone(), s.password.clone()),
         }
     };
+    // the characters never "vanish" with the sign-in (signed out, a session the website dropped, another Hero Key on
+    // this PC): Play goes in on whichever of the player's own logins here holds them (a picked one's own login), with
+    // a password for this Play set over local SQL (no network)
+    if k != eng::Kind::BossRush {
+        let s_now = eng::load_state(&p);
+        if let Ok(logins) = eng::logins_with_chars(&p, &s_now, &user) {
+            let to = eng::pick_login(&user, pick.as_deref(), &logins);
+            if !to.eq_ignore_ascii_case(&user) {
+                pass = if to.eq_ignore_ascii_case(&s_now.account) { s_now.password.clone() } else { eng::login_password(&p, &to)? };
+                eng::setup_log(&p, "Play went in on the login that holds the characters (not the one signed in)");
+                is_hero = !to.eq_ignore_ascii_case(&s_now.account);
+                user = to;
+                elsewhere = true;
+            }
+        }
+    }
     if k != eng::Kind::BossRush {
         let mine = || eng::chars_of(&p, &user);
         if first && pick.is_none() {
@@ -2406,7 +2699,7 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     let plays = WORLD_PLAYS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     stop_world_when_closed(core.dir.clone(), k, LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed), plays);
     // typed by the launcher: the login stays at hand in case the game window didn't take the keys
-    Ok(WorldPlay { message, kind: k.word().into(), auto, account: user, password: if auto && !typed { String::new() } else { pass }, made, hero: is_hero })
+    Ok(WorldPlay { message, kind: k.word().into(), auto, account: user, password: if auto && !typed { String::new() } else { pass }, made, hero: is_hero, elsewhere })
 }
 
 /// Quick start's pick for a first entry the page sent none for: a random race, one of its classes, a free name.
@@ -2536,8 +2829,8 @@ async fn world_invite(kind: String) -> Result<DenInvite, String> {
 
 fn world_invite_now(k: crate::host::engine::Kind) -> Result<DenInvite, String> {
     use crate::host::{denhost, denways, engine as eng, litenet, worldfriends as wf, worldshare as ws};
-    if k == eng::Kind::BossRush {
-        return Err("Boss Rush is for one hero for now: invite a friend from Single player or the original world.".into());
+    if k == eng::Kind::BossRush && !bossrush_friend_file().is_file() {
+        return Err("Pick the fight for you and your friend on the Boss Rush page first (With friends).".into());
     }
     let p = world_paths(k);
     if !eng::status(&p).running {
@@ -2644,7 +2937,10 @@ fn world_friends_of(k: crate::host::engine::Kind, realm_id: &str, secret: &str) 
         share: ws::dir(&world_paths(k).root),
         era: wf::Era::Wrath,
         console: Arc::new(move |l: &str| eng::console(&world_paths(k), l)),
-        with_chars: Arc::new(move || eng::friend_chars(&world_paths(k)).map(|v| v.into_iter().map(|c| c.user).collect()).unwrap_or_default()),
+        // an error is passed on: no friend's login is deleted when the world couldn't say who has characters
+        with_chars: Arc::new(move || eng::friend_chars(&world_paths(k)).map(|v| v.into_iter().map(|c| c.user).collect())),
+        // Boss Rush: a friend plays a hero (the module's heroes live on their own account), made as they come in
+        login_for: (k == eng::Kind::BossRush).then(|| -> wf::LoginFor { Arc::new(|u: &str, p: &str| bossrush_friend_login(u, p)) }),
     }
 }
 
@@ -2671,6 +2967,7 @@ fn classic_friends_of(realm_id: &str, secret: &str) -> crate::host::worldfriends
         era: wf::Era::Classic,
         console: Arc::new(|l: &str| classic::soap(&classic::load_state(&classic_paths()), l)),
         with_chars: Arc::new(|| classic::friend_logins_with_chars(&classic_paths())),
+        login_for: None,
     }
 }
 
@@ -2715,6 +3012,7 @@ fn ingame_sync_start() {
                 if eng::sql(&p, "acore_characters", wf::INGAME_TABLES).is_err() {
                     continue;
                 }
+                let _ = eng::sql(&p, "acore_characters", &wf::expire_sql(now_secs()));
                 made = Some(k);
                 last.clear();
             }
@@ -2810,6 +3108,25 @@ async fn world_friends(kind: String) -> Result<Vec<WorldFriendView>, String> {
 #[tauri::command]
 async fn world_friend(kind: String, user: String, action: String) -> Result<String, String> {
     blocking(move || {
+        // "give:<login>": the host gives this friend's characters to another friend's login (a friend who came back
+        // with a new Leyline key: a reinstall, a new PC), on the Built-in engine's worlds
+        if let Some(to) = action.strip_prefix("give:") {
+            use crate::host::engine as eng;
+            if kind == "solo" {
+                return Err("Giving characters to another friend works on Single player and the original world.".to_string());
+            }
+            let k = world_kind(&kind)?;
+            let p = world_paths(k);
+            if !eng::status(&p).running {
+                return Err("Your world has to be running for that (start it, then try again).".to_string());
+            }
+            let book = crate::host::worldfriends::load(&crate::host::worldshare::dir(&p.root));
+            if !book.friends.iter().any(|f| f.user == to) {
+                return Err("That friend isn't on this world.".to_string());
+            }
+            let n = eng::give_chars(&p, &user, to)?;
+            return Ok(if n == 0 { "They have no characters here to give.".to_string() } else { format!("{n} characters given. A back-up was taken first.") });
+        }
         let w = if kind == "solo" { classic_friends_here() } else { world_friends_here(world_kind(&kind)?) };
         let w = w.ok_or("Invite a friend first: this world has no friends yet.")?;
         crate::host::worldfriends::set_friend(&w, &user, &action)
@@ -3430,6 +3747,8 @@ struct BossRushClass {
 #[derive(Serialize)]
 struct BossRushCatalog {
     fights: Vec<BossRushFight>,
+    /// Start anywhere's tree: raids, their wings and bosses, the whole raid (ui/bossstart.js).
+    raids: Vec<BossRushRaid>,
     classes: Vec<BossRushClass>,
     maps: Vec<u32>,
     exact: crate::host::engine::EngineStatus,
@@ -3444,6 +3763,7 @@ async fn bossrush_catalog() -> Result<BossRushCatalog, String> {
     blocking(|| {
         Ok(BossRushCatalog {
             fights: br::FIGHTS.iter().map(|f| BossRushFight { key: f.key, title: f.title, raid: f.raid, map: f.map, heroic: f.heroic, light: f.light, blurb: f.blurb }).collect(),
+            raids: bossrush_raids(),
             classes: br::CLASSES.iter().map(|c| BossRushClass { word: c.0, label: c.1, specs: c.2.to_vec() }).collect(),
             maps: br::maps(),
             exact: crate::host::engine::status(&bossrush_paths()),
@@ -3501,7 +3821,7 @@ struct BossRushPlay {
 /// Den's own one-click start (the page calls den_play_lite after this).
 #[tauri::command]
 async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, diff: String, class: String, spec: String, engine: String) -> Result<BossRushPlay, String> {
-    use crate::host::{bossrush as br, engine as eng};
+    use crate::host::bossrush as br;
     let pick = br::check(&fight, &diff, &class, &spec, &engine)?;
     let profile = core.client(&client)?;
     if profile.build != clients::Build::V335a {
@@ -3521,6 +3841,16 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
         .await?;
         return Ok(BossRushPlay { message: "Your fight is ready: Den Lite opens it.".into(), engine: "light".into(), hero: String::new(), made: false, auto: true, account: String::new(), password: String::new(), code });
     }
+    let pk = pick.clone();
+    bossrush_exact(&core, &client, profile, move |main| br::go_line(main, &pk), code).await
+}
+
+/// The exact engine's one click, for a fight (bossrush_play) or a start anywhere (bossrush_start_at): the hero
+/// account's login set (once), the module asked for the hero and its waiting go (`bossfight hero go ...`, the line
+/// `go` makes from the player's own account), then the game started signed in to the hero account, whose login lands
+/// at the start.
+async fn bossrush_exact(core: &Core, client: &str, profile: ClientProfile, go: impl FnOnce(&str) -> String + Send + 'static, code: String) -> Result<BossRushPlay, String> {
+    use crate::host::{bossrush as br, engine as eng};
     let p = bossrush_paths();
     let st = eng::status(&p);
     if !st.set_up {
@@ -3529,7 +3859,8 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
     if !st.running {
         return Err("Boss Rush isn't running: press Start first.".into());
     }
-    let pk = pick.clone();
+    // the Leyline addons (the BossFights window) up to date first, as every local world's Play does
+    addons_before_launch(core, &profile.id, false).await;
     let (reply, hero_acc, pass) = blocking(move || {
         let p = bossrush_paths();
         let main = eng::load_state(&p).account;
@@ -3538,7 +3869,7 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
         let [create, set] = br::account_lines(&hero_acc, &pass)?;
         let _ = eng::console(&p, &create); // there already: fine
         eng::console(&p, &set).map_err(|e| format!("Boss Rush's realm didn't take the hero's login ({e}). Is it still starting? Try again in a minute."))?;
-        let text = eng::console(&p, &br::go_line(&main, &pk)).map_err(|e| {
+        let text = eng::console(&p, &go(&main)).map_err(|e| {
             if e.to_ascii_lowercase().contains("no such command") {
                 "Boss Rush's engine doesn't have boss fights yet: update the engine on this page.".to_string()
             } else {
@@ -3557,9 +3888,175 @@ async fn bossrush_play(core: State<'_, Core>, client: String, fight: String, dif
     let _ = crate::herokey::set_login(&profile.path, &hero_acc, Some(realm));
     let refused = crate::hybrid::refused(&profile.path);
     let session = if refused { None } else { Some(crate::hybrid::Session { user: hero_acc.clone(), pass: pass.clone(), realm: Some(realm.into()), enter: true, pick: None, make: None }) };
-    let (message, hybrid) = point_and_play_with(&core, &client, eng::REALM, true, session, true)?;
+    let (message, hybrid) = point_and_play_with(core, client, eng::REALM, true, session, true)?;
     let auto = hybrid.is_ok();
+    // the world stops (everyone saved) a minute after this game closes (Settings › world_stop_on_exit), as the other
+    // local worlds do
+    let plays = WORLD_PLAYS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    stop_world_when_closed(core.dir.clone(), eng::Kind::BossRush, LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed), plays);
     Ok(BossRushPlay { message, engine: "exact".into(), hero, made, auto, account: if auto { String::new() } else { hero_acc }, password: if auto { String::new() } else { pass }, code })
+}
+
+// ---- Boss Rush: start anywhere (host/bossrush.rs RAIDS, the module's BossfightsStarts.h; ui/bossstart.js) -------------
+
+#[derive(Serialize)]
+struct BossRushWing {
+    key: &'static str,
+    title: &'static str,
+    fights: Vec<&'static str>,
+}
+
+#[derive(Serialize)]
+struct BossRushRaid {
+    key: &'static str,
+    title: &'static str,
+    map: u32,
+    heroic: bool,
+    whole: &'static str,
+    fights: Vec<&'static str>,
+    wings: Vec<BossRushWing>,
+}
+
+fn bossrush_raids() -> Vec<BossRushRaid> {
+    crate::host::bossrush::RAIDS
+        .iter()
+        .map(|r| BossRushRaid {
+            key: r.key,
+            title: r.title,
+            map: r.map,
+            heroic: r.heroic,
+            whole: r.whole,
+            fights: r.fights.to_vec(),
+            wings: r.wings.iter().map(|w| BossRushWing { key: w.key, title: w.title, fights: w.fights.to_vec() }).collect(),
+        })
+        .collect()
+}
+
+/// Start anywhere: in front of a boss, at a wing's first boss, or at the raid's gate; 10 or 25; with companions (the
+/// empty seats filled now) or with friends (a raid that waits for them: bossrush_go_now starts it, companions in the
+/// seats left unless `companions` is off). Exact engine only (the real raid).
+#[tauri::command]
+async fn bossrush_start_at(core: State<'_, Core>, client: String, start: String, diff: String, size: u8, party: String, companions: bool, class: String, spec: String) -> Result<BossRushPlay, String> {
+    use crate::host::bossrush as br;
+    let pick = br::check_start(&start, &diff, size, &party, companions, &class, &spec)?;
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err("Boss Rush plays with a different game folder: pick one of its version.".into());
+    }
+    let pk = pick.clone();
+    bossrush_exact(&core, &client, profile, move |main| br::start_go_line(main, &pk), String::new()).await
+}
+
+/// The console's answer to `bossfight rush <verb> RUSH [arg]` as the page reads it.
+fn rush_json(r: &crate::host::bossrush::Rush) -> serde_json::Value {
+    use crate::host::bossrush::Rush;
+    match r {
+        Rush::Run(x) => serde_json::json!({
+            "kind": "run", "start": x.start, "diff": x.diff, "phase": x.phase, "leader": x.leader, "map": x.map, "instance": x.instance,
+            "x": x.x, "y": x.y, "z": x.z, "dist": x.dist, "members": x.members, "bots": x.bots, "inside": x.inside, "step": x.step,
+            "step_title": crate::host::bossrush::start(&x.step).map(|s| s.1).unwrap_or(""), "done": x.done, "of": x.of, "boss": x.boss,
+            "wipes": x.wipes, "clears": x.clears, "marks": x.marks, "last": x.last, "ms": x.ms, "clock": crate::host::bossrush::clock(x.ms),
+        }),
+        Rush::Lobby { start, diff, waiting, size } => serde_json::json!({ "kind": "lobby", "start": start, "diff": diff, "waiting": waiting, "size": size }),
+        Rush::Offline => serde_json::json!({ "kind": "offline" }),
+        Rush::Ok { word } => serde_json::json!({ "kind": "ok", "word": word }),
+        Rush::No { why } => serde_json::json!({ "kind": "no", "why": why }),
+        Rush::Nothing => serde_json::json!({ "kind": "nothing" }),
+    }
+}
+
+/// One Boss Rush console word for the player's hero (SOAP, 127.0.0.1 only), read back.
+fn bossrush_rush_now(verb: &str, arg: Option<&str>) -> Result<crate::host::bossrush::Rush, String> {
+    use crate::host::{bossrush as br, engine as eng};
+    let p = bossrush_paths();
+    if !eng::status(&p).running {
+        return Err("Boss Rush isn't running.".into());
+    }
+    let main = eng::load_state(&p).account;
+    let text = eng::console(&p, &br::rush_line(verb, &main, arg)?).map_err(|e| {
+        if e.to_ascii_lowercase().contains("no such command") {
+            "Boss Rush's engine is older than start anywhere: update the engine on this page.".to_string()
+        } else {
+            format!("Boss Rush's realm didn't answer ({e}).")
+        }
+    })?;
+    Ok(br::parse_rush(&text))
+}
+
+/// Where the hero's raid is: the start it stands at, the phase, the party, the bosses down, the last result.
+#[tauri::command]
+async fn bossrush_state() -> Result<serde_json::Value, String> {
+    blocking(|| bossrush_rush_now("status", None).map(|r| rush_json(&r))).await
+}
+
+/// Retry from this boss: after a wipe the raid stands again in front of the first boss still standing; after a
+/// clear the same start again in a fresh instance.
+#[tauri::command]
+async fn bossrush_retry() -> Result<serde_json::Value, String> {
+    blocking(|| bossrush_rush_now("retry", None).map(|r| rush_json(&r))).await
+}
+
+/// With friends: start now with whoever is there (companions in the seats left, unless `companions` is off).
+#[tauri::command]
+async fn bossrush_go_now(companions: bool) -> Result<serde_json::Value, String> {
+    blocking(move || bossrush_rush_now("go", if companions { None } else { Some("nobots") }).map(|r| rush_json(&r))).await
+}
+
+/// Out of the run (the hero stays at its start).
+#[tauri::command]
+async fn bossrush_leave() -> Result<serde_json::Value, String> {
+    blocking(|| bossrush_rush_now("leave", None).map(|r| rush_json(&r))).await
+}
+
+/// What a friend who joins Boss Rush plays: the start, the difficulty, the size, the party word and the friend's
+/// hero (`<share>/bossrush-friend.json`, read when the friend's claim comes in: world_friends_of's login_for).
+fn bossrush_friend_file() -> PathBuf {
+    crate::host::worldshare::dir(&bossrush_paths().root).join("bossrush-friend.json")
+}
+
+/// Invite a friend into the Boss Rush raid: the same invite link as a world's (the relay tunnel, the same network),
+/// and when the friend's launcher comes in, a hero made for them on the spot (the class and spec picked here; they
+/// can respec in game for free) that waits at the same start, in the same raid.
+#[tauri::command]
+async fn bossrush_invite(start: String, diff: String, size: u8, companions: bool, friend_class: String, friend_spec: String) -> Result<DenInvite, String> {
+    use crate::host::bossrush as br;
+    let pick = br::check_start(&start, &diff, size, "friends", companions, &friend_class, &friend_spec)?;
+    blocking(move || {
+        let doc = serde_json::json!({ "start": pick.start, "diff": pick.diff_token(), "mode": pick.party.mode(), "class": pick.class, "spec": pick.spec });
+        let f = bossrush_friend_file();
+        if let Some(d) = f.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        settings::write_atomic(&f, doc.to_string().as_bytes()).map_err(|e| e.to_string())?;
+        world_invite_now(crate::host::engine::Kind::BossRush)
+    })
+    .await
+}
+
+/// A friend's claim on Boss Rush, after their login is ready: their hero (made on their hero account with the claim's
+/// password, waiting at the host's start) is the login their game uses.
+fn bossrush_friend_login(user: &str, pass: &str) -> Result<String, String> {
+    use crate::host::{bossrush as br, engine as eng};
+    let p = bossrush_paths();
+    let pick: serde_json::Value = std::fs::read_to_string(bossrush_friend_file()).ok().and_then(|t| serde_json::from_str(&t).ok()).ok_or("The host hasn't picked a fight for friends yet.")?;
+    let g = |k: &str| pick.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let (diff, size) = match g("diff").as_str() {
+        "normal25" => ("normal", 25),
+        "heroic25" => ("heroic", 25),
+        "heroic" => ("heroic", 10),
+        _ => ("normal", 10),
+    };
+    let companions = g("mode") != "group-only";
+    let sp = br::check_start(&g("start"), diff, size, "friends", companions, &g("class"), &g("spec"))?;
+    let hero = br::hero_account_of(user).ok_or("That login doesn't look right.")?;
+    let [create, set] = br::account_lines(&hero, pass)?;
+    let _ = eng::console(&p, &create);
+    eng::console(&p, &set)?;
+    match br::parse_reply(&eng::console(&p, &br::start_go_line(user, &sp))?) {
+        br::HeroReply::Ok { .. } => Ok(hero),
+        br::HeroReply::No(why) => Err(format!("Your friend's hero couldn't be made: {why}.")),
+        br::HeroReply::Nothing => Err("Boss Rush's realm gave no answer for your friend's hero.".into()),
+    }
 }
 
 #[derive(Serialize)]
@@ -3672,6 +4169,28 @@ async fn bossrush_record(fight: String, diff: String, class: String, spec: Strin
     .await
 }
 
+/// The Leaderboards view (ui/boards.js): the realms' signed boards from the website, every signature checked here
+/// (boards.rs), and the separate local-run board; the last view this PC saw when the site can't be reached.
+#[tauri::command]
+async fn boards_get() -> Result<serde_json::Value, String> {
+    blocking(|| Ok(crate::boards::load(&settings::app_dir()))).await
+}
+
+/// Share a run from this PC on the website's local-run board (only when the player presses Share): signed with this
+/// launcher's own key, sent as the signed-in player. It never goes on a realm's signed board.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+async fn boards_share_local(fight: String, diff: String, engine: String, name: String, class: String, spec: String, ms: u64, at: u64) -> Result<String, String> {
+    blocking(move || {
+        let me = crate::identity::peer_identity()?;
+        let body = crate::boards::local_record(&me, &fight, &diff, &engine, &name, &class, &spec, ms, at)?;
+        let url = format!("{}{}", crate::boards::site(), crate::boards::LOCAL_PATH);
+        let reply = crate::social::post_as_player(&settings::app_dir(), &url, &body)?;
+        Ok(reply.get("message").and_then(serde_json::Value::as_str).unwrap_or("Shared on the local-run board.").chars().take(200).collect())
+    })
+    .await
+}
+
 /// A fight code a friend shared, read back as a pick (nothing in it runs).
 #[tauri::command]
 fn bossrush_code(code: String) -> Result<serde_json::Value, String> {
@@ -3745,6 +4264,18 @@ async fn realms_list(core: State<'_, Core>) -> Result<RealmList, String> {
     Ok(l)
 }
 
+/// The realm list as last fetched, at once and without the network (None before the first fetch): the page shows it
+/// while `realms_list` asks the network.
+#[tauri::command]
+async fn realms_list_cached(core: State<'_, Core>) -> Result<Option<RealmList>, String> {
+    let dir = core.dir.clone();
+    let l = blocking(move || Ok(realms::cached_list(&dir))).await?;
+    if let Some(l) = &l {
+        core.allow(l.realms.iter().flat_map(|r| [r.join_url.clone(), r.discord.clone(), r.report_url.clone()]).flatten());
+    }
+    Ok(l)
+}
+
 /// Open the browser client. Only that one address: the UI cannot open arbitrary URLs through this.
 #[tauri::command]
 fn open_browser_play(app: AppHandle) -> Result<(), String> {
@@ -3801,6 +4332,18 @@ async fn mods_catalog(core: State<'_, Core>) -> Result<Catalog, String> {
     let dir = core.dir.clone();
     let c = blocking(move || catalog::fetch(&dir)).await?;
     core.allow(c.projects.iter().flat_map(|p| [p.repo.clone(), p.page.clone(), p.author_url.clone()]).filter(|u| !u.is_empty()));
+    Ok(c)
+}
+
+/// The mods list as last fetched, at once and without the network (None before the first fetch): Discover shows it
+/// while `mods_catalog` asks the network.
+#[tauri::command]
+async fn mods_catalog_cached(core: State<'_, Core>) -> Result<Option<Catalog>, String> {
+    let dir = core.dir.clone();
+    let c = blocking(move || Ok(catalog::cached_catalog(&dir, catalog::URL))).await?;
+    if let Some(c) = &c {
+        core.allow(c.projects.iter().flat_map(|p| [p.repo.clone(), p.page.clone(), p.author_url.clone()]).filter(|u| !u.is_empty()));
+    }
     Ok(c)
 }
 
@@ -3910,10 +4453,28 @@ fn set_count_installs(core: State<Core>, on: bool) -> Result<(), String> {
     })
 }
 
-/// The `leyline://` link Leyline was started with, once (then None).
+/// The `leyline://` link waiting for the UI, once (then None): the one Leyline started with, or one that reached the
+/// open launcher (`deep_link_arrived`).
 #[tauri::command]
 fn deep_link_take(core: State<Core>) -> Option<crate::deeplink::Link> {
     core.deep_link.lock().ok().and_then(|mut d| d.take())
+}
+
+/// A `leyline://` link reached the open launcher (a second start's arguments on Windows and Linux, the deep-link
+/// plugin on macOS): keep it for `deep_link_take`, bring the window forward and tell the UI (ui/app.js listens for
+/// `deep-link`). Nothing starts here: the UI shows the page and the player clicks.
+fn deep_link_arrived(app: &AppHandle, link: Option<crate::deeplink::Link>) {
+    use tauri::Emitter;
+    let Some(link) = link else { return };
+    let fresh = app.state::<Core>().deep_link.lock().map(|mut d| d.put(link, crate::denclick::now_ms())).unwrap_or(false);
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+    if fresh {
+        let _ = app.emit_to("main", "deep-link", ());
+    }
 }
 
 /// Install a dropped or picked .zip, .MPQ, native file or folder.
@@ -4332,6 +4893,22 @@ pub fn run() {
     let dir = settings::app_dir();
     let s = settings::load(&dir);
     tauri::Builder::default()
+        // One launcher: a second start (a leyline:// link clicked while Leyline is open, or a second shortcut click)
+        // hands its arguments to this one and quits; this window comes forward (deep_link_arrived). First, as the
+        // plugin asks.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let link = crate::deeplink::from_args(argv);
+            if link.is_none() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.unminimize();
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+            deep_link_arrived(app, link);
+        }))
+        // leyline:// links on macOS (always handed over as an event, never as an argument) and while open elsewhere
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -4342,9 +4919,25 @@ pub fn run() {
             mods_lock: Arc::new(Mutex::new(())),
             games: Mutex::new(Vec::new()),
             upd: Mutex::new(UpdState::default()),
-            deep_link: Mutex::new(crate::deeplink::from_args(std::env::args())),
+            deep_link: Mutex::new(crate::deeplink::Inbox::new(crate::deeplink::from_args(std::env::args()))),
         })
         .setup(|app| {
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let h = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    deep_link_arrived(&h, crate::deeplink::from_urls(event.urls().iter().map(|u| u.as_str())));
+                });
+                // macOS: a link that started Leyline arrives here rather than in the arguments
+                if let Ok(Some(urls)) = app.deep_link().get_current() {
+                    let link = crate::deeplink::from_urls(urls.iter().map(|u| u.as_str()));
+                    if let (Some(link), Ok(mut d)) = (link, app.state::<Core>().deep_link.lock()) {
+                        if d.waiting.is_none() {
+                            d.put(link, crate::denclick::now_ms());
+                        }
+                    }
+                }
+            }
             start_update_timer(app.handle().clone());
             crate::p2p::cmds::magnet_from_args(); // a shared magnet: link (only with the magnet_links flag on)
             crate::agents::commands::start(app.handle().clone()); // Agents: the heartbeat `Leyline mcp` looks for (agents.rs)
@@ -4372,6 +4965,9 @@ pub fn run() {
                 if window.label() == "main" && crate::p2p::node::keep_running_on_close(&settings::app_dir()) {
                     api.prevent_close();
                     let _ = window.minimize();
+                } else if window.label() == "main" && close_with_world(window) {
+                    // a world is running: it is saved and stopped first, or the page asks (friends are in it)
+                    api.prevent_close();
                 } else if window.label() == "main" {
                     // Leyline closes: friends see "offline" now instead of ten minutes later (at most a second's wait;
                     // a slow relay mailbox is left to time out on its own)
@@ -4406,6 +5002,8 @@ pub fn run() {
             catalog_listing,
             realm_listing,
             realms_list,
+            realms_list_cached, // the kept list at once, then realms_list (audit 12 Nov)
+            mods_catalog_cached,
             open_browser_play,
             realm_status,
             open_link,
@@ -4534,15 +5132,27 @@ pub fn run() {
             world_stop,
             world_logs,
             world_backup,
+            world_backups,
+            world_restore,
+            world_gather_chars,
+            world_password,
+            world_update_check,
+            world_update,
             world_choices,
             world_settings_get, // Single player's world settings before the first load and later (host/spsettings.rs)
             world_settings_set,
+            world_mods_get, // Single player's "Mods in this world": the engine's own modules, off or on (host/worldmods.rs)
+            world_mods_set,
             world_play,
             world_find_folder, // one click (docs/SINGLE-PLAYER-ONE-CLICK.md §contract): the folder, the disk, resume, Repair
             world_preflight,
             world_resume_pending,
             world_repair,
             set_world_stop_on_exit,
+            set_world_stop_on_close,
+            peer_key_export,
+            peer_key_import,
+            close_leyline,
             local_characters,
             online_characters,
             world_invite,
@@ -4588,6 +5198,14 @@ pub fn run() {
             bossrush_board,
             bossrush_record,
             bossrush_code,
+            boards_get, // Leaderboards: signed boards checked here, local runs shared by choice (boards.rs, ui/boards.js)
+            boards_share_local,
+            bossrush_start_at, // start anywhere (ui/bossstart.js)
+            bossrush_state,
+            bossrush_retry,
+            bossrush_go_now,
+            bossrush_leave,
+            bossrush_invite,
             forge_state, // Forge, the Den's terrain editor (host/forge.rs, ui/den.js "Open in Forge")
             forge_install,
             forge_open,
@@ -4678,6 +5296,9 @@ pub fn run() {
             crate::addons::commands::addons_auto_update,
             crate::addons::commands::addons_set_prefs,
             crate::addons::commands::addons_should_offer,
+            crate::addons::commands::addons_before_play,
+            crate::addons::commands::addons_play_note,
+            crate::addons::commands::addons_mark_asked,
             // Agents: Allow agents, approval cards, the audit, Connect (agents.rs, ui/agents.js)
             crate::agents::commands::agents_state,
             crate::agents::commands::agents_set_allow,
@@ -4929,7 +5550,7 @@ pub fn single_play_test_cli(cli: crate::playtest::Cli) -> i32 {
         mods_lock: Arc::new(Mutex::new(())),
         games: Mutex::new(Vec::new()),
         upd: Mutex::new(UpdState::default()),
-        deep_link: Mutex::new(None),
+        deep_link: Mutex::new(crate::deeplink::Inbox::default()),
     };
     let p = world_paths(k);
     // the test Hero Key (the first-run tool's test account), only from the environment: signed in, then forgotten
@@ -5219,6 +5840,328 @@ pub fn single_play_test_cli(cli: crate::playtest::Cli) -> i32 {
             std::thread::sleep(Duration::from_secs(8));
         }
         save(&rep);
+    }
+    end(sp_stop_all(&core, &profile, k, rep))
+}
+
+/// Boss Rush's status for the playtest: the run as the module sees it, or why not (offline, an error).
+fn br_status() -> Result<crate::host::bossrush::RushRun, String> {
+    use crate::host::bossrush::Rush;
+    match bossrush_rush_now("status", None)? {
+        Rush::Run(r) => Ok(r),
+        Rush::Lobby { waiting, size, .. } => Err(format!("waiting for players ({waiting} of {size})")),
+        Rush::Offline => Err("the hero isn't in the world yet".into()),
+        Rush::No { why } => Err(why),
+        Rush::Ok { word } => Err(format!("unexpected answer: {word}")),
+        Rush::Nothing => Err("the realm gave no answer (an engine older than start anywhere?)".into()),
+    }
+}
+
+/// Wait (at most `max_s`) until `ok` says the run is where it should be; the last status and its verdict either way.
+fn br_wait(max_s: u64, mut ok: impl FnMut(&crate::host::bossrush::RushRun) -> Result<String, String>) -> (Option<crate::host::bossrush::RushRun>, Result<String, String>) {
+    let until = std::time::Instant::now() + Duration::from_secs(max_s);
+    let mut last = (None, Err("never looked".to_string()));
+    while std::time::Instant::now() < until {
+        match br_status() {
+            Ok(r) => {
+                let v = ok(&r);
+                let done = v.is_ok();
+                last = (Some(r), v);
+                if done {
+                    return last;
+                }
+            }
+            Err(e) => last.1 = Err(e),
+        }
+        std::thread::sleep(Duration::from_secs(3));
+    }
+    last
+}
+
+/// `Leyline play-test --bossrush [--fresh] [--game <folder>] [--boss <start>] [--size 10|25] [--diff normal|heroic]
+/// [--hero <class>-<spec>] [--hold <s>] [--fight-max <s>] [--checks bossstart,bossfight]` (crate::sptest; owner 12 Nov:
+/// "tested by you at least a full boss fight run through"): Boss Rush through the page's own functions with nobody
+/// at the keyboard: the Boss Rush install set up from the game folder (bossrush_setup's begin_kind), then the start
+/// picker's one click (bossrush_start_at's bossrush_exact: the hero, its waiting go, the game signed in), then
+/// * `bossstart`: the raid in front of the boss, checked on the realm itself (`bossfight rush status`: the start's
+///   map, an instance of its own, the hero within a few yards of the start, a full raid of companions inside);
+/// * `bossfight`: the hero handed to the bots' own AI (`bossfight rush autopilot on`: nobody is at the keys), the
+///   fight begun as a player would (`bossfight rush pull`: the final fight's paladin spoken to), then watched to its
+///   end: the engage, the boss's phase casts, the outcome (a kill or a wipe, as it was), then Retry (a wipe: the
+///   heroes' own auto retry, else `bossfight rush retry`; a clear: the same start in a fresh instance) until the raid
+///   is in front of the boss again. Bots that can't win don't fail it: a fight that never starts or ends, or can't be
+///   retried, does.
+/// Writes `<data>/br-play-test.json`. Exit 0 only when every step passed.
+pub fn bossrush_play_test_cli(cli: crate::playtest::Cli) -> i32 {
+    use crate::host::{bossrush as br, engine as eng};
+    use crate::sptest::{self as sp, Check};
+    std::hint::black_box(sp::BR_MARK.as_ptr());
+    let dir = settings::app_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let k = eng::Kind::BossRush;
+    let now = crate::denclick::now_ms;
+    let mut rep = sp::Report::new("bossrush", &cli.sp_checks, now());
+    rep.levelling = "";
+    let report_path = dir.join(sp::BR_REPORT);
+    let save = |rep: &sp::Report| {
+        let _ = settings::write_atomic(&report_path, serde_json::to_string_pretty(rep).unwrap_or_default().as_bytes());
+    };
+    let say = |l: &str| sp_say(&dir, l);
+    let end = |mut rep: sp::Report| -> i32 {
+        rep.finish(now());
+        let _ = settings::write_atomic(&dir.join(sp::BR_REPORT), serde_json::to_string_pretty(&rep).unwrap_or_default().as_bytes());
+        sp_say(&dir, &format!("{}\n{}", rep.table(), if rep.passed { "PASS" } else { "FAIL" }));
+        if rep.passed { 0 } else { 1 }
+    };
+    let want = |c: Check| cli.sp_checks.contains(&c);
+    let (class, spec) = cli.hero.split_once('-').unwrap_or(("mage", "fire"));
+    let diff = if cli.br_heroic { "heroic" } else { "normal" };
+    say(&format!("Boss Rush playtest: {} ({diff}, {} players), hero {class} {spec}, checks: {}", cli.boss, cli.br_size, cli.sp_checks.iter().map(|c| c.word()).collect::<Vec<_>>().join(",")));
+    let had = dir.join(settings::FILE_NAME).exists();
+    rep.extra["fresh"] = serde_json::json!({ "asked": cli.fresh, "empty": !had, "dir": dir });
+    rep.extra["start"] = serde_json::json!({ "start": cli.boss, "diff": diff, "size": cli.br_size, "hero": cli.hero });
+    if cli.fresh && had {
+        rep.step("fresh data folder", Some(false), 0, "--fresh needs an empty data folder: this one already has a launcher's settings");
+        return end(rep);
+    }
+    if !eng::supported() {
+        rep.step("setup", Some(false), 0, "Boss Rush's exact engine is made for Windows PCs: run this on the PC");
+        return end(rep);
+    }
+    let Some((scope, title, raid)) = br::start(&cli.boss) else {
+        rep.step("setup", Some(false), 0, format!("{} isn't a Boss Rush start", cli.boss));
+        return end(rep);
+    };
+    let pick = match br::check_start(&cli.boss, diff, cli.br_size, "companions", true, class, spec) {
+        Ok(p) => p,
+        Err(e) => {
+            rep.step("setup", Some(false), 0, e);
+            return end(rep);
+        }
+    };
+    let core = Core {
+        settings: Mutex::new(settings::load(&dir)),
+        dir: dir.clone(),
+        known_urls: Mutex::new(HashSet::new()),
+        mods_lock: Arc::new(Mutex::new(())),
+        games: Mutex::new(Vec::new()),
+        upd: Mutex::new(UpdState::default()),
+        deep_link: Mutex::new(crate::deeplink::Inbox::default()),
+    };
+    let p = bossrush_paths();
+    // 1. the game folder
+    let t = std::time::Instant::now();
+    if let Some(g) = &cli.game {
+        let same = |a: &Path| a.to_string_lossy().trim_end_matches(['\\', '/']).eq_ignore_ascii_case(g.to_string_lossy().trim_end_matches(['\\', '/']));
+        if !core.snapshot().clients.iter().any(|c| same(&c.path)) {
+            if let Err(e) = clients::detect(g).map_err(|e| e.to_string()).and_then(|det| add_profile(&core, g.clone(), det)) {
+                rep.step("game folder", Some(false), t.elapsed().as_millis() as u64, format!("couldn't add the game folder: {e}"));
+                return end(rep);
+            }
+        }
+    }
+    let found = find_folder_now(&core, k);
+    let Some(client) = found.picked.clone() else {
+        rep.step("game folder", Some(false), t.elapsed().as_millis() as u64, format!("no single game folder of the right version ({} found)", found.found.len()));
+        return end(rep);
+    };
+    let profile = match world_client(&core, k, &client) {
+        Ok(pr) => pr,
+        Err(e) => {
+            rep.step("game folder", Some(false), t.elapsed().as_millis() as u64, e);
+            return end(rep);
+        }
+    };
+    rep.step("game folder", Some(true), t.elapsed().as_millis() as u64, format!("{} ({})", profile.name, profile.path.display()));
+    // 2. the disk check, 3. setup (the engine, the raid maps from the game folder, the database) and the start
+    let t = std::time::Instant::now();
+    let pf = eng::preflight(&p);
+    rep.step("preflight", Some(pf.ok), t.elapsed().as_millis() as u64, if pf.ok { format!("{:.1} GB free, {:.1} GB needed", pf.free_gb, pf.need_gb) } else { pf.message.clone() });
+    if !pf.ok {
+        return end(rep);
+    }
+    rep.phase = "setup".into();
+    save(&rep);
+    let t = std::time::Instant::now();
+    let mut setup = eng::begin_kind(&settings::app_dir(), k, Some(profile.path.clone()), false).and_then(|line| {
+        say(&format!("setup: {line}"));
+        sp_follow_job(&dir, "setup", 200 * 60)
+    });
+    if setup.is_ok() && !eng::status(&p).running {
+        setup = eng::begin_kind(&settings::app_dir(), k, None, false).and_then(|line| {
+            say(&format!("start: {line}"));
+            sp_follow_job(&dir, "start", 20 * 60)
+        });
+    }
+    let st = eng::status(&p);
+    let ok = setup.is_ok() && st.running;
+    rep.step("setup", Some(ok), t.elapsed().as_millis() as u64, match &setup {
+        Err(e) => e.clone(),
+        Ok(()) if !st.running => format!("set up {} but not running (database {}, login {}, world {})", st.set_up, st.db_up, st.auth_up, st.world_up),
+        Ok(()) => format!("Boss Rush's engine {}, set up and running", if st.version.is_empty() { "?".to_string() } else { st.version.clone() }),
+    });
+    save(&rep);
+    if !ok {
+        return end(rep);
+    }
+    // 4. the start picker's one click (the realm may still be loading: a few tries)
+    rep.phase = "entering".into();
+    save(&rep);
+    let t = std::time::Instant::now();
+    let mut played: Result<BossRushPlay, String> = Err("not tried".into());
+    for _ in 0..16 {
+        let pk = pick.clone();
+        played = tauri::async_runtime::block_on(bossrush_exact(&core, &client, profile.clone(), move |main| br::start_go_line(main, &pk), String::new()));
+        match &played {
+            Err(e) if e.contains("didn't answer") || e.contains("still starting") || e.contains("gave no answer") || e.contains("didn't take") => {
+                say(&format!("play: {e} (trying again in 15 s)"));
+                std::thread::sleep(Duration::from_secs(15));
+            }
+            _ => break,
+        }
+    }
+    let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
+    let play = match played {
+        Ok(pl) => pl,
+        Err(e) => {
+            rep.step("play", Some(false), t.elapsed().as_millis() as u64, e);
+            return end(sp_stop_all(&core, &profile, k, rep));
+        }
+    };
+    rep.pid = pid;
+    rep.hero = true;
+    rep.account = br::hero_account(&eng::load_state(&p).account);
+    rep.step("play", Some(pid != 0), t.elapsed().as_millis() as u64, format!("{} {title} ({}): the game started (pid {pid}), hero {} ({})", scope.word(), raid.title, play.hero, if play.made { "made now" } else { "ready" }));
+    rep.step("signed in by itself", Some(play.auto), 0, if play.auto { "the login screen got the hero's login" } else { "the game was left at its login screen" });
+    save(&rep);
+    // 5. the hero in the world (the realm's own word: its status answers once the hero is in)
+    let t = std::time::Instant::now();
+    let (seen, v) = br_wait(sp::IN_WORLD_S, |_| Ok(String::new()));
+    match (seen.as_ref(), v) {
+        (Some(r), Ok(_)) => {
+            rep.step("in the world", Some(true), t.elapsed().as_millis() as u64, format!("{} on map {} ({})", r.leader, r.map, if r.phase.is_empty() { "-" } else { r.phase.as_str() }));
+        }
+        (_, v) => {
+            let e = v.err().unwrap_or_else(|| "no answer".to_string());
+            rep.step("in the world", Some(false), t.elapsed().as_millis() as u64, e);
+            return end(sp_stop_all(&core, &profile, k, rep));
+        }
+    }
+    rep.phase = "in_world".into();
+    save(&rep);
+    // 6. bossstart: in front of the boss, with the full raid
+    let start_map = raid.map;
+    let size = u32::from(cli.br_size);
+    let t = std::time::Instant::now();
+    let (r0, v) = br_wait(sp::START_WITHIN_S, |r| sp::judge_start(r, &cli.boss, start_map, size));
+    let at_start = v.is_ok();
+    if want(Check::BossStart) {
+        rep.step("bossstart", Some(at_start), t.elapsed().as_millis() as u64, v.clone().unwrap_or_else(|e| e));
+    } else {
+        rep.step("at the start", Some(at_start), t.elapsed().as_millis() as u64, v.clone().unwrap_or_else(|e| e));
+    }
+    rep.extra["at_start"] = serde_json::json!(r0.as_ref().map(|r| serde_json::json!({ "map": r.map, "instance": r.instance, "x": r.x, "y": r.y, "z": r.z, "dist": r.dist, "members": r.members, "bots": r.bots })));
+    rep.phase = "boss_ready".into();
+    save(&rep);
+    let hold = Duration::from_secs(cli.hold.clamp(8, crate::playtest::HOLD_MAX));
+    std::thread::sleep(hold);
+    // 7. bossfight: a full fight to its end, then Retry
+    if want(Check::BossFight) && at_start {
+        let t = std::time::Instant::now();
+        let mut timeline: Vec<serde_json::Value> = Vec::new();
+        let note = |line: String, timeline: &mut Vec<serde_json::Value>| {
+            say(&format!("fight: {line}"));
+            timeline.push(serde_json::json!({ "s": t.elapsed().as_secs(), "what": line }));
+        };
+        let auto = bossrush_rush_now("autopilot", Some("on")).map(|r| rush_json(&r)).unwrap_or_else(|e| serde_json::json!({ "kind": "no", "why": e }));
+        note(format!("the hero on the bots' own AI: {auto}"), &mut timeline);
+        let pulled = bossrush_rush_now("pull", None).map(|r| rush_json(&r)).unwrap_or_else(|e| serde_json::json!({ "kind": "no", "why": e }));
+        note(format!("pull: {pulled}"), &mut timeline);
+        let before = r0.clone();
+        let mut prev = before.clone();
+        let mut engaged = false;
+        let mut outcome: Option<(String, u64)> = None;
+        let mut phases: Vec<String> = Vec::new();
+        let mut shot_fighting = false;
+        let until_engage = std::time::Instant::now() + Duration::from_secs(sp::ENGAGE_WITHIN_S);
+        let until_end = std::time::Instant::now() + Duration::from_secs(cli.fight_max);
+        while std::time::Instant::now() < until_end {
+            if !engaged && std::time::Instant::now() > until_engage {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(3));
+            let Ok(cur) = br_status() else { continue };
+            for e in sp::fight_events(prev.as_ref(), &cur) {
+                note(e, &mut timeline);
+            }
+            if cur.phase == "fighting" {
+                engaged = true;
+                if !shot_fighting {
+                    shot_fighting = true;
+                    rep.phase = "fighting".into();
+                    save(&rep);
+                }
+            }
+            for m in &cur.marks {
+                if !phases.contains(m) {
+                    phases.push(m.clone());
+                }
+            }
+            let base = before.as_ref().map(|b| (b.wipes, b.clears)).unwrap_or((0, 0));
+            if cur.clears > base.1 || (cur.phase == "cleared") {
+                engaged = true;
+                outcome = Some(("clear".into(), cur.ms));
+            } else if cur.wipes > base.0 || cur.phase == "wiped" {
+                engaged = engaged || cur.wipes > base.0;
+                outcome = Some(("wipe".into(), cur.ms));
+            }
+            prev = Some(cur);
+            if outcome.is_some() {
+                break;
+            }
+        }
+        rep.phase = "fight_end".into();
+        save(&rep);
+        std::thread::sleep(Duration::from_secs(6));
+        // Retry: back in front of the boss (a wipe: the heroes' own retry in 8 s, else the page's Retry; a clear: the
+        // same start in a fresh instance)
+        let retry: Result<String, String> = match outcome.as_ref().map(|o| o.0.as_str()) {
+            None => Err("no end to retry from".into()),
+            Some(what) => {
+                let old_instance = prev.as_ref().map(|r| r.instance).unwrap_or(0);
+                let (_, mut v) = br_wait(30, |r| if r.phase == "ready" { Ok(format!("ready again by itself (instance {})", r.instance)) } else { Err(r.phase.clone()) });
+                if v.is_err() {
+                    let word = bossrush_rush_now("retry", None).map(|r| rush_json(&r)).unwrap_or_else(|e| serde_json::json!({ "kind": "no", "why": e }));
+                    note(format!("Retry pressed: {word}"), &mut timeline);
+                    v = br_wait(sp::RETRY_WITHIN_S, |r| {
+                        if r.phase != "ready" {
+                            return Err(r.phase.clone());
+                        }
+                        if what == "clear" && r.instance == old_instance {
+                            return Err("still the cleared instance".into());
+                        }
+                        Ok(format!("Retry: ready again (instance {})", r.instance))
+                    })
+                    .1;
+                }
+                v.and_then(|line| {
+                    let (_, near) = br_wait(60, |r| if r.dist <= sp::NEAR_YD { Ok(format!("{:.1} yd from the start", r.dist)) } else { Err(format!("{:.1} yd from the start", r.dist)) });
+                    near.map(|n| format!("{line}, {n}"))
+                })
+            }
+        };
+        if retry.is_ok() {
+            rep.phase = "retried".into();
+            save(&rep);
+        }
+        let _ = bossrush_rush_now("autopilot", Some("off"));
+        let (ok, line) = sp::judge_fight(engaged, outcome.as_ref().map(|(w, ms)| (w.as_str(), *ms)), &phases, retry);
+        rep.extra["fight"] = serde_json::json!({ "engaged": engaged, "outcome": outcome.as_ref().map(|o| o.0.clone()), "ms": outcome.as_ref().map(|o| o.1), "phases": phases, "timeline": timeline });
+        rep.step("bossfight", Some(ok), t.elapsed().as_millis() as u64, line);
+        save(&rep);
+        std::thread::sleep(Duration::from_secs(8));
+    } else if want(Check::BossFight) {
+        rep.step("bossfight", Some(false), 0, "the raid never stood in front of the boss: the fight wasn't started");
     }
     end(sp_stop_all(&core, &profile, k, rep))
 }

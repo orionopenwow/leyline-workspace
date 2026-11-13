@@ -47,6 +47,12 @@ const FAKE = (o) => {
         const f = l.find((x) => x.user === args.user);
         if (args.action === 'trust') { f.trusted = true; return 'Trusted: they can come back any time this world is shared, without a new invite.'; }
         if (args.action === 'untrust') { f.trusted = false; return 'Not trusted: they need an invite again after you stop sharing.'; }
+        if (args.action.startsWith('give:')) {
+          const to = l.find((x) => x.user === args.action.slice(5));
+          to.chars = to.chars.concat(f.chars.map((c) => Object.assign({}, c, { user: to.user })));
+          const n = f.chars.length; f.chars = [];
+          return `${n} characters given. A back-up was taken first.`;
+        }
         o.friends[args.kind] = l.filter((x) => x.user !== args.user);
         return args.action === 'delete' ? 'Removed, and their characters on your world are deleted.' : 'Removed. Their characters stay in your world: invite them again and they get them back.';
       }
@@ -190,11 +196,12 @@ test('an older core without these commands: both parts hidden, no errors', async
 
 // ---------------------------------------------------------------- the list kit
 const SHOTS = process.env.LISTS_SHOTS || '/mnt/user-data/outputs/gallery';
+const { appLook } = require('./fixtures/app-look.cjs');
 async function shot(page, name, sel) {
   try {
     require('node:fs').mkdirSync(SHOTS, { recursive: true });
-    await page.addStyleTag({ path: path.join(UI, 'style.css') }).catch(() => {});
-    await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.body.style.padding = '16px'; document.body.style.font = '14px var(--t-font, system-ui)'; document.body.style.color = 'var(--t-text)'; document.body.style.background = 'var(--t-bg, #111)'; document.getElementById('spf').style.maxWidth = '760px'; });
+    // the launcher's whole look: every stylesheet index.html links and its art, #spf as the page's Friends panel
+    if (!(await page.evaluate(() => document.body.classList.contains('ly')))) await appLook(page, { root: '#spf', panel: 'spf' });
     await (await page.$(sel)).screenshot({ path: path.join(SHOTS, `lists-friends-${name}.png`) });
   } catch (_) { /* screenshots are a nicety */ }
 }
@@ -283,5 +290,59 @@ test('the kit on your world: loading, then the empty words; nothing to search be
     await page.waitForSelector('#wf .wf-empty');
     assert.match(await page.textContent('#wf .wf-empty'), /No friend has a character here yet/);
     assert.equal(await page.isHidden('#wf-list .lk-bar'), true);
+  } finally { await browser.close(); }
+});
+
+test("a friend back with a new Leyline key: Give their characters to… another friend's login, asked on the row first", async () => {
+  const friends = JSON.parse(JSON.stringify(FRIENDS));
+  friends.single[0].chars.forEach((c) => { c.online = false; });
+  const { browser, page, errors } = await open({ friends });
+  try {
+    await page.waitForSelector('#wf-list .wf-friend');
+    assert.equal(await page.locator('#wf-list .wf-friend:nth-child(2) .wf-give').count(), 0, 'no characters: nothing to give');
+    await page.click('#wf-list .wf-friend:nth-child(1) .wf-give');
+    await page.waitForSelector('#wf-list .wf-give-to');
+    assert.match(await page.textContent('#wf-list .wf-friend:nth-child(1) .wf-confirm'), /came back with a new Leyline key\. A back-up is taken first/);
+    assert.equal((await calls(page, 'world_friend')).length, 0, 'nothing before the second press');
+    await page.selectOption('#wf-list .wf-give-to', 'GCCCCCCCCCCCCCCC');
+    await page.click('#wf-list .wf-friend:nth-child(1) .wf-yes');
+    await page.waitForFunction(() => window.__calls.some((x) => x[0] === 'world_friend'));
+    assert.deepEqual((await calls(page, 'world_friend')).pop(), { kind: 'single', user: 'GAAAAAAAAAAAAAAA', action: 'give:GCCCCCCCCCCCCCCC' });
+    await page.waitForFunction(() => /Brakka/.test(document.querySelector('#wf-list .wf-friend:nth-child(2) .wf-chars').textContent));
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); }
+});
+
+test('Settings: Your Leyline network key: Save my key and Bring back my key (asked first); the key is never on the page', async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__calls = [];
+    window.__TAURI__ = { core: { invoke: async (cmd) => {
+      window.__calls.push([cmd]);
+      if (cmd === 'peer_key_export') return 'Saved. Keep that file private: whoever has it is you to your friends. Bring it back here on a new PC or after a reinstall.';
+      if (cmd === 'peer_key_import') return 'Done: this PC is Hero ABCD again to your friends. Restart Leyline to finish. The key it had is kept aside in Leyline\'s folder.';
+      throw 'unknown command ' + cmd;
+    } } };
+  });
+  await page.goto('about:blank');
+  await page.setContent('<!doctype html><html><body><section class="page" id="page-settings"><div><h3>Updates</h3><section id="set-about"><h3>About</h3></section></div></section></body></html>');
+  await page.addScriptTag({ path: path.join(UI, 'peerkey.js') });
+  try {
+    await page.waitForSelector('#set-peerkey');
+    assert.ok(await page.evaluate(() => document.getElementById('set-peerkey').nextElementSibling.id === 'set-about'), 'before About');
+    assert.match(await page.textContent('#set-peerkey'), /Keep the saved file private: whoever has it is you to your friends/);
+    await page.click('#peerkey-save');
+    await page.waitForFunction(() => /Saved\. Keep that file private/.test(document.getElementById('peerkey-status').textContent));
+    await page.click('#peerkey-load');
+    await page.waitForSelector('#peerkey-load-go');
+    assert.equal(await page.evaluate(() => window.__calls.filter((c) => c[0] === 'peer_key_import').length), 0, 'asked first');
+    await page.click('#peerkey-load-go');
+    await page.waitForFunction(() => /Restart Leyline to finish/.test(document.getElementById('peerkey-status').textContent));
+    assert.doesNotMatch(await page.textContent('body'), /[0-9a-f]{32}/, 'never a key on the page');
+    assert.doesNotMatch(await page.textContent('body'), BRANDS);
+    assert.deepEqual(errors, []);
   } finally { await browser.close(); }
 });

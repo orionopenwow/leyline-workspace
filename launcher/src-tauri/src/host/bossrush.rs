@@ -56,7 +56,349 @@ pub const FIGHTS: &[Fight] = &[
         blurb: "Frost orbs drift through the room; the cold stacks up." },
     Fight { key: "spell-weaver", title: "The Spellweaver's Eye", raid: "The Eye of Eternity", map: 616, heroic: false, light: false,
         blurb: "A disc in the sky: sparks, a vortex, and at the end the floor is gone and you fight on dragons." },
+    // the rest of the citadel (start anywhere, owner 12 Nov; BossfightsLogic.h, the same order). TODO(owner): his words
+    // for each line.
+    Fight { key: "icc-gunship", title: "The Gunship Battle", raid: "Icecrown Citadel", map: 631, heroic: true, light: false,
+        blurb: "Two ships in the air: cannons, boarders, and a jump across to the other deck." },
+    Fight { key: "icc-deathbringer", title: "The Deathbringer", raid: "Icecrown Citadel", map: 631, heroic: true, light: false,
+        blurb: "A champion who grows stronger with every hit: marks, beasts, and a race against his power." },
+    Fight { key: "icc-bloat", title: "The Bloated Horror", raid: "Icecrown Citadel", map: 631, heroic: true, light: false,
+        blurb: "Gas fills the room and spores spread it: stack up, spread out, keep breathing." },
+    Fight { key: "icc-ooze", title: "The Ooze Horror", raid: "Icecrown Citadel", map: 631, heroic: true, light: false,
+        blurb: "Oozes that merge and burst: kite them round the room while the floor sprays." },
+    Fight { key: "icc-professor", title: "The Mad Professor", raid: "Icecrown Citadel", map: 631, heroic: true, light: false,
+        blurb: "The lab's master and his experiments: puddles, gas clouds, and a potion that changes everything." },
+    Fight { key: "icc-council", title: "The Blood Council", raid: "Icecrown Citadel", map: 631, heroic: true, light: false,
+        blurb: "Three princes, one of them empowered at a time: switch to the right one." },
+    Fight { key: "icc-blood-queen", title: "The Blood Queen", raid: "Icecrown Citadel", map: 631, heroic: true, light: false,
+        blurb: "Bites that spread a thirst through the raid, and swarms in the air above her hall." },
+    Fight { key: "icc-dreamwalker", title: "The Dreamwalker", raid: "Icecrown Citadel", map: 631, heroic: true, light: false,
+        blurb: "Heal a dreaming dragon back to full while the adds pour in from every gate." },
+    Fight { key: "icc-frost-queen", title: "The Frost Queen", raid: "Icecrown Citadel", map: 631, heroic: true, light: false,
+        blurb: "A frost dragon over her courtyard: ice tombs, a pull to her, and the cold that stacks up." },
 ];
+
+// ------------------------------------------------------------------------------------------------ start anywhere
+
+/// Boss Rush's "start anywhere" (owner 12 Nov: "start in front of any boss or any raid wing or the entire raid itself
+/// with companions or with friends in a one-click UI"): the module's tree (BossfightsStarts.h Raids(), the same order),
+/// as the picker shows it. A wing of one boss has no key of its own (it plays the boss).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Wing {
+    pub key: &'static str,
+    pub title: &'static str,
+    /// Its bosses' fights in order (the steps without a start of their own, the gauntlet, are left out).
+    pub fights: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Raid {
+    pub key: &'static str,
+    pub title: &'static str,
+    pub map: u32,
+    pub heroic: bool,
+    pub fights: &'static [&'static str],
+    pub wings: &'static [Wing],
+    /// The whole raid from its entrance ("" = none: a raid of one fight).
+    pub whole: &'static str,
+}
+
+pub const RAIDS: &[Raid] = &[
+    Raid { key: "icc", title: "Icecrown Citadel", map: 631, heroic: true,
+        fights: &["bone-lord", "cult-mistress", "icc-gunship", "icc-deathbringer", "icc-bloat", "icc-ooze", "icc-professor", "icc-council", "icc-blood-queen", "icc-dreamwalker", "icc-frost-queen", "frozen-throne"],
+        wings: &[
+            Wing { key: "icc-spire", title: "The Lower Spire", fights: &["bone-lord", "cult-mistress", "icc-deathbringer"] },
+            Wing { key: "icc-plague", title: "The Plagueworks", fights: &["icc-bloat", "icc-ooze", "icc-professor"] },
+            Wing { key: "icc-crimson", title: "The Crimson Hall", fights: &["icc-council", "icc-blood-queen"] },
+            Wing { key: "icc-frostwing", title: "The Frostwing Halls", fights: &["icc-dreamwalker", "icc-frost-queen"] },
+            Wing { key: "", title: "The Frozen Throne", fights: &["frozen-throne"] },
+        ],
+        whole: "icc-raid" },
+    Raid { key: "rs", title: "The Ruby Sanctum", map: 724, heroic: true, fights: &["twilight-destroyer"],
+        wings: &[Wing { key: "", title: "The Ruby Sanctum", fights: &["twilight-destroyer"] }], whole: "rs-raid" },
+    Raid { key: "os", title: "The Obsidian Sanctum", map: 615, heroic: false, fights: &["obsidian-sanctum", "obsidian-three"],
+        wings: &[Wing { key: "", title: "The Obsidian Sanctum", fights: &["obsidian-sanctum"] }], whole: "" },
+    Raid { key: "ony", title: "Onyxia's Lair", map: 249, heroic: false, fights: &["brood-mother"],
+        wings: &[Wing { key: "", title: "Onyxia's Lair", fights: &["brood-mother"] }], whole: "" },
+    Raid { key: "voa", title: "Vault of Archavon", map: 624, heroic: false, fights: &["stone-watcher", "storm-watcher", "flame-watcher", "frost-watcher"],
+        wings: &[Wing { key: "", title: "Vault of Archavon", fights: &["stone-watcher"] }], whole: "voa-raid" },
+    Raid { key: "eoe", title: "The Eye of Eternity", map: 616, heroic: false, fights: &["spell-weaver"],
+        wings: &[Wing { key: "", title: "The Eye of Eternity", fights: &["spell-weaver"] }], whole: "" },
+];
+
+/// What a start is: one boss, a wing, or the whole raid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    Boss,
+    Wing,
+    Raid,
+}
+
+impl Scope {
+    pub fn word(self) -> &'static str {
+        match self {
+            Scope::Boss => "boss",
+            Scope::Wing => "wing",
+            Scope::Raid => "raid",
+        }
+    }
+}
+
+/// A start by its key: (scope, its title, its raid).
+pub fn start(key: &str) -> Option<(Scope, &'static str, &'static Raid)> {
+    for r in RAIDS {
+        if r.fights.contains(&key) {
+            return fight(key).map(|f| (Scope::Boss, f.title, r));
+        }
+        if let Some(w) = r.wings.iter().find(|w| !w.key.is_empty() && w.key == key) {
+            return Some((Scope::Wing, w.title, r));
+        }
+        if !r.whole.is_empty() && r.whole == key {
+            return Some((Scope::Raid, r.title, r));
+        }
+    }
+    None
+}
+
+/// Who comes along: companions only, or friends (and companions in the empty seats, unless `companions` is off).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Party {
+    Companions,
+    Friends { companions: bool },
+}
+
+impl Party {
+    /// The module's mode word (docs/BOSS-FIGHTS.md): bots now, a lobby friends join, or a lobby of players only.
+    pub fn mode(self) -> &'static str {
+        match self {
+            Party::Companions => "bots",
+            Party::Friends { companions: true } => "group",
+            Party::Friends { companions: false } => "group-only",
+        }
+    }
+    pub fn of(w: &str, companions: bool) -> Option<Party> {
+        match w {
+            "companions" | "" => Some(Party::Companions),
+            "friends" => Some(Party::Friends { companions }),
+            _ => None,
+        }
+    }
+}
+
+/// The picker's one click: where, how hard, how many, who, and the hero.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartPick {
+    pub start: String,
+    pub scope: Scope,
+    pub heroic: bool,
+    pub size: u8,
+    pub party: Party,
+    pub class: String,
+    pub spec: String,
+}
+
+impl StartPick {
+    /// The module's difficulty word (BossfightsLogic.h DiffToken): normal, heroic, normal25, heroic25.
+    pub fn diff_token(&self) -> String {
+        format!("{}{}", if self.heroic { "heroic" } else { "normal" }, if self.size == 25 { "25" } else { "" })
+    }
+}
+
+/// A start checked: a known key, heroic only where the raid has one, 10 or 25, a class and one of its specs.
+pub fn check_start(key: &str, diff: &str, size: u8, party: &str, companions: bool, class: &str, spec: &str) -> Result<StartPick, String> {
+    let (scope, title, raid) = start(key).ok_or_else(|| "Pick a boss, a wing or a whole raid from the list.".to_string())?;
+    let heroic = match diff {
+        "normal" | "" => false,
+        "heroic" => true,
+        _ => return Err("The difficulty is normal or heroic.".into()),
+    };
+    if heroic && !raid.heroic {
+        return Err(format!("{title} has no heroic: play it on normal."));
+    }
+    if size != 10 && size != 25 {
+        return Err("A raid is 10 or 25 players.".into());
+    }
+    let party = Party::of(party, companions).ok_or_else(|| "Play with companions or with friends.".to_string())?;
+    let (_, _, specs) = CLASSES.iter().find(|c| c.0 == class).ok_or_else(|| "Pick a class for your hero.".to_string())?;
+    if !specs.iter().any(|s| s.0 == spec) {
+        return Err("Pick one of that class's specs.".into());
+    }
+    Ok(StartPick { start: key.into(), scope, heroic, size, party, class: class.into(), spec: spec.into() })
+}
+
+/// `bossfight hero go <ACCOUNT> <start> <difficulty> <mode> <class> <spec>`: the hero waits at that start.
+pub fn start_go_line(account: &str, p: &StartPick) -> String {
+    format!("bossfight hero go {} {} {} {} {} {}", account.to_ascii_uppercase(), p.start, p.diff_token(), p.party.mode(), p.class, p.spec)
+}
+
+/// The role of a spec (the icons): "tank", "heal" or "dps".
+pub fn role_of(class: &str, spec: &str) -> &'static str {
+    CLASSES.iter().find(|c| c.0 == class).and_then(|c| c.2.iter().find(|s| s.0 == spec)).map(|s| s.2).unwrap_or("dps")
+}
+
+/// The companions a raid of `size` brings for these players' roles (BossfightsLogic.h DefaultSeats / DefaultSeats25 and
+/// BotSeats: each player takes the first seat of their role, a role with no seat left takes the last damage seat):
+/// (tanks, healers, damage). `fill` false: none.
+pub fn companions_for(size: u8, roles: &[&str], fill: bool) -> (u8, u8, u8) {
+    if !fill {
+        return (0, 0, 0);
+    }
+    let mut seats: Vec<&str> = if size == 25 {
+        [vec!["tank"; 3], vec!["heal"; 6], vec!["dps"; 16]].concat()
+    } else {
+        [vec!["tank"; 2], vec!["heal"; 3], vec!["dps"; 5]].concat()
+    };
+    for r in roles {
+        if seats.is_empty() {
+            break;
+        }
+        match seats.iter().position(|s| s == r) {
+            Some(i) => {
+                seats.remove(i);
+            }
+            None => {
+                let i = seats.iter().rposition(|s| *s == "dps").unwrap_or(seats.len() - 1);
+                seats.remove(i);
+            }
+        }
+    }
+    seats.truncate((size as usize).saturating_sub(roles.len()));
+    let n = |w: &str| seats.iter().filter(|s| **s == w).count() as u8;
+    (n("tank"), n("heal"), n("dps"))
+}
+
+/// The hero account of a login (BossfightsHeroLogic.h HeroAccountName): `<LOGIN>BF`, or for a login too long for that
+/// `BF` + 14 hex digits of its FNV-1a hash. None for a name that isn't a plain account name.
+pub fn hero_account_of(main: &str) -> Option<String> {
+    if main.is_empty() || main.len() > 16 || !main.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let u = main.to_ascii_uppercase();
+    if u.len() + 2 <= 16 {
+        return Some(format!("{u}BF"));
+    }
+    let mut h: u64 = 1469598103934665603;
+    for b in u.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    Some(format!("BF{:014X}", h & 0x00FF_FFFF_FFFF_FFFF))
+}
+
+/// The console words Boss Rush's page and its playtest send (`bossfight rush <verb> <ACCOUNT> [arg]`).
+pub fn rush_line(verb: &str, account: &str, arg: Option<&str>) -> Result<String, String> {
+    if !["status", "retry", "go", "pull", "autopilot", "leave"].contains(&verb) {
+        return Err("That isn't a Boss Rush word.".into());
+    }
+    if account.is_empty() || account.len() > 16 || !account.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Err("That login doesn't look right.".into());
+    }
+    let arg = match arg {
+        None => String::new(),
+        Some(a) if ["on", "off", "nobots"].contains(&a) => format!(" {a}"),
+        Some(_) => return Err("That word doesn't go with it.".into()),
+    };
+    Ok(format!("bossfight rush {verb} {}{arg}", account.to_ascii_uppercase()))
+}
+
+/// The module's answer to `bossfight rush ...` (BossfightsStarts.h RushLine and the bfrush ok / no lines).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Rush {
+    Run(RushRun),
+    Lobby { start: String, diff: String, waiting: u32, size: u32 },
+    Offline,
+    Ok { word: String },
+    No { why: String },
+    Nothing,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RushRun {
+    pub start: String,
+    pub diff: String,
+    pub phase: String,
+    pub leader: String,
+    pub map: u32,
+    pub instance: u32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// The hero's distance from the start it should stand at (yards).
+    pub dist: f32,
+    pub members: u32,
+    pub bots: u32,
+    pub inside: u32,
+    /// The start the raid stands at now (a retry's boss).
+    pub step: String,
+    pub done: u32,
+    pub of: u32,
+    /// The boss's state in the instance script (0 not started, 1 in progress, 2 failed, 3 done).
+    pub boss: u32,
+    pub wipes: u32,
+    pub clears: u32,
+    /// The boss's phase casts seen in this attempt.
+    pub marks: Vec<String>,
+    pub last: String,
+    pub ms: u64,
+}
+
+pub fn parse_rush(text: &str) -> Rush {
+    let clean = |s: &str, n: usize| s.chars().filter(|c| c.is_ascii_alphanumeric() || " .,:;'()/_-".contains(*c)).take(n).collect::<String>();
+    for line in text.replace('\r', "\n").split('\n') {
+        let line = line.trim();
+        if line == "bfrush offline" {
+            return Rush::Offline;
+        }
+        if let Some(w) = line.strip_prefix("bfrush ok ") {
+            return Rush::Ok { word: clean(w, 60) };
+        }
+        if let Some(w) = line.strip_prefix("bfrush no ") {
+            return Rush::No { why: clean(w, 160) };
+        }
+        let kv = |rest: &str| -> Vec<(String, String)> { rest.split(' ').filter_map(|t| t.split_once('=')).map(|(k, v)| (k.to_string(), v.to_string())).collect() };
+        if let Some(rest) = line.strip_prefix("bfrush lobby ") {
+            let m = kv(rest);
+            let g = |k: &str| m.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default();
+            return Rush::Lobby { start: clean(&g("key"), 24), diff: clean(&g("diff"), 12), waiting: g("waiting").parse().unwrap_or(0), size: g("size").parse().unwrap_or(10) };
+        }
+        if let Some(rest) = line.strip_prefix("bfrush run ") {
+            let m = kv(rest);
+            let g = |k: &str| m.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default();
+            let num = |k: &str| g(k).parse::<u32>().unwrap_or(0);
+            let fl = |k: &str| g(k).parse::<f32>().unwrap_or(0.0);
+            let word = |k: &str| {
+                let v = clean(&g(k), 40);
+                if v == "-" { String::new() } else { v }
+            };
+            let (done, of) = g("done").split_once('/').map(|(a, b)| (a.parse().unwrap_or(0), b.parse().unwrap_or(0))).unwrap_or((0, 0));
+            return Rush::Run(RushRun {
+                start: word("key"),
+                diff: word("diff"),
+                phase: word("phase"),
+                leader: word("leader"),
+                map: num("map"),
+                instance: num("inst"),
+                x: fl("x"),
+                y: fl("y"),
+                z: fl("z"),
+                dist: fl("dist"),
+                members: num("members"),
+                bots: num("bots"),
+                inside: num("inside"),
+                step: word("step"),
+                done,
+                of,
+                boss: num("boss"),
+                wipes: num("wipes"),
+                clears: num("clears"),
+                marks: word("marks").split(',').filter(|m| !m.is_empty()).map(str::to_string).collect(),
+                last: word("last"),
+                ms: g("ms").parse().unwrap_or(0),
+            });
+        }
+    }
+    Rush::Nothing
+}
 
 /// Every raid map the catalog plays on: what the exact engine reads from the game folder (map_extractor `-m`).
 pub fn maps() -> Vec<u32> {
@@ -450,6 +792,27 @@ fn crc32(b: &[u8]) -> u32 {
 }
 
 /// No game brand word in anything the tile shows (the rules: the legal line is the only exception, and it isn't here).
+/// Monday 5 Jan 1970 00:00 UTC: weeks count from here (the boards' week, realm/custom/boards-export.py WEEK0).
+pub const WEEK0: u64 = 4 * 86_400;
+pub const WEEK: u64 = 7 * 86_400;
+
+/// This week's featured fight: the catalog in turn, one a week from Monday 00:00 UTC (the same rule as
+/// boards-export.py `featured` and ov_boards.lua `B.featured`; docs/LEADERBOARDS.md).
+/// The fights the boards and the weekly featured fight turn through: the first ones in [`FIGHTS`], the same list as
+/// boards-export.py CATALOG and ov_boards.lua. The single-boss starts added after them (start anywhere: `icc-*`) are
+/// places to begin a run, not boards of their own, so the featured week stays the same when one is added.
+pub const BOARD_FIGHTS: usize = 12;
+
+pub fn featured_fight(now: u64) -> &'static Fight {
+    let n = now.saturating_sub(WEEK0) / WEEK;
+    &FIGHTS[(n % BOARD_FIGHTS as u64) as usize]
+}
+
+/// Monday 00:00 UTC of `now`'s week.
+pub fn week_start(now: u64) -> u64 {
+    WEEK0 + now.saturating_sub(WEEK0) / WEEK * WEEK
+}
+
 pub fn brand_free(s: &str) -> bool {
     let l = s.to_ascii_lowercase();
     !["warcraft", "lich king", "blizzard"].iter().any(|w| l.contains(w))
@@ -498,6 +861,111 @@ mod tests {
             assert_eq!((f.key, f.title, f.raid, f.map, f.heroic), (r.0.as_str(), r.1.as_str(), r.2.as_str(), r.3, r.4));
         }
         assert_eq!(FIGHTS[0].key, "frozen-throne", "the featured fight first");
+    }
+
+    fn starts_h() -> Option<String> {
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../realm/custom/modules/mod-leyline-bossfights/src/BossfightsStarts.h")).ok()
+    }
+
+    #[test]
+    fn the_raid_tree_is_the_modules_own() {
+        let Some(h) = starts_h() else { return };
+        let mut in_raids = 0;
+        for r in RAIDS {
+            assert!(h.contains(&format!("{{ \"{}\", \"{}\", {}, ", r.key, r.title, r.map)), "{r:?}");
+            // the raid's block: its fights, in order
+            let at = h.find(&format!("{{ \"{}\", \"{}\"", r.key, r.title)).unwrap();
+            let block = &h[at..];
+            let list = block.split('{').nth(2).unwrap_or("");
+            let keys: Vec<&str> = list.split('"').skip(1).step_by(2).collect();
+            assert_eq!(keys, r.fights.to_vec(), "{}", r.key);
+            for f in r.fights {
+                assert_eq!(fight(f).map(|x| x.map), Some(r.map), "{f}");
+            }
+            in_raids += r.fights.len();
+            for w in r.wings.iter().filter(|w| !w.key.is_empty()) {
+                assert!(h.contains(&format!("{{ \"{}\", \"{}\", \"{}\"", w.key, w.title, w.fights[0])), "{w:?}");
+                assert!(w.key.len() <= 17);
+            }
+            if !r.whole.is_empty() {
+                assert!(h.contains(&format!("\"{}\", {{", r.whole)), "{}", r.whole);
+            }
+            assert!(brand_free(r.title) && r.wings.iter().all(|w| brand_free(w.title)));
+        }
+        assert_eq!(in_raids, FIGHTS.len(), "every fight is in one raid");
+    }
+
+    #[test]
+    fn starts_are_checked() {
+        assert_eq!(start("icc-plague").map(|s| (s.0, s.1, s.2.key)), Some((Scope::Wing, "The Plagueworks", "icc")));
+        assert_eq!(start("icc-raid").map(|s| s.0), Some(Scope::Raid));
+        assert_eq!(start("icc-council").map(|s| (s.0, s.1)), Some((Scope::Boss, "The Blood Council")));
+        assert_eq!(start("frozen-throne").map(|s| s.0), Some(Scope::Boss), "a wing of one boss plays the boss");
+        assert!(start("").is_none() && start("os-raid").is_none() && start("nope").is_none());
+        let p = check_start("icc-frostwing", "heroic", 25, "friends", true, "priest", "holy").unwrap();
+        assert_eq!((p.diff_token(), p.party.mode(), p.scope), ("heroic25".to_string(), "group", Scope::Wing));
+        assert_eq!(start_go_line("rush", &p), "bossfight hero go RUSH icc-frostwing heroic25 group priest holy");
+        let solo = check_start("icc-council", "normal", 10, "companions", true, "warrior", "prot").unwrap();
+        assert_eq!(start_go_line("RUSH", &solo), "bossfight hero go RUSH icc-council normal bots warrior prot");
+        assert_eq!(check_start("icc-raid", "normal", 10, "friends", false, "mage", "fire").unwrap().party.mode(), "group-only");
+        assert!(check_start("voa-raid", "heroic", 10, "companions", true, "mage", "fire").unwrap_err().contains("no heroic"));
+        assert!(check_start("icc-raid", "normal", 20, "companions", true, "mage", "fire").is_err());
+        assert!(check_start("icc-raid", "normal", 10, "strangers", true, "mage", "fire").is_err());
+        assert!(check_start("icc-raid", "normal", 10, "companions", true, "mage", "bear").is_err());
+        assert!(check_start("icc-raid; .server shutdown", "normal", 10, "companions", true, "mage", "fire").is_err());
+    }
+
+    #[test]
+    fn companions_fill_the_roles() {
+        assert_eq!(companions_for(10, &["dps"], true), (2, 3, 4));
+        assert_eq!(companions_for(10, &["tank"], true), (1, 3, 5));
+        assert_eq!(companions_for(25, &["heal"], true), (3, 5, 16));
+        assert_eq!(companions_for(10, &["tank", "dps", "heal"], true), (1, 2, 4));
+        assert_eq!(companions_for(10, &["tank", "tank", "tank"], true), (0, 3, 4), "a third tank takes a damage seat");
+        assert_eq!(companions_for(10, &["dps"], false), (0, 0, 0));
+        assert_eq!(role_of("paladin", "prot"), "tank");
+        assert_eq!(role_of("druid", "resto"), "heal");
+        // the module's own seats: the same counts (BossfightsLogic.h)
+        if let Some(l) = logic() {
+            let seats = |name: &str| -> (usize, usize, usize) {
+                let body = l.split(&format!("inline std::vector<Seat> {name}()")).nth(1).unwrap().split("};").next().unwrap().to_string();
+                (body.matches("ROLE_TANK }").count(), body.matches("ROLE_HEAL }").count(), body.matches("ROLE_DPS }").count())
+            };
+            assert_eq!(seats("DefaultSeats"), (2, 3, 5));
+            assert_eq!(seats("DefaultSeats25"), (3, 6, 16));
+        }
+    }
+
+    #[test]
+    fn hero_accounts_as_the_module_names_them() {
+        // the module's own test values (tests/test_bossfights_heroes.cpp)
+        assert_eq!(hero_account_of("wr000123").as_deref(), Some("WR000123BF"));
+        assert_eq!(hero_account_of("ABCDEFGHIJKLMN").as_deref(), Some("ABCDEFGHIJKLMNBF"));
+        assert_eq!(hero_account_of("ABCDEFGHIJKLMNO").as_deref(), Some("BF0263AAD3AE34E1"));
+        assert_eq!(hero_account_of("wr0001234567890x").as_deref(), Some("BF96F76C9CEAE255"));
+        assert_eq!(hero_account_of("a b"), None);
+        assert_eq!(hero_account_of(""), None);
+        assert_eq!(hero_account(ACCOUNT), hero_account_of(ACCOUNT).unwrap());
+    }
+
+    #[test]
+    fn the_rush_words_and_answers() {
+        assert_eq!(rush_line("status", "rush", None).unwrap(), "bossfight rush status RUSH");
+        assert_eq!(rush_line("autopilot", "RUSH", Some("on")).unwrap(), "bossfight rush autopilot RUSH on");
+        assert_eq!(rush_line("go", "RUSH", Some("nobots")).unwrap(), "bossfight rush go RUSH nobots");
+        assert!(rush_line("shutdown", "RUSH", None).is_err());
+        assert!(rush_line("status", "RUSH; x", None).is_err());
+        assert!(rush_line("status", "RUSH", Some("now; .server")).is_err());
+        let line = "bfrush run key=frozen-throne diff=normal phase=ready leader=Kalinra map=631 inst=7 x=517.0 y=-2124.6 z=840.9 dist=1.2 \
+                    members=10 bots=9 inside=10 step=frozen-throne done=0/1 boss=0 wipes=0 clears=0 marks=transition1,quake last=- ms=1234";
+        let Rush::Run(r) = parse_rush(&format!("{line}\r\n")) else { panic!("{:?}", parse_rush(line)) };
+        assert_eq!((r.start.as_str(), r.phase.as_str(), r.map, r.instance, r.members, r.bots, r.inside, r.done, r.of), ("frozen-throne", "ready", 631, 7, 10, 9, 10, 0, 1));
+        assert_eq!((r.dist, r.marks.clone(), r.last.as_str(), r.ms, r.step.as_str()), (1.2, vec!["transition1".to_string(), "quake".to_string()], "", 1234, "frozen-throne"));
+        assert_eq!(parse_rush("bfrush lobby key=icc-raid diff=normal25 waiting=2 size=25"), Rush::Lobby { start: "icc-raid".into(), diff: "normal25".into(), waiting: 2, size: 25 });
+        assert_eq!(parse_rush("bfrush offline"), Rush::Offline);
+        assert_eq!(parse_rush("bfrush ok retry icc-bloat"), Rush::Ok { word: "retry icc-bloat".into() });
+        assert_eq!(parse_rush("bfrush no the fight is on <b>"), Rush::No { why: "the fight is on b".into() });
+        assert_eq!(parse_rush("There is no such command."), Rush::Nothing);
     }
 
     #[test]
@@ -593,6 +1061,23 @@ mod tests {
         assert_eq!((v[1].0, v[1].1.heroic, v[1].1.cleared, v[1].1.class.as_str()), (44, true, false, "-"));
         let t = add_run("", &v[1].1);
         assert_eq!(read_board(&t)[0].class, "-", "the board keeps an unknown class");
+    }
+
+    #[test]
+    fn the_featured_fight_turns_once_a_week() {
+        // Thursday 12 Nov 2026 19:00 UTC; the week began Monday 9 Nov (1794182400)
+        let now = 1_794_510_000;
+        assert_eq!(week_start(now), 1_794_182_400);
+        assert_eq!(week_start(1_794_182_400), 1_794_182_400);
+        assert_eq!(week_start(1_794_182_399), 1_794_182_400 - WEEK);
+        // the same as boards-export.py featured(1794510000) over the whole catalog (boards-vector.json)
+        assert_eq!(featured_fight(now).key, "cult-mistress");
+        assert_eq!(featured_fight(1_794_182_400).key, featured_fight(1_794_182_400 + WEEK - 1).key);
+        assert_ne!(featured_fight(now).key, featured_fight(now + WEEK).key);
+        assert_eq!(featured_fight(now).key, featured_fight(now + WEEK * BOARD_FIGHTS as u64).key);
+        // the boards' fights come first; everything after them is a start-anywhere boss
+        assert!(FIGHTS[..BOARD_FIGHTS].iter().all(|f| !f.key.starts_with("icc-")));
+        assert!(FIGHTS[BOARD_FIGHTS..].iter().all(|f| f.key.starts_with("icc-")));
     }
 
     #[test]

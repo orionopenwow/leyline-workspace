@@ -21,15 +21,19 @@
   const ID_RE = /^(?:mod:[a-z][a-z0-9-]{2,31}|up:[a-z0-9][a-z0-9._-]{0,63}|mode:[a-z][a-z0-9-]{1,31})$/;
   const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/;
   const MAX_MODS = 32;
-  const BUILTIN = ["minigolf", "bumper-balls", "coin-dash", "community"];
+  // our realm's Leyline Modes when no list has come in yet: the listed ones (Duels and Boss Rush since 12 Nov; the
+  // minigames, still on the realm, are "listed": false: stream/gamemods.py BUILTIN_MODES keeps the realm's own list)
+  const BUILTIN = ["arena-queue", "frozen-throne"];
   const GAME_CATS = ["sandbox", "maps", "encounters", "conversions"];
 
   let modeList = null;   // modes_list when the Modes page has not loaded them yet
   const projects = () => (typeof catalog !== "undefined" && catalog && catalog.projects) || [];
   const realms = () => (typeof realmsCache !== "undefined" && Array.isArray(realmsCache) ? realmsCache : []);
+  // the listed modes only (modes.js: Duels and Boss Rush; the hidden ones stay off every list)
+  const isListed = (m) => (window.LeylineModes && window.LeylineModes.listed ? window.LeylineModes.listed(m) : true);
   const modes = () => {
     const m = window.LeylineModes && window.LeylineModes.modes ? window.LeylineModes.modes() : null;
-    return (m && m.length ? m : modeList) || [];
+    return ((m && m.length ? m : modeList) || []).filter(isListed);
   };
   async function loadModes() {
     if (modes().length) return;
@@ -60,7 +64,11 @@
   const side = (id, p) => (id.startsWith("mode:") ? "realm" : id.startsWith("up:") ? "client" : ({ ui: "client", both: "both", realm: "realm" })[(p || {}).kind] || "client");
   const byId = (id) => projects().find((p) => p.id === id) || null;
   const nameOf = (id) => {
-    if (id.startsWith("mode:")) { const m = modes().find((x) => x.id === id.slice(5)); return m ? m.title : id.slice(5); }
+    if (id.startsWith("mode:")) {   // a hidden mode a realm still runs keeps its name
+      const all = (window.LeylineModes && window.LeylineModes.all ? window.LeylineModes.all() : []).concat(modeList || []);
+      const m = all.find((x) => x.id === id.slice(5));
+      return m ? m.title : id.slice(5);
+    }
     const p = byId(id);
     return p ? p.name : id.replace(/^(mod|up):/, "");
   };

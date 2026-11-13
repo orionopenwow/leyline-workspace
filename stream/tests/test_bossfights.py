@@ -175,8 +175,14 @@ for v in bad:
     if isinstance(v, str) and v:
         get("/wrath/account?go=" + urllib.parse.quote(v, safe=":"), cookie="wr_session=good")
 check("bad boss fights are never sent", len(sent("ovgo")) == n, sent("ovgo")[n:])
+_golf = next(m for m in wp.playmodes.CATALOG["modes"] if m["id"] == "minigolf")
+_golf.pop("listed", None)   # listed again for a moment (hidden since 12 Nov: Duels and Boss Rush only)
 get("/wrath/account?go=mode:minigolf", cookie="wr_session=good")
-check("other modes still go as ovplay", sent("ovplay")[-1:] == ["ovplay go WR000123 minigolf"], sent("ovplay"))
+_golf["listed"] = False
+check("other modes still go as ovplay (when listed)", sent("ovplay")[-1:] == ["ovplay go WR000123 minigolf"], sent("ovplay"))
+n = len(sent("ovplay"))
+get("/wrath/account?go=mode:minigolf", cookie="wr_session=good")
+check("a hidden mode is never sent", len(sent("ovplay")) == n)
 
 # --- the data -----------------------------------------------------------------------------------------------------
 def row(ms, leader, roster, size=10, bots=0, date="2026-11-05", **kw):
@@ -329,8 +335,8 @@ check("/wrath/modes: The Frozen Throne first under Boss fights, Fight now and Qu
       and mp.index('id="md-bosses"') < mp.index('id="md-bf-frozen-throne"') < mp.index('class="md-raid"'))
 check("/wrath/modes: Queue 1v1 arena under Duels", 'href="/wrath?go=arena:1v1">Queue 1v1 arena<' in mp
       and mp.index('id="md-duels"') < mp.index('id="md-arena-queue"') < mp.index('id="md-bosses"'))
-check("/wrath/modes: the Games cards link their go", 'href="/wrath?go=bf:frozen-throne:normal:bots">Play<' in mp
-      and 'href="/wrath?go=arena:1v1">Play<' in mp)
+check("/wrath/modes: the Modes cards link their go", 'class="md-go" href="/wrath?go=bf:frozen-throne:normal:bots">Fight now<' in mp
+      and 'class="md-go" href="/wrath?go=arena:1v1">Queue now<' in mp)
 check("/wrath/modes: no brand words", not BANNED.findall(visible(mp)), BANNED.findall(visible(mp))[:3])
 st, _, mj = get("/wrath/modes.json")
 ids = [m["id"] for m in json.loads(mj)["modes"]]

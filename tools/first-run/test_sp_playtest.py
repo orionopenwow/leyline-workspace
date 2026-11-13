@@ -372,7 +372,129 @@ class TestPieces(Base):
             self.assertNotIn(word, wf.split("launcher-test-windows:")[1])
 
 
+def boss_phases(ok=True, outcome="wipe"):
+    """Boss Rush's report as the launcher writes it (app.rs bossrush_play_test_cli), one state per poll."""
+    base = {"mark": sp.SP_MARK.decode(), "kind": "bossrush", "pid": 0, "steps": []}
+    names = ["game folder", "preflight", "setup", "play", "signed in by itself", "in the world", "bossstart", "bossfight", "clean up"]
+    out = []
+    for ph in ("start", "setup", "entering", "in_world", "boss_ready", "fighting", "fight_end", "retried", "done"):
+        r = dict(base, phase=ph)
+        if ph not in ("start", "setup"):
+            r["pid"] = 4242
+        if ph == "done":
+            r["steps"] = [{"name": n, "ok": not (not ok and n == "bossfight"), "ms": 1000,
+                           "why": ("outcome: WIPE at 5:12.3; phases: transition1; retry: ready again by itself" if n == "bossfight" else "seen")} for n in names]
+            r["passed"] = ok
+            r["extra"] = {"fight": {"engaged": True, "outcome": outcome, "phases": ["transition1"]}}
+        out.append(r)
+    return out
+
+
+class BossProc(Proc):
+    def poll(self):
+        script = self.io.script
+        if self.i < len(script):
+            (self.data / sp.BR_REPORT).write_text(json.dumps(script[self.i]), encoding="utf-8")
+            self.i += 1
+            return None
+        return self.code
+
+
+class BossFake(Fake):
+    def __init__(self, t, **kw):
+        kw.setdefault("exe", EXE + sp.BR_MARK)
+        kw.setdefault("script", boss_phases(kw.pop("fight_ok", True)))
+        super().__init__(t, **kw)
+
+    def spawn_logged(self, cmd, env, cwd, out):
+        p = super().spawn_logged(cmd, env, cwd, out)
+        return BossProc(self, p.data, p.code)
+
+
+class TestBossRush(Base):
+    def go_boss(self, io, **kw):
+        kw.setdefault("bossrush", True)
+        kw.setdefault("boss", "frozen-throne")
+        kw.setdefault("size", 10)
+        kw.setdefault("diff", "normal")
+        kw.setdefault("hero", "mage-fire")
+        kw.setdefault("fight_max", 1500)
+        kw.setdefault("checks", sp.BR_CHECKS)
+        code = self.go(io, **kw)
+        self.run_dir = self.root / "logs" / "boss-playtest" / "20261111-120000"
+        return code
+
+    def test_a_boss_run_passes_with_its_shots_and_report(self):
+        io = BossFake(self.t)
+        self.assertEqual(self.go_boss(io), 0, self.text)
+        cmd = io.spawned[0]
+        self.assertEqual(cmd[1:3], ["play-test", "--fresh"])
+        self.assertIn("--bossrush", cmd)
+        self.assertNotIn("--single", cmd)
+        self.assertEqual(cmd[cmd.index("--boss") + 1], "frozen-throne")
+        self.assertEqual(cmd[cmd.index("--checks") + 1], "bossstart,bossfight")
+        self.assertEqual(cmd[cmd.index("--fight-max") + 1], "1500")
+        self.assertNotIn(sp.KEY_ENV, io.envs[0], "Boss Rush needs no test Hero Key")
+        self.assertFalse(any(p == "account/new" for _, p, _ in io.http_calls))
+        shots = " ".join(io.shots)
+        for ph in ("in-front-of-the-boss", "fighting", "fight-end", "retried"):
+            self.assertIn(ph, shots)
+        self.assertTrue((self.run_dir / "bossrush-br-play-test.json").is_file())
+        self.assertIn("WIPE at 5:12.3", self.text)
+        latest = (self.root / "logs" / "boss-playtest" / "latest.txt").read_text(encoding="utf-8")
+        self.assertTrue(latest.startswith("BOSS RUSH PLAYTEST"))
+        self.assertIn("PASS", latest)
+
+    def test_an_older_test_build_is_refused(self):
+        io = BossFake(self.t, exe=EXE)
+        self.assertEqual(self.go_boss(io), 1)
+        self.assertIn("the test launcher has the Boss Rush playtest", self.text)
+        self.assertEqual(io.spawned, [])
+
+    def test_a_failed_fight_fails_the_run(self):
+        io = BossFake(self.t, fight_ok=False)
+        self.assertEqual(self.go_boss(io), 1)
+        self.assertIn("FAIL", self.text)
+
+    def test_its_command_line(self):
+        a = Args()
+        a.bossrush, a.boss, a.size, a.diff, a.hero, a.fight_max, a.checks, a.hold = True, "icc-plague", 25, "heroic", "paladin-holy", 99999, "bossstart", 3
+        cmd = sp.build_cmd(Path("L.exe"), Path("G"), "bossrush", True, a)
+        self.assertEqual(cmd, ["L.exe", "play-test", "--fresh", "--game", "G", "--bossrush", "--boss", "icc-plague", "--size", "25", "--diff", "heroic",
+                               "--hero", "paladin-holy", "--hold", "8", "--fight-max", "3600", "--checks", "bossstart"])
+        self.assertEqual(sp.kind_list(a), ["bossrush"])
+
+    def test_main_takes_the_boss_words_only(self):
+        for bad in (["run", "--bossrush", "--boss", "x;rm"], ["run", "--bossrush", "--hero", "mage fire"], ["run", "--bossrush", "--size", "20"]):
+            with self.assertRaises(SystemExit):
+                sp.main(bad)
+
+    def test_the_boss_marks_match_the_launcher(self):
+        src = (ROOT / "launcher" / "src-tauri" / "src" / "sptest.rs").read_text(encoding="utf-8")
+        self.assertIn('pub const BR_MARK: &str = "%s";' % sp.BR_MARK.decode(), src)
+        self.assertIn('pub const BR_REPORT: &str = "%s";' % sp.BR_REPORT, src)
+        app = (ROOT / "launcher" / "src-tauri" / "src" / "app.rs").read_text(encoding="utf-8")
+        for ph in sp.BR_SHOTS:
+            self.assertIn('rep.phase = "%s".into();' % ph, app, ph)
+
+
 class TestControl(unittest.TestCase):
+    def test_boss_control_step(self):
+        src = (ROOT / "tools" / "control" / "control.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        val = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign) for t in n.targets if hasattr(t, "id")}
+        steps = ast.literal_eval(val["STEPS"])
+        bat, title, interactive = steps["sp-playtest-boss"]
+        self.assertEqual(bat.replace("\\", "/"), "tools/first-run/Boss Rush playtest.bat")
+        self.assertFalse(interactive)
+        self.assertNotIn("sp-playtest-boss", ast.literal_eval(val["READ_ONLY"]))
+        self.assertGreaterEqual(ast.literal_eval(val["STEP_TIMEOUT_MIN"])["sp-playtest-boss"], 240)
+        for word in ("World of Warcraft", "WoW", "Warcraft", "Lich King", "Blizzard"):
+            self.assertNotIn(word, title)
+        raw = (ROOT / bat).read_bytes()
+        self.assertIn(b'sp_playtest.py" run --bossrush %*', raw)
+        self.assertIn(b"-I", raw)
+
     def test_control_step(self):
         src = (ROOT / "tools" / "control" / "control.py").read_text(encoding="utf-8")
         tree = ast.parse(src)

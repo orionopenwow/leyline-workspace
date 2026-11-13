@@ -27,22 +27,22 @@ const invoke = window.__TAURI__ && window.__TAURI__.core
 // What's new, shown on Home and on the News page. Newest first. The website's news feed replaces these when it loads
 // (loadNews: the core's news_list, news.rs, /wrath/leyline/news.json); these are the offline copy.
 const NEWS = [
-  { tag: "LEYLINE LAUNCHER 0.3", title: "EVERY CLIENT, EVERY SERVER", items: [
+  { tag: "LEYLINE LAUNCHER", title: "EVERY CLIENT, EVERY SERVER", items: [
     "Finds every game client on your PC",
     "PLAY picks the client a realm needs",
     "Updates in the background, never mid-game",
   ] },
-  { tag: "LATEST NEWS · CLIENT 20261025F", title: "CHARACTER CREATE IS BACK IN COLOUR", items: [
+  { tag: "GAME CLIENT", title: "CHARACTER CREATE IS BACK IN COLOUR", items: [
     "Animated race backgrounds at character select and create",
     "No more falling through ground that hasn't loaded yet",
     "Duels arena now on the realm list",
   ] },
-  { tag: "LEYLINE LAUNCHER 0.2", title: "MODS, REALMS AND HOSTING", items: [
+  { tag: "LEYLINE LAUNCHER", title: "MODS, REALMS AND HOSTING", items: [
     "Install, update, turn off and remove mods for each game, or drop in your own zip",
     "Play on community realms from the realm list, and back to Wrath Unleashed in one click",
     "Host your own realm from the Host page with the Host pack",
   ] },
-  { tag: "LEYLINE LAUNCHER 0.1", title: "ONE LAUNCHER FOR EVERY REALM", items: [
+  { tag: "LEYLINE LAUNCHER", title: "ONE LAUNCHER FOR EVERY REALM", items: [
     "Uses the client you already have",
     "Sets the realm for you and keeps your original realmlist as a backup",
     "Or play Wrath in your browser, with nothing to install",
@@ -244,11 +244,13 @@ function renderSetJump() {
 document.addEventListener("leyline:page", (e) => { if (e.detail && e.detail.page === "settings") setTimeout(renderSetJump, 0); });
 
 // ------------------------------------------------------------------ the backdrop behind the pages
-// The website's picture (stream/hub.py BACKDROP), fetched from the site when Leyline starts, never shipped with the
-// app. It sits behind the content area only (not the side bar or the menus), under the theme's wash
-// (--t-backdrop-wash). Until it loads, if it fails, or with Settings › Background picture off: the plain colour.
-// The window's CSP allows images from exactly this origin (tauri.conf.json img-src).
+// The website's picture (stream/hub.py BACKDROP), fetched from the site when Leyline starts. It sits behind the content
+// area only (not the side bar or the menus), under the theme's wash (--t-backdrop-wash). Until it loads, and offline,
+// the picture that ships with the app (art/leyline-bg.webp; audit 12 Nov: offline showed only the plain colour). With
+// Settings › Background picture off: the plain colour. The window's CSP allows images from exactly this origin
+// (tauri.conf.json img-src).
 const BACKDROP_URL = ADDR.site("/wrath/art/leyline-shot-backdrop.webp");
+const BACKDROP_LOCAL = "art/leyline-bg.webp";
 let backdropTried = false;
 function backdropOn() {
   try { return localStorage.getItem("leyline.backdrop") !== "off"; } catch (_) { return true; }
@@ -259,18 +261,21 @@ function applyBackdrop() {
   const on = backdropOn();
   if ($("set-backdrop")) $("set-backdrop").checked = on;
   if (!on) { box.classList.remove("has-pic"); return; }
-  if (backdropTried) { if (box.dataset.loaded === "1") box.classList.add("has-pic"); return; }
+  box.classList.add("has-pic");   // the site's picture, or the app's own until it comes
+  if (backdropTried) return;
   backdropTried = true;
+  if (box.dataset.loaded !== "1") box.style.setProperty("--t-backdrop", `url("${BACKDROP_LOCAL}")`);
   const img = new Image();
   img.decoding = "async";
   img.addEventListener("load", () => {
     if (img.dataset.retried) box.style.setProperty("--t-backdrop", `url("${img.src}")`);   // came from the old name
-    box.dataset.loaded = "1"; if (backdropOn()) box.classList.add("has-pic");
+    else box.style.removeProperty("--t-backdrop");   // the theme's own (the site's picture)
+    box.dataset.loaded = "1";
   });
   img.addEventListener("error", () => {
     const old = ADDR.oldName(img.src);   // the new name not reachable yet: the old one, once (docs/DOMAIN-MOVE.md)
     if (old !== img.src && !img.dataset.retried) { img.dataset.retried = "1"; img.src = old; return; }
-    box.dataset.loaded = "0"; box.classList.remove("has-pic");
+    box.dataset.loaded = "0";   // offline: the app's own picture stays
   });
   img.src = BACKDROP_URL;
 }
@@ -284,10 +289,46 @@ if ($("set-backdrop")) {
 applyBackdrop();
 
 // ------------------------------------------------------------------ search
+// The title bar's search: a page or a feature first ("single player", "den", "friends", "boss rush": that page), then a
+// realm, then the mods list (audit 12 Nov: a feature's name fell into an empty mods search).
+const FEATURES = [
+  { page: "single", words: ["single player", "single", "solo", "singleplayer", "offline", "companions", "companion", "dungeon buddies", "bots", "local world", "my world"] },
+  { page: "single", section: "spf", words: ["friends", "friend", "invite", "invite a friend", "friends list", "friend code"] },
+  { page: "den", words: ["your den", "den", "my den", "build", "building", "den code"] },
+  { page: "bossrush", words: ["boss rush", "bossrush", "boss", "bosses", "boss fight", "boss fights", "raid boss"] },
+  { page: "mods", tab: "discover", words: ["mods", "mod", "addons", "addon", "discover", "workshop"] },
+  { page: "modes", words: ["modes", "mode", "game modes", "duels", "duel", "leaderboards", "leaderboard", "rankings", "arena"] },
+  { page: "characters", words: ["characters", "character", "my characters", "alts"] },
+  { page: "host", words: ["host", "hosting", "host a server", "my server", "my realm", "server"] },
+  { page: "realms", words: ["realms", "realm list", "community realms", "official realm"] },
+  { page: "settings", words: ["settings", "options", "preferences", "privacy", "updates"] },
+  { page: "agents", words: ["agents", "agent", "claude", "ai", "assistant"] },
+  { page: "help", words: ["help", "guide", "tour", "how to", "how do i"] },
+  { page: "news", words: ["news", "patch notes", "what's new"] },
+  { page: "forum", words: ["forum", "posts"] },
+  { page: "account", words: ["account", "manage account", "hero key", "herokey", "profile", "log in", "login"] },
+  { page: "findfiles", words: ["game files", "find files", "find my game", "install the game"] },
+  { page: "clients", words: ["game folders", "game folder", "folders", "clients"] },
+  { page: "mods", tab: "installed", words: ["installed", "my mods", "my addons"] },
+];
+// the feature the words name: the whole words, or the start of one (three letters at least)
+function featureFor(q) {
+  const w = q.replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!w) return null;
+  return FEATURES.find((f) => f.words.includes(w))
+    || (w.length >= 3 && FEATURES.find((f) => f.words.some((x) => x.startsWith(w))))
+    || null;
+}
 $("search-form").addEventListener("submit", (ev) => {
   ev.preventDefault();
   const q = $("search").value.trim().toLowerCase();
   if (!q) return;
+  const f = featureFor(q);
+  if (f) {
+    show(f.page, false, f.tab);
+    if (f.section) setTimeout(() => { const s = $(f.section); if (s && !s.hidden) s.scrollIntoView({ block: "start" }); }, 60);
+    return;
+  }
   if (realmNames.some((n) => n.toLowerCase().includes(q)) || "wrathunleashed".includes(q)) {
     show("realms");
   } else {
@@ -307,11 +348,21 @@ $("search-form").addEventListener("submit", (ev) => {
 // ------------------------------------------------------------------ news
 // Home's hero gallery and its News row read the news too (home.js, App.news()); the News page lists every entry.
 let news = NEWS;
+// The News page's line: offline, the date of the copy shown; never loaded, that these are the notes kept in Leyline.
+function newsLine(r) {
+  if (!$("news-status")) return;
+  if (r && r.from_cache) {
+    const when = r.saved_at ? new Date(r.saved_at * 1000).toLocaleDateString() : "an earlier visit";
+    say("news-status", `Offline: the news as of ${when}.`, "warn");
+  } else if (!r) say("news-status", "News from the website appears when you're online. Below: notes kept in Leyline.", "warn");
+  else say("news-status", "");
+}
 async function loadNews() {
   let r = null;
-  try { r = await invoke("news_list"); } catch (e) { console.error("[leyline] news", e); return; }   // keep the built-in posts
+  try { r = await invoke("news_list"); } catch (e) { console.error("[leyline] news", e); newsLine(null); return; }   // keep the built-in posts
   const posts = r && Array.isArray(r.posts) ? r.posts.filter((p) => p && typeof p.title === "string" && p.title) : [];
-  if (!posts.length) return;
+  if (!posts.length) { newsLine(null); return; }
+  newsLine(r);
   news = posts.map((p) => ({ tag: [p.tag, p.date].filter(Boolean).join(" · "), title: p.title, items: Array.isArray(p.items) ? p.items : [] }));
   renderNews();
   document.dispatchEvent(new CustomEvent("leyline:news"));   // Home's What's new slide and News row (home.js)
@@ -418,6 +469,7 @@ function rememberJoined(addr) {
 }
 
 let lastStatusClass = "";
+let realmState = "";   // the chosen realm's last check: online, partial, offline, unknown (no answer), "" (not checked yet)
 // The side bar's "Your realms", dressed like the website's realm list: the realm's icon (the crystal for the official
 // realm, else its initial on a colour from its name), its name, the gold client version and the live dot.
 function renderRealmRows() {
@@ -499,9 +551,12 @@ function renderQueueCard() {
 async function refreshStatus() {
   const realm = chosenRealm();
   const seq = ++statusSeq;
-  const set = (cls, pill, line, detail) => {
+  const set = (cls, pill, line, detail, st) => {
     if (seq !== statusSeq) return;
     lastStatusClass = cls;
+    const was = realmState;
+    realmState = st || "";
+    if (was !== realmState) renderPlayBar();   // PLAY's line says the realm's real state (audit 12 Nov)
     $("tb-status").className = "pill " + cls;
     $("tb-status-text").textContent = pill;
     if ($("srv-state")) {
@@ -532,22 +587,28 @@ async function refreshStatus() {
     const counts = [s.players != null ? `Players: ${s.players}` : "", s.bots != null ? `Bots: ${s.bots}` : ""].filter(Boolean);
     const host = realm.includes(":") ? realm : `${realm}:3724`;
     if (seq === statusSeq) renderSrvBar(s.state === "online" && s.players != null ? s.players : null);
-    if (s.state === "online") set("is-online", ms ? `Online  ${ms}` : "Online", ms ? `ONLINE  (${ms})` : "ONLINE", (counts.length ? counts : [host]).join(" · "));
-    else if (s.state === "partial") set("is-partial", "Partly up", "PARTLY UP", "Login answers · world server down");
-    else if (s.state === "offline") set("is-offline", "Offline", "OFFLINE", "World server down");
-    else set("is-partial", "No answer", "NO ANSWER", "The realm didn't answer: check your connection");
+    if (s.state === "online") set("is-online", ms ? `Online  ${ms}` : "Online", ms ? `ONLINE  (${ms})` : "ONLINE", (counts.length ? counts : [host]).join(" · "), "online");
+    else if (s.state === "partial") set("is-partial", "Partly up", "PARTLY UP", "Login answers · world server down", "partial");
+    else if (s.state === "offline") set("is-offline", "Offline", "OFFLINE", "World server down", "offline");
+    else set("is-partial", "No answer", "NO ANSWER", "The realm didn't answer: check your connection", "unknown");
   } catch (e) {
-    set("is-partial", "No answer", "STATUS UNAVAILABLE", oops(e, "Couldn't check the realm right now."));
+    set("is-partial", "No answer", "STATUS UNAVAILABLE", oops(e, "Couldn't check the realm right now."), "unknown");
   }
 }
-setInterval(() => { if (state) refreshStatus(); }, 60000);
+// every minute, but not while the window is hidden or minimised (a game is usually running then); back in view: at once
+setInterval(() => { if (state && !document.hidden) refreshStatus(); }, 60000);
+let hiddenSince = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenSince = Date.now(); return; }
+  if (state && hiddenSince && Date.now() - hiddenSince > 30000) refreshStatus();
+  hiddenSince = 0;
+});
 
 // ------------------------------------------------------------------ play bar
 let mode = "online";
 try { mode = localStorage.getItem("leyline.mode") === "browser" ? "browser" : "online"; } catch (_) { /* fine */ }
 
 function setMode(m) {
-  if (m === "solo") { say("play-status", "Solo play on this PC arrives in a later Leyline release.", "warn"); return; }
   mode = m;
   try { localStorage.setItem("leyline.mode", m); } catch (_) { /* fine */ }
   renderPlayBar();
@@ -1748,6 +1809,13 @@ function renderPlayBar() {
     head = `BUSY · QUEUE ${queueN()}`; warn = true;
     detail = mode === "browser" && officialQueue.wait ? `About ${officialQueue.wait} min · or skip the line` : "Or skip the line";
   }
+  // the realm's own state (refreshStatus): never a green READY over a realm that is down or didn't answer. PLAY still
+  // works: it may be back by the time the game opens.
+  if (mode !== "browser" && head.startsWith("READY") && !localChosen() && !worldChosen()) {
+    if (realmState === "offline") { head = "OFFLINE · WORLD SERVER DOWN"; warn = true; detail = "PLAY still tries: it may be back soon"; }
+    else if (realmState === "partial") { head = "PARTLY UP · WORLD SERVER DOWN"; warn = true; detail = "Login answers; the world may not yet"; }
+    else if (realmState === "unknown") { head = "CAN'T CHECK THE REALM"; warn = true; detail = "You may be offline · PLAY still tries"; }
+  }
   const lh = mode === "browser" ? null : localHint();   // My Den / Single player: their own next step
   if (lh) ({ head, detail, warn } = lh);
   $("play-headline").textContent = head;
@@ -1807,10 +1875,12 @@ $("play-form").addEventListener("submit", async (ev) => {
     if (window.LeylineLoadouts && rr && !(await window.LeylineLoadouts.beforeJoin(rr, c)).go) { say("play-status", ""); return; }
     const j = window.LeylineGameMods && rr ? await window.LeylineGameMods.beforeJoin(rr, c, (t, k) => say("play-status", t, k)) : { go: true, leyline: false };
     if (!j.go) { say("play-status", ""); return; }
-    if (window.LeylineAddons && isOfficial() && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
+    // the Leyline addons up to date first (any realm), and offered on the official realm (addons.js)
+    if (window.LeylineAddons && !j.leyline) await window.LeylineAddons.beforePlay(c, { offer: isOfficial() });
     say("play-status", "Starting…");
     const started = await invoke("play", { client: c.id, realm });
     say("play-status", playLine(started, c), "ok");
+    if (window.LeylineAddons) window.LeylineAddons.afterPlay();   // "In-game add-ons updated" on the play bar
     $("play-status").title = String(started);   // the whole of it on hover
     statusFor = playKey();
     played = true;
@@ -2035,12 +2105,18 @@ function pickedClient() {
   const all = state.settings.clients;
   return all.find((c) => c.id === state.settings.selected_client) || currentClient() || all[0] || null;
 }
-document.querySelectorAll(".client-pick").forEach((sel) => sel.addEventListener("change", async () => {
-  state.settings.selected_client = sel.value;
-  $("play-client").value = sel.value;
+// one client picked everywhere (a page's picker, Get mods for single player, Add to single player)
+function selectClient(id) {
+  if (!state.settings.clients.some((c) => c.id === id)) return false;
+  state.settings.selected_client = id;
+  $("play-client").value = id;
   renderClientPickers();
   realmChanged();
   saveSelection();
+  return true;
+}
+document.querySelectorAll(".client-pick").forEach((sel) => sel.addEventListener("change", async () => {
+  selectClient(sel.value);
   const page = sel.dataset.for;
   if (page === "mods") loadInstalled();
   if (page === "discover") { await loadInstalled(true); renderCatalog(); }
@@ -2153,6 +2229,18 @@ let catalogIn = false;   // the first mods list has answered (or failed): until 
 async function loadCatalog(quiet) {
   if (!quiet) say("cat-status", "Loading mods…");
   if (!catalogIn && window.LeylineSimple) window.LeylineSimple.render();   // the placeholder rows at once, not a bare pane
+  // the mods list kept from last time, at once, while the network answers (audit 12 Nov)
+  if (!catalogIn && !catalog.projects.length) {
+    try {
+      const k = await invoke("mods_catalog_cached");
+      if (k && Array.isArray(k.projects) && k.projects.length && !catalogIn) {
+        catalog = window.LeylineThemes ? window.LeylineThemes.takeThemes(k) : k;
+        catalogNames = catalog.projects.map((p) => p.name);
+        catalogIn = true;
+        renderCatalog();
+      }
+    } catch (_) { /* an older core: the network list only */ }
+  }
   try {
     catalog = await invoke("mods_catalog");
     if (window.LeylineThemes) catalog = window.LeylineThemes.takeThemes(catalog); // themes.js: theme packs go under Discover › Themes
@@ -2240,8 +2328,68 @@ function decorateCard(card, p) {
   }
   card.classList.toggle("is-installed", !!m);
   card.classList.toggle("just", !!justInstalled && p.id === justInstalled);
+  spCardButton(card, p);
   return card;
 }
+
+// ------------------------------------------------------------------ mods for single player (spmods.js, the Single player page)
+// The single player worlds play with one game folder (vanilla.js LeylineWorlds.folder(): the one world_find_folder
+// picked). "Get mods for single player" opens Discover on that folder with Works with this game folder on; a card for
+// another folder offers "Add to single player", which picks that folder and runs the card's own Install (the same
+// checks: pending items have no Install, so they never get this button either). While picking for single player, a bar
+// on Discover says so, with Back to Single player.
+const spFolder = () => (window.LeylineWorlds && window.LeylineWorlds.folder ? window.LeylineWorlds.folder() : null);
+let spPicking = false;   // Discover was opened for single player (or a card added to it): the bar shows
+let spAdded = "";        // the name of what went in while picking
+const spCanInstall = (p) => p && p.kind !== "realm" && ((p.source === "packaged" && !!p.download) || (p.source === "listed" && !!p.install) || p.source === "upstream");
+function spCardButton(card, p) {
+  const sp = spFolder(), c = pickedClient();
+  const acts = card.querySelector(".acts");
+  const old = card.querySelector(".dc-sp-add");
+  if (old) old.remove();
+  if (!acts || !sp || !c || sp.id === c.id || !spCanInstall(p) || !fitsClient(p, sp)) return;
+  const have = !!(window.LeylineSPMods && window.LeylineSPMods.has(p.id));
+  const b = el("button", "btn small dc-sp-add", have ? "In single player ✓" : "Add to single player");
+  b.type = "button";
+  b.disabled = have;
+  b.title = have ? `Already in ${sp.name}, the game folder single player plays with` : `Put it in ${sp.name}, the game folder single player plays with`;
+  b.addEventListener("click", (ev) => { ev.stopPropagation(); addToSingle(p, b); });
+  acts.append(b);
+}
+async function addToSingle(p, btn) {
+  const sp = spFolder();
+  if (!sp) return;
+  selectClient(sp.id);
+  spPicking = true;
+  await loadInstalled(true);
+  if (haveMod(p.id)) { renderCatalog(); say("cat-status", `${p.name} is already in single player's game folder.`, "ok"); return; }
+  if (p.source === "upstream" && window.LeylineMarket) await window.LeylineMarket.install(p, btn);
+  else await installProject(p, btn);
+}
+function modsForSingle() {
+  const sp = spFolder();
+  if (sp) selectClient(sp.id);
+  spPicking = true;
+  spAdded = "";
+  show("mods", false, "discover");
+  const list = catListMake();
+  if (list && sp) list.setFilter("fit", true);   // Works with this game folder
+  loadInstalled(true).then(renderCatalog);
+}
+function paintSpBar() {
+  const bar = $("dc-sp");
+  if (!bar) return;
+  const sp = spFolder(), c = pickedClient();
+  const on = spPicking && !!sp && !!c && sp.id === c.id;
+  bar.hidden = !on;
+  if (!on) return;
+  $("dc-sp-text").textContent = spAdded ? `Added ${spAdded} to single player. It's on the next time you play.` : `Picking mods for single player: they go into ${sp.name}.`;
+  $("dc-sp-back").classList.toggle("primary", !!spAdded);
+}
+if ($("dc-sp-back")) $("dc-sp-back").addEventListener("click", () => { spPicking = false; spAdded = ""; paintSpBar(); show("single"); });
+document.addEventListener("leyline:page", (e) => { const pg = e.detail && e.detail.page; if (pg && pg !== "mods") { spPicking = false; spAdded = ""; paintSpBar(); } });
+// the single player folder's mods were read again (spmods.js): the cards' Add to single player catch up
+document.addEventListener("leyline:spmods", () => { if (currentPage === "mods" && catList) catList.refresh(); });
 // The kit's no-match words, with this list's own word for its rows ("No addons match “x”."): its noun is a function (the
 // count says mods or addons by the tab), so its own words would say "items".
 function noMatch(info, api, many) {
@@ -2327,6 +2475,7 @@ function catListMake() {
 }
 
 function renderCatalog() {
+  paintSpBar();
   if (window.LeylineSimple) window.LeylineSimple.render();   // the Simple view's rows, or the full view's chips (simple.js)
   renderSorts();
   const list = catListMake();
@@ -2373,7 +2522,7 @@ async function rateProject(p, n, box) {
     if (ranked && ranked.metrics && ranked.metrics[p.id] && r && r.rating) ranked.metrics[p.id].rating = r.rating;
     say("cat-status", `Thanks: you rated ${p.name} ${n} star${n > 1 ? "s" : ""}.`, "ok");
   } catch (e) {
-    say("cat-status", String(e) === "signed_out" ? "Log In (in the title bar) to rate mods: the same account as the website." : oops(e, "Couldn't save your rating. Try again."), "bad");
+    say("cat-status", String(e) === "signed_out" ? "Log in (in the title bar) to rate mods: the same account as the website." : oops(e, "Couldn't save your rating. Try again."), "bad");
   }
 }
 
@@ -2580,6 +2729,7 @@ async function installProject(p, btn) {
     const m = await withNativeOk(() => invoke("mod_install", { client: c.id, project: p.id }));
     say("cat-status", installedText(was ? "Updated" : "Installed", m, c), m.warnings.length ? "warn" : "ok");
     noteInstalled(m.key || p.id, window.LeylineShelf ? window.LeylineShelf.of(p) : "");
+    if (spPicking) { const sp = spFolder(); if (sp && sp.id === c.id) spAdded = p.name; }
     catJustFocus = true;   // Discover stays on this tab with its card lit (renderCatalog)
     if (!was && window.LeylineGuide) window.LeylineGuide.moment("mod");   // the first mod: one line, once (guide.js)
   } catch (e) {
@@ -2589,8 +2739,13 @@ async function installProject(p, btn) {
   renderCatalog();
 }
 
+// The mods list's first load, while it runs: only an install link waits for it (handleDeepLink).
+let catalogLoading = null;
+
 // A hub page's "Install with Leyline" (leyline://install/<id>): show that project with its INSTALL button. Nothing
-// installs until the player clicks INSTALL.
+// installs until the player clicks INSTALL. Also a realm, a friend's invite, a Den, a Den code or the game's Host
+// window. Taken at start, and again whenever a link reaches the open launcher (the core's `deep-link` event, app.rs
+// deep_link_arrived: Leyline is never opened twice).
 async function handleDeepLink() {
   let link = null;
   try { link = await invoke("deep_link_take"); } catch (_) { return; }
@@ -2615,6 +2770,7 @@ async function handleDeepLink() {
     return;
   }
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
+  if (catalogLoading) { try { await catalogLoading; } catch (_) { /* the list as it is */ } }   // only installs wait for the mods list
   if (link.id.startsWith("look:")) {   // the website's Looks page: Discover › Looks, that card (looks.js); nothing installs yet
     show("mods", true, "discover");
     if (!(window.LeylineLooks && window.LeylineLooks.focus(link.id))) say("cat-status", "That look isn't in the list here yet. Try again in a few minutes.", "warn");
@@ -2786,6 +2942,7 @@ async function loadInstalled(quiet) {
   renderInstalled();
   renderModTiles();
   refreshModUpdates();
+  document.dispatchEvent(new CustomEvent("leyline:mods-changed", { detail: { client: c.id, from: "mods" } }));
 }
 
 // The title bar's pill: Workshop updates for mods in any of your clients.
@@ -3108,10 +3265,31 @@ function setupDrop() {
 
 // ------------------------------------------------------------------ Realms
 let realmsCache = [];
+let realmsFresh = false;   // the network's realm list has answered once (before that the kept copy may show)
 async function loadRealms(quiet) {
   if (!quiet) say("rl-status", "Loading the realm list…");
+  // the list kept from last time, at once, while the network answers (audit 12 Nov: a site that is down made the page
+  // wait). It never replaces a fresher list.
+  if (!realmsFresh && !realmsCache.length) {
+    try {
+      const k = await invoke("realms_list_cached");
+      if (k && k.realms && !realmsFresh) {
+        k.realms = k.realms.filter((r) => !hiddenRealm(r));
+        realmsCache = k.realms.map((r) => (r.official && r.slug === "official" ? Object.assign({}, r, { name: HANGOUT.name }) : r));
+        realmNames = k.realms.map((r) => r.name);
+        networkTotals = k.network || null;
+        fillRealmFilters();
+        rlLoading = false;
+        renderRealms();
+        renderRealmRows();
+        renderSrvHead();
+        renderPlayBar();
+      }
+    } catch (_) { /* an older core: the network list only */ }
+  }
   try {
     const l = await invoke("realms_list");
+    realmsFresh = true;
     // the core's official record (slug "official", realms.rs official()) is the Hangout; community records never are.
     // Its card keeps the record's own type (PvE): the Official badge already says what HANGOUT.kind would.
     l.realms = l.realms.filter((r) => !hiddenRealm(r));
@@ -3724,9 +3902,10 @@ async function playRealm(r, btn) {
     if (window.LeylineLoadouts && !(await window.LeylineLoadouts.beforeJoin(r, c)).go) { say("rl-status", ""); btn.disabled = false; return; }
     const j = window.LeylineGameMods ? await window.LeylineGameMods.beforeJoin(r, c, (t, k) => say("rl-status", t, k)) : { go: true, leyline: false };
     if (!j.go) { say("rl-status", ""); btn.disabled = false; return; }
-    if (window.LeylineAddons && r.official && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
+    if (window.LeylineAddons && !j.leyline) await window.LeylineAddons.beforePlay(c, { offer: !!r.official });   // up to date; offered on the official realm (addons.js)
     const msg = await invoke("play_realm", { client: c.id, slug: r.slug });
     started = true;
+    if (window.LeylineAddons) window.LeylineAddons.afterPlay();
     holdPlay(null, true);
     say("rl-status", msg + (r.official ? "" : ` ${r.name} has its own accounts: log in with yours there`
       + (r.join_url ? ", or make one with Make an account." : ".")), "ok");
@@ -3746,14 +3925,16 @@ async function playRealmHeroKey(r, btn) {
   if (!picked) return;
   if (!clientFits(r, picked)) return say("rl-status", wrongClientText(r, picked), "warn");
   btn.disabled = true;
-  say("rl-status", `Signing in to ${r.name} with your Hero Key…`);
+  say("rl-status", `Logging in to ${r.name} with your Hero Key…`);
   try {
+    if (window.LeylineAddons) await window.LeylineAddons.beforePlay(picked, { offer: false });   // the Leyline addons up to date (addons.js)
     const l = await invoke("play_realm_herokey", { client: picked.id, slug: r.slug });
+    if (window.LeylineAddons) window.LeylineAddons.afterPlay();
     const mins = Math.max(1, Math.round((l.valid_s || 600) / 60));
     if (l.auto) say("rl-status", `Started on ${r.name} as ${l.user}. The game signs you in by itself.`, "ok");
     else {
       const line = `Started on ${r.name} as ${l.user}. At the login screen type this one-time password: ${l.pass} `
-        + `(it works for ${mins} minutes and is not saved).` + (l.auto_why ? ` Signing in by itself didn't work here: ${oops(l.auto_why, "the game's login screen didn't take it.")}` : "");
+        + `(it works for ${mins} minutes and is not saved).` + (l.auto_why ? ` Logging in by itself didn't work here: ${oops(l.auto_why, "the game's login screen didn't take it.")}` : "");
       say("rl-status", line, "ok");
       // the password leaves the screen once it stops working (review 4 Nov: it stayed until the next status line)
       clearTimeout(ssoClearT);
@@ -4005,6 +4186,7 @@ document.addEventListener("leyline:me", () => {
 });
 
 window.LeylineApp = {
+  featureFor,   // the title bar's search (tests)
   news: () => news, realms: () => realmsCache, catalog: () => catalog, mode: () => mode, setMode, openLink, playHangout, HANGOUT,
   realmIcon, realmVersion, hiddenBuild, nameHue,
   state: () => state,   // addons.js: the clients
@@ -4012,6 +4194,7 @@ window.LeylineApp = {
   refresh: () => refresh().then(refreshStatus).catch(() => { /* as it was */ }),   // den.js: after Play solo, the bar shows Your Den
   pickRealm, playRealm, loadRealms, showRealm: showLinkedRealm,   // realmlink.js: paste to add, Live now
   realmTab, setRealmsTab,   // realmlink.js: a pasted community realm opens the Community tab
+  modsForSingle, selectClient,   // spmods.js: Get mods for single player (Discover on its game folder)
 };
 
 // ------------------------------------------------------------------ start
@@ -4019,7 +4202,12 @@ renderNews();
 renderModTiles();
 refresh().then(() => {
   setMode(mode);
-  loadCatalog(true).then(handleDeepLink);
+  catalogLoading = loadCatalog(true).finally(() => { catalogLoading = null; });
+  handleDeepLink();   // a friend's invite or a realm link doesn't wait for the mods list
+  try {
+    const ev = window.__TAURI__ && window.__TAURI__.event;
+    if (ev && ev.listen) ev.listen("deep-link", () => { handleDeepLink(); });
+  } catch (_) { /* no events: links still come at start */ }
   loadRealms(true);
   loadUpdateState();
   loadNews();

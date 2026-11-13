@@ -38,6 +38,7 @@ PAGES = (
     ("commands", "Commands"),
     ("mods", "Mod format"),
     ("publishing", "Publishing"),
+    ("themes", "Launcher themes"),   # theme packs (docs/THEMES.md for players; the launcher's Make a theme links it)
     ("hosting", "Hosting"),
     ("host-a-realm", "Host a realm"),   # the launcher's Host page, start to finish (launcher/ui/hostflow.js, host/flow.rs)
     ("den-invite", "Invite a friend to your Den"),   # docs/DEN-INVITE.md, the same text (launcher host/denways.rs)

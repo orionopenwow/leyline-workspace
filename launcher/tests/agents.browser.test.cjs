@@ -35,7 +35,7 @@ const FAKE = (opts) => {
     json: JSON.stringify({ mcpServers: { leyline: { command: exe, args: ['mcp'] } } }, null, 2),
     claude_code: { state: opts.ccState || 'no', path: 'C:\\Users\\pat\\.claude.json' },
     desktop: { state: 'missing', path: 'C:\\Users\\pat\\AppData\\Roaming\\Claude\\claude_desktop_config.json' },
-    never: ['Sign in, see or change a password, a Hero Key or your account', 'Anything with money', 'Delete files, remove a game client, wipe a realm',
+    never: ['Log in as you, see or change a password, a Hero Key or your account', 'Anything with money', 'Delete files, remove a game client, wipe a realm',
       'Make your realm public, open its sign-up, or make invites', 'Kick, ban or unban players, or change who may join',
       "Change your realm list address, or your launcher's updates", "Use the website's staff tools"],
     now,
@@ -163,6 +163,36 @@ test('Help points to Agents', async () => {
   const { page, errors } = await open({ page: 'help' });
   await page.click('#page-help [data-page-go="agents"]');
   assert.ok(await page.isVisible('#page-agents'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('the Agents check runs only while agents are on or the page is open, and never while the window is hidden', async () => {
+  const { page, errors } = await open({ page: 'play' });
+  const n = async () => (await calls(page, 'agents_state')).length;
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.LeylineAgents.polling()), false, 'agents off, on Home: no tick');
+  const a = await n();
+  await page.waitForTimeout(2600);
+  assert.equal(await n(), a, 'nothing asked');
+  await page.evaluate(() => window.LeylineNav.show('agents'));
+  await page.waitForFunction(() => window.LeylineAgents.polling());
+  await page.evaluate(() => window.LeylineNav.show('play'));
+  await page.waitForTimeout(2300);
+  assert.equal(await page.evaluate(() => window.LeylineAgents.polling()), false, 'left the page with agents off: stops');
+  // agents on: an agent may ask on any page, so it ticks there too
+  await page.evaluate(() => { window.__agents.allow = true; window.LeylineNav.show('agents'); });
+  await page.evaluate(() => window.LeylineNav.show('play'));
+  await page.waitForTimeout(2300);
+  assert.equal(await page.evaluate(() => window.LeylineAgents.polling()), true, 'agents on: ticking on Home');
+  // the window hidden (minimised): stops; back: asks at once
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); });
+  assert.equal(await page.evaluate(() => window.LeylineAgents.polling()), false, 'hidden: no tick');
+  const b = await n();
+  await page.waitForTimeout(2300);
+  assert.equal(await n(), b, 'nothing asked while hidden');
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.waitForFunction((x) => window.__calls.filter(([c]) => c === 'agents_state').length > x, b);
   assert.deepEqual(errors, []);
   await page.close();
 });

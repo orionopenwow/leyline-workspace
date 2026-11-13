@@ -154,7 +154,7 @@ pub const TOOLS: &[Tool] = &[
 
 /// What agents can never do: there is no tool for any of it. (Shown on the Agents page; the tests check none exists.)
 pub const NEVER: &[&str] = &[
-    "Sign in, see or change a password, a Hero Key or your account",
+    "Log in as you, see or change a password, a Hero Key or your account",
     "Anything with money",
     "Delete files, remove a game client, wipe a realm",
     "Make your realm public, open its sign-up, or make invites",

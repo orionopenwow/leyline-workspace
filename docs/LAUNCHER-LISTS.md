@@ -197,3 +197,24 @@ The play bar reads `favourites("realms")` to list the starred realms.
 **The star** sits at the end of each row's buttons. Starred realms also show under Favourites in the play bar's realm list.
 
 **The FILTERS popover** (build, rules, region, language, has players, my game folders) is the page's own, through `match` / `filtersOn` / `onReset`. A filter is about realms, so this PC's own worlds step aside while one is on.
+
+## The Mods page
+
+Every list on Mods & Addons is the kit's. They share one favourites store, `favourites: { id: "mods" }`
+(`leyline.list.mods.fav`), so a star on Discover is the same star on Installed, Looks and Game modes.
+
+| List | Where | Tabs | Chips | Sort |
+|---|---|---|---|---|
+| Discover's full list | `app.js` `catListMake`, on `#cat-grid` | Mods / Addons / Looks / Themes / Graphics stay `themes.js`'s; the rows are the open tab's | the categories (`simple.js`, `market.js`) as the page's own filters (`match` / `filtersOn` / `onReset`), then the kit's: Works with this game folder (on by default, `leyline.catFit`), Installed, Updates, Favourites, Game (only with more than one game in the list) | `#cat-sort`: the hub's orders ask the core (`mods_ranked`); Name is the kit's own A to Z |
+| Installed | `app.js` `instListMake`, on `#mods-list` | Mods / Addons (`#inst-tab-mods`, `#inst-tab-addons`, with `data-shelf` and the `#inst-n-*` badges; remembered in `leyline.instShelf`) | Updates, Turned off, Favourites | As installed, Name, Updates first |
+| Looks | `looks.js`, on `#looks-list` (the cards stay `#looks-grid .lk-card`) | the kinds (`#looks-tab-all`, `-graphics-pack`, `-ui-look`, `-preset`, each with `data-type`) | Works with this game folder, In use, Favourites | Suggested, Name |
+| Game modes | `gamemods.js`, on `#gm-list` | none: groups Play now, Game mode mods, Coming and hosted | Installed, Favourites | Suggested, Name |
+
+- **Search:** `#cat-q` is Discover's box (`search.input`): name, author, description, tags, category and the addon's words.
+- **Marks:** `decorateCard` (app.js) puts Installed or Update ready on every card, in every view.
+- **Enter:** Install or Update when the card has it, else its page (a card with nothing to install never gets an Install).
+- **After an install** the player stays on the same tab: the card is lit (`.just`) and keeps the focus. Installed opens on the
+  tab of what went in last.
+- **Pending stays pending:** the lists add no Install of their own. Install, Update and Use are the cards' own buttons,
+  drawn from what the catalog and the core say, exactly as before the kit.
+- Tests: `launcher/tests/modlists.browser.test.cjs` (screenshots with `SHOTS=<dir>`: `lists-mods-*.png`).

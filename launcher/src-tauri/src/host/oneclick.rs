@@ -16,6 +16,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 // ------------------------------------------------------------------------------------------------ error codes
 
@@ -377,23 +378,65 @@ pub fn cached_id(text: &str, site: &str) -> Option<String> {
     (v.get("site")?.as_str()? == site).then(|| v.get("id")?.as_str().map(String::from))?
 }
 
-/// The signed-in Hero Key's login name for local worlds: None when signed out (the world's own login is used).
-/// Asks the website who is signed in (8 s at most); offline, the id kept from the last time.
+/// The longest Play waits on the website to say who is signed in (all of it: both of its names, connect and read).
+pub const HERO_WAIT: Duration = Duration::from_secs(8);
+/// Asked once in this long per launcher run; in between, Play uses the id kept from the last answer (no network).
+pub const HERO_FRESH: Duration = Duration::from_secs(30 * 60);
+
+/// When the website last answered `me` in this run (for [`HERO_FRESH`]).
+static HERO_ASKED: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
+
+/// Whether to ask the website again: never asked in this run, or longer ago than `fresh`.
+pub fn hero_ask_due(asked: Option<Instant>, fresh: Duration) -> bool {
+    match asked {
+        None => true,
+        Some(t) => t.elapsed() >= fresh,
+    }
+}
+
+/// The signed-in Hero Key's login name for local worlds: None when signed out (the world's own login is used; Play
+/// then goes to whichever login holds the characters, app.rs world_play_now). The website is asked who is signed in
+/// at most once every [`HERO_FRESH`] and waited on for [`HERO_WAIT`] in all; offline, slow or in between, the id
+/// kept from the last answer. Only an answer that says signed out forgets it.
 pub fn hero_identity(app_dir: &Path) -> Option<String> {
     crate::social::load_token(app_dir)?;
     let site = crate::social::base();
     let cache = app_dir.join(CACHE_FILE);
-    let id = match crate::social::call(app_dir, "me", &serde_json::json!({})) {
-        Ok(v) => {
-            let id = account_id(&v)?;
-            let _ = crate::settings::write_atomic(&cache, serde_json::json!({ "site": site, "id": id }).to_string().as_bytes());
-            id
+    let kept = || cached_id(&fs::read_to_string(&cache).ok()?, &site);
+    let asked = HERO_ASKED.lock().ok().and_then(|g| *g);
+    let id = if !hero_ask_due(asked, HERO_FRESH) && kept().is_some() {
+        kept()?
+    } else {
+        // asked on its own thread: a site that hangs never holds Play past HERO_WAIT (the answer, when it comes,
+        // is still kept for next time)
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (dir, c, st) = (app_dir.to_path_buf(), cache.clone(), site.clone());
+        std::thread::spawn(move || {
+            let r = match crate::social::call(&dir, "me", &serde_json::json!({})) {
+                Ok(v) => match account_id(&v) {
+                    Some(id) => {
+                        let _ = crate::settings::write_atomic(&c, serde_json::json!({ "site": st, "id": id }).to_string().as_bytes());
+                        if let Ok(mut g) = HERO_ASKED.lock() {
+                            *g = Some(Instant::now());
+                        }
+                        Ok(id)
+                    }
+                    None => Err(String::new()),
+                },
+                Err(e) => {
+                    if e == "signed_out" {
+                        let _ = fs::remove_file(&c);
+                    }
+                    Err(e)
+                }
+            };
+            let _ = tx.send(r);
+        });
+        match rx.recv_timeout(HERO_WAIT) {
+            Ok(Ok(id)) => id,
+            Ok(Err(e)) if e == "signed_out" => return None,
+            _ => kept()?,
         }
-        Err(e) if e == "signed_out" => {
-            let _ = fs::remove_file(&cache);
-            return None;
-        }
-        Err(_) => cached_id(&fs::read_to_string(&cache).ok()?, &site)?,
     };
     let secret = local_secret(app_dir).ok()?;
     Some(hero_name(&secret, &site, &id))

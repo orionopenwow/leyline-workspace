@@ -952,7 +952,7 @@ pub fn have(p: &Paths, s: &State, update: bool) -> Have {
     let db = s.db_made && db_made(p);
     Have {
         installed: installed(p),
-        update: update && update_ready(p),
+        update: update && update_ready_with(p, s),
         maps: maps_done(p),
         db,
         filled: s.filled && db,
@@ -1794,7 +1794,17 @@ pub fn engine_shas(p: &Paths) -> (String, String, u64) {
 
 /// The release has another engine than the installed one (from the last look).
 pub fn update_ready(p: &Paths) -> bool {
-    let (inst, latest, _) = engine_shas(p);
+    update_ready_with(p, &load_state(p))
+}
+
+/// [`update_ready`] with this world's state as it is in hand (Single player's own is the shared one).
+pub fn update_ready_with(p: &Paths, s: &State) -> bool {
+    let (inst, latest) = if p.kind == Kind::Single {
+        (s.sha256.clone(), s.latest_sha256.clone())
+    } else {
+        let shared = load_state(&shared_paths(p));
+        if shared.sha256.is_empty() { (s.sha256.clone(), s.latest_sha256.clone()) } else { (shared.sha256, shared.latest_sha256) }
+    };
     installed(p) && !inst.is_empty() && !latest.is_empty() && inst != latest
 }
 

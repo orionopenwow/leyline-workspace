@@ -16,7 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # `app` is the desktop app (Tauri + webview). Without it only the core builds, which needs no system webview:
 #   cargo test --no-default-features
 default = ["app"]
-app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-plugin-updater", "torrent-engine"]
+app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-plugin-updater", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-deep-link", "torrent-engine"]
 # A real BitTorrent engine for game-client magnets and .torrents, used only with Settings > Testing's switch on
 # (clienttorrent.rs, owner 31 Oct; off by default). About 3.5 MB of the release binary.
 torrent-engine = ["dep:librqbit", "dep:tokio"]
@@ -69,6 +69,11 @@ leyline-terrain = { path = "terrain" }
 # Leyline's own updates: GitHub release downloads, signature-checked against the public key in tauri.conf.json.
 # Desktop only: the phone app updates through its APK (docs/ANDROID.md).
 tauri-plugin-updater = { version = "2", optional = true }
+# One launcher at a time: a leyline:// link clicked while Leyline is open reaches the open window instead of starting a
+# second launcher (deeplink.rs, app.rs run). Desktop only, like the app module that uses them.
+tauri-plugin-single-instance = { version = "2", optional = true }
+# leyline:// links on macOS, which never arrive as an argument (deeplink.rs from_urls)
+tauri-plugin-deep-link = { version = "2", optional = true }
 librqbit = { version = "9.1.0", default-features = false, features = ["rust-tls", "disable-upload"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"], optional = true }
 

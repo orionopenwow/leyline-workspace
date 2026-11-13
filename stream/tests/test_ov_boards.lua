@@ -84,8 +84,8 @@ local all = B.fights("spell-weaver, frozen-throne,nope,bone-lord")
 check("fights: catalog order, unknown left out", #all == 3 and all[1][1] == "frozen-throne" and all[2][1] == "bone-lord" and all[3][1] == "spell-weaver")
 check("fights: none known is the first fight", B.fights("nope")[1][1] == "frozen-throne")
 local wk = math.floor((clock - 4 * 86400) / (7 * 86400))
-check("featured: the catalog in turn, one a week", B.featured(clock, B.CATALOG)[1] == B.CATALOG[(wk % 12) + 1][1]
-    and B.featured(clock + 7 * 86400, B.CATALOG)[1] == B.CATALOG[((wk + 1) % 12) + 1][1])
+check("featured: the catalog in turn, one a week", B.featured(clock, B.CATALOG)[1] == B.CATALOG[(wk % #B.CATALOG) + 1][1]
+    and B.featured(clock + 7 * 86400, B.CATALOG)[1] == B.CATALOG[((wk + 1) % #B.CATALOG) + 1][1])
 check("featured: one fight is always that fight", B.featured(clock)[1] == "frozen-throne")
 check("featured: no brand words in the titles", (function()
     for _, f in ipairs(B.CATALOG) do

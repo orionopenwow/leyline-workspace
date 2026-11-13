@@ -38,6 +38,12 @@ local CATALOG = {
     { "brood-mother", "The Brood Mother's Lair", 249 }, { "stone-watcher", "The Stone Watcher", 624 },
     { "storm-watcher", "The Storm Watcher", 624 }, { "flame-watcher", "The Flame Watcher", 624 },
     { "frost-watcher", "The Frost Watcher", 624 }, { "spell-weaver", "The Spellweaver's Eye", 616 },
+    -- the citadel's other fights (Boss Rush, start anywhere)
+    { "icc-gunship", "The Gunship Battle", 631 }, { "icc-deathbringer", "The Deathbringer", 631 },
+    { "icc-bloat", "The Bloated Horror", 631 }, { "icc-ooze", "The Ooze Horror", 631 },
+    { "icc-professor", "The Mad Professor", 631 }, { "icc-council", "The Blood Council", 631 },
+    { "icc-blood-queen", "The Blood Queen", 631 }, { "icc-dreamwalker", "The Dreamwalker", 631 },
+    { "icc-frost-queen", "The Frost Queen", 631 },
 }
 
 local B = {}            -- exposed for tests as OV_BOARDS_TEST

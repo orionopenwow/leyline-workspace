@@ -2216,6 +2216,73 @@ fn world_repair_now(core: &Core, k: crate::host::engine::Kind, client: &str) -> 
     crate::host::engine::begin_repair(&settings::app_dir(), k, Some(profile.path))
 }
 
+/// A local world whose servers run on this PC now (the one this launcher started first).
+fn running_world() -> Option<crate::host::engine::Kind> {
+    use crate::host::engine as eng;
+    let order = eng::active().into_iter().chain(eng::KINDS);
+    order.into_iter().find(|k| eng::status(&world_paths(*k)).running)
+}
+
+/// The page answered "close Leyline with my world running" (or there was nothing to ask): the next close goes through.
+static CLOSE_ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Leyline's main window is closing (Settings › world_stop_on_close, on by default): with a world running and no
+/// friend in it, the window goes and the world is saved and stopped, then Leyline exits; with friends in it, the
+/// page asks first (`leyline:close-world`, answered by close_leyline). True: the close waits (prevented).
+fn close_with_world(window: &tauri::Window) -> bool {
+    use crate::host::engine as eng;
+    if CLOSE_ASKED.load(std::sync::atomic::Ordering::SeqCst) || !settings::load(&settings::app_dir()).world_stop_on_close {
+        return false;
+    }
+    let Some(k) = running_world() else { return false };
+    let friends = eng::friends_online(&world_paths(k)).unwrap_or(0);
+    if friends > 0 {
+        use tauri::Emitter;
+        let _ = window.emit("leyline:close-world", serde_json::json!({ "kind": k.word(), "title": k.title(), "friends": friends }));
+        return true;
+    }
+    let _ = window.hide();
+    close_stopping(window.app_handle().clone(), Some(k));
+    true
+}
+
+/// Save and stop `k` (sharing ends with it), tell friends Leyline is offline, then exit.
+fn close_stopping(app: AppHandle, k: Option<crate::host::engine::Kind>) {
+    use crate::host::engine as eng;
+    CLOSE_ASKED.store(true, std::sync::atomic::Ordering::SeqCst);
+    std::thread::spawn(move || {
+        if let Some(k) = k {
+            let p = world_paths(k);
+            eng::setup_log(&p, "Leyline is closing: saving and stopping the world");
+            world_share_off(k);
+            let _ = eng::stop(&p);
+        }
+        if let Some(h) = crate::p2p::friendnet::current() {
+            crate::p2p::friendnet::stop(&h);
+        }
+        app.exit(0);
+    });
+}
+
+/// The page's answer to `leyline:close-world`: `stop` saves and stops the world, then closes Leyline; false closes
+/// Leyline and leaves the world running (friends who came through the launcher are cut off).
+#[tauri::command]
+fn close_leyline(app: AppHandle, stop: bool) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
+    close_stopping(app, if stop { running_world() } else { None });
+}
+
+/// Settings › Stop my world when Leyline closes.
+#[tauri::command]
+fn set_world_stop_on_close(core: State<Core>, on: bool) -> Result<(), String> {
+    core.update(|s| {
+        s.world_stop_on_close = on;
+        Ok(())
+    })
+}
+
 /// Settings › Stop my world when the game closes.
 #[tauri::command]
 fn set_world_stop_on_exit(core: State<Core>, on: bool) -> Result<(), String> {
@@ -2849,6 +2916,7 @@ fn ingame_sync_start() {
                 if eng::sql(&p, "acore_characters", wf::INGAME_TABLES).is_err() {
                     continue;
                 }
+                let _ = eng::sql(&p, "acore_characters", &wf::expire_sql(now_secs()));
                 made = Some(k);
                 last.clear();
             }
@@ -4528,6 +4596,9 @@ pub fn run() {
                 if window.label() == "main" && crate::p2p::node::keep_running_on_close(&settings::app_dir()) {
                     api.prevent_close();
                     let _ = window.minimize();
+                } else if window.label() == "main" && close_with_world(window) {
+                    // a world is running: it is saved and stopped first, or the page asks (friends are in it)
+                    api.prevent_close();
                 } else if window.label() == "main" {
                     // Leyline closes: friends see "offline" now instead of ten minutes later (at most a second's wait;
                     // a slow relay mailbox is left to time out on its own)
@@ -4704,6 +4775,8 @@ pub fn run() {
             world_resume_pending,
             world_repair,
             set_world_stop_on_exit,
+            set_world_stop_on_close,
+            close_leyline,
             local_characters,
             online_characters,
             world_invite,

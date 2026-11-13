@@ -772,6 +772,15 @@ pub const INGAME_TABLES: &str = "CREATE TABLE IF NOT EXISTS ov_world_share (k VA
     account INT UNSIGNED NOT NULL DEFAULT 0, made INT UNSIGNED NOT NULL DEFAULT 0, done TINYINT NOT NULL DEFAULT 0, \
     answer VARCHAR(255) NOT NULL DEFAULT '');";
 
+/// Asks older than two minutes that nobody ran (the launcher was closed): answered, never run late (a link nobody
+/// is waiting for any more). The realm script does the same while the launcher is away.
+pub fn expire_sql(t: u64) -> String {
+    format!(
+        "UPDATE ov_world_asks SET done = 1, answer = 'err:The Leyline launcher was closed, so nobody answered. Ask again.' WHERE done = 0 AND made > 0 AND made < {};",
+        t.saturating_sub(120)
+    )
+}
+
 /// The asks waiting (oldest first, a few at a time).
 pub const ASKS_SQL: &str = "SELECT id, kind FROM ov_world_asks WHERE done = 0 ORDER BY id LIMIT 4";
 

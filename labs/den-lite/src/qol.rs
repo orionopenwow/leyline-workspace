@@ -363,20 +363,22 @@ mod tests {
         let out = cmd(&mut d, &mut sel, &mut a, here, "commit", true, 400);
         assert!(out.change.is_some(), "{:?}", out.say);
         assert_eq!(d.undo_depth(), undo + 1, "one undo for the group");
-        let at = |g: u64| d.placed(g).unwrap().obj.clone();
-        let c = at(chair.guid);
+        fn at(d: &Den, g: u64) -> crate::den::WorldObject {
+            d.placed(g).unwrap().obj.clone()
+        }
+        let c = at(&d, chair.guid);
         assert!((c.x - chair.x).abs() < 0.02 && (c.y - (chair.y + 3.0)).abs() < 0.02);
         // the table was 2 yards west of the chair: turned a quarter left with it, it is 2 yards south of it now
-        let t = at(table.guid);
+        let t = at(&d, table.guid);
         assert!((t.x - c.x).abs() < 0.02 && (t.y - (c.y - 2.0)).abs() < 0.02, "{t:?} {c:?}");
         assert!((t.o - std::f32::consts::FRAC_PI_2).abs() < 0.01, "turned with it");
         // the stool was 2 west and 3 north: now 3 west and 2 south
-        let s = at(stool.guid);
+        let s = at(&d, stool.guid);
         assert!((s.x - (c.x - 3.0)).abs() < 0.02 && (s.y - (c.y - 2.0)).abs() < 0.02, "{s:?}");
         assert!(sel.guid == Some(chair.guid) && sel.more.len() == 2, "still all selected");
         // one undo puts all three back
         d.undo();
-        assert!((at(table.guid).x - table.x).abs() < 0.02 && (at(stool.guid).y - stool.y).abs() < 0.02 && (at(chair.guid).y - chair.y).abs() < 0.02);
+        assert!((at(&d, table.guid).x - table.x).abs() < 0.02 && (at(&d, stool.guid).y - stool.y).abs() < 0.02 && (at(&d, chair.guid).y - chair.y).abs() < 0.02);
     }
 
     #[test]

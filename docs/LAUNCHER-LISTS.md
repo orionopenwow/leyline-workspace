@@ -21,11 +21,9 @@ features with one consistent style everywhere"):
 
 **Uses it now:**
 - the Realms page (`app.js` `rlList`);
-- the play bar's realm picker, which reads the Realms page's favourites.
-
-**Next:**
-- the Friends list (`friends.js`, `worldfriends.js`);
-- the Mods lists (`addons.js`, `gamemods.js`, `looks.js`, the Mods page).
+- the play bar's realm picker, which reads the Realms page's favourites;
+- the Friends list (`friends.js` #lf), friends with a character on your world (`worldfriends.js` #wf) and your friends' worlds (#fw);
+- the Mods page: Discover, Installed, Looks and Game modes (see "The Mods page" below).
 
 ## Making a list
 

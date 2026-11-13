@@ -326,13 +326,15 @@ test('Play with a friend: how a friend joins, Invite a friend gives one link wit
 
 test('the i button: a bubble for every top-level page, Learn more opens its docs, Esc and a click outside close it', async () => {
   const { page, ctx, errors } = await open({});
-  const want = { play: ['Home', 'gettingstarted'], single: ['Single player', 'docsingle'], realms: ['Realms', 'docsplay'], modes: ['Modes', 'docsplay'],
+  const want = { play: ['Home', 'gettingstarted'], single: ['Single player', 'docsingle'], realms: ['Realms', 'docsplay'], modes: ['Modes', 'docsmodes'],
     mods: ['Mods & Addons', 'docsmods'], host: ['Host', 'hostarealm'], forum: ['Forum', 'docslauncher'], news: ['News', 'docslauncher'], settings: ['Settings', 'docslauncher'] };
   for (const [pg, [title, link]] of Object.entries(want)) {
     await page.evaluate((p) => window.LeylineNav.show(p), pg);
     await page.click('#ll-info');
     await page.waitForSelector('#ll-info-b:not([hidden])');
-    assert.equal(await page.textContent('#ll-info-t'), title, pg);
+    // Modes: its Leaderboards panel has its own bubble when it is mid-screen (a short Modes list here)
+    if (pg === 'modes') assert.ok(['Modes', 'Leaderboards'].includes(await page.textContent('#ll-info-t')), pg);
+    else assert.equal(await page.textContent('#ll-info-t'), title, pg);
     const lines = await page.$$eval('#ll-info-b p', (l) => l.length);
     assert.ok(lines >= 1 && lines <= 4, `${pg}: ${lines} lines`);
     assert.equal(await page.getAttribute('#ll-info-more', 'data-link'), link);
@@ -352,8 +354,8 @@ test('the i button: a bubble for every top-level page, Learn more opens its docs
   await page.click('#ll-info-more');
   assert.deepEqual((await callsOf(page, 'open_link')).pop(), { name: 'docsingle' });
   await page.waitForSelector('#ll-info-b[hidden]', { state: 'attached' });
-  // any other page: Read the docs
-  await page.evaluate(() => window.LeylineNav.show('help'));
+  // a page with no bubble of its own (none today: info.browser.test.cjs checks every page): Read the docs
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent('leyline:page', { detail: { page: 'nowhere' } })));
   await page.click('#ll-info');
   assert.equal(await page.textContent('#ll-info-more'), 'Read the docs');
   assert.equal(await page.getAttribute('#ll-info-more', 'data-link'), 'docs');

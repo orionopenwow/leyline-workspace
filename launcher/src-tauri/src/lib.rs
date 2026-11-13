@@ -134,6 +134,7 @@ pub const LINKS: &[(&str, &str)] = &[
     ("docssolo", crate::site!("/wrath/docs/solo")), // Leyline Solo, the small first-era app
     ("docscommands", crate::site!("/wrath/docs/commands")), // Boss Rush and Modes: the chat commands
     ("docspublishing", crate::site!("/wrath/docs/publishing")), // a mod or a theme onto the Workshop
+    ("docsmodes", crate::site!("/wrath/docs/wrath-unleashed#duels-boss-rush-and-your-den")), // Boss Rush, Duels, the boards
     ("mods", crate::site!("/wrath/mods")),
     ("discord", "https://discord.gg/RfChVr8J7T"),
     ("forum", forum::PAGE), // the website's forum: posting happens there (forum.rs)
@@ -202,7 +203,8 @@ mod link_tests {
     #[test]
     fn the_info_bubble_docs_pages_are_on_the_site() {
         for (n, p) in [("docsden", "den"), ("docsdeninvite", "den-invite"), ("docsmobile", "mobile"), ("docsherokey", "hero-key"),
-            ("docssolo", "solo"), ("docscommands", "commands"), ("docspublishing", "publishing")] {
+            ("docssolo", "solo"), ("docscommands", "commands"), ("docspublishing", "publishing"),
+            ("docsmodes", "wrath-unleashed#duels-boss-rush-and-your-den")] {
             assert_eq!(super::link(n), Some(format!("https://leylinelauncher.com/wrath/docs/{p}").as_str()), "{n}");
         }
     }

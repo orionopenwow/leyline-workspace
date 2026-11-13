@@ -1,5 +1,5 @@
 // The guide (ui/guide.js, ui/guide.css; src-tauri settings.rs Settings::seen, app.rs guide_seen) in Chromium with a fake
-// Tauri core: the first-run tour (3 or 4 steps on the real controls, Find your game files only with no game folder;
+// Tauri core: the first-run tour (5 or 6 steps on the real controls, Find your game files only with no game folder;
 // Skip, Esc, Done; kept in the core's settings, never localStorage), Help › Show me again and Start here, nothing at all
 // with an older core, and the one-time encouragement toasts (each once, one at a time, never over the tour; the
 // hosted one copies the invite link). No game or publisher names.
@@ -78,20 +78,20 @@ async function inView(page) {
   assert.ok(b.x >= 0 && b.y >= 0 && b.x + b.width <= vp.width && b.y + b.height <= vp.height, 'the card is on screen');
 }
 
-test('first run with no game folder: four steps on the real controls, then Done keeps it in the settings', async () => {
+test('first run with no game folder: six steps on the real controls, then Done keeps it in the settings', async () => {
   const { page, ctx, errors } = await open({ seen: [] });
   await page.waitForSelector('#gd-tour');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'gd-tour-next', 'Next has the focus');
-  const want = [['Play Wrath Unleashed', '#play-go'], ['Your Den', '#pb-realm-btn'], ['Host a server', '.side .nav[data-page="host"]'],
-    ['Find your game files', '#pb-client']];
+  const want = [['Single player', '#hm-single-go'], ['Play Wrath Unleashed', '#play-go'], ['Your Den', '#pb-realm-btn'], ['Host a server', '.side .nav[data-page="host"]'],
+    ['Find your game files', '#pb-client'], ['Ask about any page', '#ll-info']];
   for (let i = 0; i < want.length; i++) {
     assert.equal(await page.textContent('#gd-tour-title'), want[i][0]);
-    assert.equal(await page.textContent('#gd-tour-n'), `${i + 1} of 4`);
+    assert.equal(await page.textContent('#gd-tour-n'), `${i + 1} of 6`);
     assert.ok((await page.textContent('#gd-tour-text')).length < 160, 'short');
     await ringOn(page, want[i][1]);
     await inView(page);
     await shot(page, `tour-${i + 1}`);
-    assert.equal((await page.textContent('#gd-tour-next')).trim(), i === 3 ? 'Done' : 'Next');
+    assert.equal((await page.textContent('#gd-tour-next')).trim(), i === 5 ? 'Done' : 'Next');
     await page.click('#gd-tour-next');
   }
   assert.equal(await page.locator('#gd-tour, #gd-ring').count(), 0);
@@ -102,13 +102,12 @@ test('first run with no game folder: four steps on the real controls, then Done 
   await ctx.close();
 });
 
-test('with a game folder: three steps (no Find your game files); Skip and Esc both end it once', async () => {
+test('with a game folder: five steps (no Find your game files); Skip and Esc both end it once', async () => {
   const { page, ctx, errors } = await open({ seen: [], clients: true });
   await page.waitForSelector('#gd-tour');
-  assert.equal(await page.textContent('#gd-tour-n'), '1 of 3');
-  await page.click('#gd-tour-next');
-  await page.click('#gd-tour-next');
-  assert.equal(await page.textContent('#gd-tour-title'), 'Host a server');
+  assert.equal(await page.textContent('#gd-tour-n'), '1 of 5');
+  for (let i = 0; i < 4; i++) await page.click('#gd-tour-next');
+  assert.equal(await page.textContent('#gd-tour-title'), 'Ask about any page');
   assert.equal((await page.textContent('#gd-tour-next')).trim(), 'Done');
   await page.click('#gd-tour-skip');
   assert.equal(await page.locator('#gd-tour').count(), 0);
@@ -184,7 +183,7 @@ test('the toast and the tour sit inside the window on a small launcher', async (
   const { page, ctx, errors } = await open({ seen: [] });
   await page.setViewportSize({ width: 900, height: 620 });
   await page.waitForSelector('#gd-tour');
-  for (let i = 0; i < 4; i++) { await inView(page); await page.click('#gd-tour-next'); }
+  for (let i = 0; i < 6; i++) { await inView(page); await page.click('#gd-tour-next'); }
   await page.evaluate(() => window.LeylineGuide.moment('hosted'));
   await page.waitForSelector('#gd-toast');
   const b = await page.locator('#gd-toast').boundingBox();

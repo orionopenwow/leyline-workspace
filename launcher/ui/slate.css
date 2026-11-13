@@ -447,3 +447,17 @@ html[data-base="light"] :is(.side, .playbar, .titlebar .brand, .titlebar .search
   --t-ok: #4fd18b; --t-warn: #f2c14e; --t-bad: #ff7f76;
   color: var(--t-text);
 }
+
+/* ---------------------------------------------------------------- Host and its console on the stone too
+   (audit 12 Nov: Host and the host console used the server windows' navy slate with a blue and violet glow, so Host
+   read as another app). The dark base only; the console keeps its own accent for its controls. */
+html:not([data-base="light"]) :is(#page-host, .hc-dlg) {
+  --hc-slate: var(--t-panel);
+  --hc-glow: none;
+  --hc-grain: none;
+  --hc-edge: var(--sl-metal);
+  --hc-inset: rgba(0, 0, 0, 0.28);
+  --hc-inset-border: var(--t-border);
+  --hc-row: var(--t-card);
+  --hc-row-border: var(--t-card-border);
+}

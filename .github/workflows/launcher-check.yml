@@ -1,0 +1,172 @@
+# Leyline launcher: the Rust core's tests and a compile check of the whole app, on feature branches, before a ship
+# (Claude's cloud sessions can't reach crates.io, so this is where their Rust gets built). No secrets; the public
+# Leyline repo's own workflow still builds and ships the launcher from main. The one upload: launcher-test-windows,
+# a test build for the owner's PC on the test branches named there (a prerelease, never on main).
+name: launcher check
+
+on:
+  push:
+    branches: ["feat-*"]
+    paths:
+      - "launcher/src-tauri/**"
+      - "launcher/ui-solo/**"
+      - "launcher/ui/**"
+      - "labs/den-lite/**"
+      - ".github/workflows/launcher-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Linux webview libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          # Lua 5.1: the hybrid login's glue tests (hybrid.rs runs glue/test_hybrid_glue.lua when a Lua is installed)
+          sudo apt-get install -y lua5.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: cargo test (core, no webview)
+        working-directory: launcher/src-tauri
+        run: cargo test --locked --no-default-features
+      - name: cargo check (the whole app)
+        working-directory: launcher/src-tauri
+        run: cargo check --locked --all-targets
+
+  den-lite:
+    # Den Lite (labs/den-lite, its own crate) and the terrain crate it shares with the launcher
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: labs/den-lite
+      - name: cargo test (Den Lite)
+        working-directory: labs/den-lite
+        run: cargo test --locked
+      - name: cargo test (the terrain crate)
+        working-directory: launcher/src-tauri/terrain
+        run: cargo test
+
+  solo-app:
+    # Leyline Solo (docs/LEYLINE-SOLO.md): the same crate with the `solo` feature and its own window
+    # (tauri.solo.conf.json, ui-solo/). Only on its branch: the compile on Linux, then the Windows app as players get it
+    # (no installer here; the leyline-solo repo's own workflow makes and signs that).
+    if: github.ref == 'refs/heads/feat-solo-app'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Linux webview libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: cargo check --features solo (with the solo window's config)
+        working-directory: launcher/src-tauri
+        run: |
+          export TAURI_CONFIG="$(cat tauri.solo.conf.json)"
+          cargo check --locked --features solo --all-targets
+
+  solo-app-windows:
+    if: github.ref == 'refs/heads/feat-solo-app'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: Build Leyline Solo (no installer)
+        working-directory: launcher
+        shell: bash
+        run: |
+          npm ci --no-audit --no-fund
+          npx tauri build --no-bundle --features solo --config src-tauri/tauri.solo.conf.json -- --locked
+          ls -la src-tauri/target/release/*.exe
+
+  launcher-test-windows:
+    # A Windows test build of the normal launcher from a test branch (owner 11 Nov: "do your own playtests on my pc and
+    # level up before releasing"): Leyline.exe with no installer, to the rolling PRERELEASE `launcher-test` of this
+    # repository with its .sha256, for Control's sp-playtest step (tools/first-run/sp_playtest.py). Never on main (the
+    # workflow only runs on feat-* branches, and this job only on the branches named here); only the built-in
+    # GITHUB_TOKEN; players never get this build (the public Leyline repo's own workflow builds theirs from main).
+    if: github.ref == 'refs/heads/feat-sp-playtest' || github.ref == 'refs/heads/feat-launcher-test'
+    needs: check
+    runs-on: windows-latest
+    timeout-minutes: 75
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: Build the launcher (no installer)
+        working-directory: launcher
+        shell: bash
+        run: |
+          npm ci --no-audit --no-fund
+          npx tauri build --no-bundle -- --locked
+          ls -la src-tauri/target/release/*.exe
+      - name: Leyline.exe, its .sha256 and what it was built from
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          exe="$(ls launcher/src-tauri/target/release/*.exe | grep -i '/leyline\.exe$' | head -n1)"
+          test -n "$exe"
+          cp "$exe" out/Leyline.exe
+          # the single player playtest must be in it (sptest.rs SP_MARK), or the PC's step would only say so later
+          grep -c "leyline-play-test-single-v1" out/Leyline.exe
+          (cd out && sha256sum Leyline.exe > Leyline.exe.sha256 && cat Leyline.exe.sha256)
+          printf '{"commit":"%s","branch":"%s","run":"%s","built":"%s"}\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$(date -u +%FT%TZ)" > out/launcher-test.json
+      - name: The rolling prerelease launcher-test
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          notes="A test build of the Leyline launcher from ${GITHUB_REF_NAME} (${GITHUB_SHA}), for the single player playtest on the owner's PC (Control: sp-playtest). Not a release: players get the launcher from the Leyline repository."
+          if gh release view launcher-test -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit launcher-test -R "$GITHUB_REPOSITORY" --prerelease --title "Launcher test build" --notes "$notes"
+          else
+            gh release create launcher-test -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" --title "Launcher test build" --notes "$notes"
+          fi
+          gh release upload launcher-test -R "$GITHUB_REPOSITORY" --clobber out/Leyline.exe out/Leyline.exe.sha256 out/launcher-test.json
+          gh release view launcher-test -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'

@@ -798,9 +798,14 @@ pub const WEEK: u64 = 7 * 86_400;
 
 /// This week's featured fight: the catalog in turn, one a week from Monday 00:00 UTC (the same rule as
 /// boards-export.py `featured` and ov_boards.lua `B.featured`; docs/LEADERBOARDS.md).
+/// The fights the boards and the weekly featured fight turn through: the first ones in [`FIGHTS`], the same list as
+/// boards-export.py CATALOG and ov_boards.lua. The single-boss starts added after them (start anywhere: `icc-*`) are
+/// places to begin a run, not boards of their own, so the featured week stays the same when one is added.
+pub const BOARD_FIGHTS: usize = 12;
+
 pub fn featured_fight(now: u64) -> &'static Fight {
     let n = now.saturating_sub(WEEK0) / WEEK;
-    &FIGHTS[(n % FIGHTS.len() as u64) as usize]
+    &FIGHTS[(n % BOARD_FIGHTS as u64) as usize]
 }
 
 /// Monday 00:00 UTC of `now`'s week.
@@ -1069,7 +1074,10 @@ mod tests {
         assert_eq!(featured_fight(now).key, "cult-mistress");
         assert_eq!(featured_fight(1_794_182_400).key, featured_fight(1_794_182_400 + WEEK - 1).key);
         assert_ne!(featured_fight(now).key, featured_fight(now + WEEK).key);
-        assert_eq!(featured_fight(now).key, featured_fight(now + WEEK * FIGHTS.len() as u64).key);
+        assert_eq!(featured_fight(now).key, featured_fight(now + WEEK * BOARD_FIGHTS as u64).key);
+        // the boards' fights come first; everything after them is a start-anywhere boss
+        assert!(FIGHTS[..BOARD_FIGHTS].iter().all(|f| !f.key.starts_with("icc-")));
+        assert!(FIGHTS[BOARD_FIGHTS..].iter().all(|f| f.key.starts_with("icc-")));
     }
 
     #[test]

@@ -59,7 +59,10 @@ else:
 
 rs = open(os.path.join(REPO, "launcher", "src-tauri", "src", "host", "bossrush.rs"), encoding="utf-8").read()
 fights = re.findall(r'Fight \{ key: "([a-z0-9-]+)"', rs.split("pub const FIGHTS")[1].split("];")[0])
-check("catalog: the launcher's FIGHTS in the same order", tuple(fights) == ex.CATALOG, fights)
+# the boards' fights first, in the same order (bossrush.rs BOARD_FIGHTS); after them only start-anywhere bosses (icc-*)
+check("catalog: the launcher's FIGHTS in the same order", tuple(fights[:len(ex.CATALOG)]) == ex.CATALOG
+      and all(f.startswith("icc-") for f in fights[len(ex.CATALOG):]), fights)
+check("catalog: bossrush.rs BOARD_FIGHTS is the catalog's length", f"pub const BOARD_FIGHTS: usize = {len(ex.CATALOG)};" in rs)
 check("week: Monday to Monday", ex.day(ex.week_start(NOW)) == "2026-11-09" and ex.week_start(WK) == WK and ex.week_start(WK - 1) == WK - 7 * 86400)
 check("week: the same Monday as the boss boards' week", ex.week_start(NOW) == bf.week_bounds(NOW)[0])
 check("featured: one fight a week, in turn", ex.featured(NOW) != ex.featured(NOW + 7 * 86400)

@@ -296,8 +296,8 @@ local card5 = D.CARDS[5][2]
 check("the keys card: nudge, Alt, circle, magnet, slope, the tour", card5:find("nudge", 1, true) and card5:find("Alt+drag circle", 1, true)
     and card5:find("M magnet", 1, true) and card5:find("Ctrl+L", 1, true) and card5:find("/dentour", 1, true))
 local guideKeys
-for _, p in ipairs(W.DenGuide and W.DenGuide.PAGES or {}) do if p[1] == "keys" then guideKeys = table.concat(p[5], " ") end end
-check("the Guide's Keys page: the same", guideKeys and guideKeys:find("Numpad", 1, true) and guideKeys:find("magnet", 1, true) and guideKeys:find("/dentour", 1, true))
+for _, p in ipairs(W.DenGuide and W.DenGuide.PAGES or {}) do if p[1] == "morekeys" then guideKeys = table.concat(p[5], " ") end end
+check("the Guide's More keys page: the same", guideKeys and guideKeys:find("Numpad", 1, true) and guideKeys:find("magnet", 1, true) and guideKeys:find("/dentour", 1, true))
 check("the hint line: Alt+drag circle and the nudge", K.Hint():find("Alt+drag circle", 1, true) and K.Hint():find("Numpad nudges", 1, true))
 
 -- no game-brand words; owner copy marked

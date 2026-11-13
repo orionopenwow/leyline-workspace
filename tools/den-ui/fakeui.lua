@@ -469,7 +469,8 @@ local function owner(f) if f.kind == "FontString" or f.kind == "Texture" then re
 function F.layout()
     cache = {}
     local out = {}
-    for _, f in ipairs(F.created) do
+    -- the creation order is the index here (a window may keep its own field called `n`: BuildTools.lua's array count)
+    for i, f in ipairs(F.created) do
         if f:IsVisible() and not f._root then
             local r = F.rect(f)
             if r and r.w > 0 and r.h > 0 then
@@ -479,7 +480,7 @@ function F.layout()
                 while p and not p._root do alpha = alpha * (p.alpha or 1); p = p.parent end
                 local root = o
                 while root.parent and not root.parent._root do root = root.parent end
-                out[#out + 1] = { f = f, n = f.n, kind = f.kind, name = f.name, stock = f.stock, x = r.x, y = r.y, w = r.w, h = r.h,
+                out[#out + 1] = { f = f, n = i, kind = f.kind, name = f.name, stock = f.stock, x = r.x, y = r.y, w = r.w, h = r.h,
                     strata = STRATA[o:GetFrameStrata()] or 3, level = o:GetFrameLevel(), layer = LAYER[f.layer or "ARTWORK"] or 3,
                     alpha = alpha, root = root.name or ("#" .. root.n) }
             end
@@ -531,7 +532,7 @@ function F.dump(path, title, notes)
         rows[#rows + 1] = string.format('{"n":%d,"kind":%s,"name":%s,"stock":%s,"x":%s,"y":%s,"w":%s,"h":%s,"strata":%d,"level":%d,"layer":%d,"alpha":%s,'
             .. '"color":%s,"file":%s,"text":%s,"font":%s,"tcolor":%s,"justify":%s,"model":%s,"desat":%s,"root":%s,"autoW":%s,'
             .. '"bd":%s,"bdedge":%s,"edge":%s,"wrap":%s,"justifyV":%s}',
-            f.n, jstr(f.kind), jstr(f.name), jstr(f.stock), jnum(e.x), jnum(e.y), jnum(e.w), jnum(e.h), e.strata, e.level, e.layer, jnum(e.alpha),
+            e.n, jstr(f.kind), jstr(f.name), jstr(f.stock), jnum(e.x), jnum(e.y), jnum(e.w), jnum(e.h), e.strata, e.level, e.layer, jnum(e.alpha),
             jcol(f.color or (f.file and f.vcolor) or nil), jstr(f.file), jstr(text), font and tostring(font) or "null", jcol(f.tcolor), jstr(f.justify),
             jstr(f.model and f.kind:find("Model") and f.model or nil), f.desat and "true" or "false", jstr(e.root), f.autoW and "true" or "false",
             jcol(f.backdrop and f.backdrop.bgFile and (f.bdcolor or { 0, 0, 0, 1 }) or nil), jcol(f.backdrop and f.backdrop.edgeFile and f.bdborder or nil),

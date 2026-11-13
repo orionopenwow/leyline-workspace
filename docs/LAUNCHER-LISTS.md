@@ -23,7 +23,9 @@ features with one consistent style everywhere"):
 - the Realms page (`app.js` `rlList`);
 - the play bar's realm picker, which reads the Realms page's favourites;
 - the Friends list (`friends.js` #lf), friends with a character on your world (`worldfriends.js` #wf) and your friends' worlds (#fw);
-- the Mods page: Discover, Installed, Looks and Game modes (see "The Mods page" below).
+- the Mods page: Discover, Installed, Looks and Game modes (see "The Mods page" below);
+- the Leaderboards (`boards.js`, on `#md-boards` and `#br-boards`): tabs Boss Rush / Duels / Local runs, an "Only you"
+  chip; see docs/LEADERBOARDS.md.
 
 ## Making a list
 

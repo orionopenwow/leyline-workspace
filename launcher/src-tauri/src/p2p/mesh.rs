@@ -11,6 +11,11 @@
 //! * Merge: the newest per realm (`seq`), endpoints merged, ties settled by the smaller sha256 of the signature.
 //! * Relay per realm (`choose`): our seed relays and the realm's own relay; with `mesh_relays` also community
 //!   relays, by measured round trip and published load.
+//! * Commonhold v1 (docs/COMMONHOLD-V1.md): `info` records are capability documents (what a relay or host supports,
+//!   its protocol levels `proto_min`/`proto_max`, limits, abuse contact as a peer id). The tolerant reader: fields this
+//!   code doesn't know are kept (records are stored as sent), and a kind or document version it doesn't know is
+//!   ignored (`Err("ignored: ...")`, counted apart from refusals). `commonhold-v1-vectors.json` is the conformance kit,
+//!   made by `hosting/kit/tools/wunet/commonhold.py` and checked by both sides.
 //! * The result is a realms.json document (`kind: community`, `source: mesh`) that `realms::list_of` reads like
 //!   any other listing.
 
@@ -29,6 +34,11 @@ pub const REALM_TTL: u64 = 15 * 60;
 pub const ENDPOINT_TTL: u64 = 15 * 60;
 pub const NODE_TTL: u64 = 30 * 60;
 pub const BLOCK_MAX_TTL: u64 = 90 * 86400;
+/// A capability document lives a day (wunet/mesh.py INFO_TTL).
+pub const INFO_TTL: u64 = 24 * 3600;
+/// The Commonhold protocol levels this code speaks (wunet/mesh.py PROTO_MIN / PROTO).
+pub const PROTO_MIN: u64 = 1;
+pub const PROTO: u64 = 1;
 pub const SKEW: u64 = 300;
 pub const MAX_ENDPOINTS: usize = 8;
 pub const MAX_RECORDS: usize = 50_000;
@@ -38,6 +48,8 @@ const CTX_HEARTBEAT: &str = "wu-listing-heartbeat-v1";
 const CTX_ENDPOINT: &str = "leyline-mesh-endpoint-v1";
 const CTX_NODE: &str = "leyline-mesh-node-v1";
 const CTX_BLOCK: &str = "leyline-mesh-block-v1";
+const CTX_INFO: &str = "leyline-mesh-info-v1";
+const REGIONS: &[&str] = &["na-east", "na-west", "sa", "eu", "africa", "me", "asia", "oce"];
 const TYPES: &[&str] = &["PvE", "PvP", "RP", "RP-PvP", "Fun"];
 
 pub fn now_secs() -> u64 {
@@ -130,7 +142,90 @@ fn dedupe(eps: Vec<Value>) -> Vec<Value> {
     v
 }
 
+/// `(proto_min, proto_max)` of a signed document; missing or malformed: `(1, 1)` (wunet/mesh.py `proto_range`).
+pub fn proto_range(doc: &Value) -> (u64, u64) {
+    let lo = doc.get("proto_min").map_or(Some(1), Value::as_u64);
+    let hi = doc.get("proto_max").map_or(lo, Value::as_u64);
+    match (lo, hi) {
+        (Some(a), Some(b)) if (1..=65535).contains(&a) && (1..=65535).contains(&b) && a <= b => (a, b),
+        _ => (1, 1),
+    }
+}
+
+/// Whether a document's signer and this launcher share a protocol level.
+pub fn speaks(doc: &Value) -> bool {
+    let (a, b) = proto_range(doc);
+    a <= PROTO && PROTO_MIN <= b
+}
+
+/// The version gate of the tolerant reader: v1 is checked, a newer v is ignored, anything else refused.
+fn version(doc: Option<&Value>, what: &str) -> Result<(), String> {
+    match doc.and_then(|d| d.get("v")).and_then(Value::as_u64) {
+        Some(1) => Ok(()),
+        Some(v) if v >= 2 && doc.is_some_and(Value::is_object) => Err(format!("ignored: {what} v{v} is newer than this launcher")),
+        _ => Err(format!("no {what}")),
+    }
+}
+
+fn token_ok(s: &str, first_lower_only: bool, max: usize) -> bool {
+    let b = s.as_bytes();
+    !b.is_empty() && b.len() <= max
+        && (b[0].is_ascii_lowercase() || (!first_lower_only && b[0].is_ascii_digit()))
+        && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || (if first_lower_only { *c == b'_' } else { *c == b'.' || *c == b'-' }))
+}
+
+fn lang_ok(s: &str) -> bool {
+    let (a, b) = s.split_once('-').map(|(a, b)| (a, Some(b))).unwrap_or((s, None));
+    (2..=3).contains(&a.len()) && a.bytes().all(|c| c.is_ascii_lowercase())
+        && b.map_or(true, |b| (2..=8).contains(&b.len()) && b.bytes().all(|c| c.is_ascii_alphanumeric()))
+}
+
+/// The fields of a capability document (wunet/mesh.py `_check_info`). Fields not named here are kept, unchecked.
+fn info_fields_ok(d: &Value) -> Result<(), String> {
+    let s = |k: &str| d.get(k).map_or(Some(""), Value::as_str);
+    let list = |k: &str, max: usize, ok: &dyn Fn(&str) -> bool| match d.get(k) {
+        None => true,
+        Some(Value::Array(a)) => a.len() <= max && a.iter().all(|x| x.as_str().is_some_and(ok)),
+        _ => false,
+    };
+    if !matches!(d.get("role").and_then(Value::as_str), Some("relay" | "host")) {
+        return Err("info role".into());
+    }
+    let (lo, hi) = (int(d.get("proto_min")), int(d.get("proto_max")));
+    if !matches!((lo, hi), (Some(a), Some(b)) if (1..=65535).contains(&a) && (1..=65535).contains(&b) && a <= b) {
+        return Err("info proto_min/proto_max".into());
+    }
+    if !s("software").is_some_and(|x| x.chars().count() <= 40) || !s("version").is_some_and(|x| x.chars().count() <= 32) {
+        return Err("info software".into());
+    }
+    if !list("supported", 32, &|c: &str| token_ok(c, false, 32)) {
+        return Err("info supported".into());
+    }
+    let lim_ok = match d.get("limits") {
+        None => true,
+        Some(Value::Object(m)) => m.len() <= 16 && m.iter().all(|(k, v)| token_ok(k, true, 24) && v.as_u64().is_some()),
+        _ => false,
+    };
+    if !lim_ok {
+        return Err("info limits".into());
+    }
+    if !s("admin").is_some_and(|a| a.is_empty() || crate::realms::realm_id_ok(a)) {
+        return Err("info admin".into());
+    }
+    if !s("rules_url").is_some_and(|u| u.is_empty() || (u.len() <= 200 && u.starts_with("https://"))) {
+        return Err("info rules_url".into());
+    }
+    if !s("region").is_some_and(|r| r.is_empty() || REGIONS.contains(&r)) {
+        return Err("info region".into());
+    }
+    if !list("languages", 8, &lang_ok) || !list("restricted", 8, &|c: &str| token_ok(c, false, 32)) {
+        return Err("info languages/restricted".into());
+    }
+    Ok(())
+}
+
 /// A checked record: (id, version, the record with only its good endpoints). The rules of wunet/mesh.py `check`.
+/// `Err` starting "ignored:" is the tolerant reader's answer (a kind or version from a newer spec), not a refusal.
 pub fn check(rec: &Value, now: u64, staff: &[&str]) -> Result<(String, u64, Value), String> {
     if canonical(rec).len() > 6000 {
         return Err("too big".into());
@@ -138,7 +233,8 @@ pub fn check(rec: &Value, now: u64, staff: &[&str]) -> Result<(String, u64, Valu
     let sig = rec.get("sig").and_then(Value::as_str).unwrap_or("");
     match rec.get("kind").and_then(Value::as_str) {
         Some("realm") => {
-            let beat = rec.get("beat").filter(|b| b.get("v").and_then(Value::as_u64) == Some(1)).ok_or("no beat")?;
+            version(rec.get("beat"), "beat")?;
+            let beat = &rec["beat"];
             let pk = hex64(beat.get("pubkey")).ok_or("beat pubkey")?;
             let rid = realm_id(&unhex(pk).unwrap_or_default());
             if beat.get("realm_id").and_then(Value::as_str) != Some(rid.as_str()) {
@@ -162,7 +258,8 @@ pub fn check(rec: &Value, now: u64, staff: &[&str]) -> Result<(String, u64, Valu
             Ok((format!("r-{rid}"), seq, out))
         }
         Some("relay") => {
-            let n = rec.get("node").filter(|b| b.get("v").and_then(Value::as_u64) == Some(1)).ok_or("no node")?;
+            version(rec.get("node"), "node")?;
+            let n = &rec["node"];
             let pk = hex64(n.get("pubkey")).ok_or("node pubkey")?;
             let host = n.get("host").and_then(Value::as_str).filter(|h| crate::realms::relay_ok(h)).ok_or("node host")?;
             let http = n.get("http").and_then(Value::as_str).unwrap_or("");
@@ -181,7 +278,8 @@ pub fn check(rec: &Value, now: u64, staff: &[&str]) -> Result<(String, u64, Valu
             Ok((format!("n-{}", realm_id(&unhex(pk).unwrap_or_default())), seq, rec.clone()))
         }
         Some("block") => {
-            let b = rec.get("block").filter(|b| b.get("v").and_then(Value::as_u64) == Some(1)).ok_or("no block")?;
+            version(rec.get("block"), "block")?;
+            let b = &rec["block"];
             let st = b.get("staff").and_then(Value::as_str).filter(|s| staff.contains(s)).ok_or("not a staff key")?;
             let t = b.get("target").and_then(Value::as_str).unwrap_or("");
             if !(t.len() == 18 && (t.starts_with("r-") || t.starts_with("n-")) && crate::realms::realm_id_ok(&t[2..])) {
@@ -196,7 +294,23 @@ pub fn check(rec: &Value, now: u64, staff: &[&str]) -> Result<(String, u64, Valu
             }
             Ok((format!("b-{t}"), ts, rec.clone()))
         }
-        _ => Err("unknown kind".into()),
+        Some("info") => {
+            version(rec.get("info"), "info")?;
+            let d = &rec["info"];
+            let pk = hex64(d.get("pubkey")).ok_or("info pubkey")?;
+            let seq = int(d.get("seq")).ok_or("info seq")?;
+            let ts = int(d.get("ts")).ok_or("info ts")?;
+            info_fields_ok(d)?;
+            if !fresh(ts, INFO_TTL, now) {
+                return Err("expired".into());
+            }
+            if !verify_doc(pk, d, CTX_INFO, sig) {
+                return Err("signature".into());
+            }
+            Ok((format!("i-{}", realm_id(&unhex(pk).unwrap_or_default())), seq, rec.clone()))
+        }
+        Some(k) => Err(format!("ignored: unknown kind {}", k.chars().take(24).collect::<String>())),
+        None => Err("ignored: no kind".into()),
     }
 }
 
@@ -210,16 +324,34 @@ fn sig_rank(rec: &Value) -> String {
 pub struct Merged {
     pub recs: BTreeMap<String, (u64, Value)>,
     pub refused: usize,
+    /// Records of a kind or version this launcher doesn't know (the tolerant reader): not stored, not refusals.
+    pub ignored: usize,
+}
+
+/// The id a block names for a record: an info document is blocked with the relay or realm it describes.
+fn subject(id: &str, rec: &Value) -> String {
+    match id.strip_prefix("i-") {
+        Some(k) if rec["info"]["role"].as_str() == Some("relay") => format!("n-{k}"),
+        Some(k) => format!("r-{k}"),
+        None => id.to_string(),
+    }
 }
 
 impl Merged {
     /// Offer one record; true when it changed what is known.
     pub fn offer(&mut self, rec: &Value, now: u64, staff: &[&str]) -> bool {
-        let Ok((id, ver, mut rec)) = check(rec, now, staff) else {
-            self.refused += 1;
-            return false;
+        let (id, ver, mut rec) = match check(rec, now, staff) {
+            Ok(x) => x,
+            Err(e) => {
+                if e.starts_with("ignored:") {
+                    self.ignored += 1;
+                } else {
+                    self.refused += 1;
+                }
+                return false;
+            }
         };
-        if !id.starts_with("b-") && self.recs.contains_key(&format!("b-{id}")) {
+        if !id.starts_with("b-") && self.recs.contains_key(&format!("b-{}", subject(&id, &rec))) {
             self.refused += 1;
             return false;
         }
@@ -248,6 +380,7 @@ impl Merged {
         }
         if let Some(t) = id.strip_prefix("b-") {
             self.recs.remove(t);
+            self.recs.remove(&format!("i-{}", &t[2..]));
         }
         self.recs.insert(id, (ver, rec));
         true
@@ -255,6 +388,11 @@ impl Merged {
 
     pub fn realms(&self) -> impl Iterator<Item = &Value> {
         self.recs.iter().filter(|(k, _)| k.starts_with("r-")).map(|(_, (_, v))| v)
+    }
+
+    /// The verified capability document of a relay or realm (`n-<id>` or `r-<id>`), if one reached us.
+    pub fn info_of(&self, id: &str) -> Option<&Value> {
+        self.recs.get(&format!("i-{}", id.get(2..)?)).map(|(_, v)| &v["info"])
     }
 
     /// host -> the node dict of every verified relay record.
@@ -350,7 +488,8 @@ pub fn view(rec: &Value, ep: Option<&Value>, now: u64) -> Value {
 /// node, `community.fallback` names the relay to use at once if it does not answer: one of ours, or the realm's own.
 pub fn realms_doc(m: &Merged, rtt: &HashMap<String, f64>, volunteers: bool, seeds: &[String], now: u64) -> Value {
     let relays = m.relays();
-    let realms: Vec<Value> = m.realms().map(|r| {
+    // a realm that needs a newer protocol than this launcher speaks is not shown (the records are still kept)
+    let realms: Vec<Value> = m.realms().filter(|r| speaks(&r["beat"]["record"])).map(|r| {
         let ep = choose(r, &relays, rtt, volunteers, seeds, false);
         let mut v = view(r, ep, now);
         let safe = choose(r, &relays, rtt, false, seeds, false);
@@ -691,6 +830,108 @@ mod tests {
         let dead: Vec<&str> = dead.iter().map(|s| s.as_str()).collect();
         let e = tempfile::tempdir().unwrap();
         assert!(realms_doc_for(e.path(), &on, &dead, &fetch, &no_rtt).is_none(), "nobody answered: today's listings");
+    }
+
+    /// The Commonhold v1 conformance vectors (made by hosting/kit/tools/wunet/commonhold.py, checked there too).
+    #[test]
+    fn commonhold_vectors() {
+        let v: Value = serde_json::from_str(include_str!("commonhold-v1-vectors.json")).unwrap();
+        assert_eq!(v["format"], "commonhold-v1-vectors");
+        let has = |doc: &Value, path: &str| {
+            let mut d = doc;
+            for p in path.split('.') {
+                match d.get(p) {
+                    Some(x) => d = x,
+                    None => return false,
+                }
+            }
+            true
+        };
+        let mut n = 0;
+        for c in v["cases"].as_array().unwrap() {
+            let (name, now) = (c["name"].as_str().unwrap(), c["now"].as_u64().unwrap());
+            let case_staff: Vec<String> = c["staff"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
+            for (i, t) in c["check"].as_array().cloned().unwrap_or_default().iter().enumerate() {
+                n += 1;
+                let staff: Vec<String> = t["staff"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_else(|| case_staff.clone());
+                let staff: Vec<&str> = staff.iter().map(String::as_str).collect();
+                let exp = &t["expect"];
+                let got = check(&t["record"], now, &staff);
+                match exp["result"].as_str().unwrap() {
+                    "ok" => {
+                        let (id, ver, rec) = got.unwrap_or_else(|e| panic!("{name} [{i}]: refused: {e}"));
+                        assert_eq!((id.as_str(), ver), (exp["id"].as_str().unwrap(), exp["version"].as_u64().unwrap()), "{name} [{i}]");
+                        if let Some(k) = exp["endpoints"].as_u64() {
+                            assert_eq!(rec["endpoints"].as_array().map_or(0, Vec::len) as u64, k, "{name} [{i}]: endpoints");
+                        }
+                        for p in exp["keeps"].as_array().cloned().unwrap_or_default() {
+                            assert!(has(&rec, p.as_str().unwrap()), "{name} [{i}]: dropped {p}");
+                        }
+                    }
+                    "ignored" => assert!(got.as_ref().is_err_and(|e| e.starts_with("ignored:")), "{name} [{i}]: {got:?}"),
+                    _ => assert!(got.as_ref().is_err_and(|e| !e.starts_with("ignored:")), "{name} [{i}]: expected a refusal, got {got:?}"),
+                }
+            }
+            if let Some(recs) = c["merge"].as_array() {
+                n += 1;
+                let staff: Vec<&str> = case_staff.iter().map(String::as_str).collect();
+                let mut m = Merged::default();
+                for r in recs {
+                    m.offer(r, now, &staff);
+                }
+                for (id, sig) in c["final"].as_object().unwrap() {
+                    assert_eq!(m.recs.get(id).map(|(_, r)| r["sig"].clone()).unwrap_or(Value::Null), *sig, "{name}: {id}");
+                }
+                for (id, k) in c["final_endpoints"].as_object().cloned().unwrap_or_default() {
+                    assert_eq!(m.recs[&id].1["endpoints"].as_array().unwrap().len() as u64, k.as_u64().unwrap(), "{name}: {id}");
+                }
+            }
+        }
+        assert!(n >= 20, "every case ran ({n})");
+    }
+
+    #[test]
+    fn info_records_and_the_tolerant_reader() {
+        let (relay, realm) = (Key::new(21), Key::new(22));
+        let now = 1_800_000_000u64;
+        let doc = |seq: u64, extra: Value| {
+            let mut d = json!({"v": 1, "pubkey": relay.pubhex(), "role": "relay", "seq": seq, "ts": now, "proto_min": 1, "proto_max": 2,
+                "software": "wurelay", "version": "2026.11", "supported": ["mesh", "ws-bridge"], "limits": {"realms": 25},
+                "admin": realm.rid(), "rules_url": "", "region": "eu", "languages": ["en"], "restricted": []});
+            for (k, v) in extra.as_object().unwrap() {
+                d[k] = v.clone();
+            }
+            json!({"kind": "info", "sig": relay.sign(CTX_INFO, &d), "info": d})
+        };
+        let mut m = Merged::default();
+        assert!(m.offer(&doc(5, json!({"x_new": [1]})), now, &[]));
+        let rid = format!("n-{}", relay.rid());
+        assert_eq!(m.info_of(&rid).unwrap()["x_new"], json!([1]), "unknown fields are kept");
+        assert!(!m.offer(&doc(4, json!({})), now, &[]), "older");
+        for bad in [json!({"role": "server"}), json!({"proto_min": 3}), json!({"admin": "Bob"}), json!({"limits": {"realms": -1}}),
+                    json!({"rules_url": "http://x.example.org"}), json!({"languages": ["english!"]}), json!({"supported": ["UPPER"]})] {
+            assert!(check(&doc(9, bad.clone()), now, &[]).is_err(), "{bad}");
+        }
+        assert_eq!(check(&doc(9, json!({})), now + INFO_TTL + 1, &[]).unwrap_err(), "expired");
+        let mut t = doc(9, json!({}));
+        t["info"]["limits"]["realms"] = json!(999);
+        assert_eq!(check(&t, now, &[]).unwrap_err(), "signature");
+        // unknown kinds and newer versions: ignored, not refused
+        let refused = m.refused;
+        assert!(!m.offer(&json!({"kind": "probe", "probe": {"v": 1}}), now, &[]));
+        let mut newer = realm.realm(1, now, "Next", "relay.test", vec![]);
+        newer["beat"]["v"] = json!(2);
+        assert!(!m.offer(&newer, now, &[]));
+        assert_eq!((m.ignored, m.refused), (2, refused));
+        // a realm whose record needs a newer protocol is kept but not shown
+        let beat = json!({"v": 1, "realm_id": realm.rid(), "pubkey": realm.pubhex(), "seq": 3, "ts": now, "relay": "relay.test",
+            "record": {"name": "Future", "proto_min": PROTO + 1, "proto_max": PROTO + 1}, "status": {"online": true}});
+        assert!(m.offer(&json!({"kind": "realm", "sig": realm.sign(CTX_HEARTBEAT, &beat), "beat": beat, "endpoints": []}), now, &[]));
+        assert_eq!(m.realms().count(), 1);
+        assert_eq!(realms_doc(&m, &HashMap::new(), false, &[], now)["realms"].as_array().unwrap().len(), 0);
+        assert_eq!(proto_range(&json!({})), (1, 1));
+        assert_eq!(proto_range(&json!({"proto_min": 2, "proto_max": 1})), (1, 1));
+        assert!(speaks(&json!({"proto_min": 1, "proto_max": 9})));
     }
 
     #[test]

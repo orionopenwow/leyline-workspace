@@ -144,7 +144,8 @@ test('the entries: Your Den in the realm list next to PLAY (not the side menu), 
   assert.ok(await page.locator('#pb-rmenu', { hasText: 'Your Den' }).count(), 'the realm list has it');
   await page.keyboard.press('Escape');
   const order = await page.$$eval('#home-more > .hm-sec', (s) => s.map((x) => x.id));
-  assert.equal(order[0], 'hm-den', 'the banner leads the rows under the hero');
+  // single player in one click leads Home since 11 Nov (oneclick.js); the Den's banner comes right after it
+  assert.deepEqual(order.slice(0, 2), ['hm-oneclick', 'hm-den'], 'Play single player, then the Den, under the hero');
   assert.equal((await page.textContent('#hm-den-go')).trim(), 'Open my Den');
   assert.equal((await page.textContent('#hm-den .hm-den-txt b')).trim(), 'Your Den', 'not "Play solo": that clashed with Single player');
   await page.evaluate(() => window.LeylineNav.show('den'));   // the page itself still opens (Home's banner, the realm list)

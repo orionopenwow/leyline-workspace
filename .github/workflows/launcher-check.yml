@@ -120,7 +120,7 @@ jobs:
     # repository with its .sha256, for Control's sp-playtest step (tools/first-run/sp_playtest.py). Never on main (the
     # workflow only runs on feat-* branches, and this job only on the branches named here); only the built-in
     # GITHUB_TOKEN; players never get this build (the public Leyline repo's own workflow builds theirs from main).
-    if: github.ref == 'refs/heads/feat-sp-playtest' || github.ref == 'refs/heads/feat-launcher-test'
+    if: github.ref == 'refs/heads/feat-sp-playtest' || github.ref == 'refs/heads/feat-launcher-test' || github.ref == 'refs/heads/feat-launcher-test-2'
     needs: check
     runs-on: windows-latest
     timeout-minutes: 75

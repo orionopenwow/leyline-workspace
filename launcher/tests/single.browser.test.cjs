@@ -96,6 +96,8 @@ const FAKE = (o) => {
       case 'engine_logs': return 'setup: done\nworld: World initialized';
       case 'engine_backup': return 'C:\\Users\\me\\AppData\\Roaming\\Leyline\\engine\\backups\\single-player-2026-11-04-200509.zip';
       case 'engine_update_check': return JSON.parse(JSON.stringify(window.__es));
+      case 'world_update_check': return JSON.parse(JSON.stringify(window.__es));
+      case 'world_backups': return [{ name: 'single-player-2026-11-11-080000.zip', at: '2026-11-11 08:00:00', why: 'daily', kb: 800 }];
       case 'engine_play': return { message: 'Started My Wrath on 127.0.0.1:3724.', account: window.__es.account, password: window.__es.password };
       case 'docker_start': window.__dock = Object.assign({}, window.__dock, { state: 'ready', can_start: false }); return 'Starting Docker…';
       case 'open_link': return null;
@@ -455,6 +457,11 @@ test('Manage on the Built-in engine: Play, Stop, Start, Logs, Back up, the login
     await page.evaluate((r) => { window.__es = Object.assign({}, r, { update: true }); }, ES_READY);
     await page.evaluate(() => window.LeylineSingle.load());
     await page.waitForSelector('#sp-update');
+    assert.ok((await callsOf(page, 'world_update_check')).some((a) => a && a.kind === 'single' && !a.force), 'the release looked at (cached in the core)');
+    assert.match(await page.textContent('#sp-manage'), /backed up first/);
+    // back-ups and Restore on the card
+    await page.click('#wt-backups-open-single');
+    await page.waitForFunction(() => /2026-11-11 08:00:00.*daily/.test(document.getElementById('wt-backups-single').textContent));
     await page.click('#sp-update');
     await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'engine_setup' && a && a.update === true));
     assert.deepEqual(errors, []);

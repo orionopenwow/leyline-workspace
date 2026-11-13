@@ -18,6 +18,14 @@
 --   Home, Numpad 0     the view back to your character (from the far view)
 --   Ctrl+1..3          keep where the view is; Shift+1..3 go back to it (kept between sessions)
 --   right mouse + wheel   the flight's speed (2 to 96 yards a second, shown in the status line)
+-- The builder's comforts (12 Nov; Den Lite labs/den-lite src/qol.rs, the caps say which it has):
+--   Numpad 8 / 2 / 4 / 6, Ctrl+arrows   nudge the selection away / back / left / right of the view, on the grid's axes
+--   Numpad 9 / 3, Ctrl+PgUp / PgDn      nudge it up / down;  Numpad 7 / 1  turn it left / right by the turn step
+--                      (Alt: fine, a tenth of a yard and 1 degree; Shift: five steps, a quarter turn)
+--   M                  the magnet: in hand near another of its kind, it snaps edge to edge (walls, fences, rows)
+--   Ctrl+L             follow the slope: what is placed or moved lies on the ground's slope (L does the selection now)
+--   Alt+drag           circle select (Alt+Shift+drag adds); a selection dragged by one of its props moves as one
+--   Alt held           while something is in hand: no grid and no magnet (the precise spot); Q / E turn by 1 degree
 -- Esc is Gizmo.lua's (G.Escape): the first press cancels what is going on, the next deselects, the third is the game's.
 
 local W = WrathUnleashedUI or {}
@@ -34,6 +42,16 @@ K.ROT_PX = 20                                        -- pixels of a Turn drag pe
 K.SCALE_PX = 1.01                                    -- a Size drag: this much bigger each pixel up
 K.SCATTER = { 0.85, 1.15 }                           -- scatter's sizes
 K.MARKS = 3
+K.NUDGE = 0.5                                        -- yards a nudge moves with the grid off (the grid's own step when on)
+K.NUDGE_FINE, K.NUDGE_BIG = 0.1, 5                   -- Alt: a tenth of a yard; Shift: five steps
+K.TURN_FINE, K.TURN_BIG = 1, 90                      -- Alt: 1 degree; Shift: a quarter turn
+-- the nudge keys: forward (away from the view), right, up, turn (+ left)
+K.NUDGE_KEYS = {
+    NUMPAD8 = { 1, 0, 0, 0 }, NUMPAD2 = { -1, 0, 0, 0 }, NUMPAD4 = { 0, -1, 0, 0 }, NUMPAD6 = { 0, 1, 0, 0 },
+    NUMPAD9 = { 0, 0, 1, 0 }, NUMPAD3 = { 0, 0, -1, 0 }, NUMPAD7 = { 0, 0, 0, 1 }, NUMPAD1 = { 0, 0, 0, -1 },
+    ["CTRL-UP"] = { 1, 0, 0, 0 }, ["CTRL-DOWN"] = { -1, 0, 0, 0 }, ["CTRL-LEFT"] = { 0, -1, 0, 0 }, ["CTRL-RIGHT"] = { 0, 1, 0, 0 },
+    ["CTRL-PAGEUP"] = { 0, 0, 1, 0 }, ["CTRL-PAGEDOWN"] = { 0, 0, -1, 0 },
+}
 K.CLICK_MOVE = 6
 K.TOOLS = { "move", "rotate", "scale" }
 K.TOOL_NAME = { move = "Move", rotate = "Turn", scale = "Size" }
@@ -312,6 +330,116 @@ function K.ScatterTurn()
     return send("preview turn " .. (r * 15))
 end
 
+-- ---------------------------------------------------------------- the builder's comforts (Den Lite's qol.rs)
+
+local function alt() return IsAltKeyDown and IsAltKeyDown() and true or false end
+local function shift() return IsShiftKeyDown and IsShiftKeyDown() and true or false end
+
+-- One nudge of the selection: `v` = { forward, right, up, turn sign }. The step is the grid's (or K.NUDGE), Alt a
+-- tenth of a yard (1 degree), Shift five steps (a quarter turn). A Den Lite without qol.rs: the Builder's own `step`.
+function K.NudgeStep()
+    if alt() then return K.NUDGE_FINE end
+    local b = B()
+    local g = (b and b.Snap and b.Snap()) or 0
+    local s = (g and g > 0) and g or K.NUDGE
+    return shift() and s * K.NUDGE_BIG or s
+end
+function K.TurnStepNow()
+    if alt() then return K.TURN_FINE end
+    if shift() then return K.TURN_BIG end
+    return (B() and B().TurnStep and B().TurnStep()) or 15
+end
+function K.Nudge(v)
+    if not K.SelId() then note("Select a prop first: the nudge keys move the selection"); return false end
+    local s, deg = K.NudgeStep(), (v[4] or 0) * K.TurnStepNow()
+    if can("nudge") then
+        K.lastNudge = string.format("nudge %.2f %.2f %.2f %d", v[1] * s, v[2] * s, v[3] * s, deg)
+        return send(K.lastNudge)
+    end
+    if deg ~= 0 then return cmd("turn " .. deg) end
+    local dir = (v[1] > 0 and "fwd") or (v[1] < 0 and "back") or (v[2] > 0 and "right") or (v[2] < 0 and "left") or (v[3] > 0 and "up") or "down"
+    return cmd(string.format("step %s %.2f", dir, s))
+end
+
+-- The magnet (M) and following the slope (Ctrl+L): kept in the saved settings, said to Den Lite on entering build
+-- mode (K.OnBuild) and when changed.
+function K.MagnetToggle()
+    K.magnet = not K.magnet
+    db().magnet = K.magnet
+    if can("magnet") then send("gizmo magnet " .. (K.magnet and "on" or "off")) end
+    note(K.magnet and "Magnet on: a prop in hand snaps edge to edge with one of its kind (Alt: free)" or "Magnet off")
+    if not K.magnet then K.snapped = nil end
+    refresh()
+    return K.magnet
+end
+function K.SlopeToggle()
+    K.slope = not K.slope
+    db().slope = K.slope
+    if can("slopefollow") then send("gizmo slope " .. (K.slope and "on" or "off")) end
+    note(K.slope and "Follow the slope on: what you place or move lies on the ground" or "Follow the slope off: props stand upright")
+    refresh()
+    return K.slope
+end
+function K.OnBuild()
+    if can("magnet") then send("gizmo magnet " .. (K.magnet and "on" or "off")) end
+    if can("slopefollow") then send("gizmo slope " .. (K.slope and "on" or "off")) end
+end
+-- Alt held with something in hand: this hover is free (no grid, no magnet). Gizmo.lua adds the word to its hover.
+function K.FreeWord()
+    if alt() and can("free") then return " free" end
+    return ""
+end
+
+-- Circle select (Alt+drag): pressed in the middle, let go at the edge; the ring drawn on the screen while dragging.
+local circleFrame
+local function circleShow(x0, y0, x1, y1)
+    if not circleFrame or not UIParent then return end
+    local s = (UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+    local r = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2) / s
+    circleFrame:ClearAllPoints()
+    circleFrame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x0 / s, y0 / s)
+    circleFrame:SetWidth(math.max(2, 2 * r)); circleFrame:SetHeight(math.max(2, 2 * r))
+    circleFrame:Show()
+end
+function K.CircleDown()
+    local g = G()
+    if not (g and g.build and g.Cursor) then return false end
+    local u, v, a = g.Cursor()
+    if not u then return false end
+    local x, y = cursorPx()
+    K.circle = { u = u, v = v, a = a, x = x, y = y }
+    return true
+end
+function K.CircleUpdate()
+    if not K.circle then return false end
+    local x, y = cursorPx()
+    if math.abs(x - K.circle.x) > K.CLICK_MOVE or math.abs(y - K.circle.y) > K.CLICK_MOVE then circleShow(K.circle.x, K.circle.y, x, y) end
+    return true
+end
+function K.CircleUp()
+    local c, g = K.circle, G()
+    K.circle = nil
+    if circleFrame then circleFrame:Hide() end
+    if not (c and g and g.Cursor) then return false end
+    local u, v = g.Cursor()
+    local x, y = cursorPx()
+    if not u or (math.abs(x - c.x) <= K.CLICK_MOVE and math.abs(y - c.y) <= K.CLICK_MOVE) then return false end
+    if not can("selcircle") then note("Circle select needs a newer Den Lite: Ctrl+drag a box"); return false end
+    return send(string.format("selcircle %.4f %.4f %.4f %.4f %.4f %d%s", c.u, c.v, u, v, c.a or (16 / 9), g.zoom or 12, shift() and " add" or ""))
+end
+
+-- Fill (the Tools window's Arrange and these): copies of the first selected between it and the second, or over the
+-- box the two make.
+function K.Fill(kind, step)
+    if not (K.sel and (K.sel.n or 1) >= 2) then
+        note(kind == "box" and "Fill box: select two props at opposite corners first (Shift+click the second)"
+            or "Fill gap: select two props first (Shift+click the second)")
+        return false
+    end
+    if kind == "box" then return cmd(step and string.format("fill box %.2f", step) or "fill box") end
+    return cmd("fill gap")
+end
+
 -- ---------------------------------------------------------------- box select (Ctrl+drag)
 
 local boxFrame
@@ -376,7 +504,12 @@ K.ACTIONS = {
     slope = function() return cmd(can("slope") and "slope" or "ground") end,
     upright = function() return cmd("upright") end,
     home = function() return send("cam off") end,
+    magnet = function() return K.MagnetToggle() end,
+    slopefollow = function() return K.SlopeToggle() end,
 }
+for key, v in pairs(K.NUDGE_KEYS) do
+    K.ACTIONS["nudge_" .. key] = function() return K.Nudge(v) end
+end
 for i = 1, K.MARKS do
     K.ACTIONS["mark" .. i] = function() return K.Mark(i) end
     K.ACTIONS["recall" .. i] = function() return K.Recall(i) end
@@ -415,10 +548,23 @@ function K.Wanted()
     out["SHIFT-G"] = "gridsize"
     out["CTRL-A"] = "selnear"
     out["CTRL-BUTTON1"], out["CTRL-SHIFT-BUTTON1"] = "box", "box"
+    out["ALT-BUTTON1"], out["ALT-SHIFT-BUTTON1"] = "circle", "circle"
+    out.M, out["CTRL-L"] = "magnet", "slopefollow"
     if K.clip or (B() and B().state and B().state.clip == "1") then out["CTRL-V"] = "paste" end
     if K.SelId() then
         out.DELETE, out["CTRL-C"], out["CTRL-D"] = "delete", "copy", "dup"
         out.F, out.L, out["SHIFT-L"] = "frame", "slope", "upright"
+        -- the nudge keys, with Alt (fine) and Shift (big) as the same key (the action reads the modifier)
+        for key in pairs(K.NUDGE_KEYS) do
+            local act = "nudge_" .. key
+            local ctrl = key:match("^CTRL%-(.+)$")
+            out[key] = act
+            if ctrl then
+                out["ALT-CTRL-" .. ctrl], out["CTRL-SHIFT-" .. ctrl] = act, act
+            else
+                out["ALT-" .. key], out["SHIFT-" .. key] = act, act
+            end
+        end
     end
     if g.far then out.HOME, out.NUMPAD0 = "home", "home" end
     return out
@@ -431,7 +577,7 @@ function K.Bind()
     ClearOverrideBindings(owner)
     K.bound = {}
     for key, act in pairs(K.Wanted()) do
-        local name = act == "box" and "LeylineDenKeyBox" or button(act)
+        local name = (act == "box" and "LeylineDenKeyBox") or (act == "circle" and "LeylineDenKeyCircle") or button(act)
         SetOverrideBindingClick(owner, true, key, name)
         K.bound[key] = act
     end
@@ -448,11 +594,22 @@ function K.Hint()
     elseif t == "scale" then
         head = "Size (3): drag a prop up or down  ·  wheel sizes the selection"
     else
-        head = "Move (1): click a prop to carry it, drag to slide it  ·  Shift adds  ·  Ctrl+drag box  ·  Q E turn"
+        head = "Move (1): click a prop to carry it, drag to slide it  ·  Shift adds  ·  Ctrl+drag box, Alt+drag circle  ·  Q E turn"
     end
-    local tail = "1 2 3 tools  ·  Del  ·  Ctrl+Z / Y  ·  Ctrl+C / V / D  ·  G grid  ·  F frame"
+    local tail = "1 2 3 tools  ·  Del  ·  Ctrl+Z / Y  ·  Ctrl+C / V / D  ·  G grid  ·  F frame  ·  Numpad nudges"
     if K.scatter then tail = "scatter on  ·  " .. tail end
+    if K.magnet then tail = "magnet on (M)  ·  " .. tail end
+    if K.slope then tail = "on the slope (Ctrl+L)  ·  " .. tail end
     return head .. "  ·  " .. tail
+end
+-- The hover tip's second line: what the mouse does to the prop under it with the tool now.
+function K.TipHint()
+    local t = K.Tool()
+    if t == "rotate" then return "drag left / right: turn  ·  wheel: turn the selection" end
+    if t == "scale" then return "drag up / down: size  ·  wheel: size the selection" end
+    local n = K.sel and K.sel.n or 0
+    if n >= 2 then return "click: carry  ·  drag: slide all " .. n .. "  ·  Shift+click: add  ·  Q E: turn" end
+    return "click: carry  ·  drag: slide  ·  Shift+click: add  ·  Q E: turn  ·  right-click: menu"
 end
 function K.SpeedText()
     return string.format("fly %d yd/s (right mouse + wheel)", K.Speed())
@@ -497,6 +654,12 @@ function K.OnMessage(prefix, msg, channel, sender)
         if K.dupWait and now() - (K.dupAt or 0) > 3 then K.dupWait = nil end
         if K.dupWait and s and s.id ~= K.dupWait then K.dupLast, K.dupWait = s.id, nil end
         if (was ~= nil) ~= (s ~= nil) then refresh() end
+    elseif name == "snapped" then
+        K.snapped = data == "1"
+        if g and g.ShowTag then g.ShowTag() end
+    elseif name == "nudged" then
+        local dx, dy, dz = data:match("^([%-%d%.]+),([%-%d%.]+),([%-%d%.]+)")
+        if dx then note(string.format("Nudged %+.2f, %+.2f, %+.2f yd (Alt fine, Shift big)", tonumber(dx), tonumber(dy), tonumber(dz))) end
     elseif name == "cammark" then
         local n = K.markWait
         K.markWait = nil
@@ -517,6 +680,7 @@ function K.OnMessage(prefix, msg, channel, sender)
     elseif name == "aim" then
         local kind = data:match("^(%a+)")
         if kind ~= "place" then K.pasting = nil end
+        if kind == "off" then K.snapped = nil end
         -- scatter: each new card (and the next one after Shift+click) starts at a random turn
         if kind == "place" and K.scatter and g then K.ScatterTurn() end
     end
@@ -530,11 +694,30 @@ local function setup()
     local d = db()
     K.speedI = math.max(1, math.min(#K.FLY_SPEEDS, tonumber(d.flySpeed) or K.FLY_DEFAULT))
     K.scatter = d.scatter == true
+    K.magnet = d.magnet == true
+    K.slope = d.slope == true
     -- Ctrl+drag: the box's press and let-go
     local bb = CreateFrame("Button", "LeylineDenKeyBox", UIParent)
     if bb.RegisterForClicks then bb:RegisterForClicks("AnyDown", "AnyUp") end
     bb:SetScript("OnClick", function(_, _, down) if down == false then K.BoxUp() else K.BoxDown() end end)
     bb:Hide()
+    -- Alt+drag: the circle's press and let-go, and the ring drawn while dragging (our own ring, Media\Icons\circle)
+    local cb = CreateFrame("Button", "LeylineDenKeyCircle", UIParent)
+    if cb.RegisterForClicks then cb:RegisterForClicks("AnyDown", "AnyUp") end
+    cb:SetScript("OnClick", function(_, _, down) if down == false then K.CircleUp() else K.CircleDown() end end)
+    cb:Hide()
+    circleFrame = CreateFrame("Frame", "LeylineDenSelectCircle", UIParent)
+    circleFrame:SetFrameStrata("TOOLTIP")
+    if circleFrame.EnableMouse then circleFrame:EnableMouse(false) end
+    if circleFrame.CreateTexture then
+        local ring = circleFrame:CreateTexture(nil, "OVERLAY")
+        if ring then
+            ring:SetAllPoints(circleFrame)
+            ring:SetTexture("Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\circle")
+            ring:SetVertexColor(0.95, 0.72, 0.25, 0.9)
+        end
+    end
+    circleFrame:Hide()
     boxFrame = CreateFrame("Frame", "LeylineDenSelectBox", UIParent)
     boxFrame:SetFrameStrata("TOOLTIP")
     if boxFrame.EnableMouse then boxFrame:EnableMouse(false) end
@@ -554,6 +737,7 @@ local function setup()
     boxFrame:Hide()
     owner:SetScript("OnUpdate", function()
         if K.box then K.BoxUpdate() end
+        if K.circle then K.CircleUpdate() end
         if K.drag then K.DragUpdate() end
         K.CursorTick()
     end)

@@ -77,7 +77,11 @@ G.PAGES = {
         "G: grid on or off, Shift+G its size. R: the turn step. Shift+R: scatter (random turn and size).",
         "L: lie on the slope. Shift+L: upright. F: frame the selection.",
         "Far view: W A S D fly, Space and X up and down, Shift fast. Right mouse and wheel: the speed.",
-        "Home: back to you. Ctrl+1, 2, 3 keep a view. Shift+1, 2, 3 go back to it." } },
+        "Home: back to you. Ctrl+1, 2, 3 keep a view. Shift+1, 2, 3 go back to it.",
+        "Numpad 8, 2, 4, 6 (or Ctrl and the arrows): nudge the selection. 9 and 3: up and down. 7 and 1: turn. Alt: fine. Shift: big.",
+        "Alt and drag: a circle. Drag one of several selected props and they all move together.",
+        "M: the magnet (snaps edge to edge). Ctrl+L: follow the slope. Hold Alt with a prop in hand: the precise spot.",
+        "/dentour: your first build, step by step." } },
     { "files", "Saving", "files", "Saving and opening", {
         "Your Den saves by itself every few seconds.",
         "Files on the bar saves your Den by name, and opens one again.",

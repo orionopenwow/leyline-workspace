@@ -1902,17 +1902,19 @@ pub fn sweep_friends(p: &Paths, s: &mut State, t: u64, all: bool) -> usize {
     let up = engine::port_answers(SOAP_PORT) && ours_up(p).2;
     // a one-time login that has characters is a friend's now: kept as their lasting login (host/worldfriends.rs),
     // never deleted with its characters
-    if up && !todo.is_empty() {
-        let with = friend_logins_with_chars(p);
+    // a read that failed deletes nothing (fail closed): every login waits in `gone` for a look with a good read
+    let read = if up && !todo.is_empty() { Some(friend_logins_with_chars(p)) } else { None };
+    let can_delete = matches!(read, Some(Ok(_)));
+    if let Some(Ok(with)) = &read {
         if !with.is_empty() {
             let mut b = crate::host::worldfriends::load(&p.share);
-            crate::host::worldfriends::fold(&mut b, &with, t);
+            crate::host::worldfriends::fold(&mut b, with, t);
             let _ = crate::host::worldfriends::save(&p.share, &b);
             todo.retain(|u| !with.contains(u));
         }
     }
     for u in todo {
-        let gone = up && friend_delete(&u).ok().is_some_and(|line| soap(s, &line).map(|a| deleted(&a)).unwrap_or(false));
+        let gone = up && can_delete && friend_delete(&u).ok().is_some_and(|line| soap(s, &line).map(|a| deleted(&a)).unwrap_or(false));
         if gone {
             n += 1;
         } else if !s.gone.contains(&u) {
@@ -1941,24 +1943,30 @@ pub fn add_friend(p: &Paths) -> Result<(String, String, u64), String> {
     Ok((user, pass, expires))
 }
 
-/// Friends' logins (one-time and lasting) that have characters on this world (it must be running; else none).
-pub fn friend_logins_with_chars(p: &Paths) -> Vec<String> {
-    let mut v: Vec<String> = friend_chars(p).into_iter().map(|c| c.user).collect();
+/// Friends' logins (one-time and lasting) that have characters on this world, read now (it must be running): an
+/// error when it couldn't be asked, so no login is deleted on a guess.
+pub fn friend_logins_with_chars(p: &Paths) -> Result<Vec<String>, String> {
+    let mut v: Vec<String> = friend_chars_read(p)?.into_iter().map(|c| c.user).collect();
     v.dedup();
-    v
+    Ok(v)
 }
 
 /// Friends' characters on this world now (it must be running; else none).
 pub fn friend_chars(p: &Paths) -> Vec<engine::FriendChar> {
+    friend_chars_read(p).unwrap_or_default()
+}
+
+/// [`friend_chars`], or why they couldn't be read.
+pub fn friend_chars_read(p: &Paths) -> Result<Vec<engine::FriendChar>, String> {
     if !ours_up(p).2 {
-        return Vec::new();
+        return Err(format!("{TITLE} isn't running."));
     }
     let q = format!(
         "SELECT a.username, c.name, c.level, c.online FROM classiccharacters.characters c JOIN classicrealmd.account a ON a.id = c.account \
          WHERE a.username REGEXP '{}' ORDER BY a.username, c.guid;",
         crate::host::worldfriends::FRIEND_REGEXP
     );
-    sql(p, &load_state(p), None, &q).map(|r| engine::parse_friend_chars(&r)).unwrap_or_default()
+    sql(p, &load_state(p), None, &q).map(|r| engine::parse_friend_chars(&r))
 }
 
 /// Every friend's login removed (sharing off).

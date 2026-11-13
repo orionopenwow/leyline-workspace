@@ -2714,7 +2714,8 @@ fn world_friends_of(k: crate::host::engine::Kind, realm_id: &str, secret: &str) 
         share: ws::dir(&world_paths(k).root),
         era: wf::Era::Wrath,
         console: Arc::new(move |l: &str| eng::console(&world_paths(k), l)),
-        with_chars: Arc::new(move || eng::friend_chars(&world_paths(k)).map(|v| v.into_iter().map(|c| c.user).collect()).unwrap_or_default()),
+        // an error is passed on: no friend's login is deleted when the world couldn't say who has characters
+        with_chars: Arc::new(move || eng::friend_chars(&world_paths(k)).map(|v| v.into_iter().map(|c| c.user).collect())),
         // Boss Rush: a friend plays a hero (the module's heroes live on their own account), made as they come in
         login_for: (k == eng::Kind::BossRush).then(|| -> wf::LoginFor { Arc::new(|u: &str, p: &str| bossrush_friend_login(u, p)) }),
     }

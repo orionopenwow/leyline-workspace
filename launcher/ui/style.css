@@ -599,6 +599,10 @@ html[data-base="light"] .pb-menu { box-shadow: 0 -10px 30px rgba(16, 24, 40, 0.1
 #pb-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; font-size: 12px; letter-spacing: 0; color: var(--t-text-2); }
 #pb-detail:empty { display: none; }
 .pb-status .status { margin: 0 0 0 auto; font-size: 12px; font-weight: 500; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
+/* "In-game add-ons updated" under the realm box, after a PLAY that updated them (addons.js afterPlay) */
+.pb-addons { padding-left: 2px; font: 500 11.5px/1.3 var(--t-font); color: var(--t-ok); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-addons::before { content: "\2713  "; }
+.pb-addons[hidden] { display: none; }
 .pb-realm[aria-expanded="false"] .pb-caret { transform: rotate(180deg); }
 .pb-rmenu { width: 100%; min-width: 340px; max-height: min(700px, calc(100vh - 130px)); }   /* room for the game client part too */
 .pb-head { padding: 8px 16px 4px; font: 700 10.5px var(--t-font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--t-muted); }

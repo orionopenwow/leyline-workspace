@@ -28,6 +28,11 @@
     setupTitle: "One more step: the Leyline addons",
     playTitle: "Add the Leyline addons?",
     playBody: `${OFFICIAL[0].toUpperCase() + OFFICIAL.slice(1)} is better with them: game modes, golf, Edit mode, your Den. It takes a few seconds.`,
+    // asked once per new version, before PLAY, when the game folder has its own (out of date) copy of our folders
+    ownTitle: "Your in-game Leyline add-on is out of date",
+    ownBody: "Update it before you play? Your game folder has an older copy of it that Leyline didn't put there, so it asks first.",
+    ownFine: "Update moves your copy, whole, into the game folder's Leyline/backup and puts the current one in. Uninstall on Game folders puts yours back. Not now plays with the copy you have.",
+    updated: "In-game add-ons updated",
   };
 
   let ov = null;            // addons_status: { pack, from_cache, error, prefs, clients: [...] }
@@ -88,8 +93,9 @@
     return t;
   }
 
-  // Install or update; asks before moving the player's own folders of the same name aside. Returns true when in.
-  async function install(c) {
+  // Install or update; asks before moving the player's own folders of the same name aside (o.replace: the player
+  // already said yes). Returns true when in.
+  async function install(c, o) {
     if (!c || busy.has(c.id)) return false;
     busy.add(c.id);
     notes[c.id] = ["Downloading and checking…", ""];
@@ -98,7 +104,7 @@
     try {
       let r;
       try {
-        r = await invoke("addons_install", { client: c.id, replace: false });
+        r = await invoke("addons_install", { client: c.id, replace: !!(o && o.replace) });
       } catch (e) {
         const t = String(e);
         if (!t.startsWith(REPLACE)) throw e;
@@ -283,19 +289,37 @@
     if (a.yes) await install(profile);
   }
 
-  // ------------------------------------------------------------------ PLAY on the official realm
-  // Called before the game starts. Never stops PLAY: whatever the answer (or an error), the game starts after.
-  async function beforePlay(c) {
-    if (!c || c.build !== "3.3.5a") return;
+  // ------------------------------------------------------------------ right before any PLAY on a 3.3.5a client
+  // Called before the game starts (official, community, Single player, Your Den, modes). Never stops PLAY: whatever
+  // the answer (or an error), the game starts after. The core (addons_before_play) updates a pack Leyline installed
+  // that is behind, quickly (12 Nov: updates only at launcher start never reached the owner's game folder); a copy
+  // of our folders the player has that Leyline didn't put there is asked about once per version; then, only on the
+  // official realm (o.offer, the default), the offer to add them where they aren't.
+  async function beforePlay(c, o) {
+    if (!c) return;
+    const offer = !o || o.offer !== false;
     try {
       if (!ov) await load(false);
+      const known = forClient(c.id);
+      if ((c.build || (known && known.build)) !== "3.3.5a") return;
+      let prep = null;
+      try { prep = await invoke("addons_before_play", { client: c.id }); } catch (_) { prep = null; /* an older core: as before */ }
+      if (prep && prep.updated) { notes[c.id] = [`Updated the Leyline addons in ${c.name || "your game folder"} to v${prep.updated}.`, "ok"]; await load(false); }
+      if (prep && prep.outdated_own && prep.outdated_own.length && !prep.asked && prep.version) {
+        const a = await ask({ title: COPY.ownTitle, body: COPY.ownBody, list: prep.outdated_own.map((f) => "Interface/AddOns/" + f),
+          fine: COPY.ownFine, yes: "Update it", no: "Not now" });
+        try { await invoke("addons_mark_asked", { client: c.id, version: prep.version }); } catch (_) { /* asked again next PLAY */ }
+        if (a.yes && (await install(c, { replace: true }))) updatedNow = true;
+        return;
+      }
       const s = forClient(c.id);
       if (!ov.pack || !s) return;
       if (s.installed) {
-        // Behind the listing and updating is on: a quick update first (a few hundred KB).
-        if ((s.update || s.missing.length) && ov.prefs.auto_update) await install(c);
+        // an older core without addons_before_play: the quick update here, as before
+        if (!prep && (s.update || s.missing.length) && ov.prefs.auto_update && (await install(c))) updatedNow = true;
         return;
       }
+      if (!offer || (s.foreign && s.foreign.length)) return;
       if (!(await invoke("addons_should_offer", { client: c.id }))) return;
       const a = await ask({ title: COPY.playTitle, body: COPY.playBody, fine: COPY.safe, yes: "Install and play", no: "Play without", ask: true });
       if (a.dontAsk) {
@@ -304,6 +328,34 @@
       }
       if (a.yes) await install(c);
     } catch (_) { /* PLAY goes on */ }
+  }
+
+  // After a game started: "In-game add-ons updated" on the play bar when the core updated them right before (its
+  // note, taken once) or the player said yes to updating their own copy. Gone after a while, and at the next PLAY.
+  let updatedNow = false;
+  let lineT = 0;
+  async function afterPlay() {
+    let note = null;
+    try { note = await invoke("addons_play_note"); } catch (_) { note = null; }
+    const yes = updatedNow || !!(note && note.updated);
+    updatedNow = false;
+    let line = $("pb-addons");
+    if (!line) {
+      const pick = $("pb-realm-btn") && $("pb-realm-btn").closest(".pb-pick");
+      if (!pick) return yes;
+      line = el("span", "pb-addons");
+      line.id = "pb-addons";
+      line.setAttribute("role", "status");
+      line.hidden = true;
+      pick.after(line);
+    }
+    clearTimeout(lineT);
+    line.textContent = yes ? COPY.updated : "";
+    line.title = note && note.updated ? `The Leyline addons are now v${note.updated}.` : "";
+    line.hidden = !yes;
+    if (yes) lineT = setTimeout(() => { line.hidden = true; }, 60000);
+    if (note && note.updated) await load(false);
+    return yes;
   }
 
   // ------------------------------------------------------------------ Settings
@@ -347,6 +399,6 @@
     } catch (_) { /* tried again next start */ }
   }
 
-  window.LeylineAddons = { clientCard, renderMods, offer, beforePlay, install, remove, reload: load, status: () => ov };
+  window.LeylineAddons = { clientCard, renderMods, offer, beforePlay, afterPlay, install, remove, reload: load, status: () => ov, COPY };
   setTimeout(start, 0);
 })();

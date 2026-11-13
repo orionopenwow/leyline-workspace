@@ -219,7 +219,9 @@
     busy = true; paint();
     say(liteUp() ? "Opening your Den…" : liteGet() ? "Getting your Den ready… (a one-time download of a few MB)" : "Starting your Den… (a few seconds)");
     try {
+      if (window.LeylineAddons) await window.LeylineAddons.beforePlay(c, { offer: false });   // the Den bar is in the Leyline addons (addons.js)
       const r = await call("den_play_lite", { client: c.id });
+      if (window.LeylineAddons) window.LeylineAddons.afterPlay();
       if (r && typeof r === "object" && r.auto) say("Your Den is opening. The game signs you in and takes you straight to your Den.", "ok");
       else {
         const acct = (r && r.account) || (st && st.lite && st.lite.account) || "DEN";

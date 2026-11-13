@@ -63,7 +63,9 @@
       <p class="net-line" id="md-net" aria-live="polite"></p>
       <p class="status" id="md-status" role="status"></p>
       <div class="md-list" id="md-list"></div>
-    </div>`;
+    </div>
+    <!-- Leaderboards (boards.js mounts here: Boss Rush and Duels, signed by the realms; docs/LEADERBOARDS.md) -->
+    <div class="panel wide lb-panel" id="md-boards" data-board="bossrush"></div>`;
   const main = document.querySelector("main");
   const realmsPage = document.getElementById("page-realms");
   if (realmsPage) realmsPage.after(page); else if (main) main.appendChild(page);

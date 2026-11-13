@@ -38,6 +38,7 @@
 <link rel="stylesheet" href="single.css"><!-- Single player: its page and Home row (single.js) -->
 <link rel="stylesheet" href="oneclick.css"><!-- single player in one click: the setup card, the chip, Home's button (oneclick.js) -->
 <link rel="stylesheet" href="bossrush.css"><!-- Boss Rush: its page and Home row (bossrush.js) -->
+<link rel="stylesheet" href="boards.css"><!-- Leaderboards: Boss Rush and Duels, signed by the realms (boards.js) -->
 <link rel="stylesheet" href="solo.css"><!-- Play solo everywhere, Invite a friend, the GM command center (solo.js, gmcenter.js) -->
 <link rel="stylesheet" href="hostfriends.css"><!-- Play with friends: the one window, Ready for friends?, the friend's steps (hostfriends.js) -->
 <link rel="stylesheet" href="info.css"><!-- the "i" button and its bubble (info.js) -->
@@ -480,6 +481,8 @@
   <!-- BOSS RUSH (bossrush.js): the engine (exact or light), the fight, the difficulty, the hero, Fight; the board -->
   <section class="page" id="page-bossrush">
     <div class="panel wide br" id="br"></div>
+    <!-- Leaderboards (boards.js, docs/LEADERBOARDS.md): the realms' signed boards, Boss Rush first; local runs apart -->
+    <div class="panel wide lb-panel" id="br-boards" data-board="bossrush"></div>
   </section>
 
   <!-- SINGLE PLAYER (single.js): your game folder, the engine, Start; then Manage. Over it, the original world in one
@@ -1001,6 +1004,7 @@
 <script src="oneclick.js"></script><!-- single player in one click: folder, room, Quick start, the setup card, errors (window.LeylineOneClick; after vanilla.js) -->
 <script src="characters.js"></script><!-- Characters: On this PC and Online (window.LeylineCharacters; after vanilla.js) -->
 <script src="bossrush.js"></script><!-- Boss Rush: its page (window.LeylineBossRush; after app.js) -->
+<script src="boards.js"></script><!-- Leaderboards on every [data-board] mount: Modes (#md-boards) and Boss Rush (#br-boards) (window.LeylineBoards; after modes.js and bossrush.js) -->
 <script src="singleupdate.js"></script><!-- Single player: the bots, always up to date (Update the bots, Bots updated; window.LeylineSingleUpdate) -->
 <script src="gmcenter.js"></script><!-- the GM command center for your own worlds (window.LeylineGM; after den.js) -->
 <script src="hostnetwork.js"></script><!-- Host: the Network tab (host/network.rs) -->

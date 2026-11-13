@@ -1066,7 +1066,7 @@ mod tests {
         assert_eq!(week_start(1_794_182_400), 1_794_182_400);
         assert_eq!(week_start(1_794_182_399), 1_794_182_400 - WEEK);
         // the same as boards-export.py featured(1794510000) over the whole catalog (boards-vector.json)
-        assert_eq!(featured_fight(now).key, "cult-mistress");
+        assert_eq!(featured_fight(now).key, "obsidian-three");
         assert_eq!(featured_fight(1_794_182_400).key, featured_fight(1_794_182_400 + WEEK - 1).key);
         assert_ne!(featured_fight(now).key, featured_fight(now + WEEK).key);
         assert_eq!(featured_fight(now).key, featured_fight(now + WEEK * FIGHTS.len() as u64).key);

@@ -63,7 +63,7 @@ check("catalog: the launcher's FIGHTS in the same order", tuple(fights) == ex.CA
 check("week: Monday to Monday", ex.day(ex.week_start(NOW)) == "2026-11-09" and ex.week_start(WK) == WK and ex.week_start(WK - 1) == WK - 7 * 86400)
 check("week: the same Monday as the boss boards' week", ex.week_start(NOW) == bf.week_bounds(NOW)[0])
 check("featured: one fight a week, in turn", ex.featured(NOW) != ex.featured(NOW + 7 * 86400)
-      and ex.featured(NOW) == ex.featured(NOW + 12 * 7 * 86400) and ex.featured(NOW, ("frozen-throne",)) == "frozen-throne")
+      and ex.featured(NOW) == ex.featured(NOW + len(ex.CATALOG) * 7 * 86400) and ex.featured(NOW, ("frozen-throne",)) == "frozen-throne")
 check("featured: the whole week is one fight", ex.featured(WK) == ex.featured(WK + 7 * 86400 - 1) != ex.featured(WK - 1))
 check("schema: --schema prints the tables", ex.schema_sql() == "".join(q + ";\n" for q in ex.SCHEMA.values()))
 

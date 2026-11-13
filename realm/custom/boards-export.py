@@ -81,7 +81,9 @@ CLASS_BY_ID = {1: "warrior", 2: "paladin", 3: "hunter", 4: "rogue", 5: "priest",
 # Boss Rush's catalog in the launcher's order (launcher/src-tauri/src/host/bossrush.rs FIGHTS; a test keeps them equal).
 # The official realm offers only the first; a Boss Rush install offers all of them.
 CATALOG = ("frozen-throne", "bone-lord", "cult-mistress", "twilight-destroyer", "obsidian-sanctum", "obsidian-three",
-           "brood-mother", "stone-watcher", "storm-watcher", "flame-watcher", "frost-watcher", "spell-weaver")
+           "brood-mother", "stone-watcher", "storm-watcher", "flame-watcher", "frost-watcher", "spell-weaver",
+           "icc-gunship", "icc-deathbringer", "icc-bloat", "icc-ooze", "icc-professor", "icc-council",
+           "icc-blood-queen", "icc-dreamwalker", "icc-frost-queen")
 OFFICIAL_FIGHTS = ("frozen-throne",)
 
 # ov_boards.lua's two tables (the same text; stream/tests/test_boards_export.py keeps the copies equal)

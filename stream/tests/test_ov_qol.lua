@@ -401,6 +401,7 @@ _G.OVMod = nil
 
 -- the login chat: one welcome line and one tip (ov_discord.lua adds the Discord line: three at most) -------------
 env.OV_AUTOLEARN = "0"
+env.OV_QOL_HUB = "1"   -- the hub's tip only where the hub is on
 local W = OV_QOL_TEST
 local w1 = player({ guid = 90, account = 900, level = 80 })
 events[3](3, w1)
@@ -444,6 +445,38 @@ local wn = player({ guid = 94, account = 904, level = 80 })
 events[3](3, wn)
 check("OV_HOST_INVITE=0: no invitation", not wn.msgs[2]:find("/host", 1, true))
 env.OV_HOST_INVITE = nil
+-- a world on the player's own PC (OV_REALM_KIND, host/engine.rs world_env): its own tips, never the hub's or the
+-- shared realm's; a character's very first login names the Bots window
+env.OV_QOL_HUB = "0"
+local hubSeen = {}
+for i = 1, 12 do local wh = player({ guid = 96, account = 906, level = 80 }); events[3](3, wh); hubSeen[wh.msgs[2] or ""] = true end
+check("hub off: never the .hub tip", (function() for m in pairs(hubSeen) do if m:find(".hub", 1, true) then return false end end return true end)())
+env.OV_HOST_INVITE, env.OV_REALM_KIND = "0", "single"
+local loc = {}
+for i = 1, 20 do local wl = player({ guid = 97, account = 907, level = 80 }); events[3](3, wl); loc[wl.msgs[2] or ""] = true end
+check("local world: the Bots window's tip (Ctrl-B, the minimap button) comes round", (function()
+    for m in pairs(loc) do if m:find("Ctrl-B", 1, true) and m:find("Bots button", 1, true) then return true end end end)())
+check("local world: /comp, .recruit party and .buddy named", (function()
+    for m in pairs(loc) do if m:find("/comp", 1, true) and m:find(".recruit party", 1, true) and m:find(".buddy", 1, true) then return true end end end)())
+check("local world: never .hub, /golf or the shared realm's .guide", (function()
+    for m in pairs(loc) do if m:find(".hub", 1, true) or m:find("/golf", 1, true) or m:find(".guide", 1, true) then return false end end return true end)())
+local fresh = player({ guid = 98, account = 908, level = 1 })
+fresh.GetTotalPlayedTime = function() return 0 end
+events[3](3, fresh)
+check("local world, a character's first login: the Bots window line", #fresh.msgs == 2 and fresh.msgs[2]:find("Ctrl-B", 1, true) and fresh.msgs[2]:find("Bots window", 1, true))
+local again = player({ guid = 98, account = 908, level = 2 })
+again.GetTotalPlayedTime = function() return 600 end
+events[3](3, again)
+check("after that: a tip as usual", #again.msgs == 2 and again.msgs[2] ~= fresh.msgs[2])
+env.OV_REALM_KIND = "original"
+local orig = player({ guid = 99, account = 909, level = 1 }); orig.GetTotalPlayedTime = function() return 0 end
+events[3](3, orig)
+check("the original world is a local world too", orig.msgs[2]:find("Bots window", 1, true) ~= nil)
+env.OV_REALM_KIND = nil
+local off = player({ guid = 100, account = 910, level = 1 }); off.GetTotalPlayedTime = function() return 0 end
+events[3](3, off)
+check("a shared realm: no local first-login line", not (off.msgs[2] or ""):find("Bots window", 1, true))
+env.OV_HOST_INVITE, env.OV_QOL_HUB = nil, nil
 env.OV_QOL_WELCOME = "0"
 local wo = player({ guid = 95, account = 905, level = 80 })
 events[3](3, wo)
@@ -452,6 +485,8 @@ env.OV_QOL_WELCOME, env.OV_AUTOLEARN = nil, nil
 check("tips and invitation: no brand words, ASCII", (function()
     local all = { W.HOST_INVITE }
     for _, t in ipairs(W.TIPS) do all[#all + 1] = t.text end
+    for _, t in ipairs(W.LOCAL_TIPS) do all[#all + 1] = t.text end
+    all[#all + 1] = W.FIRST_LOGIN
     for _, t in ipairs(all) do
         local l = t:lower()
         if l:find("warcraft") or l:find("blizzard") or l:find("lich king") or l:find("%f[%a]wow%f[%A]") or t:find("[\128-\255]") then return false end

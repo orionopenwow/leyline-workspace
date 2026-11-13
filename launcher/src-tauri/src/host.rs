@@ -26,6 +26,7 @@ pub mod denmodels; // My models: kept, listed for Den Lite, put in the Den's pat
 pub mod bossrush; // Boss Rush: the catalog, the pick, the hero's console lines, the board, share codes (docs/BOSS-RUSH.md)
 pub mod localworld; // Single player's worlds: their characters (On this PC, Online), Quick start's choices (host/localworld.rs)
 pub mod worldshare; // Play with friends from a single player world: the realm list rewrite, the same-network way (host/worldshare.rs)
+pub mod worldmods; // the mods in a single player world: the engine's own modules, turned off or on in its realm.env (host/worldmods.rs)
 pub mod spsettings; // Single player's world settings: companions, dungeon buddies, roaming bots, XP, in the world's realm.env
 pub mod worldfriends; // friends keep their character on a single player world: lasting logins, the claim handshake (host/worldfriends.rs)
 pub mod engine; // Single player's Built-in engine: the realm natively on Windows, no Docker (docs/BUILTIN-ENGINE.md)

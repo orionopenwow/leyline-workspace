@@ -2279,6 +2279,34 @@ async fn world_backup(kind: String) -> Result<String, String> {
     blocking(move || crate::host::engine::backup(&world_paths(k)).map(|p| p.display().to_string())).await
 }
 
+/// "Move my characters here": every one of the player's characters in a world onto the login Play uses now (the
+/// signed-in Hero Key's, else the world's own), inside a back-up taken first. The world must be running. How many.
+#[tauri::command]
+async fn world_gather_chars(core: State<'_, Core>, kind: String) -> Result<String, String> {
+    use crate::host::{engine as eng, oneclick::tag};
+    let k = world_kind(&kind)?;
+    if k == eng::Kind::BossRush {
+        return Err(tag("other", "Boss Rush's heroes stay on its own login."));
+    }
+    let dir = core.dir.clone();
+    blocking(move || {
+        let p = world_paths(k);
+        if !eng::status(&p).running {
+            return Err(tag("other", format!("Start {} first (press Play), then move your characters.", k.title())));
+        }
+        let to = match crate::host::oneclick::hero_identity(&dir) {
+            Some(h) => {
+                eng::hero_login(&p, &h)?;
+                h
+            }
+            None => eng::load_state(&p).account,
+        };
+        let n = eng::gather_chars(&p, &to)?;
+        Ok(if n == 0 { "Your characters are all on this login already.".to_string() } else { format!("{n} characters moved: they're on the login Play uses now. A back-up was taken first.") })
+    })
+    .await
+}
+
 /// A world's back-ups, newest first (when, why), for its Restore list.
 #[tauri::command]
 async fn world_backups(kind: String) -> Result<Vec<crate::host::engine::BackupInfo>, String> {
@@ -2363,6 +2391,9 @@ struct WorldPlay {
     made: String,
     /// Played on the Hero Key's own login in this world (signed in); false: the world's own login.
     hero: bool,
+    /// Played on another of the player's logins here, the one that holds the characters (signed out, or another Hero
+    /// Key signed in): the page offers "Move my characters here" (world_gather_chars).
+    elsewhere: bool,
 }
 
 /// Play a world that is running: the game signed in by itself (the hybrid login, as Your Den and Boss Rush do: the
@@ -2412,7 +2443,8 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     }
     let s = eng::load_state(&p);
     let mut is_hero = false;
-    let (user, pass) = if k == eng::Kind::BossRush {
+    let mut elsewhere = false;
+    let (mut user, mut pass) = if k == eng::Kind::BossRush {
         // the heroes' account (bossrush_play makes it with the first fight); its password set again, as there
         if s.hero_password.len() < 8 {
             return Err(tag("other", "Pick a fight on the Boss Rush page first: it makes your hero."));
@@ -2435,6 +2467,22 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
             None => (s.account.clone(), s.password.clone()),
         }
     };
+    // the characters never "vanish" with the sign-in (signed out, a session the website dropped, another Hero Key on
+    // this PC): Play goes in on whichever of the player's own logins here holds them (a picked one's own login), with
+    // a password for this Play set over local SQL (no network)
+    if k != eng::Kind::BossRush {
+        let s_now = eng::load_state(&p);
+        if let Ok(logins) = eng::logins_with_chars(&p, &s_now, &user) {
+            let to = eng::pick_login(&user, pick.as_deref(), &logins);
+            if !to.eq_ignore_ascii_case(&user) {
+                pass = if to.eq_ignore_ascii_case(&s_now.account) { s_now.password.clone() } else { eng::login_password(&p, &to)? };
+                eng::setup_log(&p, "Play went in on the login that holds the characters (not the one signed in)");
+                is_hero = !to.eq_ignore_ascii_case(&s_now.account);
+                user = to;
+                elsewhere = true;
+            }
+        }
+    }
     if k != eng::Kind::BossRush {
         let mine = || eng::chars_of(&p, &user);
         if first && pick.is_none() {
@@ -2522,7 +2570,7 @@ fn world_play_now(core: &Core, client: &str, k: crate::host::engine::Kind, pick:
     let plays = WORLD_PLAYS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     stop_world_when_closed(core.dir.clone(), k, LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed), plays);
     // typed by the launcher: the login stays at hand in case the game window didn't take the keys
-    Ok(WorldPlay { message, kind: k.word().into(), auto, account: user, password: if auto && !typed { String::new() } else { pass }, made, hero: is_hero })
+    Ok(WorldPlay { message, kind: k.word().into(), auto, account: user, password: if auto && !typed { String::new() } else { pass }, made, hero: is_hero, elsewhere })
 }
 
 /// Quick start's pick for a first entry the page sent none for: a random race, one of its classes, a free name.
@@ -4928,6 +4976,7 @@ pub fn run() {
             world_backup,
             world_backups,
             world_restore,
+            world_gather_chars,
             world_update_check,
             world_update,
             world_choices,

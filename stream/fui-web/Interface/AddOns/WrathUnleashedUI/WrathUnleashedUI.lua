@@ -270,6 +270,13 @@ W.Say = say
 -- "layout", ov_main.lua). Only answers count, never the ask (a whisper to oneself comes back on any server). Kept for
 -- this session only: the next login asks again.
 W.LeylineRealm = false
+-- The kind of a world on the player's own PC ("single", "original", "bossrush"), from its hello; nil on a shared realm.
+W.RealmKind = nil
+function W.SetRealmKind(k)
+    k = tostring(k or ""):lower()
+    if not k:match("^%a+$") or #k > 16 then return end
+    W.RealmKind = k
+end
 local leylineWaiting = {}
 -- fn now on a Leyline realm, else once its hello arrives (never on another server).
 function W.WhenLeyline(fn)
@@ -307,6 +314,10 @@ brandFrame:SetScript("OnEvent", function(self, event, prefix, msg, channel)
         return
     end
     if prefix ~= "OVMOD" or channel ~= "WHISPER" or type(msg) ~= "string" then return end
+    -- a world on the player's own PC names its kind after the hello's "1" (ov_modapi.lua OVMod.HelloData): the
+    -- realm guide shows that world's pages (RealmGuide.lua); known before anything waiting on the hello runs
+    local kind = msg:match("^wuhello\thi\t%d+/%d+\t1\t(%a+)")
+    if kind and W.SetRealmKind then W.SetRealmKind(kind) end
     if isHello(msg) then W.SetLeyline() end
     local data = msg:match("^wubrand\tbrand\t1/1\t(.*)$")
     if not data then return end

@@ -219,6 +219,12 @@ end
 check("on: nothing the window shows names an old brand", #bad == 0)
 if #bad > 0 then print("  " .. table.concat(bad, " | ")) end
 
+-- a world on the player's own PC names its kind in the hello (OV_REALM_KIND): the add-on keeps it for its guide
+env.OV_REALM_KIND = "single"
+SendAddonMessage("OVMOD", "wuhello\task\t1/1\t", "WHISPER", UnitName("player"))
+check("a local world's hello names its kind, and the add-on keeps it", received[#received][2] == "wuhello\thi\t1/1\t1\tsingle" and W.RealmKind == "single")
+env.OV_REALM_KIND = nil
+
 os.remove(flagFile); os.remove(datFile)
 print(string.format("\n%d/%d passed", pass, pass + fail))
 os.exit(fail == 0 and 0 or 1)

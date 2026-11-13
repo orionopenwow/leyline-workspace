@@ -1,0 +1,113 @@
+# Leyline launcher: the Rust core's tests and a compile check of the whole app, on feature branches, before a ship
+# (Claude's cloud sessions can't reach crates.io, so this is where their Rust gets built). Linux only, no release, no
+# secrets; the public Leyline repo's own workflow still builds and ships the launcher from main.
+name: launcher check
+
+on:
+  push:
+    branches: ["feat-*"]
+    paths:
+      - "launcher/src-tauri/**"
+      - "launcher/ui-solo/**"
+      - "labs/den-lite/**"
+      - ".github/workflows/launcher-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Linux webview libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          # Lua 5.1: the hybrid login's glue tests (hybrid.rs runs glue/test_hybrid_glue.lua when a Lua is installed)
+          sudo apt-get install -y lua5.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: cargo test (core, no webview)
+        working-directory: launcher/src-tauri
+        run: cargo test --locked --no-default-features
+      - name: cargo check (the whole app)
+        working-directory: launcher/src-tauri
+        run: cargo check --locked --all-targets
+
+  den-lite:
+    # Den Lite (labs/den-lite, its own crate) and the terrain crate it shares with the launcher
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: labs/den-lite
+      - name: cargo test (Den Lite)
+        working-directory: labs/den-lite
+        run: cargo test --locked
+      - name: cargo test (the terrain crate)
+        working-directory: launcher/src-tauri/terrain
+        run: cargo test
+
+  solo-app:
+    # Leyline Solo (docs/LEYLINE-SOLO.md): the same crate with the `solo` feature and its own window
+    # (tauri.solo.conf.json, ui-solo/). Only on its branch: the compile on Linux, then the Windows app as players get it
+    # (no installer here; the leyline-solo repo's own workflow makes and signs that).
+    if: github.ref == 'refs/heads/feat-solo-app'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Linux webview libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: cargo check --features solo (with the solo window's config)
+        working-directory: launcher/src-tauri
+        run: |
+          export TAURI_CONFIG="$(cat tauri.solo.conf.json)"
+          cargo check --locked --features solo --all-targets
+
+  solo-app-windows:
+    if: github.ref == 'refs/heads/feat-solo-app'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: Build Leyline Solo (no installer)
+        working-directory: launcher
+        shell: bash
+        run: |
+          npm ci --no-audit --no-fund
+          npx tauri build --no-bundle --features solo --config src-tauri/tauri.solo.conf.json -- --locked
+          ls -la src-tauri/target/release/*.exe

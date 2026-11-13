@@ -434,6 +434,9 @@ pub fn changed(answer: &str) -> Result<(), String> {
 
 pub type Console = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 pub type WithChars = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
+/// After a claim's login is ready (made, or its password set): the login the friend's game uses instead, made with
+/// the same password (Boss Rush: the friend's hero account, app.rs bossrush_friend_login). None: the login itself.
+pub type LoginFor = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
 
 /// A world as its claims need it: its realm id and invite secret, its share folder, its console, and the
 /// friend-shaped logins that have characters there.
@@ -445,6 +448,7 @@ pub struct World {
     pub era: Era,
     pub console: Console,
     pub with_chars: WithChars,
+    pub login_for: Option<LoginFor>,
 }
 
 fn run(w: &World, line: &str) -> Result<(), String> {
@@ -476,7 +480,10 @@ pub fn handle(w: &World, chal: &str, sealed: &str) -> Result<String, String> {
         }
     }
     save(&w.share, &b)?;
-    Ok(g.user)
+    match &w.login_for {
+        Some(f) => f(&g.user, &o.pass),
+        None => Ok(g.user),
+    }
 }
 
 /// A random password nobody holds: the login can't be used until its friend's next claim.
@@ -1042,7 +1049,32 @@ mod tests {
                 Ok(if l.starts_with("account create") { "Account created".into() } else if l.starts_with("account set password") { "The password was changed".into() } else { "ok".into() })
             }),
             with_chars: Arc::new(Vec::<String>::new),
+            login_for: None,
         }
+    }
+
+    #[test]
+    fn a_world_may_answer_with_another_login() {
+        // Boss Rush: the friend's game signs in to the hero made for them, with the claim's own password
+        let d = tempfile::tempdir().unwrap();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut w = world(d.path(), log.clone());
+        let seen = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+        let s2 = seen.clone();
+        w.login_for = Some(Arc::new(move |u: &str, p: &str| {
+            s2.lock().unwrap().push((u.to_string(), p.to_string()));
+            Ok(format!("HERO{}", &u[1..5]))
+        }));
+        add_ticket(d.path(), "GTICKET234", "TPASS2345678", now()).unwrap();
+        let a = peer(14);
+        let got = handle(&w, "ab", &make_claim(&a, RID, SECRET, "ab", Some(("GTICKET234", "TPASS2345678")), "PASSWORD2345", &[]).unwrap()).unwrap();
+        let lasting = name_for(RID, &a.peer_id);
+        assert_eq!(got, format!("HERO{}", &lasting[1..5]));
+        assert_eq!(seen.lock().unwrap().clone(), vec![(lasting.clone(), "PASSWORD2345".to_string())], "after the lasting login is made");
+        assert!(log.lock().unwrap().iter().any(|l| l == &format!("account create {lasting} PASSWORD2345")));
+        // a hook that fails: the claim is refused with its words
+        w.login_for = Some(Arc::new(|_: &str, _: &str| Err("no fight picked".to_string())));
+        assert_eq!(handle(&w, "ab", &make_claim(&a, RID, SECRET, "ab", None, "PASSWORD3456", &[]).unwrap()).unwrap_err(), "no fight picked");
     }
 
     #[test]

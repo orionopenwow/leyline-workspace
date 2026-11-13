@@ -65,7 +65,7 @@ pub mod upstream; // upstream addons: curated third-party addons installed from 
 #[cfg(all(feature = "app", desktop))]
 mod app;
 #[cfg(all(feature = "app", desktop))]
-pub use app::{den_play_cli, play_test_cli, run, single_play_test_cli};
+pub use app::{bossrush_play_test_cli, den_play_cli, play_test_cli, run, single_play_test_cli};
 #[cfg(all(feature = "app", mobile))]
 mod mobile;
 #[cfg(all(feature = "app", mobile))]

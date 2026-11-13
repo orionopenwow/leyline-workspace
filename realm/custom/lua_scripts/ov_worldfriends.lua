@@ -88,12 +88,22 @@ local function friendLines()
     return out
 end
 
+-- The asks older than ASK_EXPIRE seconds that nobody ran, answered for the launcher.
+T.ASK_EXPIRE = 120
+function T.ExpireSql(now)
+    return "UPDATE ov_world_asks SET done = 1, answer = 'err:The Leyline launcher is closed, so nobody answered. Open Leyline, then ask again.' "
+        .. "WHERE done = 0 AND made > 0 AND made < " .. math.floor((tonumber(now) or 0) - T.ASK_EXPIRE)
+end
+
 function T.Info(player)
     local friend = T.IsFriend(player)
     local lines = { "role=" .. (friend and "friend" or "host"), "sharing=" .. (shareGet("sharing") == "1" and "1" or "0") }
     if not friend then
         local link = shareGet("link")
         if T.LinkOk(link) then lines[#lines + 1] = "link=" .. link end
+        -- an ask nobody ran in two minutes: the launcher is closed (the world keeps running without it), so the game
+        -- stops waiting and says so
+        CharDBExecute(T.ExpireSql(os.time()))
         lines[#lines + 1] = "asking=" .. (CharDBQuery("SELECT id FROM ov_world_asks WHERE done = 0 LIMIT 1") and "1" or "0")
         local a = CharDBQuery("SELECT answer FROM ov_world_asks WHERE done = 1 ORDER BY id DESC LIMIT 1")
         if a then lines[#lines + 1] = "answer=" .. a:GetString(0):gsub("[|\n]", " ") end

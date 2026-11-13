@@ -71,6 +71,10 @@ pub struct Settings {
     /// the launcher started for a world on this PC closes, the world is saved and stopped, unless friends are in it
     /// or the game was started again. On by default; a file without it: on.
     pub world_stop_on_exit: bool,
+    /// Settings › "Stop my world when Leyline closes": closing the launcher saves and stops a world running on this
+    /// PC (nothing would watch it, and friends couldn't reach it without the launcher). With friends in it, the
+    /// launcher asks first. On by default; a file without it: on.
+    pub world_stop_on_close: bool,
 }
 
 impl Default for Settings {
@@ -90,6 +94,7 @@ impl Default for Settings {
             signin_cover: true,
             solo_signin: "prefill".into(),
             world_stop_on_exit: true,
+            world_stop_on_close: true,
         }
     }
 }
@@ -293,6 +298,8 @@ mod tests {
         let s = load(d.path());
         assert!(s.signin_cover, "a file from before the switch: on");
         assert!(s.world_stop_on_exit, "a file from before the setting: on");
+        assert!(s.world_stop_on_close, "stop the world when Leyline closes: on for a file from before it");
+        assert!(Settings::default().world_stop_on_close);
         save(d.path(), &Settings { signin_cover: false, ..s }).unwrap();
         assert!(!load(d.path()).signin_cover);
     }

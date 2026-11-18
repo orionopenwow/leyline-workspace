@@ -732,14 +732,6 @@
    "reason": "no open licence file"
   },
   {
-   "repo": "https://github.com/dnkrse/TurtlePvPEnhanced",
-   "name": "TurtlePvPEnhanced",
-   "builds": [
-    "1.12"
-   ],
-   "reason": "no open licence file"
-  },
-  {
    "repo": "https://github.com/dns-sec/AutoQuest",
    "name": "AutoQuest",
    "builds": [
@@ -2972,6 +2964,10 @@
   {
    "repo": "https://github.com/DenoHearth/QuestBlobMinimap",
    "reason": "written for one commercial server's modified client"
+  },
+  {
+   "repo": "https://github.com/dnkrse/TurtlePvPEnhanced",
+   "reason": "below the bar for discovered projects (2 stars)"
   },
   {
    "repo": "https://github.com/Drakensangs/DungeonMapsVanilla",

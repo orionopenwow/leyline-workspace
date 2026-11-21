@@ -3378,6 +3378,10 @@
    "reason": "ships game-format files: client_patch/Patch-Z.MPQ"
   },
   {
+   "repo": "https://github.com/Stefan2102/DialogUI-WotLK",
+   "reason": "the repo is gone"
+  },
+  {
    "repo": "https://github.com/StephenSorriaux/mangos-docker",
    "reason": "no sign of a supported client build"
   },
@@ -5576,14 +5580,6 @@
     "3.3.5a"
    ],
    "category": "realm-scripts"
-  },
-  {
-   "repo": "https://github.com/Stefan2102/DialogUI-WotLK",
-   "name": "DialogUI-WotLK",
-   "builds": [
-    "3.3.5a"
-   ],
-   "category": "addons"
   },
   {
    "repo": "https://github.com/stevemcqueenz/gathermate-and-database-3.3.5a",

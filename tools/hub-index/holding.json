@@ -2740,10 +2740,6 @@
    "reason": "a launcher and patcher that hands out a server's client patches: check it can't carry game files"
   },
   {
-   "repo": "https://github.com/Ildourol/mod-warband-camp",
-   "reason": "its TOC says 1.12 but it was found under 3.3.5a"
-  },
-  {
    "repo": "https://github.com/LleguitoWoW/NPCBotGMPanel",
    "reason": "the author's name carries a brand word (credit can't be shown cleanly)"
   },
@@ -3376,10 +3372,6 @@
   {
    "repo": "https://github.com/silviu20092/mod-flightmaster-whistle",
    "reason": "ships game-format files: client_patch/Patch-Z.MPQ"
-  },
-  {
-   "repo": "https://github.com/Stefan2102/DialogUI-WotLK",
-   "reason": "the repo is gone"
   },
   {
    "repo": "https://github.com/StephenSorriaux/mangos-docker",
@@ -4761,6 +4753,14 @@
    "category": "tools"
   },
   {
+   "repo": "https://github.com/Ildourol/mod-warband-camp",
+   "name": "Warband Camp",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
    "repo": "https://github.com/Iliana-sc/enemyframes",
    "name": "enemyframes",
    "builds": [
@@ -5580,6 +5580,14 @@
     "3.3.5a"
    ],
    "category": "realm-scripts"
+  },
+  {
+   "repo": "https://github.com/Stefan2102/DialogUI-WotLK",
+   "name": "DialogUI-WotLK",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
   },
   {
    "repo": "https://github.com/stevemcqueenz/gathermate-and-database-3.3.5a",

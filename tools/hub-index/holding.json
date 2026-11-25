@@ -3342,6 +3342,10 @@
    "reason": "ships game-format files: Resources/Cooldown/LoC-ShadowBG.blp, Resources/Cooldown/Loc-RedLine.blp, Resources/Cooldown/UI-HUD-ActionBar-LoC.blp"
   },
   {
+   "repo": "https://github.com/Sagiroth/TortoiseBots",
+   "reason": "no sign of a supported client build"
+  },
+  {
    "repo": "https://github.com/SahtoutDev/SahtoutCMS",
    "reason": "ships binaries or archives (we only link source): download/files/wow_woltk.zip"
   },
@@ -5418,14 +5422,6 @@
     "1.12"
    ],
    "category": "addons"
-  },
-  {
-   "repo": "https://github.com/Sagiroth/TortoiseBots",
-   "name": "TortoiseBots",
-   "builds": [
-    "1.12"
-   ],
-   "category": "realm-scripts"
   },
   {
    "repo": "https://github.com/SamuelLira99/Profession-Capper",

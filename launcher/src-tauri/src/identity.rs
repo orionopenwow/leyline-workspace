@@ -2,6 +2,8 @@
 //! kept in `<app data>/peer.key`, never sent anywhere. Friends, profile cards, presence and lasting world logins for
 //! friends (host side: keyed on the friend's peer id) all stand on it; no website and no server is needed.
 //!
+//! * The Passport (crate::passport) is this key grown up: a new key is made from a 12-word recovery phrase; a key
+//!   made before that backs up as 24 words; world keys are derived from it ([`PeerIdentity::derive`]).
 //! * `peer.key`: 64 hex characters, the Ed25519 seed (the same shape as a Den's `realm.key`, host/litenet.rs), made
 //!   once with the system's random source, owner-only on Mac and Linux. Settings › Your Leyline network key saves it
 //!   to a file and brings it back ([`export_text`], [`import`]): it is the only thing that makes "you" you to your

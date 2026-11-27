@@ -13,7 +13,7 @@
 //!   old friendship can't be replayed back in.
 //! * **Messages** (`leyline-friend-msg-v1`): `{kind, from, to, ts, nonce, body}` signed by the sender, then sealed to
 //!   the recipient (identity::seal) inside an envelope that shows only the recipient's peer id. Kinds: request,
-//!   accept, decline, revoke, presence, invite, card. Good for 10 minutes; each nonce once (friendnet.rs).
+//!   accept, decline, revoke, presence, invite, card; and the Passport's guardian and rotate (crate::passport). Good for 10 minutes; each nonce once (friendnet.rs).
 //! * **LAN beacon** (`leyline-friend-beacon-v1`): `{pubkey, port, ts, name?}` signed, broadcast on the local
 //!   network only.
 //!

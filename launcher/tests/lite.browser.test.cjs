@@ -132,9 +132,9 @@ test('opens straight to Home: no sign-in, no server call, Single player first in
   assert.ok(opts.includes('Your Den') || opts.some((x) => /den/i.test(x)), String(opts));
   assert.ok(!opts.some((x) => /wrath unleashed|browser|host a server/i.test(x)), String(opts));
   await page.keyboard.press('Escape');
-  // the side menu: no Host or Forum; Community in their place
+  // the side menu: no server Host or Forum; Host a world on this PC (worlds.js) and Community in their place
   const items = await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.dataset.page));
-  assert.deepEqual(items, ['play', 'realms', 'mods', 'community', 'news', 'single', 'modes']);
+  assert.deepEqual(items, ['play', 'realms', 'mods', 'worlds', 'community', 'news', 'single', 'modes']);
   assert.doesNotMatch(await page.textContent('#realm-rows'), /wrath unleashed/i, 'Your realms: no official realm');
   const text = await visibleText(page);
   assert.doesNotMatch(text, BRAND);

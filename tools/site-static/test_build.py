@@ -49,6 +49,7 @@ STATIC = {
     "/wrath/leyline/submit": "Submit a mod (moves to a GitHub issue)",
     "/wrath/leyline/forum": "the forum (moves to the Discord)",
     "/wrath/bugs": "Report a bug (moves to GitHub issues)",
+    "/j": "a world's one-click invite (the invite after #: host/invite.rs)",
 }
 SERVER_ONLY = {
     "/wrath": "Play in the browser and the account page (a page that moves to the front page)",
@@ -456,6 +457,35 @@ class Site(unittest.TestCase):
                 "    print('refused', e)\nelse:\n    print('CONNECTED')\n")
         r = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=60)
         self.assertIn("refused", r.stdout, r.stdout + r.stderr)
+
+    def test_join_page_opens_the_launcher_and_keeps_the_invite_in_the_browser(self):
+        page = self.pages[B.JOIN_PATH]
+        self.assertIn(LEGAL, page)
+        self.assertIsNone(BANNED.search(visible(page)))
+        # the invite is read from the fragment only, shape-checked, then opened as leyline://join/<invite>
+        script = re.findall(r"<script>(.*?)</script>", page, flags=re.S)
+        self.assertEqual(len(script), 1)
+        self.assertIn("location.hash", script[0])
+        self.assertIn("'leyline://join/'+h", script[0])
+        self.assertNotRegex(script[0], r"fetch|XMLHttpRequest|sendBeacon|WebSocket|<img|\.src\s*=")
+        # only that script may run (its hash in the page's policy), nothing loads from anywhere, no referrer
+        sha = __import__("base64").b64encode(hashlib.sha256(script[0].encode("utf-8")).digest()).decode()
+        csp = html.unescape(re.search(r'http-equiv="Content-Security-Policy" content="([^"]*)"', page).group(1))
+        self.assertIn(f"script-src 'sha256-{sha}'", csp)
+        self.assertIn("default-src 'none'", csp)
+        self.assertIn('name="referrer" content="no-referrer"', page)
+        self.assertIn('name="robots" content="noindex"', page)
+        self.assertNotRegex(page, r'<(?:link|img|iframe)\b|src="http')
+        # Get Leyline is the fallback, and it is a page of the site
+        self.assertIn('id="j-get" href="/wrath/download"', page)
+        self.assertTrue(self.has("/wrath/download"))
+        self.assertNotIn("/j/", self.files["sitemap.xml"].read_text(encoding="utf-8"))
+        # the shape it takes is the launcher's (host/invite.rs make: lw1.<b64url>.<86 b64url>)
+        rx = re.search(r"/(\^lw1.*?\$)/", script[0]).group(1).replace("\\\\", "\\")
+        good = "lw1." + "a" * 400 + "." + "b" * 86
+        self.assertRegex(good, rx)
+        for bad in ("lw1.short.sig", "lw1.%s.%s<x" % ("a" * 20, "b" * 86), "javascript:alert(1)"):
+            self.assertNotRegex(bad, rx, bad)
 
     def test_same_inputs_same_bytes(self):
         with tempfile.TemporaryDirectory() as d:

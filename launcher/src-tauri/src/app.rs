@@ -2384,6 +2384,87 @@ fn set_world_stop_on_close(core: State<Core>, on: bool) -> Result<(), String> {
     })
 }
 
+/// Settings › Get worlds ready in the background (host/quickworld.rs).
+#[tauri::command]
+fn set_world_get_ready(core: State<Core>, on: bool) -> Result<(), String> {
+    core.update(|s| {
+        s.world_get_ready = on;
+        Ok(())
+    })
+}
+
+/// Background readiness (host/quickworld.rs, engine.rs begin_prepare): once the game folder is found, Single player's
+/// engine fetched and the maps read quietly, so a world's Start later is fast. Only while Settings › Get worlds ready
+/// in the background is on; nothing when there's no game folder yet (or several and none picked).
+#[tauri::command]
+fn world_prepare(core: State<Core>) -> Result<String, String> {
+    if !core.snapshot().world_get_ready {
+        return Ok("off".into());
+    }
+    let k = crate::host::engine::Kind::Single;
+    let Ok(c) = world_client(&core, k, "") else { return Ok("no game folder yet".into()) };
+    crate::host::engine::begin_prepare(&settings::app_dir(), c.path)
+}
+
+/// The background readiness line (the small note on the Host page).
+#[tauri::command]
+fn world_prepare_progress() -> crate::host::engine::Job {
+    crate::host::engine::prep_progress()
+}
+
+/// A one-click invite to a world running on this PC (host/invite.rs): the same friend's login and ways as Invite a
+/// friend (`world_invite_now`), signed by this launcher's peer key, as `leyline://join/<invite>` and the site's
+/// `https://leylinelauncher.com/j/#<invite>`.
+#[derive(Serialize)]
+struct WorldInviteLink {
+    invite: String,
+    app_link: String,
+    site_link: String,
+    expires: u64,
+    /// The same network way's line (the others are Invite a friend's).
+    ways: Vec<InviteWay>,
+}
+
+#[tauri::command]
+async fn world_invite_link(kind: String) -> Result<WorldInviteLink, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        use crate::host::{denways, invite, litenet};
+        let d = world_invite_now(k)?;
+        let (_, rid, secret) = realms::parse_invite(&d.link).ok_or("The world's invite didn't come out right. Try again.")?;
+        let (user, pass) = litenet::guest_in(&d.link).ok_or("The world's invite has no friend's login. Try again.")?;
+        let (lan, _) = denways::ways_in(&d.link);
+        let me = crate::identity::peer_identity()?;
+        let app = settings::app_dir();
+        let name = crate::p2p::friends::Book::load(&app, &me, now_secs()).0.profile.name;
+        let inv = invite::make(&me, &invite::Make { world: &rid, kind: k.word(), name: &name, secret: &secret, user: &user, pass: &pass, lan: lan.as_deref(), now: now_secs() })?;
+        let (app_link, site_link) = invite::links(&inv);
+        let expires = invite::open(&inv, now_secs())?.expires;
+        Ok(WorldInviteLink { invite: inv, app_link, site_link, expires, ways: d.ways })
+    })
+    .await
+}
+
+/// What a one-click invite says, checked (its signature, its fields, not run out): the card's "Join <name>'s world?"
+/// and the link Join takes (`join_invite`, the lasting-login handshake). Nothing joins here.
+#[derive(Serialize)]
+struct InviteCard {
+    title: String,
+    name: String,
+    peer: String,
+    kind: String,
+    expires: u64,
+    /// The ways to try first (the transport's own, the same network), as host/invite.rs `ways` gives them.
+    ways: Vec<String>,
+    link: String,
+}
+
+#[tauri::command]
+fn invite_open(invite: String) -> Result<InviteCard, String> {
+    let inv = crate::host::invite::open(&invite, now_secs())?;
+    Ok(InviteCard { title: inv.title(None), name: inv.name.clone(), peer: inv.peer.clone(), kind: inv.kind.clone(), expires: inv.expires, ways: crate::host::invite::ways(&inv), link: inv.legacy_link() })
+}
+
 /// Settings › Stop my world when the game closes.
 #[tauri::command]
 fn set_world_stop_on_exit(core: State<Core>, on: bool) -> Result<(), String> {
@@ -5462,6 +5543,11 @@ pub fn run() {
             chars_ask_back,
             chars_backup_settings,
             world_invite,
+            world_invite_link, // worlds in three clicks (host/invite.rs, host/quickworld.rs): the one-click invite, its card, readiness
+            invite_open,
+            world_prepare,
+            world_prepare_progress,
+            set_world_get_ready,
             world_share_stop,
             world_friends,
             world_friend,

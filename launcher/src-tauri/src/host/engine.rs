@@ -875,6 +875,8 @@ pub enum Step {
     Maps,
     Database,
     Fill,
+    /// The world's database copied from this PC's prepared one (host/quickworld.rs) instead of Database and Fill.
+    Copy,
     Account,
     Start,
     /// Repair only: every engine file checked (and the broken or missing ones fetched again).
@@ -886,6 +888,22 @@ pub enum Step {
 }
 
 impl Step {
+    /// One word for it (the timings file: host/quickworld.rs).
+    pub fn word(self) -> &'static str {
+        match self {
+            Step::Download => "download",
+            Step::Unpack => "unpack",
+            Step::Maps => "maps",
+            Step::Database => "database",
+            Step::Fill => "fill",
+            Step::Copy => "copy",
+            Step::Account => "account",
+            Step::Start => "start",
+            Step::Verify => "verify",
+            Step::Login => "login",
+            Step::Ports => "ports",
+        }
+    }
     /// What the page shows for it (single.js's progress line).
     pub fn label(self) -> &'static str {
         match self {
@@ -894,6 +912,7 @@ impl Step {
             Step::Maps => "Reading the maps from your game folder (one time)",
             Step::Database => "Making the world's database (one time)",
             Step::Fill => "Filling the world: placing creatures, quests and items into its database (one time)",
+            Step::Copy => "Copying your prepared world (seconds, not minutes)",
             Step::Account => "Creating your local login",
             Step::Start => "Starting your world",
             Step::Verify => "Checking the engine's files",
@@ -914,6 +933,8 @@ pub struct Have {
     pub filled: bool,
     pub account: bool,
     pub running: bool,
+    /// A prepared database for the installed engine is on this PC (host/quickworld.rs): copied, not filled.
+    pub base: bool,
 }
 
 /// The steps still to do, in order. An update stops the servers, so Start follows it.
@@ -925,11 +946,15 @@ pub fn plan(h: &Have) -> Vec<Step> {
     if !h.maps {
         v.push(Step::Maps);
     }
-    if !h.db {
-        v.push(Step::Database);
-    }
-    if !h.filled {
-        v.push(Step::Fill);
+    if !h.db && h.base && !h.update {
+        v.push(Step::Copy);
+    } else {
+        if !h.db {
+            v.push(Step::Database);
+        }
+        if !h.filled {
+            v.push(Step::Fill);
+        }
     }
     if !h.account {
         v.push(Step::Account);
@@ -969,6 +994,7 @@ pub fn have(p: &Paths, s: &State, update: bool) -> Have {
         filled: s.filled && db,
         account: s.account_made && db,
         running: port_answers(DB_PORT) && port_answers(LOGIN_PORT) && port_answers(WORLD_PORT) && other_running(p).is_none(),
+        base: !db && crate::host::quickworld::base_ready(&p.app, &engine_shas(p).0).is_some(),
     }
 }
 
@@ -1085,6 +1111,15 @@ pub fn progress() -> Job {
 }
 
 fn job(f: impl FnOnce(&mut Job)) {
+    // the background readiness thread's steps go on its own quiet line (`prep_progress`), never a world's
+    if IN_PREP.with(|x| x.get()) {
+        if let Ok(mut g) = PREP.lock() {
+            if let Some((j, _)) = g.as_mut() {
+                f(j);
+            }
+        }
+        return;
+    }
     if let Ok(mut g) = JOB.lock() {
         if let Some((j, t)) = g.as_mut() {
             f(j);
@@ -1093,6 +1128,141 @@ fn job(f: impl FnOnce(&mut Job)) {
             }
         }
     }
+}
+
+// ------------------------------------------------------------------------------------------------ background readiness
+
+thread_local! {
+    /// This thread is the background readiness one (its progress goes on PREP, its map reader runs at low priority).
+    static IN_PREP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+/// The background readiness line (kind "prepare") and the game folder it reads the maps from.
+static PREP: Mutex<Option<(Job, Instant)>> = Mutex::new(None);
+static PREP_GAME: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// What background readiness does (host/quickworld.rs): get the engine and read the maps, nothing that makes a world
+/// (no database, no login, no start), and never an engine update.
+pub fn prepare_plan(h: &Have) -> Vec<Step> {
+    let mut v = Vec::new();
+    if !h.installed {
+        v.extend([Step::Download, Step::Unpack]);
+    }
+    if !h.maps {
+        v.push(Step::Maps);
+    }
+    v
+}
+
+/// The background readiness line (idle when it never ran).
+pub fn prep_progress() -> Job {
+    match PREP.lock().ok().and_then(|g| g.clone()) {
+        Some((mut j, t)) => {
+            if j.running {
+                j.secs = t.elapsed().as_secs();
+            }
+            j
+        }
+        None => Job { idle: true, kind: "prepare".into(), ..Default::default() },
+    }
+}
+
+pub fn prep_running() -> bool {
+    PREP.lock().ok().is_some_and(|g| g.as_ref().is_some_and(|(j, _)| j.running))
+}
+
+/// Get Single player's engine and maps ready in the background (Settings › Get worlds ready in the background; the
+/// caller checks it). Quietly: its own progress line, the map reader at low priority. A world's Start pressed meanwhile
+/// waits for it and goes on from there ([`begin_setup`]). Ok(what it does) or Ok("ready") when nothing is left.
+pub fn begin_prepare(app_dir: &Path, game: PathBuf) -> Result<String, String> {
+    if !supported() {
+        return Ok("The Built-in engine isn't made for this PC.".into());
+    }
+    let p = Paths::new(app_dir);
+    let s = load_state(&p);
+    let steps = prepare_plan(&have(&p, &s, false));
+    if steps.is_empty() {
+        return Ok("ready".into());
+    }
+    if progress().running {
+        return Ok("A world is being set up: it does this itself.".into());
+    }
+    {
+        let mut g = PREP.lock().map_err(|_| "busy")?;
+        if g.as_ref().is_some_and(|(j, _)| j.running) {
+            return Ok("Getting ready already.".into());
+        }
+        *g = Some((Job { idle: false, kind: "prepare".into(), running: true, step: steps[0].label().into(), n: 1, of: steps.len(), ..Default::default() }, Instant::now()));
+    }
+    if let Ok(mut g) = PREP_GAME.lock() {
+        *g = Some(game.clone());
+    }
+    std::thread::spawn(move || {
+        IN_PREP.with(|x| x.set(true));
+        let r = (|| {
+            for d in [&p.root, &p.logs, &p.state, &p.tmp] {
+                fs::create_dir_all(d).map_err(|e| format!("Couldn't make the engine's folder: {e}"))?;
+            }
+            heal_partial(&p);
+            let mut s = load_state(&p);
+            let mut want = String::new();
+            let mut timer = crate::host::quickworld::Timer::new(&p.app, "prepare");
+            for (i, step) in steps.iter().enumerate() {
+                job(|j| {
+                    j.n = i + 1;
+                    j.step = step.label().into();
+                    j.pct = None;
+                    j.detail.clear();
+                });
+                if let Some(l) = timer.step(step.word()) {
+                    setup_log(&p, &format!("timing: {l}"));
+                }
+                setup_log(&p, &format!("in the background: {}", step.label()));
+                run_step(&p, Some(&game), *step, &mut s, &mut want)?;
+            }
+            if let Some(l) = timer.end() {
+                setup_log(&p, &format!("timing: {l}"));
+            }
+            setup_log(&p, &format!("timing: {}", timer.total("prepare")));
+            Ok::<(), String>(())
+        })();
+        setup_log(&p, &match &r {
+            Ok(()) => "ready in the background".to_string(),
+            Err(e) => format!("getting ready in the background stopped: {e}"),
+        });
+        job(|j| {
+            j.running = false;
+            j.pct = None;
+            match r {
+                Ok(()) => {
+                    j.code = Some(0);
+                    j.step = "Ready".into();
+                    j.n = j.of;
+                }
+                Err(e) => {
+                    j.code = Some(1);
+                    j.problem = Some(e);
+                }
+            }
+        });
+        IN_PREP.with(|x| x.set(false));
+    });
+    Ok("Getting worlds ready in the background.".into())
+}
+
+/// A world's Start waits for background readiness to finish (its line shows what it is waiting for).
+fn wait_prep() -> bool {
+    let mut waited = false;
+    while prep_running() {
+        waited = true;
+        let pj = prep_progress();
+        job(|j| {
+            j.step = "Finishing getting ready".into();
+            j.pct = pj.pct;
+            j.detail = pj.step.clone();
+        });
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    waited
 }
 
 /// Percent of `done` in `total`, below 100 until the step itself says it is done.
@@ -1140,6 +1310,9 @@ pub fn begin_setup(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: bo
     if steps.is_empty() {
         return Ok(format!("{title} is running."));
     }
+    // background readiness is reading the maps from a game folder: this Start waits for it and uses the same one
+    let preparing = prep_running();
+    let game = game.or_else(|| if preparing { PREP_GAME.lock().ok().and_then(|g| g.clone()) } else { None });
     if steps.contains(&Step::Maps) && game.is_none() {
         return Err(tag("folder", format!("Pick your game folder first: {title} reads its maps from it once.")));
     }
@@ -1170,6 +1343,9 @@ pub fn begin_setup(app_dir: &Path, kind: Kind, game: Option<PathBuf>, update: bo
     }
     let msg = if steps.contains(&Step::Download) { "Getting the engine…".to_string() } else { format!("Starting {title}…") };
     std::thread::spawn(move || {
+        // what's left once background readiness is done (the engine and maps may be there now)
+        let steps = if preparing && wait_prep() { plan(&have(&p, &load_state(&p), update)) } else { steps };
+        job(|j| j.of = steps.len());
         let r = run(&p, game.as_deref(), &steps);
         if r.is_ok() {
             let mut s = load_state(&p);
@@ -1408,7 +1584,12 @@ fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
     // a world made in this run has nothing of the player's to back up yet
     let fresh = steps.contains(&Step::Account);
     let mut want = String::new();
+    // each step's seconds (host/quickworld.rs Timer): phase 0's fresh-PC numbers
+    let mut timer = crate::host::quickworld::Timer::new(&p.app, p.kind.word());
     for (i, step) in steps.iter().enumerate() {
+        if let Some(l) = timer.step(step.word()) {
+            setup_log(p, &format!("timing: {l}"));
+        }
         job(|j| {
             j.n = i + 1;
             j.step = step.label().into();
@@ -1421,6 +1602,11 @@ fn run(p: &Paths, game: Option<&Path>, steps: &[Step]) -> Result<(), String> {
         }
         run_step(p, game, *step, &mut s, &mut want).map_err(|e| classify(*step, e))?;
     }
+    if let Some(l) = timer.end() {
+        setup_log(p, &format!("timing: {l}"));
+    }
+    let how = if steps.contains(&Step::Copy) { "prepared" } else if steps.contains(&Step::Fill) { "fresh" } else { "start" };
+    setup_log(p, &format!("timing: {}", timer.total(how)));
     Ok(())
 }
 
@@ -1524,7 +1710,25 @@ fn run_step(p: &Paths, game: Option<&Path>, step: Step, s: &mut State, want: &mu
             }
             s.fill_started = true;
             save_state(p, s)?;
-            fill(p, s)?;
+            fill_import(p, s)?;
+            // the filled database kept for every later world (host/quickworld.rs): before this world's own rules
+            keep_base(p, s);
+            profile_sql_in(p)?;
+            s.filled = true;
+            save_state(p, s)?;
+        }
+        Step::Copy => {
+            let sha = engine_shas(p).0;
+            let (pw, bytes) = crate::host::quickworld::use_base(&p.app, &sha, &p.db)?;
+            setup_log(p, &format!("copied the prepared database ({} MB)", bytes / 1_048_576));
+            s.db_password = pw;
+            fs::write(p.my_ini(), my_ini(p)).map_err(|e| e.to_string())?;
+            fs::write(p.client_cnf(), client_cnf(s)).map_err(|e| e.to_string())?;
+            s.db_made = true;
+            s.fill_started = true;
+            save_state(p, s)?;
+            start_db(p)?;
+            profile_sql_in(p)?;
             s.filled = true;
             save_state(p, s)?;
         }
@@ -1861,6 +2065,23 @@ fn extract_maps(p: &Paths, game: &Path) -> Result<(), String> {
     game_ok(game)?;
     fs::create_dir_all(&p.data).map_err(|e| format!("Couldn't make the maps folder: {e}"))?;
     let _ = fs::remove_file(p.maps_marker());
+    // a world that plays some of the maps (Boss Rush) copies them from Single player's whole read when that is done
+    // (host/quickworld.rs): the map reader runs once per PC
+    let single = Paths::for_kind(&p.app, Kind::Single);
+    if p.kind.only_maps().is_some() && single.data != p.data && maps_done(&single) {
+        job(|j| j.detail = "From the maps already read on this PC".into());
+        match crate::host::quickworld::copy_maps(&single.data, &p.data, crate::host::bossrush::keeps_map_file) {
+            Ok(n) if count(&p.data.join("maps")) > 0 => {
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                let marker = serde_json::json!({ "from": game.display().to_string(), "at": now, "maps": count(&p.data.join("maps")), "only": p.kind.only_maps(), "copied": n });
+                fs::write(p.maps_marker(), marker.to_string()).map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            Ok(_) => setup_log(p, "the copied maps had none of this world's: reading them from the game folder"),
+            Err(e) => setup_log(p, &format!("copying the maps didn't work ({e}): reading them from the game folder")),
+        }
+        let _ = fs::remove_file(p.maps_marker());
+    }
     // no marker: whatever is there is from a read that didn't finish, so it's read again from nothing
     for d in ["maps", "dbc", "Cameras"] {
         let _ = fs::remove_dir_all(p.data.join(d));
@@ -1875,7 +2096,11 @@ fn extract_maps(p: &Paths, game: &Path) -> Result<(), String> {
         cmd.arg("-m").arg(crate::host::bossrush::maps_arg());
     }
     cmd.current_dir(&p.data).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    no_window(&mut cmd);
+    if IN_PREP.with(|x| x.get()) {
+        low_priority(&mut cmd);
+    } else {
+        no_window(&mut cmd);
+    }
     let mut child = cmd.spawn().map_err(|e| format!("The map reader didn't start: {e}"))?;
     let _ = fs::write(p.pid("extract"), child.id().to_string());
     let log = fs::File::create(p.logs.join("extract.log")).ok();
@@ -1957,6 +2182,19 @@ struct Procs {
 }
 
 static PROCS: Mutex<Procs> = Mutex::new(Procs { db: None, auth: None, world: None });
+
+/// No window, and below normal priority (background readiness's map reader: the PC stays quick while it reads).
+fn low_priority(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const BELOW_NORMAL_PRIORITY_CLASS: u32 = 0x0000_4000;
+        cmd.creation_flags(CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS);
+    }
+    #[cfg(not(windows))]
+    let _ = cmd;
+}
 
 fn no_window(cmd: &mut Command) {
     #[cfg(windows)]
@@ -2448,7 +2686,7 @@ fn sql_file(p: &Paths, db: &str, file: &Path) -> Result<(), String> {
 }
 
 /// dbimport (every database made and filled), then the profile's world SQL once.
-fn fill(p: &Paths, s: &State) -> Result<(), String> {
+fn fill_import(p: &Paths, s: &State) -> Result<(), String> {
     let log = p.logs.join("dbimport.out.log");
     let mut c = spawn(&p.dbimport(), &["-c", "configs/dbimport.conf"], &p.bin(), &dbimport_env(p, s), &log)?;
     let _ = fs::write(p.pid("dbimport"), c.id().to_string());
@@ -2468,6 +2706,52 @@ fn fill(p: &Paths, s: &State) -> Result<(), String> {
         job(|j| j.detail = format!("{} min", t.elapsed().as_secs() / 60));
         std::thread::sleep(Duration::from_secs(1));
     }
+    Ok(())
+}
+
+/// Just this world's MySQL server down, cleanly (`mysqladmin shutdown`): true once its port is closed.
+fn stop_db_only(p: &Paths) -> bool {
+    if !port_answers(DB_PORT) {
+        return true;
+    }
+    let _ = mysql_cmd(p, &p.mysqladmin(), &["shutdown"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    let ok = wait_closed(DB_PORT, 60);
+    if ok {
+        if let Ok(mut g) = PROCS.lock() {
+            if let Some(mut c) = g.db.take() {
+                let _ = c.wait();
+            }
+        }
+    }
+    ok
+}
+
+/// A freshly filled database kept as this engine's prepared one (host/quickworld.rs), when there isn't one yet: MySQL
+/// stopped for the copy and started again. Never stops the setup: a copy that can't be made is only logged.
+fn keep_base(p: &Paths, s: &State) {
+    use crate::host::quickworld as qw;
+    let sha = engine_shas(p).0;
+    if sha.is_empty() || qw::base_ready(&p.app, &sha).is_some() {
+        return;
+    }
+    job(|j| j.detail = "Keeping a prepared copy, so your next worlds start in seconds".into());
+    let t = Instant::now();
+    if !stop_db_only(p) {
+        setup_log(p, "no prepared copy: the database didn't stop in time");
+        return;
+    }
+    let free = crate::host::oneclick::free_bytes(&p.app);
+    match qw::save_base(&p.app, &sha, &p.db, &s.db_password, free, now_secs()) {
+        Ok(b) => setup_log(p, &format!("kept a prepared copy of the database ({} MB, {:.1} s)", b.bytes / 1_048_576, t.elapsed().as_secs_f64())),
+        Err(e) => setup_log(p, &format!("no prepared copy: {e}")),
+    }
+    if let Err(e) = start_db(p) {
+        setup_log(p, &format!("the database didn't start again after the copy: {e}"));
+    }
+}
+
+/// The world's template SQL (its profile's own rows) on a filled or copied database.
+fn profile_sql_in(p: &Paths) -> Result<(), String> {
     for name in p.kind.profile_sql() {
         let f = p.profile_sql(name);
         if f.is_file() {
@@ -3117,6 +3401,56 @@ mod tests {
     }
 
     #[test]
+    fn a_prepared_database_is_copied_instead_of_filled() {
+        // the template's prepared database on this PC: Copy in place of the database's first run and the fill
+        let h = Have { installed: true, maps: true, base: true, ..Default::default() };
+        assert_eq!(plan(&h), [Step::Copy, Step::Account, Step::Start]);
+        assert_eq!(plan(&Have { base: true, ..Default::default() }), [Step::Download, Step::Unpack, Step::Maps, Step::Copy, Step::Account, Step::Start]);
+        // an engine update fills from its own files (the copy is the old engine's)
+        assert!(!plan(&Have { update: true, ..h }).contains(&Step::Copy));
+        // a database that is there is never copied over
+        let made = Have { db: true, ..h };
+        assert_eq!(plan(&made), [Step::Fill, Step::Account, Step::Start]);
+        assert!(!repair_plan(&h).contains(&Step::Copy), "Repair never copies");
+        assert_eq!(Step::Copy.word(), "copy");
+        assert_eq!(crate::host::oneclick::classify(Step::Copy, "no".into()).split(']').next(), Some("[db"));
+    }
+
+    #[test]
+    fn background_readiness_gets_the_engine_and_maps_only() {
+        assert_eq!(prepare_plan(&Have::default()), [Step::Download, Step::Unpack, Step::Maps]);
+        assert_eq!(prepare_plan(&Have { installed: true, ..Default::default() }), [Step::Maps]);
+        assert!(prepare_plan(&Have { installed: true, maps: true, ..Default::default() }).is_empty());
+        // never an update, never a database or a start
+        assert!(prepare_plan(&Have { installed: true, update: true, maps: true, ..Default::default() }).is_empty());
+        assert!(prep_progress().idle || prep_progress().kind == "prepare");
+    }
+
+    #[test]
+    fn have_sees_a_prepared_database_for_the_installed_engine_only() {
+        let app = std::env::temp_dir().join(format!("leyline-eng-base-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&app);
+        let single = Paths::new(&app);
+        let sha = "ab".repeat(32);
+        save_state(&single, &State { sha256: sha.clone(), ..Default::default() }).unwrap();
+        let v = Paths::for_kind(&app, Kind::Vanilla);
+        assert!(!have(&v, &State::default(), false).base);
+        // a filled database kept for this engine
+        let db = app.join("src-db");
+        for d in ["mysql", "acore_world"] {
+            fs::create_dir_all(db.join(d)).unwrap();
+        }
+        crate::host::quickworld::save_base(&app, &sha, &db, "PW", None, 1).unwrap();
+        assert!(have(&v, &State::default(), false).base);
+        // a world whose database is made doesn't take it
+        fs::create_dir_all(v.db.join("mysql")).unwrap();
+        assert!(!have(&v, &State { db_made: true, ..Default::default() }, false).base);
+        // another engine installed: not this one's
+        save_state(&single, &State { sha256: "cd".repeat(32), ..Default::default() }).unwrap();
+        assert!(!have(&Paths::for_kind(&app, Kind::BossRush), &State::default(), false).base);
+    }
+
+    #[test]
     fn the_state_machine() {
         let none = Have::default();
         assert_eq!(plan(&none), [Step::Download, Step::Unpack, Step::Maps, Step::Database, Step::Fill, Step::Account, Step::Start]);
@@ -3452,7 +3786,7 @@ mod tests {
         assert_eq!(engine_shas(&van), ("a".repeat(64), "b".repeat(64), 7));
         assert!(!update_ready(&van), "nothing is installed here");
         // an update plans the download and the start, never the maps, database or fill again
-        let h = Have { installed: true, update: true, maps: true, db: true, filled: true, account: true, running: true };
+        let h = Have { installed: true, update: true, maps: true, db: true, filled: true, account: true, running: true, base: false };
         assert_eq!(plan(&h), vec![Step::Download, Step::Unpack, Step::Start]);
     }
 

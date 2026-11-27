@@ -10,7 +10,8 @@
   const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
   const oops = (e, fb) => (window.LeylineFriendly ? window.LeylineFriendly(e, fb) : fb);
   const MIN = 10, MAX = 1500, LOG_MAX = 40;
-  const NAMES = { play: "Home", den: "Your Den", realms: "Realms", mods: "Mods & Addons", host: "Host", forum: "Forum",
+  const NAMES = { play: "Home", den: "Your Den", realms: "Realms", mods: "Mods & Addons", host: "Host", forum: "Forum", community: "Community",
+    single: "Single player", modes: "Modes", bossrush: "Boss Rush", characters: "Characters",
     news: "News", settings: "Settings", agents: "Agents", account: "Manage account", findfiles: "Find your files",
     clients: "Game folders", help: "Help" };
   const KIND = { den: "den", host: "host", mods: "mods" };
@@ -120,5 +121,26 @@
   const opener = $("bug-open");
   if (opener) opener.addEventListener("click", () => open());
 
-  window.LeylineBugReport = { open, log: () => log.slice(), where: whereLine };
+  // ---------------------------------------------------------------- Copy debug info (no server: lite.js)
+  // Help › Found a bug?: the core cleans the version, the system, where and the recent log (bugs.rs debug_info), the
+  // window copies it; the player pastes it into a GitHub issue (Open an issue on GitHub, the core's LINKS "issues").
+  async function copyDebug() {
+    const out = $("dbg-status");
+    const tell = (t, kind) => { if (out) { out.textContent = t; out.className = "status" + (kind ? " " + kind : ""); } };
+    let text = "";
+    try { text = await invoke("debug_info", { place: whereLine(lastPage), log: log.slice(-LOG_MAX) }); }
+    catch (_) { tell("Couldn't gather the debug info. Try again.", "bad"); return ""; }
+    try { await navigator.clipboard.writeText(text); tell("Copied. Paste it into your issue on GitHub, with what happened.", "ok"); }
+    catch (_) { tell("Couldn't copy by itself: select the text below and copy it.", "warn"); }
+    if (out) {
+      let box = $("dbg-out");
+      if (!box) { box = document.createElement("textarea"); box.id = "dbg-out"; box.className = "dbg-out"; box.readOnly = true; box.setAttribute("aria-label", "Debug info"); out.after(box); }
+      box.value = text;
+    }
+    return text;
+  }
+  const dbg = $("dbg-copy");
+  if (dbg) dbg.addEventListener("click", copyDebug);
+
+  window.LeylineBugReport = { open: (p) => (window.LeylineLite && !window.LeylineLite.SERVER_FEATURES ? copyDebug() : open(p)), copyDebug, log: () => log.slice(), where: whereLine };
 })();

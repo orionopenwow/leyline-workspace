@@ -315,9 +315,37 @@ pub fn send(dir: &Path, args: &Value, version: &str) -> Result<Value, String> {
     }
 }
 
+/// Help › Copy debug info (no server of ours any more, addresses.rs SERVER_FEATURES): the version, the OS, the page
+/// and realm the window names, and the window's recent log, each cleaned with `redact` (user names in paths, tokens,
+/// keys, emails, IPs) for the player to paste into a GitHub issue. At most 40 log lines of 300 characters.
+pub fn debug_info(version: &str, os: &str, where_: &str, log: &[String]) -> String {
+    let mut out = format!("Leyline {}\nSystem: {}\nWhere: {}\n", cut(version, 40), cut(os, 40), cut(&redact(where_, None), 200));
+    if log.is_empty() {
+        out.push_str("Recent log: nothing\n");
+    } else {
+        out.push_str("Recent log:\n");
+        for l in log.iter().rev().take(40).collect::<Vec<_>>().into_iter().rev() {
+            out.push_str(&cut(&redact(l, None), 300));
+            out.push('\n');
+        }
+    }
+    out
+}
+
 #[cfg(all(feature = "app", desktop))] // desktop only: the phone app has its own short list (mobile.rs)
 pub mod commands {
     use super::*;
+
+    /// Help › Copy debug info: the cleaned text (`debug_info`); the window copies it.
+    #[tauri::command]
+    pub fn debug_info(place: Option<String>, log: Option<Vec<String>>) -> String {
+        let token = crate::social::load_token(&crate::settings::app_dir());
+        let text = super::debug_info(env!("CARGO_PKG_VERSION"), std::env::consts::OS, place.as_deref().unwrap_or(""), &log.unwrap_or_default());
+        match token.as_deref() {
+            Some(t) => redact(&text, Some(t)),
+            None => text,
+        }
+    }
 
     /// Send a bug report (Help › Report a bug) as the launcher's signed-in player.
     #[tauri::command]
@@ -332,6 +360,15 @@ pub mod commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_info_is_cleaned() {
+        let log = vec![r"12:00:00 error C:\Users\alice\Games\x failed token=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789".to_string()];
+        let t = debug_info("1.2.3", "windows", "Realms · Elsewhere", &log);
+        assert!(t.starts_with("Leyline 1.2.3\nSystem: windows\nWhere: Realms"), "{t}");
+        assert!(!t.contains("alice") && !t.contains("AbCdEfGhIjKlMnOp"), "{t}");
+        assert!(debug_info("1", "linux", "", &[]).contains("Recent log: nothing"));
+    }
 
     const TOK: &str = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde";
 

@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="spin.css"><!-- the spinning mark: the header logo and every loading state (spin.js) -->
 <!-- themes (themes agent): Dark (style.css) or Light; the Themes section; themes.js applies the theme before paint -->
 <script src="addresses.js"></script><!-- the site, the game and the relay on their new and old names (window.LeylineAddresses; first) -->
+<script src="lite.js"></script><!-- SERVER_FEATURES: off, Leyline is a launcher aggregator (window.LeylineLite, html.lite; second) -->
 <script src="platform.js"></script><!-- a computer or a phone (window.LeylinePlatform; html.phone on a phone: phone.css, phone.js; docs/ANDROID.md) -->
 <link rel="stylesheet" href="themes/themes.css"><script src="themes.js"></script>
 <link rel="stylesheet" href="social.css"><!-- Home's profile panel (social.js) and the Forum page (forum.js) -->
@@ -46,6 +47,7 @@
 <link rel="stylesheet" href="info.css"><!-- the "i" button and its bubble (info.js) -->
 <link rel="stylesheet" href="friends.css"><!-- Friends on the Leyline network (friends.js) -->
 <link rel="stylesheet" href="guide.css"><!-- the first-run tour and the one-time encouragement toast (guide.js) -->
+<link rel="stylesheet" href="lite.css"><!-- what needed the server, hidden ([data-srv]; lite.js) and the Community page -->
 <link rel="stylesheet" href="phone.css"><!-- the phone app's layout (html.phone only; phone.js, docs/ANDROID.md): last, over the rest -->
 </head>
 <body class="ly">
@@ -74,13 +76,13 @@
   <!-- owner 31 Oct: every update reaches everyone; one calm line, Restart, or it finishes the next time Leyline opens -->
   <div class="pill upd-line" id="tb-update" role="status" hidden><span id="tb-update-text">Update ready — restart to finish</span><button type="button" class="upd-go" id="tb-update-go">Restart</button></div>
   <div class="pill" id="tb-status"><span class="dot"></span><span id="tb-status-text">Checking…</span></div>
-  <button type="button" class="chip" id="tb-account" title="Your account lives on the website: log in, or manage it">
+  <button type="button" class="chip" id="tb-account" data-srv title="Your account lives on the website: log in, or manage it">
     <span class="chip-crest"><b>L</b></span>
     <span class="chip-txt"><span>Your account</span></span>
     <span class="chip-go" aria-hidden="true">Manage</span>
   </button>
   <!-- your profile (social.js): owner 2026-10-30 "hide this sidebar area for now"; the profile stays at the top right -->
-  <div class="tb-me">
+  <div class="tb-me" data-srv>
     <div class="hf-me" id="hf-me"></div>
     <div class="hf-code" id="hf-code" role="status" hidden></div>
   </div>
@@ -109,8 +111,9 @@
     <button class="nav" data-page="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
     <button class="nav" data-page="realms"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Realms</button>
     <button class="nav" data-page="mods" title="Mods &amp; Addons"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span class="nav-txt">Mods</span><span class="badge" id="nav-mods-count" hidden></span></button>
-    <button class="nav" data-page="host"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Host</button>
-    <button class="nav" data-page="forum"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M16 8h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1v3.5L15 17h-4a1 1 0 0 1-1-1v-1"/></svg>Forum</button>
+    <button class="nav" data-page="host" data-srv><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Host</button>
+    <button class="nav" data-page="forum" data-srv><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M16 8h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1v3.5L15 17h-4a1 1 0 0 1-1-1v-1"/></svg>Forum</button>
+    <button class="nav" data-page="community" data-lite><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.8-3.4 3.2-5.2 6-5.2s5.2 1.8 6 5.2"/><circle cx="17" cy="9" r="2.4"/><path d="M15.6 13.9c2.6-.4 4.7 1.2 5.4 4.1"/></svg>Community</button>
     <button class="nav" data-page="news"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2M8 9h5M8 13h5"/></svg>News</button>
     <!-- owner 31 Oct 21:59: Join the Discord moves from the title bar to the side menu, under News -->
     <button type="button" class="nav nav-discord" id="tb-discord" data-link="discord" title="Find a group, voice chat and hear about new realms first"><svg class="dc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.028C.533 9.046-.32 13.58.099 18.058a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03ZM8.02 15.331c-1.183 0-2.157-1.086-2.157-2.42 0-1.333.956-2.418 2.157-2.418 1.21 0 2.176 1.095 2.157 2.419 0 1.333-.956 2.419-2.157 2.419Zm7.975 0c-1.183 0-2.157-1.086-2.157-2.42 0-1.333.955-2.418 2.157-2.418 1.21 0 2.176 1.095 2.157 2.419 0 1.333-.946 2.419-2.157 2.419Z"/></svg><span>Join the Discord</span></button>
@@ -168,7 +171,7 @@
         <p class="ph-hint" id="ph-solo-hint">Your own world, run by this phone: no realm, your companion at your side. Your world is kept on this phone; the game page opens from the website, so it needs the internet.</p>
       </div>
       <!-- Join a friend (phone.js join): a friend's invite link to their PC-hosted realm plays it here, in the app -->
-      <section class="ph-join-box" aria-labelledby="ph-join-title">
+      <section class="ph-join-box" data-srv aria-labelledby="ph-join-title">
         <h3 id="ph-join-title">Join a friend</h3>
         <p class="ph-hint">Got an invite link from a friend who hosts on their PC? Copy it, then one tap.</p>
         <button type="button" class="btn primary ph-paste" id="ph-paste-join">Paste invite link and join</button>
@@ -181,7 +184,7 @@
       </div>
       <div class="ph-links" role="group" aria-label="More">
         <button type="button" class="btn" data-ph-go="news">News</button>
-        <button type="button" class="btn" data-ph-go="forum">Forum</button>
+        <button type="button" class="btn" data-ph-go="forum" data-srv>Forum</button>
         <button type="button" class="btn" data-ph-link="discord">Join the Discord</button>
       </div>
       <section class="ph-pc" aria-labelledby="ph-pc-title">
@@ -282,7 +285,7 @@
         <div class="card-head hm-head"><span id="hm-news-h">NEWS</span><button type="button" class="link" data-hm-go="news">See all ›</button></div>
         <div class="hm-row two" id="hm-news-row"></div>
       </section>
-      <section class="hm-sec hm-host" id="hm-host" aria-label="Host your own">
+      <section class="hm-sec hm-host" id="hm-host" data-srv aria-label="Host your own">
         <span class="hm-host-ic" aria-hidden="true"><img src="art/brand/leyline-crystal-256.webp" alt="" decoding="async"></span>
         <div class="hm-host-txt"><b>Host your own</b><span>Your realm on the Leyline network. No router settings.</span></div>
         <div class="hm-host-acts">
@@ -318,7 +321,7 @@
           <button type="button" class="page-tab" role="tab" id="tab-mods-discover" data-group="mods" data-tab="discover" aria-controls="pane-discover">Discover</button>
           <button type="button" class="page-tab" role="tab" id="tab-mods-installed" data-group="mods" data-tab="installed" aria-controls="pane-installed">Installed<span class="badge" id="tab-mods-count" hidden></span></button>
           <button type="button" class="page-tab" role="tab" id="tab-mods-gamemodes" data-group="mods" data-tab="gamemodes" aria-controls="pane-gamemodes">Game modes</button>
-          <button type="button" class="page-tab" role="tab" id="tab-mods-dens" data-group="mods" data-tab="dens" aria-controls="pane-dens">Dens</button>
+          <button type="button" class="page-tab" role="tab" id="tab-mods-dens" data-srv data-group="mods" data-tab="dens" aria-controls="pane-dens">Dens</button>
         </div></div>
       <div class="tabpane" id="pane-installed" role="tabpanel" aria-labelledby="tab-mods-installed" data-shelf="mods">
         <div class="ly-tabs inst-tabs" id="inst-tabs" role="tablist" aria-label="Installed">
@@ -424,14 +427,14 @@
         </div>
         <span class="toolbar-fill"></span>
         <select class="client-pick rl-client" data-for="realms" aria-label="Play with" title="Play with"></select>
-        <button type="button" class="btn small" data-page-go="modes" title="Duels and Boss Rush">Modes</button>
+        <button type="button" class="btn small" data-page-go="modes" title="Boss Rush and the other modes">Modes</button>
         <button type="button" class="icon-btn" id="rl-refresh" aria-label="Refresh" title="Refresh the list">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
         <div class="rl-pop-wrap">
           <button type="button" class="icon-btn" id="rl-more" aria-label="More" title="More" aria-haspopup="menu" aria-expanded="false" aria-controls="rl-menu">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
           <div class="rl-popover rl-menu" id="rl-menu" role="menu" hidden>
-            <button type="button" role="menuitem" id="rl-back">Back to the official realm</button>
+            <button type="button" role="menuitem" id="rl-back" data-srv>Back to the official realm</button>
             <button type="button" role="menuitem" id="rl-restore" title="Put back the realmlist you had before Leyline">Use my own realmlist</button>
           </div>
         </div>
@@ -439,7 +442,7 @@
       <form class="rl-paste" id="rl-paste" autocomplete="off">
         <label for="rl-paste-in">Paste a realm link or address</label>
         <div class="rl-paste-row">
-          <input id="rl-paste-in" placeholder="leylinelauncher.com/r/… or realm.example.org:3724" spellcheck="false">
+          <input id="rl-paste-in" placeholder="leylinelauncher.com/r/… or realm.example.org:3724" spellcheck="false" data-lite-placeholder="realm.example.org:3724 or a realm link">
           <button type="submit" class="btn small">Add</button>
           <button type="button" class="btn small primary" id="rl-paste-play" hidden>Play now</button>
         </div>
@@ -451,7 +454,7 @@
         <div class="realm-list" id="rl-list"></div>
         <p class="rl-tab-note" id="rl-tab-note"></p>
       </div>
-      <section class="rl-host-banner" id="rl-host-cta" aria-label="Host your own">
+      <section class="rl-host-banner" id="rl-host-cta" data-srv aria-label="Host your own">
         <span class="rl-host-ic" aria-hidden="true"><img src="art/brand/leyline-crystal-256.webp" alt="" decoding="async"></span>
         <p><b>Host your own realm.</b> <span>It runs on your PC and shows up here for everyone. No router settings.</span></p>
         <div class="rl-host-acts">
@@ -461,16 +464,18 @@
         </div>
       </section>
       <details class="rl-other" id="rl-other">
-        <summary>Got an invite link or another realm address?</summary>
+        <summary data-srv>Got an invite link or another realm address?</summary><summary data-lite>Another realm address?</summary>
+      <div data-srv>
       <h3>A private realm</h3>
       <p class="lede ph-only">Got an invite link from a friend? Paste it and Join: their realm opens in the app. A friend's Den (DEN-…) needs the game on a computer.</p>
       <p class="lede pc-only">Got an invite link? Paste it here and Leyline points your client at that realm. Make your account on the link's page first; a link or code (DEN-…) to a friend's Den needs nothing more.</p>
       <div class="row"><input id="rl-invite" placeholder="https://relay.leylinelauncher.com/join/…#… or DEN-…" aria-label="An invite link or a friend's Den code" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="rl-join">Join</button></div>
+      </div>
       <h3>Another realm</h3>
       <div class="form">
         <label>Play on
           <select id="play-realm">
-            <option value="official">Wrath Unleashed (the official realm)</option>
+            <option value="official" data-srv>Wrath Unleashed (the official realm)</option>
             <option value="custom">Another realm address…</option>
           </select>
         </label>
@@ -493,7 +498,7 @@
     <div class="panel wide bs" id="bs" role="region" aria-label="Start anywhere"></div><!-- bossstart.js: a boss, a wing or the whole raid; companions or friends; Start; Retry -->
     <div class="panel wide br" id="br"></div>
     <!-- Leaderboards (boards.js, docs/LEADERBOARDS.md): the realms' signed boards, Boss Rush first; local runs apart -->
-    <div class="panel wide lb-panel" id="br-boards" data-board="bossrush"></div>
+    <div class="panel wide lb-panel" id="br-boards" data-srv data-board="bossrush"></div>
   </section>
 
   <!-- SINGLE PLAYER (single.js): your game folder, the engine, Start; then Manage. Over it, the original world in one
@@ -593,6 +598,24 @@
     </div>
   </section>
 
+  <!-- COMMUNITY (lite.js, owner 26 Nov: the forum went with the server): the Discord and Reddit, the allowed links -->
+  <section class="page" id="page-community" data-lite>
+    <div class="panel">
+      <h2>Community</h2>
+      <!-- TODO(owner): the Community words, his voice -->
+      <p class="lede">Find a group, ask a question, show what you made, and hear about new realms first.</p>
+      <section class="card cm-card">
+        <span class="cm-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 2.9l-.7 1.3a18.3 18.3 0 0 0-5.5 0l-.6-1.3a19.7 19.7 0 0 0-4.9 1.5C.5 9 -.3 13.6.1 18.1a19.9 19.9 0 0 0 6 3l1.3-2a13 13 0 0 1-1.9-.9l.5-.4a14.2 14.2 0 0 0 12.1 0l.5.4c-.6.4-1.2.7-1.9.9l1.3 2a19.8 19.8 0 0 0 6-3c.5-5.2-.8-9.7-3.6-13.7ZM8 15.3c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg></span>
+        <div>
+          <p><b>The Discord.</b> Quick questions, finding a group, voice chat, and the news first.</p>
+          <div class="row"><button type="button" class="btn primary" id="cm-discord" data-link="discord">Join the Discord</button>
+            <button type="button" class="btn" id="cm-reddit" hidden>Reddit</button></div>
+        </div>
+      </section>
+      <p class="hint">Leyline has no forum or accounts of its own any more: the Discord and Reddit are where players meet.</p>
+    </div>
+  </section>
+
   <!-- MANAGE ACCOUNT (account.js): signed out, the sign-in in steps; signed in, your picture, name and bio, the ways to
        log in and Sign out. Opened from the title bar's profile chip; no menu item. -->
   <section class="page" id="page-account">
@@ -646,7 +669,7 @@
           <div class="card-head"><span>ASK A FRIEND</span></div>
           <p>A friend with the same version can copy their game folder to you, on a USB drive for example.</p>
         </section>
-        <section class="card ff-card ff-browser">
+        <section class="card ff-card ff-browser" data-srv>
           <div class="card-head"><span>NO FILES?</span></div>
           <p>Play in your browser: the official realm streams there, with nothing to install.</p>
           <div class="row"><button type="button" class="btn small" id="ff-browser">Play in your browser</button></div>
@@ -717,7 +740,8 @@
         <li><b>Get your game files.</b> Leyline plays with a game folder you already have; it can't download the game for you.
           <button type="button" class="link" data-page-go="findfiles">Can't find your files? ›</button></li>
         <li><b>Add your folder.</b> Press PLAY with no folder, or pick Add a game folder… in the play bar. Leyline reads the version itself.</li>
-        <li><b>Pick a realm.</b> The official realm is picked for you. The realm list in the play bar has Your Den and the realms you host or played on; Realms lists every realm.</li>
+        <li data-srv><b>Pick a realm.</b> The official realm is picked for you. The realm list in the play bar has Your Den and the realms you host or played on; Realms lists every realm.</li>
+        <li data-lite><b>Pick where to play.</b> The realm list in the play bar has Single player, the original world and Your Den on this PC, and the realms you played on; Realms lists other servers, and you can add any realm address.</li>
         <li><b>Play.</b> Press PLAY. Leyline sets the realm for you and keeps your original settings as a backup.</li>
       </ol>
       <!-- audit 12 Nov: the newer parts (Single player, Your Den, Modes and Boss Rush, Friends, offline). TODO(owner): his words -->
@@ -731,25 +755,33 @@
       <p class="lede">Modes are other ways to play: quick fights, challenges and modes other players made. Boss Rush puts you straight into a boss fight; the leaderboards show the best times.
         <button type="button" class="link" data-page-go="modes">Modes ›</button> <button type="button" class="link" data-page-go="bossrush">Boss Rush ›</button></p>
       <h3>Friends</h3>
-      <p class="lede">Invite a friend to your world or your Den with one link; they keep their character for next time. Your friends list is on the Single player page and in the Social panel at the top.
+      <p class="lede" data-srv>Invite a friend to your world or your Den with one link; they keep their character for next time. Your friends list is on the Single player page and in the Social panel at the top.</p>
+      <!-- TODO(owner): the Friends words, his voice -->
+      <p class="lede" data-lite>Friends on the same network (at home, or in the same office) can join your world or your Den: Invite a friend gives them a link. Leyline has no server of its own any more, so friends elsewhere can't join through it. Your friends list is on the Single player page.
         <button type="button" class="link" data-page-go="single">Friends ›</button> <button type="button" class="link" data-link="hostfriends">Playing with friends ›</button></p>
       <h3>Playing offline</h3>
-      <p class="lede">Single player and Your Den work with no internet. Realms, mods, news and the forum need it: offline, Leyline shows the lists as they were the last time, with the date. Mods you installed keep working.</p>
-      <h3>Level 1 or boost to 80</h3>
-      <p class="lede">On the official realm a new character can start at level 1 and level up, or take the boost to 80 and play the end game straight away. You choose when you make the character.</p>
-      <h3>No files? Play in your browser</h3>
-      <p class="lede">Pick Play in your browser in the play bar's realm list: the official realm streams there, with nothing to install.</p>
+      <p class="lede">Single player and Your Den work with no internet. Realms, mods and news need it: offline, Leyline shows the lists as they were the last time, with the date. Mods you installed keep working.</p>
+      <h3 data-srv>Level 1 or boost to 80</h3>
+      <p class="lede" data-srv>On the official realm a new character can start at level 1 and level up, or take the boost to 80 and play the end game straight away. You choose when you make the character.</p>
+      <h3 data-srv>No files? Play in your browser</h3>
+      <p class="lede" data-srv>Pick Play in your browser in the play bar's realm list: the official realm streams there, with nothing to install.</p>
       <h3>Mods, realms and hosting</h3>
-      <p class="lede">Mods &amp; Addons › Discover lists every mod and addon: Install adds it to your game. Addons are in-game interface helpers; mods change the game itself. Installed turns them off and on, updates and removes them. Realms lists every realm; Host runs your own.</p>
+      <p class="lede">Mods &amp; Addons › Discover lists every mod and addon: Install adds it to your game. Addons are in-game interface helpers; mods change the game itself. Installed turns them off and on, updates and removes them. Realms lists other servers<span data-srv>; Host runs your own</span>.</p>
       <h3>Agents</h3>
       <p class="lede">Your own AI assistant can check realms, find mods and read your realm's logs. It asks you before it changes anything.
         <button type="button" class="link" data-page-go="agents">Agents ›</button> <button type="button" class="link" data-link="agentsguide">The guide ›</button></p>
       <div class="row"><button type="button" class="btn" data-link="gettingstarted">Read the player guide</button><button type="button" class="btn" data-link="docs">Open the Leyline docs</button></div>
       <p class="hint help-dc">Lost files or need help? Ask on the Discord: Join the Discord, in the side menu under News.</p>
+      <h3 data-lite>Community</h3>
+      <p class="lede" data-lite>Talk with other players on the Discord and Reddit. <button type="button" class="link" data-page-go="community">Community ›</button></p>
       <!-- TODO(owner): the Report a bug words, his voice -->
       <h3>Found a bug?</h3>
-      <p class="lede">Tell us what happened: it goes straight to the list the team works through.
+      <p class="lede" data-srv>Tell us what happened: it goes straight to the list the team works through.
         <button type="button" class="link" id="bug-open">Report a bug ›</button></p>
+      <!-- TODO(owner): the Found a bug words, his voice -->
+      <p class="lede" data-lite>Copy the debug info, then open an issue on GitHub and paste it in with what happened. Names in folder paths, keys and codes are taken out first.</p>
+      <div class="row" data-lite><button type="button" class="btn" id="dbg-copy">Copy debug info</button><button type="button" class="btn" data-link="issues">Open an issue on GitHub</button></div>
+      <p class="status" id="dbg-status" role="status" data-lite></p>
     </div>
   </section>
 
@@ -761,7 +793,7 @@
       <nav class="set-jump" id="set-jump" aria-label="Parts of Settings"></nav>
       <!-- Your account (account.js settingsAccount): a guest's login and the Hero Key are found from Settings too (owner 2 Nov
            23:31: "recommended to go to settings to retrieve their user name and pass and text file") -->
-      <div class="set-acct" id="set-acct-box">
+      <div class="set-acct" id="set-acct-box" data-srv>
         <h3>Your account</h3>
         <p class="lede" id="set-acct-line">Your name, password and Hero Key: save them, or use them to log in on another PC.</p>
         <div class="row"><button type="button" class="btn" id="set-acct">Your login and Hero Key</button></div>
@@ -786,7 +818,7 @@
         (fetched from leylinelauncher.com when Leyline starts; the plain colour when it is off or offline)</label>
       <h3>Playing</h3>
       <label class="check"><input type="checkbox" id="set-cover"> Hide the login behind Leyline's screen: while Leyline logs you in
-        at the game's login screen (the official realm, Single player and Your Den), a "Logging you in…" screen covers the
+        at the game's login screen (Single player and Your Den), a "Logging you in…" screen covers the
         game until you're through (Esc or Show the game takes it away)</label>
       <p class="status" id="cover-status" role="status"></p>
       <h3>Updates</h3>
@@ -802,14 +834,16 @@
       <div class="row"><button type="button" class="btn" id="upd-check">Check now</button><button type="button" class="btn" id="upd-restart" hidden>Restart to update</button><button type="button" class="btn" id="upd-open" hidden>Open the release page</button></div>
       <p class="status" id="upd-status" role="status"></p>
       <h3>Privacy</h3>
-      <p class="lede">We don't track you. Your account is optional and lives on the website. Leyline only fetches what its pages show: the mods list, the realm list and status, news, the forum, modes and leaderboards, the website's flags and pictures (the backdrop), the Leyline addons and its own updates, all from leylinelauncher.com and GitHub. Home also shows Melty's logo from melty.gg. Friends and invites go through the Leyline relay. It keeps copies so it works offline, and sends nothing about you.</p>
-      <label class="check"><input type="checkbox" id="set-count"> Count my installs: after you install a mod, tell the website
+      <p class="lede" data-srv>We don't track you. Your account is optional and lives on the website. Leyline only fetches what its pages show: the mods list, the realm list and status, news, the forum, modes and leaderboards, the website's flags and pictures (the backdrop), the Leyline addons and its own updates, all from leylinelauncher.com and GitHub. Home also shows Melty's logo from melty.gg. Friends and invites go through the Leyline relay. It keeps copies so it works offline, and sends nothing about you.</p>
+      <!-- TODO(owner): the privacy words, his voice -->
+      <p class="lede" data-lite>We don't track you, and there's no account. Leyline only fetches what its pages show: the mods list, the realm list, news, modes, the website's flags and pictures (the backdrop), the Leyline addons and its own updates, from leylinelauncher.com (read-only files) and GitHub, and the mods themselves from where their makers put them. Home also shows Melty's logo from melty.gg. Friends join over your own network only. It keeps copies so it works offline, and sends nothing about you.</p>
+      <label class="check" data-srv><input type="checkbox" id="set-count"> Count my installs: after you install a mod, tell the website
         "one more install" (the mod, your client's build and a random one-time number; no account, nothing about you or your PC).
         It helps good mods rise in Hot and Most installed.</label>
       <p class="status" id="count-status" role="status"></p>
       <h3>Testing</h3>
       <p class="lede">For trying things out on this PC.</p>
-      <label class="check"><input type="checkbox" id="set-hybrid"> Log in by itself: PLAY on Wrath Unleashed (signed in on Home)
+      <label class="check" data-srv><input type="checkbox" id="set-hybrid"> Log in by itself: PLAY on Wrath Unleashed (signed in on Home)
         and Hero Key sign-in go past the login screen to character select, as in the browser. Needs Forever UI's login screens in
         the game folder; without them your account name is filled in. The login goes into Leyline's own archive in the game's
         Data folder for that one start, and is taken out when the game closes.</label>
@@ -973,7 +1007,7 @@
     </div>
   </div>
   <!-- the official realm has a line (status.json, docs/QUEUE.md): the other ways in (app.js renderQueueCard) -->
-  <div class="pb-queue" id="pb-queue" role="region" aria-label="Skip the line" hidden>
+  <div class="pb-queue" id="pb-queue" data-srv role="region" aria-label="Skip the line" hidden>
     <b class="pbq-head">Busy right now</b><span class="pbq-line" id="pbq-line"></span>
     <span class="pbq-why">Skip the line, and help make room for more players:</span>
     <span class="pbq-btns"><button type="button" class="btn small" id="pbq-pc" hidden>Play with your game folder</button><button type="button" class="btn small" id="pbq-host">Host your own realm</button><button type="button" class="btn small" id="pbq-node">Become a node</button></span>

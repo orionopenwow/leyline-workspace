@@ -54,7 +54,8 @@
     el.replaceChildren();
     const head = mk("div", "lf-head");
     head.append(mk("h3", "lf-title", "Your friends list"), mk("p", "lf-lede",
-      "You and your friends sign your friendship yourselves, and it lives on your PCs. It works on the same network with no internet, and from anywhere through a relay that can't read your messages."));
+      (window.LeylineLite && window.LeylineLite.lite) ? "You and your friends sign your friendship yourselves, and it lives on your PCs. It works on the same network, with no internet."
+        : "You and your friends sign your friendship yourselves, and it lives on your PCs. It works on the same network with no internet, and from anywhere through a relay that can't read your messages."));
     const status = mk("p", "status lf-status");
     status.setAttribute("role", "status");
     const say = (t, k) => { status.textContent = t || ""; status.className = "status lf-status" + (k ? " " + k : ""); };
@@ -127,7 +128,7 @@
     });
     save.classList.add("lf-save");
     profBox.append(field("name", "Name", name), field("status", "Status", st), field("share", "Tell friends what I'm playing", share),
-      field("lan", "Seen on this network by", lan), field("mailbox", "Friends can reach me through the Leyline relay's mailbox", mail), save,
+      field("lan", "Seen on this network by", lan), ...((window.LeylineLite && window.LeylineLite.lite) ? [] : [field("mailbox", "Friends can reach me through the Leyline relay's mailbox", mail)]), save,
       mk("p", "lf-note", "Your key stays on this PC (peer.key). Lose it and friends need to add you again."));
 
     el.append(head, status, add, listBox, profBox);

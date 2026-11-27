@@ -40,6 +40,10 @@
   const HIDDEN = new Set(Array.isArray(window.LEYLINE_MODES_HIDDEN) ? window.LEYLINE_MODES_HIDDEN : [
     "minigolf", "bumper-balls", "coin-dash", "community", "brawl", "azeroth-survivors", "hordes-of-azeroth",
     "arena-1v1", "keystones", "transmog", "hardcore"]);
+  // lite (lite.js: no server of ours): Duels ran on the official realm, so it is not listed; the raid finale is played
+  // as Boss Rush on this PC
+  const LITE = !!(window.LeylineLite && window.LeylineLite.lite);
+  if (LITE && !Array.isArray(window.LEYLINE_MODES_HIDDEN)) HIDDEN.add("arena-queue");
   const listed = (m) => !!m && m.listed !== false && !HIDDEN.has(m.id);
   const ORDER = ["arena-queue", "frozen-throne"];   // TODO(owner): the order on the page
   const byOrder = (a, b) => (ORDER.indexOf(a.id) + 1 || 99) - (ORDER.indexOf(b.id) + 1 || 99);
@@ -52,7 +56,8 @@
         "Or meet at the duel spot in Dalaran: target someone and type /duel.",
         "Rated games: type .q1v1 rated in the game."] },
     "frozen-throne": { kick: "Raid finale · Companions fill", play: "Fight now", board: "bossrush", local: true,
-      how: ["Fight now logs you in and takes your hero straight onto the platform; companions fill the raid of 10.",
+      how: LITE ? ["Fight now opens Boss Rush: pick this fight, the difficulty and a hero; companions fill the raid of 10.",
+        "Or pick any fight of any raid: Boss Rush runs on this PC, with your own clock and your best runs."] : ["Fight now logs you in and takes your hero straight onto the platform; companions fill the raid of 10.",
         "Or pick any fight of any raid and play it here: Boss Rush on this PC, with your own clock and board.",
         "In the game, /bf opens the Boss fights window: Heroic, or queue with players."] },
   };
@@ -283,6 +288,11 @@
   }
 
   async function play(m, btn) {
+    if (LITE) {   // no official realm: a fight on this PC (Boss Rush), or nothing to start here
+      if (DETAILS[m.id] && DETAILS[m.id].local && window.LeylineNav) { window.LeylineNav.show("bossrush"); return; }
+      say(`${m.title} needs a realm that runs it: pick one on the Realms page.`, "warn");
+      return;
+    }
     // the official realm signs in with the Leyline account: the sign-in screen first, then this goes on (gate.js)
     const G = window.LeylineGate;
     if (m.kind !== "offline" && !browserMode() && G && !G.ready()) { G.need(`${m.title} is on the official realm, which signs you in with your Leyline account. Log in, and it goes on by itself.`, () => play(m, btn)); return; }

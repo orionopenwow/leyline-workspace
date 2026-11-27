@@ -240,6 +240,8 @@
     b.addEventListener("click", () => open(document.getElementById("pane-installed")?.dataset.shelf === "addons" ? "addon" : "mod"));
     find.after(b);
   }
+  // lite (lite.js): listings were sent to the server; no List your mod button and nothing to list to
+  if (window.LeylineLite && window.LeylineLite.lite) { window.LeylineListMod = null; return; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addButton); else addButton();
 
   window.LeylineListMod = { open, mine, decorate, reportButton, report };

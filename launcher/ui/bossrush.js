@@ -287,7 +287,8 @@
     if (!list.length) box.append(mk("p", "br-line", "No clears yet. Your fastest kill of each fight shows here (kept on this PC)."));
     else {
       const t = mk("table", "br-table");
-      const B = window.LeylineBoards;
+      // lite (lite.js): no website boards any more, so nothing to share to; Your best times stay on this PC
+      const B = window.LeylineLite && window.LeylineLite.lite ? null : window.LeylineBoards;
       for (const r of list) {
         const tr = mk("tr", "");
         tr.append(mk("td", "", r.title), mk("td", "", r.difficulty === "heroic" ? "Heroic" : "Normal"), mk("td", "br-clock", r.clock), mk("td", "", r.class === "-" ? "" : r.class));

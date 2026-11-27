@@ -203,7 +203,7 @@ impl Endpoint {
 /// `connect_one`, and once more on the relay's old name when its new one cannot be reached (addresses.rs).
 fn connect(ep: &Endpoint) -> Result<Box<dyn Io>, String> {
     connect_one(ep).or_else(|e| {
-        let old = crate::addresses::PAIRS.iter().find(|(n, _)| ep.host.eq_ignore_ascii_case(n)).map(|(_, o)| *o);
+        let old = crate::addresses::PAIRS.iter().find(|(n, _)| ep.host.eq_ignore_ascii_case(n)).map(|(_, o)| *o).filter(|o| !crate::addresses::dead_host(o));
         match old {
             Some(o) => connect_one(&Endpoint { host: o.into(), ..ep.clone() }),
             None => Err(e),
@@ -211,7 +211,13 @@ fn connect(ep: &Endpoint) -> Result<Box<dyn Io>, String> {
     })
 }
 
+/// What a way through the relay says with `SERVER_FEATURES` off (addresses.rs).
+pub const RELAY_GONE: &str = "off. Leyline no longer has a relay, so friends join from the same network.";
+
 fn connect_one(ep: &Endpoint) -> Result<Box<dyn Io>, String> {
+    if crate::addresses::dead_host(&ep.host) {
+        return Err(RELAY_GONE.into());
+    }
     let addr = (ep.host.as_str(), ep.port).to_socket_addrs().map_err(|e| e.to_string())?.next().ok_or("no address for the relay")?;
     let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(10)).map_err(|e| format!("the relay didn't answer: {e}"))?;
     let _ = tcp.set_nodelay(true);
@@ -638,6 +644,11 @@ static TUNNEL: Mutex<Option<Handle>> = Mutex::new(None);
 
 /// Starts the tunnel (once; again while it runs: nothing), reconnecting with a growing pause until stopped.
 pub fn start(s: Setup) -> TunnelState {
+    // no relay of ours any more (addresses.rs SERVER_FEATURES): nothing is started, and the way says so
+    if crate::addresses::dead_host(&s.endpoint.host) {
+        let public = public_key(&s.seed).unwrap_or([0; 32]);
+        return TunnelState { relay: s.relay_name.clone(), realm_id: realm_id(&public), last_error: RELAY_GONE.into(), ..Default::default() };
+    }
     let mut g = TUNNEL.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(h) = g.as_ref() {
         if !h.stop.load(Ordering::Relaxed) {

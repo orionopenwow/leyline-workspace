@@ -399,6 +399,11 @@ pub fn hero_ask_due(asked: Option<Instant>, fresh: Duration) -> bool {
 /// at most once every [`HERO_FRESH`] and waited on for [`HERO_WAIT`] in all; offline, slow or in between, the id
 /// kept from the last answer. Only an answer that says signed out forgets it.
 pub fn hero_identity(app_dir: &Path) -> Option<String> {
+    // no sign-in any more (addresses.rs SERVER_FEATURES): the world's own login, which `engine::pick_login` turns
+    // into whichever of the player's logins here holds the characters, so none is stranded
+    if !crate::addresses::SERVER_FEATURES {
+        return None;
+    }
     crate::social::load_token(app_dir)?;
     let site = crate::social::base();
     let cache = app_dir.join(CACHE_FILE);
@@ -444,6 +449,9 @@ pub fn hero_identity(app_dir: &Path) -> Option<String> {
 
 /// [`hero_identity`] without the network (a command that can't wait): signed in and the id kept from the last time.
 pub fn hero_identity_cached(app_dir: &Path) -> Option<String> {
+    if !crate::addresses::SERVER_FEATURES {
+        return None;
+    }
     crate::social::load_token(app_dir)?;
     let site = crate::social::base();
     let id = cached_id(&fs::read_to_string(app_dir.join(CACHE_FILE)).ok()?, &site)?;

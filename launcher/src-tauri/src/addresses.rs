@@ -6,6 +6,13 @@
 //! it) is tried once more on the old one (`fallback`, used by `net`, `social`, `bugs` and `rankings`). Downloads
 //! are accepted from the site on either name (`same_site`). The release check (GitHub) and deep links do not change.
 
+/// The server's own features: off (owner, 26 Nov 2026: Leyline's only server is shut down for good; the launcher is a
+/// launcher aggregator, docs/LAUNCHER-LITE.md). The website comes back as a static site on GitHub Pages at the same
+/// address, so only its read-only files are fetched (`off`); the browser game (`GAME_HOST`), the relay (`RELAY_HOST`)
+/// and every old name are never called, and nothing is posted to the site. The code stays behind this one switch so
+/// it could come back: `true` is the launcher as it was. The window has the same switch (ui/lite.js).
+pub const SERVER_FEATURES: bool = false;
+
 /// The website (the old name: `OLD_SITE_HOST`).
 pub const SITE_HOST: &str = "leylinelauncher.com";
 /// The browser game.
@@ -98,13 +105,55 @@ pub fn official_realm() -> &'static str {
     })
 }
 
+/// The hosts that are gone with the server (`SERVER_FEATURES` off): the browser game and the relay on both names, and
+/// the website's old name. The website itself stays (static, read-only).
+pub fn dead_host(host: &str) -> bool {
+    let h = host.trim().trim_end_matches('.');
+    !SERVER_FEATURES
+        && [GAME_HOST, RELAY_HOST, OLD_SITE_HOST, OLD_GAME_HOST, OLD_RELAY_HOST].iter().any(|d| h.eq_ignore_ascii_case(d))
+}
+
+/// A path on the static website that only the old server answered: its APIs (`/api/`, `/wrath/api/…`,
+/// `/wrath/forum/api`, `/wrath/bugs/api`), sign-in (`/auth/`, `/account`) and the official realm's live status.
+pub fn dynamic_site_path(path: &str) -> bool {
+    let p = path.split(['?', '#']).next().unwrap_or("").to_ascii_lowercase();
+    p.contains("/api/") || p.ends_with("/api") || p.starts_with("/auth/") || p.starts_with("/account") || p == "/wrath/status.json"
+}
+
+/// True when `url` must not be called with `SERVER_FEATURES` off: a dead host (`dead_host`), or the website's
+/// dynamic parts (`dynamic_site_path`). Answered without touching the network.
+pub fn off(url: &str) -> bool {
+    if SERVER_FEATURES {
+        return false;
+    }
+    let Some((_, host, rest)) = host_of(url) else { return false };
+    if dead_host(host) {
+        return true;
+    }
+    if host.eq_ignore_ascii_case(SITE_HOST) {
+        // the path after an optional :port
+        let path = rest.find('/').map(|i| &rest[i..]).unwrap_or("/");
+        return dynamic_site_path(path);
+    }
+    false
+}
+
+/// What a call to an `off` address says (an error made without the network: ureq refuses the scheme at once).
+pub const OFF_MESSAGE: &str = "Leyline no longer has a server of its own, so this isn't available.";
+fn off_error() -> ureq::Error {
+    ureq::get("leyline-off://server-features-off").call().err().expect("an unknown scheme is refused")
+}
+
 /// Run `call` on `url`; when it could not reach the server at all (DNS, connect, TLS: not an HTTP answer) and
 /// `url` is on a new name, run it once more on the old name. Once a new name has answered in this run, this computer
 /// resolves it: a later failure is the server or the network, and the old name (the same server) would only double the
 /// wait (audit 12 Nov: a realm list could take 32 s), so it is not tried again.
 pub fn try_both<T>(url: &str, mut call: impl FnMut(&str) -> Result<T, ureq::Error>) -> Result<T, ureq::Error> {
+    if off(url) {
+        return Err(off_error());
+    }
     match call(url) {
-        Err(ureq::Error::Transport(t)) => match fallback(url).filter(|_| !new_name_answered()) {
+        Err(ureq::Error::Transport(t)) => match fallback(url).filter(|o| !new_name_answered() && !off(o)) {
             Some(old) => call(&old),
             None => Err(ureq::Error::Transport(t)),
         },
@@ -181,6 +230,33 @@ mod tests {
     }
 
     #[test]
+    fn the_server_is_off() {
+        assert!(!SERVER_FEATURES, "Leyline is a launcher aggregator: no server of its own");
+        for dead in ["https://relay.leylinelauncher.com/api/listing/realms.json", "wss://relay.openvanilla.app/agent",
+            "https://play.leylinelauncher.com/", "https://wrath.openvanilla.app/x", "https://play.openvanilla.app/wrath/mods/all.json",
+            "https://leylinelauncher.com/wrath/api/social/ways", "https://leylinelauncher.com/wrath/forum/api/threads",
+            "https://leylinelauncher.com/wrath/bugs/api/report", "https://leylinelauncher.com/auth/google/start",
+            "https://leylinelauncher.com/wrath/status.json", "https://LEYLINELAUNCHER.COM/wrath/api/dens?x=1"] {
+            assert!(off(dead), "{dead}");
+        }
+        for live in ["https://leylinelauncher.com/wrath/mods/all.json", "https://leylinelauncher.com/wrath/leyline/news.json",
+            "https://leylinelauncher.com/wrath/realms.json", "https://leylinelauncher.com/wrath/leyline/flags.json",
+            "https://leylinelauncher.com/wrath/modes.json", "https://leylinelauncher.com/wrath/docs/hosting",
+            "https://api.github.com/repos/orionopenwow/Leyline/releases?per_page=30", "http://127.0.0.1:9/x", "not a url"] {
+            assert!(!off(live), "{live}");
+        }
+        assert!(dead_host("relay.leylinelauncher.com") && dead_host("RELAY.OPENVANILLA.APP") && !dead_host("leylinelauncher.com"));
+        // never called: the call is not made, and the old name is not tried for a site file that did not answer
+        let mut seen = vec![];
+        let r: Result<u8, ureq::Error> = try_both("https://relay.leylinelauncher.com/x", |u| { seen.push(u.to_string()); Ok(1) });
+        assert!(matches!(r, Err(ureq::Error::Transport(_))));
+        assert!(seen.is_empty());
+        let _ = try_both("https://leylinelauncher.com/x", |u| { seen.push(u.to_string()); ureq::get("http://127.0.0.1:1/").call().map(|_| 0u8) });
+        assert_eq!(seen, ["https://leylinelauncher.com/x"], "no second try on the old name");
+    }
+
+    #[test]
+    #[ignore = "the old name is off while SERVER_FEATURES is off"]
     fn try_both_only_on_no_answer() {
         let mut seen = vec![];
         let r: Result<u8, ureq::Error> = try_both("https://leylinelauncher.com/x", |u| {
@@ -209,6 +285,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "the old name is off while SERVER_FEATURES is off"]
     fn a_local_address_never_marks_the_new_name() {
         let r: Result<u8, ureq::Error> = try_both("http://127.0.0.1:9/x", |_| Ok(1));
         assert_eq!(r.unwrap(), 1);

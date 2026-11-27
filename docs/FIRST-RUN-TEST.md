@@ -1,5 +1,7 @@
 # First-run test: a fresh machine, from the download into the world
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): this test needs the website (a test Hero Key) and the official realm, both gone. `first-run-test` is retired in Control. `solo-first-run` and `sp-playtest` need no server and still run.
+
 Owner, 2 Nov: "run through a first time install test and up to the full game and getting into the game", "all
 features from exe pro tested and quality and user experience tested fully", "smoke tested fresh machine".
 

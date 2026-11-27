@@ -1,5 +1,7 @@
 # The release audit
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): most sections test the server's website, realm and Hero Keys, so the `audit` step and the Release audit button are retired in Control. `py -3 tools\audit\audit.py --only den,launcher` still runs by hand, and `--fake` runs anywhere.
+
 Owner, 1 Nov 16:28: "create an automated test list for me to audit everything as a new user and make sure all our
 features work like Den, hosting, Azeroth Survivors, Wrath Unleashed, forum etc, everything, with as little as I need
 to do as possible."

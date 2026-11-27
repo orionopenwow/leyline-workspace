@@ -1,5 +1,7 @@
 # The Leyline hub and its community index
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): where this page says "ship and signin", `ship` alone is enough now: the website rebuilds on GitHub Pages from the public repo. `signin` is retired.
+
 The hub is one catalog of everything modding-related for the game's classic clients: our Workshop (packages the
 launcher installs), a credited **link-out index** of open community projects, and launcher theme packs. It covers
 every client build the launcher supports: **1.12.1, 2.4.3, 3.3.5a, 4.3.4 and 5.4.8**, each entry tagged by build.

@@ -1,5 +1,7 @@
 # The bugs manifest: every bug report in one list
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): the bug reports were on the server. The `bugs` step is retired, and the last pulled `tools/bugs/live/backlog.json` stays on the PC as it was.
+
 Owner, 1 Nov 04:18: "submitting a bug report, automatically including bug reports in a manifesto ready to upgrade as
 autonomously as possible from the Discord".
 

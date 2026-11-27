@@ -461,6 +461,9 @@ pub fn tick(app_dir: &Path, env: &dyn Env) -> (State, Stats) {
         env.stop_share(app_dir);
         st.peers_now = 0;
     }
+    // the relay for other players' sealed connections (p2p/linknet.rs), when this PC chose it
+    #[cfg(all(feature = "link", desktop))]
+    super::linknet::node_tick(&s, state, env.killed());
     st.add_uptime(state.sharing(), now);
     st.state = serde_json::to_value(state).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
     save_stats(app_dir, &st);

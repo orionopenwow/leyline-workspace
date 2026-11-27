@@ -5,7 +5,7 @@ description = "Leyline: pick a game client, manage mods, find and host realms"
 authors = ["Leyline contributors"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.91"
 
 [lib]
 # The core (clients, launch, settings, catalog, realms) is a plain library; the Tauri app sits on top of it.
@@ -16,10 +16,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # `app` is the desktop app (Tauri + webview). Without it only the core builds, which needs no system webview:
 #   cargo test --no-default-features
 default = ["app"]
-app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-plugin-updater", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-deep-link", "torrent-engine"]
+app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-plugin-updater", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-deep-link", "torrent-engine", "link"]
 # A real BitTorrent engine for game-client magnets and .torrents, used only with Settings > Testing's switch on
 # (clienttorrent.rs, owner 31 Oct; off by default). About 3.5 MB of the release binary.
 torrent-engine = ["dep:librqbit", "dep:tokio"]
+# Launcher-to-launcher connections by key (p2p/link.rs, p2p/linknet.rs, docs/leyline/joining.md): QUIC with hole
+# punching and port mapping (iroh, MIT OR Apache-2.0), no public relays or lookups of its maker by default. In `app`;
+# the core's dial-order, relay-cap and sealing rules build and test without it.
+link = ["dep:iroh", "dep:iroh-mainline-address-lookup", "dep:tokio", "tokio/net", "tokio/io-util", "tokio/sync"]
 # Scripted Den recipes (agents/den.rs): Lua 5.1, compiled from C sources (mlua vendored). Off by default: without it
 # JSON template recipes work as always, and a .recipe.lua is listed but refused in plain words.
 lua-recipes = ["dep:mlua"]
@@ -76,6 +80,9 @@ tauri-plugin-single-instance = { version = "2", optional = true }
 tauri-plugin-deep-link = { version = "2", optional = true }
 librqbit = { version = "9.1.0", default-features = false, features = ["rust-tls", "disable-upload"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"], optional = true }
+# iroh needs Rust 1.91 (hence rust-version above). The DHT lookup publishes only the hole-punch helper by default.
+iroh = { version = "=1.5.0", default-features = false, features = ["tls-ring", "portmapper"], optional = true }
+iroh-mainline-address-lookup = { version = "=0.6.1", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

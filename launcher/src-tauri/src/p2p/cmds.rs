@@ -687,3 +687,58 @@ pub fn node_quit(app: tauri::AppHandle) {
     crate::p2p::node::stop_now(&settings::app_dir());
     app.exit(0);
 }
+
+// ------------------------------------------------------------------------------------------------ Settings › Network
+
+/// What Settings › Network shows: the switches, whether this PC's connections run, and what they did (counts only:
+/// never a key or an address).
+#[derive(serde::Serialize)]
+pub struct LinkView {
+    settings: crate::p2p::link::LinkSettings,
+    running: bool,
+    /// Data passed for friends today (bytes), and connections refused by the caps.
+    helped_today: u64,
+    refused: u64,
+    /// Messages kept here for friends who are offline.
+    held: usize,
+    /// The way the last connection to each friend took, by "Hero XXXX" name.
+    ways: Vec<(String, String)>,
+    community_relay_running: bool,
+}
+
+fn link_view(dir: &std::path::Path) -> LinkView {
+    let settings = crate::p2p::link::load(dir);
+    #[cfg(feature = "link")]
+    if let Some(l) = crate::p2p::linknet::current() {
+        let b = l.friend_budget.lock().unwrap().clone();
+        let ways = l.last_way.lock().unwrap().iter().map(|(pid, w)| (format!("Hero {}", pid.chars().take(4).collect::<String>().to_ascii_uppercase()), w.words().to_string())).collect();
+        return LinkView { settings, running: true, helped_today: b.used, refused: b.refused, held: l.held.lock().unwrap().items.len(), ways,
+            community_relay_running: l.node_relay.load(std::sync::atomic::Ordering::Relaxed) };
+    }
+    LinkView { settings, running: false, helped_today: 0, refused: 0, held: 0, ways: Vec::new(), community_relay_running: false }
+}
+
+#[tauri::command]
+pub async fn link_state() -> Result<LinkView, String> {
+    blocking(|| Ok(link_view(&settings::app_dir()))).await
+}
+
+/// Change Settings › Network. A changed router-port or helper choice takes effect when the connections start again
+/// (Stop and Start on the Friends list, or the next launch); the rest at once.
+#[tauri::command]
+pub async fn link_set(settings: crate::p2p::link::LinkSettings) -> Result<LinkView, String> {
+    blocking(move || {
+        let dir = crate::settings::app_dir();
+        crate::p2p::link::save(&dir, &settings)?;
+        #[cfg(feature = "link")]
+        if let Some(l) = crate::p2p::linknet::current() {
+            if settings.on {
+                l.set_cfg(crate::p2p::link::load(&dir));
+            } else {
+                crate::p2p::linknet::stop();
+            }
+        }
+        Ok(link_view(&dir))
+    })
+    .await
+}

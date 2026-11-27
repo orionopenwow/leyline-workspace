@@ -292,6 +292,24 @@ impl Hub {
                 Err(e) => tried.push(format!("direct: {e}")),
             }
         }
+        // from anywhere by key (p2p/linknet.rs): ways 1 to 3 only for presence (quick), every way for the rest; a
+        // friend you both have keeps other messages (sealed) while they're offline
+        #[cfg(all(feature = "link", desktop))]
+        if let Some(l) = super::linknet::current() {
+            let env = friends::envelope(&pk, msg, None)?;
+            let quick = matches!(kind, "presence" | "card");
+            let total = if quick { super::linknet::QUICK_TOTAL } else { Duration::from_secs(40) };
+            match super::linknet::block(l.send_envelope(&pk, &env, total, !quick)) {
+                Ok(_) => return Ok("link"),
+                Err(e) => tried.push(format!("from anywhere: {e}")),
+            }
+            if !quick {
+                match super::linknet::block(l.hold(&pk, &env)) {
+                    Ok(()) => return Ok("held"),
+                    Err(e) => tried.push(format!("with a friend: {e}")),
+                }
+            }
+        }
         if let Some(r) = mailbox.or(relay.map(String::from)).filter(|r| crate::realms::relay_ok(r)) {
             let tag = matches!(kind, "presence" | "card").then(|| friends::tag_for(&self.me, to, kind));
             match mailbox_post(&r, &friends::envelope(&pk, msg, tag.as_deref())?) {
@@ -323,6 +341,11 @@ impl Hub {
         }
         if let Some(a) = self.direct.lock().unwrap().clone().filter(|_| online) {
             body["addr"] = json!(a);
+        }
+        // where this PC's connections can be reached (sealed to each friend; p2p/linknet.rs)
+        #[cfg(all(feature = "link", desktop))]
+        if let Some(p) = super::linknet::presence_part().filter(|_| online) {
+            body["link"] = p;
         }
         for k in keys {
             if self.stop.load(Ordering::Relaxed) && online {
@@ -566,6 +589,16 @@ pub fn start(hub: &Arc<Hub>) -> NetState {
             tick += 1;
         }
     });
+    // friends from anywhere, by key (p2p/linknet.rs; off in Settings › Network)
+    #[cfg(all(feature = "link", desktop))]
+    {
+        let h = hub.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = super::linknet::start_for(&h) {
+                h.state.lock().unwrap().last_error = e;
+            }
+        });
+    }
     hub.state.lock().unwrap().clone()
 }
 
@@ -575,6 +608,8 @@ pub fn stop(hub: &Arc<Hub>) {
         return;
     }
     hub.presence_all(false);
+    #[cfg(all(feature = "link", desktop))]
+    super::linknet::stop();
     hub.stop.store(true, Ordering::Relaxed);
     hub.gen.fetch_add(1, Ordering::SeqCst);
     hub.state.lock().unwrap().running = false;

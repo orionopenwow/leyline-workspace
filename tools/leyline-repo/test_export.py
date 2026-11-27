@@ -89,7 +89,7 @@ try:
           and ex.brand_hits("docs/leyline/index.md", b"Play WoW") and not ex.user_facing("docs/other.txt"))
     check("allow-list: every leyline-* art file", all(f"stream/www-files/art/{n}" in got for n in art if n not in ex.PRIVATE_ART)
           and not any(f"stream/www-files/art/{n}" in got for n in ex.PRIVATE_ART), len(art))
-    outside = [g for g in got if g not in ex.GENERATED and g.split("/")[0] not in ex.MANAGED]
+    outside = [g for g in got if g not in ex.GENERATED and g not in ex.EXTRA and g.split("/")[0] not in ex.MANAGED]
     check("allow-list: nothing outside the managed folders but the top files", not outside, outside)
     check("allow-list: no ModsPanel.lua, control.py or other addon files",
           not any(g.endswith(("ModsPanel.lua", "control.py", "WrathUnleashedUI.lua", "Collections.lua")) for g in got))
@@ -97,7 +97,17 @@ try:
           not any(g.startswith("launcher/") and any(f"/{d}/" in g for d in ("target", "gen", "node_modules")) for g in got))
     check("allow-list: no labs/, client patches or private ops folders (2026-10-30 repo map)",
           not any(g.split("/")[0] in ("labs", "client", "server", "tools", "control", "gmconsole", "play", "players")
-                  for g in got) and not any(e.split("/")[0] == "labs" for e in ex.ALLOW))
+                  and not g.startswith("tools/site-static/") for g in got) and not any(e.split("/")[0] == "labs" for e in ex.ALLOW))
+    check("static site: its builder, data, docs and workflow are exported (docs/STATIC-SITE.md)",
+          all(f in got for f in ("tools/site-static/build.py", "tools/site-static/test_build.py", "site/realms.json",
+                                 "site/news.json", "docs/STATIC-SITE.md", "stream/wrath_portal.py", "stream/hub.py",
+                                 "stream/hub/community-index.json", "mods/categories.json",
+                                 ".github/workflows/leyline-site.yml")))
+    check("static site: no sign-in, forum, social, admin, queue or browser-game modules, no slices",
+          not any(g in got for g in ("stream/forum.py", "stream/social.py", "stream/profiles.py", "stream/herokeys.py",
+                                     "stream/admin.py", "stream/survivors.py", "stream/denmarket.py", "stream/listings.py"))
+          and not any(g.startswith(("stream/slices/", "stream/fui-web/js", "stream/survivors/")) for g in got))
+    check("static site: of tools/ only tools/site-static", all(g.startswith("tools/site-static/") for g in got if g.startswith("tools/")))
     check("allow-list: no __pycache__ / .pyc", not any("__pycache__" in g or g.endswith(".pyc") for g in got))
     lic = (out1 / "LICENSE").read_text()
     check("LICENSE: the repo's MIT license", lic.startswith("MIT License") and "WrathUnleashed contributors" in lic)
@@ -115,7 +125,7 @@ try:
     gi = (out1 / ".gitignore").read_text()
     check(".gitignore: state, .env, keys, game data", all(s in gi for s in ("**/state/", ".env", "*.pem", "*.mpq", "*.blp")))
     check("--list-exec: the leyline command and the shell scripts", "hosting/kit/leyline" in res["exec"]
-          and all(r.endswith((".sh", "leyline")) for r in res["exec"]))
+          and all(r.endswith((".sh", "leyline", ".py")) for r in res["exec"]))
     if os.name != "nt":
         check("exec bit set on leyline", os.access(out1 / "hosting/kit/leyline", os.X_OK))
 

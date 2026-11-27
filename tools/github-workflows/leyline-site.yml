@@ -1,0 +1,68 @@
+# Leyline's website on GitHub Pages (docs/STATIC-SITE.md): build the static site from this repo and publish it.
+# Runs in the public Leyline repo (orionopenwow/Leyline), whose files come from the workspace through Control's
+# `leyline` step (tools/leyline-repo/export.py). Source copy: tools/github-workflows/leyline-site.yml
+# ("Turn on GitHub builds.bat" installs it as .github/workflows/leyline-site.yml in Leyline).
+# One-time, by the owner: Settings > Pages > Source: GitHub Actions, and the custom domain leylinelauncher.com.
+# The build makes no network connections and reads only this checkout; only the built-in token is used.
+name: leyline site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "stream/**"
+      - "docs/leyline/**"
+      - "tools/site-static/**"
+      - ".github/workflows/leyline-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Only the Leyline repo publishes leylinelauncher.com. The same export goes to Leyline-Launcher, whose own Pages
+    # site (openvanilla.app, its pages.yml) this must never replace.
+    if: github.repository == 'orionopenwow/Leyline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Test the site build (every launcher address, brand words, links)
+        run: python3 -I tools/site-static/test_build.py
+      - name: Build the site
+        run: python3 -I tools/site-static/build.py --out _site --list
+      - name: No game data in the site
+        run: |
+          if find _site -type f \( -iname '*.mpq' -o -iname '*.m2' -o -iname '*.wmo' -o -iname '*.adt' -o -iname '*.blp' \
+               -o -iname '*.dbc' -o -iname '*.db2' -o -iname '*.skin' -o -iname '*.anim' \) | grep .; then
+            echo "game data in the site: stopped"; exit 1
+          fi
+          du -sh _site
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    if: github.repository == 'orionopenwow/Leyline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

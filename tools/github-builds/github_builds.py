@@ -58,7 +58,8 @@ NEED_SCOPES = ("workflow", "write:packages", "admin:org")
 WU_FILES = ("wu-images.yml", "wu-hosting.yml", "hub-index.yml", "scout.yml", "forge.yml", "den-lite.yml", "den-lite-web.yml",
             "survivors.yml", "bots-canary.yml", "engine-windows.yml")
 DEPLOY_FILE, DEPLOY_SECRET = "realm-scripts.yml", "WU_DEPLOY_SSH_KEY"
-LY_FILES = ("leyline-launcher.yml", "leyline-android.yml")   # the desktop launcher; the phone app (docs/ANDROID.md)
+LY_FILES = ("leyline-launcher.yml", "leyline-android.yml",   # the desktop launcher; the phone app (docs/ANDROID.md)
+            "leyline-site.yml")                          # the website on GitHub Pages (docs/STATIC-SITE.md)
 LY_TEMPLATES = ("submit-mod.yml",)                  # .github/ISSUE_TEMPLATE in Leyline: "Submit a mod" (hub index)
 LY_LABELS = (("mod-submission", "5fe3ff", "A Submit a mod issue (hub index)"),
              ("approved", "5ef0a0", "Approved for the hub index: the weekly refresh picks it up"))

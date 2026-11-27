@@ -90,6 +90,7 @@ PHRASES = (
     ("What changed in the launcher, the realms and the browser game.", "What changed in Leyline."),
     (" The browser game already uses it.", ""),
     ("Wrath Unleashed, in game", "In game"),
+    ("Wrath Unleashed: Wrath on the Leyline network", "The Leyline mark"),
 )
 # Docs pages that still mention what closed get this note under their heading.
 DOCS_NOTE = ('<p class="st-docnote" role="note"><b>Leyline runs no server of its own now.</b> Parts of this page '
@@ -377,7 +378,7 @@ class Portal:
     """The portal, loaded from stream/ and served on 127.0.0.1 for this build only."""
 
     def __init__(self, tmp: Path, news: dict, stamp: str):
-        self.tmp = tmp
+        self.tmp, self.news = tmp, news
         data, ley = tmp / "data", tmp / "data" / "leyline"
         for d in (data, ley, tmp / "mods", tmp / "hub-data", tmp / "docs", tmp / "empty"):
             d.mkdir(parents=True, exist_ok=True)
@@ -401,6 +402,10 @@ class Portal:
             "WU_STATUS_FIRST_WAIT": "0", "TZ": "UTC",
         }
         os.environ.update(env)
+        for k in list(os.environ):   # no proxy either: a proxy on this machine would carry requests out
+            if k.lower() in ("http_proxy", "https_proxy", "all_proxy", "ftp_proxy"):
+                del os.environ[k]
+        os.environ["no_proxy"] = os.environ["NO_PROXY"] = "*"
         no_network()
         sys.dont_write_bytecode = True
         spec = importlib.util.spec_from_file_location("wrath_portal_static", STREAM / "wrath_portal.py")
@@ -431,9 +436,17 @@ class Portal:
             return main, more
         Hub.nav_items = nav_items
         Hub.health_state = lambda self: ""
+        Hub._backdrop = lambda self: ""   # the owner's backdrop picture is not ours to publish (PRIVATE_ART)
         # nobody is ever signed in here, and nothing is live
         if hasattr(hub_mod, "_viewer"):
             hub_mod._viewer = lambda h: None
+        news = self.news
+
+        class Admin:   # the old admin console: only the News it published, from site/news.json now
+            match = staticmethod(lambda path: False)
+            news_doc = staticmethod(lambda: news)
+            channel_doc = staticmethod(lambda: {})
+        wp.admin = Admin()
         if getattr(wp, "playmodes", None) is not None:   # every mode ran on the official realm
             wp.playmodes.CATALOG = {"schema": 1, "modes": []}
         wp.realm_status = lambda: {}
@@ -572,10 +585,12 @@ def tidy_frame(page: str) -> str:
     page = re.sub(r"<dt>On Wrath Unleashed</dt><dd>.*?</dd>", "", page, flags=re.S)   # tried on the official realm
     for old, new in PHRASES:
         page = page.replace(html.escape(old, quote=True), html.escape(new, quote=True)).replace(old, new)
+    page = PRIVATE_REPO.sub(REPO_URL, page)   # the workspace repo is private: its public twin instead
     return page
 
 
 def strip_noindex(page: str) -> str:
+    page = re.sub(r' nonce="[^"]*"', "", page)   # no CSP on a static host: the nonces only made each build differ
     return page.replace('<meta name="robots" content="noindex">', "").replace('<meta name="robots" content="noindex,nofollow">', "")
 
 
@@ -758,9 +773,23 @@ def all_json(body: bytes) -> bytes:
     return (json.dumps(doc, indent=1, ensure_ascii=False) + "\n").encode("utf-8")
 
 
+def restamp(body: bytes, stamp: str) -> bytes:
+    """A feed's own clock times ("generated_at") replaced by the build's stamp, so the same inputs give the same bytes."""
+    return re.sub(rb'"generated_at":\s*"[^"]*"', b'"generated_at": "' + stamp.encode() + b'"', body)
+
+
+PRIVATE_REPO = re.compile(r"https://github\.com/orionopenwow/(?:leyline-workspace|WrathUnleashed)\b")
+
+
 def fix_pages_json(body: bytes) -> bytes:
-    """Feeds that name item pages at the old preview address: the front-door address instead."""
-    return body.replace(b"/wrath/leyline-preview/", b"/wrath/leyline/").replace(b"play.openvanilla.app", DOMAIN.encode())
+    """Feeds that name item pages at the old preview address: the front-door address instead. The rankings' formulas
+    link went to the private workspace repo: left out."""
+    body = body.replace(b"/wrath/leyline-preview/", b"/wrath/leyline/").replace(b"play.openvanilla.app", DOMAIN.encode())
+    doc = json.loads(body)
+    if isinstance(doc, dict) and PRIVATE_REPO.match(str(doc.get("formulas") or "")):
+        doc["formulas"] = None
+        body = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+    return body
 
 
 # --------------------------------------------------------------------------------------------- the build
@@ -818,11 +847,11 @@ class Build:
                 body = fix(body)
             if path.startswith("/wrath/mods/all.json"):
                 body = all_json(body)
-            self.put_file(out_file(path), body)
+            self.put_file(out_file(path), restamp(body, self.stamp))
         # the catalog feed: the same rule as all.json (installs from their authors only)
         cat = json.loads(self.files["wrath/leyline/catalog.json"])
         if isinstance(cat.get("projects"), list):
-            self.files["wrath/leyline/catalog.json"] = all_json(json.dumps(cat).encode())
+            self.files["wrath/leyline/catalog.json"] = restamp(all_json(json.dumps(cat).encode()), self.stamp)
         self.say(f"feeds: {len([f for f in self.files if f.endswith('.json')])}")
 
     # the pages drawn here

@@ -808,7 +808,8 @@ mod tests {
         let none = fetch_all_from(&dead_url(), empty.path());
         assert_eq!(none.realms.len(), 1);
         assert!(none.error.is_some());
-        assert_eq!(cached(d.path()).len(), 3);
+        // the kept list as the window gets it: without the official realm and the relay's realms when the server is off
+        assert_eq!(cached(d.path()).len(), if crate::addresses::SERVER_FEATURES { 3 } else { 0 });
     }
 
     #[test]
@@ -834,7 +835,11 @@ mod tests {
         assert!(t.elapsed() < Duration::from_millis(2600), "{:?}", t.elapsed());
         assert!(l.from_cache && l.realms.len() == 3, "the kept list");
         let c = cached_list(d.path()).unwrap();
-        assert!(c.from_cache && c.realms.len() == 3 && c.realms[0].official);
+        if crate::addresses::SERVER_FEATURES {
+            assert!(c.from_cache && c.realms.len() == 3 && c.realms[0].official);
+        } else {
+            assert!(c.from_cache && c.realms.is_empty(), "no official realm, nothing through the relay");
+        }
         assert!(cached_list(tempfile::tempdir().unwrap().path()).is_none(), "nothing kept yet");
     }
 
@@ -941,7 +946,9 @@ mod tests {
         // both down: the cache, still in order
         let l = fetch_network(&[&dead_url(), &dead_url()], d.path());
         assert!(l.from_cache && l.realms[0].official);
-        assert_eq!(cached(d.path())[0].group, "official");
+        if crate::addresses::SERVER_FEATURES {
+            assert_eq!(cached(d.path())[0].group, "official");
+        }
     }
 
     #[test]

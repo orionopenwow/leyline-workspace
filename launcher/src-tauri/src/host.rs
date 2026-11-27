@@ -29,6 +29,7 @@ pub mod worldshare; // Play with friends from a single player world: the realm l
 pub mod worldmods; // the mods in a single player world: the engine's own modules, turned off or on in its realm.env (host/worldmods.rs)
 pub mod spsettings; // Single player's world settings: companions, dungeon buddies, roaming bots, XP, in the world's realm.env
 pub mod worldfriends; // friends keep their character on a single player world: lasting logins, the claim handshake (host/worldfriends.rs)
+pub mod charsave; // characters that survive any server: signed saves, sealed backups on friends, witnesses, re-home (host/charsave.rs)
 pub mod engine; // Single player's Built-in engine: the realm natively on Windows, no Docker (docs/BUILTIN-ENGINE.md)
 pub mod classic; // Leyline Solo: the first-era world on this PC, no Docker (docs/LEYLINE-SOLO.md)
 pub mod classicsign; // Leyline Solo's fast sign-in: realmlist.wtf, Config.wtf, the opt-in add-on, byte-exact restore

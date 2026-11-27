@@ -52,7 +52,7 @@ pub const REVOKE_KEEP: u64 = 60 * 86400;
 /// A friend code's rendezvous token is good this long.
 pub const CODE_TTL: u64 = 24 * 3600;
 pub const CACHE_MAX: u64 = 2 * 1024 * 1024;
-const KINDS: &[&str] = &["request", "accept", "decline", "revoke", "presence", "invite", "card", "guardian", "rotate"];
+const KINDS: &[&str] = &["request", "accept", "decline", "revoke", "presence", "invite", "card", "guardian", "rotate", "chars"];
 /// Pending Passport rotations of friends (waiting for their guardians' wait to end) and vetoes seen, at most.
 pub const MAX_ROTATIONS: usize = 20;
 const WORLD_KINDS: &[&str] = &["single", "vanilla", "original", "den", "realm", "solo", "survivors", "other"];

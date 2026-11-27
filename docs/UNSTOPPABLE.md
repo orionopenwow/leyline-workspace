@@ -1,7 +1,7 @@
 # Unstoppable Leyline: the plan after the server
 
-**Status (2026-11-27):** a plan, with phase 1 (the Passport) and phase 2's connections (section 3) built and tested on
-one PC; their two-PC gate tests are still to do. Section 1 lists what is built. Written from the
+**Status (2026-11-27):** a plan, with phase 1 (the Passport), phase 2's connections (section 3) and part of phase 4
+(section 5) built and tested on one PC; their two-PC gate tests are still to do. Section 1 lists what is built. Written from the
 owner's grand plan of 27 Nov 2026, the day after the only server (Hetzner) was shut down ([SERVERLESS.md](SERVERLESS.md),
 [STATIC-SITE.md](STATIC-SITE.md)). Player pages: `docs/leyline/way-forward.md`, `passport.md`, `joining.md`,
 `characters.md`, `guide-play-with-friends.md`.
@@ -30,6 +30,7 @@ a status line at the top, and never name the game, its maker or a client version
 | The Passport: recovery phrase, device records, world keys, login agreement, guardians, second device, Hero Key alias | `launcher/src-tauri/src/passport.rs`, `ui/passport.js`, [passport.md](leyline/passport.md) | on; tested in the launcher, not yet on two PCs |
 | NAT type check (classifies only) | `p2p/nat.rs` | built |
 | Connections by key: same network, direct, hole punching (with a helper), a mutual friend, community relays; sealed messages kept by a shared friend | `p2p/link.rs` (rules), `p2p/linknet.rs` (iroh, feature `link` in `app`) | on for friends; tested in one process only (section 3) |
+| Character saves (`leyline-char-save-v1`, host + player signed, hash-chained), sealed backups on friends, witnesses (`leyline-char-witness-v1`), re-home between local worlds | `host/charsave.rs`, ui/characters.js, [leyline/characters.md](leyline/characters.md) | built; tested against fixture rows, not yet on a live world |
 
 Everything below is to build.
 
@@ -145,6 +146,35 @@ Host › template › Start, under a minute on a PC that has played before. Temp
 world and Your Den first. The invite link opens the friend's launcher on Join. Phase 0's timings are the baseline.
 
 ## 5. Characters that survive any server (phase 4)
+
+**Built (`host/charsave.rs`, 27 Nov), tested with fixture database rows only:**
+
+- **Save record** `{"kind":"char-save","save":{v, char, seq, prev, world, made, ns, player, host, who}, "host_sig",
+  "player_sig"}`. `prev` = sha256(canonical(previous `save`)); `world` must be the id of `host`; both signatures over
+  `leyline-char-save-v1\n` + canonical(`save`). `who` names things as `<ns>:<kind>:<entry>` with `ns` = `stock-335a`
+  for the Built-in engine (`stock-335a:item:19019`, `:quest:`, `:spell:`, `:faction:`, `:skill:`, `:achievement:`,
+  `:enchant:`, `:map:`, `:race:`, `:class:`). Proposed here; not yet in COMMONHOLD-V1.md, no conformance vectors yet.
+- **Char id** = `c` + base32(sha256(`leyline-char-v1\n<realm id>\n<row>`))[:15], made at the first save, kept on re-home.
+- **When**: engine.rs `stop` (before the database goes down), every 30 min while a world runs, "Back up now". Last 20
+  per character in `<app data>/characters/<char id>/`. Unchanged characters aren't saved again.
+- **Friends' characters on a host's world**: the host signs (`pending.json`), sends it (`cosign`), the friend checks,
+  signs and keeps it, and answers (`cosigned`).
+- **Sealed backups**: deflate + `identity::seal` to the player's own key, base32, in parts of 5 000 characters over
+  friendnet sealed messages of the new kind `chars` (ops `keep`, `ask`, `back`, `witness`, `cosign`, `cosigned`).
+  Holders keep the newest per owner and character, 20 MB in all, oldest first out. Default 3 holders (setting).
+  Delivery is friendnet's: same network or a shared direct address (no relay mailbox since the server went).
+- **Witness** `{"kind":"char-witness","witness":{v, char, seq, hash, player, made},"sig"}`, newest per (player,
+  char), 2 000 kept. `judge` says newest, ahead, stale or fork.
+- **Re-home** between local worlds (Single player and the original world): customs (level cap; unknown items and items
+  above the level to a vault list; gold 0; raid lockouts, active quests and talents stay; spells and non-profession
+  skills dropped when the level is lowered), then one SQL transaction with both worlds stopped, after a back-up:
+  `characters`, `item_instance` + `mail` / `mail_items` (items by mail, 12 a letter), rewarded quests, reputation,
+  skills, spells, achievements. A taken name gets a free variant and the game's rename-at-login flag.
+- **Not built:** re-home onto a friend's world, visits, the Passport's keys (today: the peer key and each world's
+  realm key, behind the `Keys` trait), a transport beyond friendnet (behind the `FriendLink` trait), checking saves
+  against witnesses held by others before a re-home, and a run against a real world database.
+
+Plan:
 
 - **Signed saves**: on leaving a world, host and player both sign a `save` record (character data hash, previous
   save hash, world id, time): a hash chain. The full save lives on the player's PC and the host's.

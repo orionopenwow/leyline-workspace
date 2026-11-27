@@ -1,7 +1,9 @@
 # Characters that survive
 
-**Status, 27 Nov 2026:** keeping your character on a friend's world **works today**. Signed saves, backups on
-friends and moving to another world are **coming** (phase 4 of [the way forward](way-forward.md)).
+**Status, 27 Nov 2026:** keeping your character on a friend's world **works today**. Signed saves of the characters
+on your own PC, sealed backups on friends, fingerprints (witnesses) and moving a character between the worlds on your
+PC **work today** in the launcher's tests; they haven't been tried on a real world yet, so treat them as new. Moving a
+character onto a friend's world and visits are **coming**.
 
 A world lives on someone's PC. PCs get turned off, sold and reinstalled. This page is about keeping your character
 when that happens.
@@ -17,35 +19,53 @@ when that happens.
 - **If you lost your key.** The host can invite you again and use **Give their characters to…** on your old row in
   their friends list.
 
-Today, a character on a friend's world lives only on that friend's PC. If their PC is gone, so is the character.
-
-## What is coming
-
 ### Signed saves
 
-Each time you leave a world, the host's launcher and yours both sign a save of your character. Each save points to
-the one before it, so the line of saves can't be changed or quietly rolled back. Your copy lives on your PC.
+When a world on your PC stops, every 30 minutes while it runs, and when you press **Back up now** on the
+**Characters** page, the launcher writes down each of your characters: level, race, class, items, finished quests,
+standing, skills, spells, achievements and raid lockouts. Only numbers and ids go in, never game files. Each save is
+signed twice: by the world's key and by your key. Each save points to the one before it, so the line of saves can't
+be changed or quietly rolled back. The last 20 saves of each character stay on your PC. If nothing changed, no new
+save is made.
+
+When a friend's character is on your world, your launcher signs its save first and sends it to that friend, whose
+launcher checks it and signs it too. Both of you keep the same save.
 
 ### Sealed backups on friends
 
-Your launcher sends a sealed copy of your newest save to 3 friends you pick. They can't open it. If your PC dies,
-your new PC gets it back from them.
+After a save, your launcher seals the newest one so only your key can open it and sends it to 3 friends (the ones you
+played with most lately). They can't open it. Each friend's launcher keeps at most 20 MB of other people's copies,
+newest first. On a new PC, bring back your key and press **Get my characters back from friends** on the
+**Characters** page: your friends' launchers send the copies back. You can turn off keeping friends' copies.
+
+Copies travel the same way friends' messages do, so today they reach a friend on your network, or one whose address
+you share.
 
 ### Witnesses
 
-Some launchers hold only a short fingerprint of each save, not the save itself. If someone shows an old or changed
-save, the fingerprints show it.
+Every friend also gets a short signed fingerprint of your newest save. If someone shows an old or changed save, the
+fingerprints show it.
 
-### Moving to another world
+### Moving to another world on your PC
 
-If a world closes, take your character to another one that accepts it. Your launcher shows the new host the signed
-line of saves, and the new world makes your character from it.
+On the **Characters** page, press **Bring to another world** under a character, pick the world, then
+**See what comes**. You see what comes along, what goes to your vault and what stays behind. Press **Bring** to move it.
 
-- **Your character, level and gear come with you**, where the new world has them.
-- **Gold never travels.** You start with what the new world gives.
-- **No trading between worlds.** Items can't be sent from one world to another.
-- **Items the new world doesn't know** go to a vault. They wait there in case they come back to a world that knows
+- **Your character and level come with you**, up to the new world's highest level (60 in the original world).
+- **Items come by in-game mail**, where the new world has them and your level can use them.
+- **Items the new world doesn't know go to your vault.** They wait there in case they come back to a world that knows
   them.
+- **Gold never travels.** You start with none in the new world.
+- **No trading between worlds.** Items can't be sent from one world to another, only with the character.
+- **Raid lockouts and quests in progress stay behind.** You pick talents again. If your level is lowered, spells are
+  learned again for the new level and profession recipes stay behind.
+- **Both worlds must be stopped**, and the new world is backed up first. If anything goes wrong, nothing is written.
+
+## What is coming
+
+### Moving to a friend's world
+
+Showing a friend's world your signed line of saves, so their world makes your character from it.
 
 ### Visits
 
@@ -58,5 +78,5 @@ Nothing. Saves live on your PC, on the host's PC and, sealed, on the friends you
 
 ## Still being decided
 
-- Whether sealed backups on friends are on by default.
+- Whether sealed backups on friends are on by default (today: on, 3 friends).
 - How a world says which characters it accepts from elsewhere.

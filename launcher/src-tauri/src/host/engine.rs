@@ -2565,6 +2565,10 @@ pub fn stop(p: &Paths) -> Result<String, String> {
     if port_answers(WORLD_PORT) && other_running(p).is_none() {
         let _ = refresh_chars(p);
     }
+    // each of the player's characters saved and signed, while the database still runs (host/charsave.rs)
+    if port_answers(DB_PORT) && other_running(p).is_none() {
+        crate::host::charsave::on_world_stop(p);
+    }
     let s = load_state(p);
     // the day's back-up, while the database still runs (at most one a day; the newest KEEP_BACKUPS kept)
     if s.account_made && port_answers(DB_PORT) && other_running(p).is_none() && backup_due(newest_backup_at(p), now_secs()) {
@@ -2770,6 +2774,18 @@ pub fn restore(p: &Paths, name: &str) -> Result<String, String> {
 /// down, and stopped again after. The path of the zip.
 pub fn backup(p: &Paths) -> Result<PathBuf, String> {
     backup_why(p, "by hand")
+}
+
+/// `f` with this world's database running: started for it when it wasn't, and shut down again after when the login
+/// server isn't running either (the way [`backup_why`] does).
+pub fn with_db<T>(p: &Paths, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    let was_up = port_answers(DB_PORT);
+    start_db(p)?;
+    let r = f();
+    if !was_up && !port_answers(LOGIN_PORT) {
+        let _ = mysql_cmd(p, &p.mysqladmin(), &["shutdown"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
+    r
 }
 
 /// [`backup`], saying why it was made (in its about.json, for the Restore list).

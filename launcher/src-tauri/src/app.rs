@@ -2842,6 +2842,51 @@ fn online_characters(core: State<Core>) -> Result<OnlineChars, String> {
     Ok(OnlineChars { realm: realms::SAMPLE_NAME, chars })
 }
 
+/// The Characters page's backups (host/charsave.rs): each of the player's characters with its newest save and the
+/// friends holding a sealed copy; the backup settings.
+#[tauri::command]
+async fn chars_saves() -> Result<crate::host::charsave::View, String> {
+    blocking(|| Ok(crate::host::charsave::view(&settings::app_dir()))).await
+}
+
+/// "Back up now": a world's characters saved (it must be running to read them) and sent, sealed, to friends.
+#[tauri::command]
+async fn chars_backup_now(kind: String) -> Result<String, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || crate::host::charsave::back_up_now(&settings::app_dir(), k)).await
+}
+
+/// "Bring to another world", step one: what comes, what goes to the vault, what stays behind.
+#[tauri::command]
+async fn chars_bring_preview(id: String, to: String) -> Result<crate::host::charsave::Plan, String> {
+    let k = world_kind(&to)?;
+    blocking(move || crate::host::charsave::preview(&settings::app_dir(), &id, k)).await
+}
+
+/// "Bring": the character made in the other world from its newest signed save (a back-up of that world first).
+#[tauri::command]
+async fn chars_bring(id: String, to: String) -> Result<String, String> {
+    let k = world_kind(&to)?;
+    blocking(move || crate::host::charsave::bring(&settings::app_dir(), &id, k)).await
+}
+
+/// "Get my characters back from friends": every friend asked for the sealed copies they hold of mine.
+#[tauri::command]
+async fn chars_ask_back() -> Result<String, String> {
+    blocking(|| {
+        let h = crate::p2p::friendnet::current().ok_or("Turn your friends list on first (Friends page).")?;
+        let n = crate::host::charsave::ask_back(&crate::host::charsave::HubLink(&h));
+        Ok(if n == 0 { "No friend could be asked right now.".to_string() } else { format!("Asked {n} friends: copies they hold come back by themselves.") })
+    })
+    .await
+}
+
+/// Settings for sealed backups: how many friends hold a copy, and keeping friends' copies here.
+#[tauri::command]
+async fn chars_backup_settings(holders: Option<usize>, keep: Option<bool>) -> Result<(), String> {
+    blocking(move || crate::host::charsave::set_settings(&settings::app_dir(), holders, keep)).await
+}
+
 /// Invite a friend into a single player world while it runs (host/worldshare.rs): its own key on the Leyline relay
 /// (private, the tunnel Your Den uses: one at a time on this PC), the same network through the launcher's own
 /// forwarder, and one friend's login (a player, made over the world's console) in the link.
@@ -5187,6 +5232,7 @@ pub fn run() {
                 }
             }
             start_update_timer(app.handle().clone());
+            crate::host::charsave::start_timer(settings::app_dir()); // a character save every 30 minutes while a world runs
             crate::p2p::cmds::magnet_from_args(); // a shared magnet: link (only with the magnet_links flag on)
             crate::agents::commands::start(app.handle().clone()); // Agents: the heartbeat `Leyline mcp` looks for (agents.rs)
             // Be a node (p2p/node.rs): its loop, when this PC turned it on; started by "start with Windows" (--node):
@@ -5409,6 +5455,12 @@ pub fn run() {
             close_leyline,
             local_characters,
             online_characters,
+            chars_saves,
+            chars_backup_now,
+            chars_bring_preview,
+            chars_bring,
+            chars_ask_back,
+            chars_backup_settings,
             world_invite,
             world_share_stop,
             world_friends,

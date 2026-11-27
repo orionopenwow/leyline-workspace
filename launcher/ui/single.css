@@ -116,3 +116,9 @@
 .ch-card.horde { border-left: 3px solid color-mix(in srgb, #c0453a 70%, var(--t-border)); }
 .ch-card-t { display: grid; gap: 1px; flex: 1; min-width: 0; }
 .ch-card-t b { color: var(--t-text); font-size: 14px; }
+.ch-backup { font-size: 11px; }
+.ch-bring-open { justify-self: start; padding: 0; border: 0; background: none; color: var(--t-accent, var(--t-text)); font-size: 12px; text-decoration: underline; cursor: pointer; }
+.ch-bring { display: grid; gap: 8px; }
+.ch-bring-to { justify-self: start; max-width: 100%; }
+.ch-bring-list b { font-size: 13px; color: var(--t-text); }
+.ch-bring-list ul { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--t-muted); }

@@ -5291,6 +5291,7 @@ pub fn run() {
             // the Forum page: reading the website's forum, opening its pages (forum.rs)
             crate::forum::commands::forum_call,
             crate::bugs::commands::bug_report,
+            crate::bugs::commands::debug_info,
             crate::forum::commands::forum_post,
             crate::forum::commands::forum_open,
             // List your mod: check, list, report, edit, remove with the launcher's sign-in (listing.rs)

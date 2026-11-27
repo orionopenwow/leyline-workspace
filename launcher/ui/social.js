@@ -715,8 +715,14 @@
   }
 
   // ---------------------------------------------------------------- start
-  renderBody();
-  (async () => {
+  // lite (lite.js: no server, no sign-in): signed out, known to have no way in; nothing is asked or drawn
+  const LITE = !!(window.LeylineLite && window.LeylineLite.lite);
+  if (LITE) {
+    checked = true; known = false; signedIn = false;
+    setTimeout(() => emit("leyline:status", { known, signedIn }), 0);
+  }
+  if (!LITE) renderBody();
+  if (!LITE) (async () => {
     let yes = false;
     try { yes = await invoke("social_status"); known = true; } catch (_) { yes = false; }
     signedIn = !!yes; checked = true;
@@ -727,7 +733,7 @@
   // the sign-in dialog closed while the browser is still open for its code: the title bar's pop-over shows it
   document.addEventListener("leyline:gate", () => renderCode());
   // back on Home: the latest threads again
-  document.addEventListener("leyline:page", (ev) => { if ((ev.detail || {}).page === "play") loadLatest(); });
+  document.addEventListener("leyline:page", (ev) => { if (!LITE && (ev.detail || {}).page === "play") loadLatest(); });
 
   document.addEventListener("leyline:page", (ev) => { if ((ev.detail || {}).page !== "account" || flow.stage !== "idle") renderCode(); });
 

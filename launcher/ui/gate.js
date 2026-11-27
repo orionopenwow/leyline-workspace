@@ -500,6 +500,14 @@
     return false;
   }
 
+  // lite (lite.js: no server, no sign-in; owner 26 Nov 2026): the dialog never opens, anything that waited for a sign-in
+  // goes on at once, and no Hero Key file is looked for. The code above stays behind the switch.
+  if (window.LeylineLite && window.LeylineLite.lite) {
+    window.LeylineGate = { isOpen: () => false, makePassword, ready: () => true, need: (reason, next) => { if (next) next(); return true; },
+      show: () => {}, close: () => {}, skip: () => {}, dropPath: () => {}, findKeyFile: async () => false, dragOver: () => {} };
+    open = true; setOpen(false);
+    return;
+  }
   window.LeylineGate = { isOpen: () => open, makePassword, ready, need, show, close, skip, dropPath, findKeyFile,
     dragOver: (on) => { if (over !== on) { over = on; const d = $("gate-drop"); if (d) d.classList.toggle("over", on); } } };
   // never left over the launcher: closed at the start, whatever the page said

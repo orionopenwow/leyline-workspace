@@ -1,0 +1,12 @@
+/* Leyline as a launcher aggregator (lite.js): what needed the server is not shown. [data-srv]: only with the server's
+   features on; [data-lite]: only without them. */
+html.lite [data-srv] { display: none !important; }
+html:not(.lite) [data-lite] { display: none !important; }
+/* the Community page (index.html #page-community): the Discord and Reddit card */
+.cm-card { display: grid; grid-template-columns: auto 1fr; gap: 14px 18px; align-items: start; margin-top: 14px; }
+.cm-card .cm-ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: rgba(88, 101, 242, .18); }
+.cm-card .cm-ic svg { width: 26px; height: 26px; fill: currentColor; }
+.cm-card p { margin: 0 0 8px; }
+.cm-card .row { margin-top: 6px; }
+/* Help › Found a bug?: the debug info, copied */
+.dbg-out { width: 100%; min-height: 9em; font: 12px/1.45 ui-monospace, Consolas, monospace; margin-top: 8px; }

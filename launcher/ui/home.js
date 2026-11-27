@@ -34,6 +34,9 @@
   const AUTO_MS = Number(window.LEYLINE_HERO_MS) || 7000;   // a test may shorten it
   const SITE_ORIGIN = window.LeylineAddresses.SITE;   // the only place pictures come from (the window's CSP agrees)
   const reduced = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
+  // lite (lite.js: no server): no official realm, browser game, hosting, forum or Den of the week (a relay realm);
+  // Single player, the realm list of other servers and the mods take their slides
+  const LITE = !!(window.LeylineLite && window.LeylineLite.lite);
 
   // ---------------------------------------------------------------- the slides
   const slidesBox = $("hero-slides");
@@ -57,14 +60,21 @@
     // (0) launch (owner 2026-10-30): the official realm (App.HANGOUT), where everyone meets in Dalaran, is the front door.
     // Play now selects it and presses PLAY (browser play when there is no 3.3.5a client); Join the Discord is the core's
     // named link. TODO(owner): the kicker and the line, his words.
-    if (App.playHangout) {
+    if (LITE) {
+      // TODO(owner): the kickers and lines of these two slides, his words
+      out.push({ key: "single", kicker: "On this PC", title: "Single player", line: "Just you and your companions: dungeons and raids with helper bots, at your pace.",
+        photo: true, cta: "Play single player", run: () => go("single"), cta2: "The original world", run2: () => go("single") });
+      out.push({ key: "realms", kicker: "Every server, one launcher", title: "Pick a realm", line: "Other servers' realms, and any realm by its address: Leyline sets it up and plays.",
+        chips: networkChips, photo: true, side: realmsPanel, cta: "See the realms", run: () => go("realms") });
+    }
+    if (App.playHangout && !LITE) {
       out.push({ key: "hangout", kicker: "Open now · " + App.HANGOUT.kind, title: "Join " + App.HANGOUT.name,
         line: "Start at level 1 or boost to 80. Say hello, then try a duel or Boss Rush.",
         chips: hangoutChips, photo: true, side: hangoutSide, cta: "Play now", run: () => App.playHangout(),
         cta2: "Join the Discord", run2: () => App.openLink("discord") });
     }
     // (a) the featured mode with its key art
-    if (M && M.ART[M.FEATURED] && !artFailed) {
+    if (!LITE && M && M.ART[M.FEATURED] && !artFailed) {
       const a = M.ART[M.FEATURED];
       const m = modeData(M.FEATURED);
       out.push({ key: "mode", kicker: m && m.status === "coming" ? "Featured mode · Coming soon" : "Featured mode",
@@ -76,19 +86,19 @@
     if (n) out.push({ key: "news", kicker: "What's new", title: n.title, line: "",   // its points are in the panel beside it
       photo: true, side: newsSide, cta: "Read the patch notes", run: () => go("news") });
     // (c) browser play (left out when it is already on), with the realms on the network beside it
-    if (App.mode() !== "browser") {
+    if (!LITE && App.mode() !== "browser") {
       out.push({ key: "browser", kicker: "Nothing to install", title: "Play in your browser", line: "Your game folder, straight in a browser tab.",
         chips: networkChips, photo: true, side: realmsPanel, cta: "Use browser play",
         run: (b) => { App.setMode("browser"); b.textContent = "Browser play is on"; b.disabled = true; } });
     }
     // (d) hosting
-    out.push({ key: "host", kicker: "Host", title: "Host a realm, up 24/7", line: "Vanilla+ or your own rules, on the Leyline network.",
+    if (!LITE) out.push({ key: "host", kicker: "Host", title: "Host a realm, up 24/7", line: "Vanilla+ or your own rules, on the Leyline network.",
       chips: hostChips, photo: true, side: hostSteps, cta: "Start hosting", run: () => go("host") });
     // (e) Your Den has no slide (owner 1 Nov: one way in, less redundant): the side menu, the play bar's realm picker
     // and Home's one banner below (#hm-den, den.js) all call the same one click (window.LeylineDen.go).
     // (e2) Den of the week (stream/denweek.py: staff pick it in HQ; it rides in the site's home.json): a player's Den,
     // its maker and one line. Screenshots are links on the website only; Visit shows a leyline://realm/ Den on Realms.
-    if (denWeek) {
+    if (denWeek && !LITE) {
       const v = /^leyline:\/\/realm\/([a-z2-7]{16})$/.exec(denWeek.visit);
       const visit = v && App.showRealm ? () => App.showRealm(v[1]) : null;
       out.push({ key: "denweek", kicker: "Den of the week", title: denWeek.title, line: `by ${denWeek.by}` + (denWeek.line ? `. ${denWeek.line}` : ""),
@@ -183,7 +193,8 @@
       const get = (base) => fetch(base + "home.json", { credentials: "omit", referrerPolicy: "no-referrer" });
       let r;
       try { r = await get(HOME_ART); }
-      catch (_) {   // no answer on the new name (docs/DOMAIN-MOVE.md): the old one, once; the pictures then come from there
+      catch (e) {   // no answer on the new name (docs/DOMAIN-MOVE.md): the old one, once; the pictures then come from there
+        if (LITE) throw e;   // the old name went with the server
         HOME_ART = window.LeylineAddresses.oldName(HOME_ART);
         r = await get(HOME_ART);
       }
@@ -348,7 +359,7 @@
   }
   async function loadForum() {
     const tauri = window.__TAURI__ && window.__TAURI__.core ? window.__TAURI__.core.invoke : null;
-    if (!tauri || Date.now() - forumAt < 60000) return;
+    if (LITE || !tauri || Date.now() - forumAt < 60000) return;   // lite: no forum
     forumAt = Date.now();
     let list = [];
     try {
@@ -368,7 +379,7 @@
     const rank = (r) => (r.official ? 0 : r.state === "live" ? 1 : 2);
     const list = all.slice().sort((a, b) => rank(a) - rank(b) || (b.players || 0) - (a.players || 0)).slice(0, 7);
     const box = el("div", "hs-side hs-realms hs-rich");
-    box.append(sideHead("On the network", el("span", "hs-side-n", plural(all.length, "realm"))));
+    box.append(sideHead(LITE ? "Other servers" : "On the network", el("span", "hs-side-n", plural(all.length, "realm"))));
     for (const r of list) {
       const live = r.state === "live" || r.official;
       const row = el("button", "hs-rl" + (live ? " live" : ""));
@@ -822,6 +833,7 @@
     const g = b.dataset.hmGo;
     if (g === "discover") go("mods", "discover"); else go(g);
   }));
+  if (LITE) { const h = $("hm-host"); if (h) h.hidden = true; }
   $("hm-host-start").addEventListener("click", () => go("host"));
   $("hm-host-link").addEventListener("click", () => go("host"));
   $("hm-host-docs").addEventListener("click", () => App.openLink("docs"));   // a named link in the core (lib.rs LINKS)
@@ -846,7 +858,7 @@
   document.addEventListener("leyline:page", (e) => { if ((e.detail || {}).page === "play") loadForum(); });
   build();
   loadForum();
-  loadHomeArt();
+  setTimeout(loadHomeArt, LITE ? 80 : 0);   // the site's pictures after Home is on screen
   realmsIn = App.realms().length > 0;   // the list may be in before this file ran
   renderRealms();
   renderMods();

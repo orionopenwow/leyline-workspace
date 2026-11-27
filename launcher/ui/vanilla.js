@@ -402,7 +402,7 @@
         else say("Start it, then invite from Play with friends.", "warn");
       }, "sv-invite");
       inv.disabled = !up;
-      inv.title = up ? "A friend joins your original world: same network or through the Leyline relay" : "Start it first: friends join while it runs";
+      inv.title = up ? ((window.LeylineLite && window.LeylineLite.lite) ? "A friend on the same network joins your original world" : "A friend joins your original world: same network or through the Leyline relay") : "Start it first: friends join while it runs";
       row.append(stop, inv);
     }
     // every world's characters, this one's and the online ones (characters.js), from here: no side menu item

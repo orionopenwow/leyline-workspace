@@ -367,7 +367,7 @@
       box.id = "ad-settings";
       box.innerHTML = '<h3>Leyline addons</h3>' +
         '<label class="check"><input type="checkbox" id="ad-set-auto"> Update the Leyline addons when Leyline starts (in every game folder that has them)</label>' +
-        '<label class="check"><input type="checkbox" id="ad-set-ask"> Offer them when I press PLAY on <span id="ad-set-ask-realm"></span> without them</label>' +
+        '<label class="check"' + ((window.LeylineLite && window.LeylineLite.lite) ? ' data-srv' : '') + '><input type="checkbox" id="ad-set-ask"> Offer them when I press PLAY on <span id="ad-set-ask-realm"></span> without them</label>' +
         '<p class="status" id="ad-set-status" role="status"></p>';
       anchor.after(box);
       $("ad-set-ask-realm").textContent = OFFICIAL;

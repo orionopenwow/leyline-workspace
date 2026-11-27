@@ -902,7 +902,7 @@
       sb.append(more);
       if (sharing) { const steps = mk("div", "yd-steps"); paintSteps(steps); paintJob(steps); sb.append(steps); }
       // TODO(owner): the hint, his words
-      grid.append(tile("Share with friends", "Friends join this Den through the Leyline relay: no Docker, no port forwarding, and your home address is never shown.", sb, "wide"));
+      grid.append(tile("Share with friends", (window.LeylineLite && window.LeylineLite.lite) ? "Friends on the same network join this Den with your link: no Docker and no port forwarding." : "Friends join this Den through the Leyline relay: no Docker, no port forwarding, and your home address is never shown.", sb, "wide"));
     } else {
       const sb = mk("div", "");
       const open = btn(sharing ? "Hide the steps" : "Share with friends", "btn small" + (sharing ? "" : " primary"), () => {

@@ -193,7 +193,11 @@ pub fn fetch(app_dir: &Path) -> ModeList {
 /// The site's list, else the cached one, else the built-in one.
 pub fn fetch_from(url: &str, app_dir: &Path) -> ModeList {
     match net::fetch_json(url, &cache_path(app_dir), net::TIMEOUT, |v| parse(v).map(|_| ())) {
-        Ok(f) => ModeList { modes: parse(&f.value).unwrap_or_default(), from_cache: f.from_cache, builtin: false, saved_at: f.saved_at, error: f.error },
+        // with the server off (addresses.rs) the static site lists no modes: the built-in copy keeps Boss Rush on this PC
+        Ok(f) => match parse(&f.value).unwrap_or_default() {
+            m if m.is_empty() && !crate::addresses::SERVER_FEATURES => ModeList { modes: builtin(), from_cache: f.from_cache, builtin: true, saved_at: f.saved_at, error: f.error },
+            m => ModeList { modes: m, from_cache: f.from_cache, builtin: false, saved_at: f.saved_at, error: f.error },
+        },
         Err(e) => ModeList { modes: builtin(), from_cache: false, builtin: true, saved_at: None, error: Some(e) },
     }
 }

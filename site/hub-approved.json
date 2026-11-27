@@ -1,0 +1,5 @@
+{
+  "about": "The hub index's review list (tools/hub-index/hub_index.py build --approved): repos a person approved from a Submit a mod issue, and repos taken off the index. It was the admin console's approved.json on the old server; edit it here now. Each entry: {\"repo\": \"https://github.com/owner/name\"}, delisted ones may add \"reason\".",
+  "approved": [],
+  "delisted": []
+}

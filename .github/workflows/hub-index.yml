@@ -36,7 +36,10 @@ jobs:
     timeout-minutes: 90
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      HUB_APPROVED_URL: https://play.openvanilla.app/wrath/leyline-preview/approved.json
+      # The approved submissions and delisted repos: a file in the repo since the server shut down (26 Nov; it was the
+      # admin console's approved.json on the site). The index lands on the static site with the next export
+      # (docs/STATIC-SITE.md): nothing here talks to a server of ours.
+      HUB_APPROVED_URL: site/hub-approved.json
       HUB_ISSUES_REPO: orionopenwow/Leyline
       DAILY: hub-index/daily
       REVIEW: hub-index/review

@@ -212,6 +212,7 @@
   if (setPanel) {
     const part = mk("section", "set-node");
     part.id = "set-node";
+    part.setAttribute("data-srv", "");   // lite.js: Be a node worked for the Leyline network, gone with the server
     part.append(mk("h3", "", "Network"),
       mk("p", "lede", "Be a node: let this PC help the Leyline network while you're not playing. The switch is at the top of the Host page."));
     const row = mk("div", "row");

@@ -1,5 +1,7 @@
 # Owner test plan: a new machine, every way in
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): the parts of this plan that use the website, Wrath Unleashed or the relay can't be tested until there is a server again.
+
 Owner, 3 Nov: "Fully tested, rounded featuresets, p2p hosting flawless, hero key intuitive, few steps as possible to get
 everywhere. Can log in and out, share character, everything makes sense on new machine, then give me what to test to
 make sure all kinks are out."

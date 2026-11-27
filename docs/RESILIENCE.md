@@ -1,5 +1,7 @@
 # Resilience: what keeps working when something goes down
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): the server is gone, and so is the release mirror (`release-mirror` is retired). GitHub (releases, Pages) is now the one home. See SERVERLESS.md for what still works.
+
 For the owner. Plain words: what survives what, and the few things only you can do.
 
 Hard lines that stay: the network never carries game data or game clients; nothing here involves money, tokens,

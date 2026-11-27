@@ -1,5 +1,7 @@
 # Mods & Addons, every day
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): `mods-daily`, `addons-curate` and `thumbs` still run (no server). Afterwards `ship` is enough: the website rebuilds on GitHub Pages from that push. `signin` and `mods` are retired.
+
 Owner, 2 Nov 2026: "add as many mods and graphics settings to the mods and addons discovery thing and make a plan to
 expand it daily".
 

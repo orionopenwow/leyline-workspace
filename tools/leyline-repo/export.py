@@ -35,7 +35,8 @@ ADDON = "stream/fui-web/Interface/AddOns/WrathUnleashedUI"
 
 # The allow-list: folders (copied whole, minus refusals), single files, and globs. Paths as in this repo.
 # Public = the launcher, the host kit, the relay and their docs (docs/REPO-MAP.md marks them "public"). Never labs/,
-# client/ (our client patches), server/, tools/ or the Autopilot files: those stay in the private repo.
+# client/ (our client patches), server/, tools/ (but tools/site-static, the website's builder) or the Autopilot files:
+# those stay in the private repo.
 ALLOW = [
     "hosting/relay",                              # the relay (wurelay, its Dockerfile and deploy scripts)
     "hosting/kit",                                # the host kit: the `leyline` command, host scripts, compose
@@ -61,7 +62,31 @@ ALLOW = [
     "docs/leyline",                               # the Leyline docs (also served at /wrath/docs)
     "docs/FORKING.md",                            # how a community rebuilds it all under another name (the fork kit)
     "launcher",                                   # the Leyline desktop launcher (Tauri 2: web UI over a Rust core)
+    # The website, as a static site on GitHub Pages (docs/STATIC-SITE.md; owner 26 Nov: the server is gone). The public
+    # repo builds it (.github/workflows/leyline-site.yml): the generator, its curated data, and the parts of the old
+    # portal it runs in-process to draw the pages. Only these portal modules: never the sign-in, forum, social, admin,
+    # queue or browser-game ones, and never stream/slices or the browser kit.
+    "tools/site-static",                          # build.py and its test (the one tools/ folder in the public repo)
+    "site",                                       # realms.json, news.json, the retired docs pages, the owner's README
+    "docs/STATIC-SITE.md",                        # how the site builds, what's static, what was dropped
+    "mods/categories.json",                       # the Mods page's categories
+    "stream/wrath_portal.py", "stream/hub.py", "stream/docs.py", "stream/workshop.py", "stream/leyline_net.py",
+    "stream/upstream_addons.py", "stream/looks.py", "stream/downloads.py", "stream/playmodes.py",
+    "stream/site_pages.py", "stream/hub_rank.py", "stream/ratelimit.py", "stream/brandfile.py", "stream/denweek.py",
+    "stream/weekly.py", "stream/gamemods.py", "stream/loadouts.py",
+    "stream/upstream-addons.json", "stream/looks.json", "stream/hostpack.json", "stream/weekly.json",
+    "stream/hub/community-index.json",            # the approved community index (tools/hub-index, merged by a person)
+    "stream/www-files/art/hub-thumbs",            # its preview pictures (each project's own GitHub preview)
+    "stream/www-files/art/looks",                 # the Looks pictures (the launcher shows them too)
+    "stream/www-files/art/stone-*",               # the site frame's art
+    "stream/www-files/art/window-edge.png",
+    "stream/www-files/art/play-stone.webp",
+    "stream/www-files/art/marcellus-400.woff2",
+    "stream/www-files/art/Marcellus-OFL.txt",
 ]
+# Single files written outside the managed folders, at their own path: (path in the target, source here). Only these
+# are written there; nothing else under .github is touched (the other workflows come from tools/github-builds).
+EXTRA = {".github/workflows/leyline-site.yml": "tools/github-workflows/leyline-site.yml"}
 # The top folders the export owns in the target: it deletes stale files only below these.
 MANAGED = sorted({p.split("/", 1)[0] for p in ALLOW})
 GENERATED = ["README.md", "LICENSE", "THIRD-PARTY-NOTICES.md", ".gitignore"]
@@ -482,6 +507,10 @@ def export(src: Path, target: Path, dry: bool = False, out=print) -> dict:
     files["LICENSE"] = (license_text(src), False)
     files["THIRD-PARTY-NOTICES.md"] = (NOTICES.encode(), False)
     files[".gitignore"] = (GITIGNORE.encode(), False)
+    for dest, source in EXTRA.items():   # from its source copy, or (a source that is itself an export) its own path
+        got = next((p for p in (src / source, src / dest) if p.is_file()), None)
+        if got is not None:
+            files[dest] = (got.read_bytes(), False)
 
     missing = missing_includes(files)
     # the Leyline repo's launcher workflow installs from the lockfiles (npm ci, cargo --locked; security review 2 Nov)

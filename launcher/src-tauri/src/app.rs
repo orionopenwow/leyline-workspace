@@ -403,6 +403,9 @@ async fn addons_before_launch(core: &Core, client: &str, install_missing: bool) 
 #[tauri::command]
 async fn play(app: AppHandle, core: State<'_, Core>, client: String, realm: String) -> Result<String, String> {
     addons_before_launch(&core, &client, false).await;
+    if crate::addresses::is_official_realm(realm.trim()) && !crate::addresses::SERVER_FEATURES {
+        return Err(OFFICIAL_GONE.into());
+    }
     if crate::addresses::is_official_realm(realm.trim()) {
         return play_official(&core, &client, &realm, Some(&app)).await;
     }
@@ -1255,7 +1258,7 @@ fn host_ready_now(kind: &str, kit: Option<PathBuf>) -> crate::host::ready::Ready
         }
     }
     f.sleep_min = ready::sleep_now();
-    ready::judge(&f)
+    ready::same_network_only(ready::judge(&f))
 }
 
 /// The friend's side, after Join: does the host's world answer at the address Join used? Ok(ms), or why not (a world
@@ -4227,9 +4230,15 @@ async fn forge_open(core: State<'_, Core>, client: String) -> Result<String, Str
     .await
 }
 
+/// What PLAY says for the official realm with `SERVER_FEATURES` off (addresses.rs): it is gone with the server.
+const OFFICIAL_GONE: &str = "Leyline's own realm has closed. Pick another realm on the Realms page, or play Single player on this PC.";
+
 /// "Back to the official realm": point the client at it again.
 #[tauri::command]
 fn back_to_official(core: State<Core>, client: String) -> Result<String, String> {
+    if !crate::addresses::SERVER_FEATURES {
+        return Err(OFFICIAL_GONE.into());
+    }
     point_and_play(&core, &client, OFFICIAL_REALM, false)
 }
 
@@ -4279,6 +4288,9 @@ async fn realms_list_cached(core: State<'_, Core>) -> Result<Option<RealmList>, 
 /// Open the browser client. Only that one address: the UI cannot open arbitrary URLs through this.
 #[tauri::command]
 fn open_browser_play(app: AppHandle) -> Result<(), String> {
+    if !crate::addresses::SERVER_FEATURES {
+        return Err("The browser game has closed.".into());
+    }
     app.opener().open_url(BROWSER_PLAY_URL, None::<&str>).map_err(|e| e.to_string())
 }
 
@@ -4294,6 +4306,11 @@ async fn realm_status(realm: String, status_url: Option<String>) -> Result<statu
         Some(_) => return Err("Not a realm status address.".into()),
         None => crate::addresses::is_official_realm(&status::host_port(&realm).0).then(|| status::OFFICIAL_STATUS_URL.to_string()),
     };
+    // the official realm and the relay's realms are gone (addresses.rs SERVER_FEATURES): no wait on a port that never answers
+    let host = status::host_port(&realm).0;
+    if !crate::addresses::SERVER_FEATURES && (crate::addresses::is_official_realm(&host) || crate::addresses::dead_host(&host)) {
+        return Err(OFFICIAL_GONE.into());
+    }
     blocking(move || Ok(status::check(&realm, url.as_deref()))).await
 }
 
@@ -4884,6 +4901,9 @@ fn start_update_timer(app: AppHandle) {
         };
     }
     std::thread::spawn(move || loop {
+        // Home first (owner, 26 Nov: startup shows Home before any network): the first check waits a moment
+        static FIRST: std::sync::Once = std::sync::Once::new();
+        FIRST.call_once(|| std::thread::sleep(Duration::from_secs(4)));
         tauri::async_runtime::block_on(run_update_check(app.clone()));
         std::thread::sleep(Duration::from_secs(update::CHECK_EVERY_SECS));
     });
@@ -4943,14 +4963,20 @@ pub fn run() {
             crate::agents::commands::start(app.handle().clone()); // Agents: the heartbeat `Leyline mcp` looks for (agents.rs)
             // Be a node (p2p/node.rs): its loop, when this PC turned it on; started by "start with Windows" (--node):
             // the window opens minimized, the node working
-            crate::p2p::node::start(settings::app_dir());
+            if crate::addresses::SERVER_FEATURES {
+                crate::p2p::node::start(settings::app_dir());   // the Leyline network's node: gone with the server
+            }
             if crate::p2p::node::started_as_node(std::env::args()) {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.minimize();
                 }
             }
-            // Your Den shared with friends before: back on the Leyline network by itself (host/denhost.rs)
+            // Your Den shared with friends before: back on the Leyline network by itself (host/denhost.rs); not
+            // with the relay gone (SERVER_FEATURES off: friends on the same network join while the Den runs)
             std::thread::spawn(|| {
+                if !crate::addresses::SERVER_FEATURES {
+                    return;
+                }
                 if let Err(e) = den_share_resume() {
                     eprintln!("leyline: Your Den's sharing didn't come back: {e}");
                 }
@@ -5265,6 +5291,7 @@ pub fn run() {
             // the Forum page: reading the website's forum, opening its pages (forum.rs)
             crate::forum::commands::forum_call,
             crate::bugs::commands::bug_report,
+            crate::bugs::commands::debug_info,
             crate::forum::commands::forum_post,
             crate::forum::commands::forum_open,
             // List your mod: check, list, report, edit, remove with the launcher's sign-in (listing.rs)
@@ -5946,7 +5973,7 @@ pub fn bossrush_play_test_cli(cli: crate::playtest::Cli) -> i32 {
         mods_lock: Arc::new(Mutex::new(())),
         games: Mutex::new(Vec::new()),
         upd: Mutex::new(UpdState::default()),
-        deep_link: Mutex::new(None),
+        deep_link: Mutex::new(crate::deeplink::Inbox::default()),
     };
     let p = bossrush_paths();
     // 1. the game folder

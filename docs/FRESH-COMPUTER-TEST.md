@@ -1,5 +1,7 @@
 # Fresh computer test: every feature, from a brand-new PC
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): this test needs the website and the official realm, both gone. `fresh-test` and `fresh-sandbox` are retired in Control.
+
 Owner, 3 Nov: "a clean test from a fresh computer to test every feature with a bat: like login, select client, torrent
 drag and drop, dens instant sign in and more, all needed assets on fresh computer and cookies — plan."
 

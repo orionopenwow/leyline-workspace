@@ -540,6 +540,8 @@
     focus: (id) => { if (window.LeylineNav) window.LeylineNav.show("mods", true, "dens"); return open(id); },
     state: () => ({ view, state: Object.assign({}, state), detail, shareFor, mine }),
   };
+  // lite (lite.js): shared Dens lived on the server; nothing here is drawn or fetched, and nothing offers it
+  if (window.LeylineLite && window.LeylineLite.lite) { window.LeylineDenMarket = null; return; }
   paint();
   // a leyline://den link that came before this file loaded (app.js handleDeepLink)
   if (typeof window.LeylinePendingDen === "string") { const id = window.LeylinePendingDen; delete window.LeylinePendingDen; window.LeylineDenMarket.focus(id); }

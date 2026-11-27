@@ -732,14 +732,6 @@
    "reason": "no open licence file"
   },
   {
-   "repo": "https://github.com/dnkrse/TurtlePvPEnhanced",
-   "name": "TurtlePvPEnhanced",
-   "builds": [
-    "1.12"
-   ],
-   "reason": "no open licence file"
-  },
-  {
    "repo": "https://github.com/dns-sec/AutoQuest",
    "name": "AutoQuest",
    "builds": [
@@ -2748,10 +2740,6 @@
    "reason": "a launcher and patcher that hands out a server's client patches: check it can't carry game files"
   },
   {
-   "repo": "https://github.com/Ildourol/mod-warband-camp",
-   "reason": "its TOC says 1.12 but it was found under 3.3.5a"
-  },
-  {
    "repo": "https://github.com/LleguitoWoW/NPCBotGMPanel",
    "reason": "the author's name carries a brand word (credit can't be shown cleanly)"
   },
@@ -2972,6 +2960,10 @@
   {
    "repo": "https://github.com/DenoHearth/QuestBlobMinimap",
    "reason": "written for one commercial server's modified client"
+  },
+  {
+   "repo": "https://github.com/dnkrse/TurtlePvPEnhanced",
+   "reason": "below the bar for discovered projects (2 stars)"
   },
   {
    "repo": "https://github.com/Drakensangs/DungeonMapsVanilla",
@@ -3348,6 +3340,10 @@
   {
    "repo": "https://github.com/s0h2x/LossOfControl",
    "reason": "ships game-format files: Resources/Cooldown/LoC-ShadowBG.blp, Resources/Cooldown/Loc-RedLine.blp, Resources/Cooldown/UI-HUD-ActionBar-LoC.blp"
+  },
+  {
+   "repo": "https://github.com/Sagiroth/TortoiseBots",
+   "reason": "no sign of a supported client build"
   },
   {
    "repo": "https://github.com/SahtoutDev/SahtoutCMS",
@@ -4761,6 +4757,14 @@
    "category": "tools"
   },
   {
+   "repo": "https://github.com/Ildourol/mod-warband-camp",
+   "name": "Warband Camp",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
    "repo": "https://github.com/Iliana-sc/enemyframes",
    "name": "enemyframes",
    "builds": [
@@ -5418,14 +5422,6 @@
     "1.12"
    ],
    "category": "addons"
-  },
-  {
-   "repo": "https://github.com/Sagiroth/TortoiseBots",
-   "name": "TortoiseBots",
-   "builds": [
-    "1.12"
-   ],
-   "category": "realm-scripts"
   },
   {
    "repo": "https://github.com/SamuelLira99/Profession-Capper",

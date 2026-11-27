@@ -32,7 +32,7 @@ def steps(doc, job):
 class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
-        self.assertEqual(names, ["bots-canary.yml", "den-lite-web.yml", "den-lite.yml", "engine-windows.yml", "forge.yml", "hub-index.yml", "leyline-android.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
+        self.assertEqual(names, ["bots-canary.yml", "den-lite-web.yml", "den-lite.yml", "engine-windows.yml", "forge.yml", "hub-index.yml", "leyline-android.yml", "leyline-launcher.yml", "leyline-site.yml", "realm-scripts.yml", "scout.yml",
                                  "solo-engine.yml", "survivors.yml", "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
@@ -46,6 +46,38 @@ class Workflows(unittest.TestCase):
                         self.assertRegex(s["uses"], r"^[\w.-]+/[\w.-]+(/[\w.-]+)?@[0-9a-f]{40}$", f"{n}: pin actions to a commit SHA")
                         self.assertRegex(text, re.escape(s["uses"]) + r" # (v\d+|stable)\n", f"{n}: name the tag in a comment")
             self.assertNotIn("\t", text, n)
+
+    def test_leyline_site(self):
+        """The website on GitHub Pages (docs/STATIC-SITE.md): on push to main (the site's inputs) and by hand; tests, then
+        builds with tools/site-static and deploys with the Pages actions; only in orionopenwow/Leyline (Leyline-Launcher
+        gets the same export and keeps its own Pages site); the built-in token only; Pages and id-token write only on
+        the deploy job; the export writes it into the Leyline repo."""
+        text, doc = load("leyline-site.yml")
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        for p in ("site/**", "stream/**", "docs/leyline/**", "tools/site-static/**"):
+            self.assertIn(p, doc["on"]["push"]["paths"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"\$\{\{\s*secrets\.([A-Za-z_]+)", text)), set())
+        for job in ("build", "deploy"):
+            self.assertEqual(doc["jobs"][job]["if"], "github.repository == 'orionopenwow/Leyline'")
+        self.assertEqual(doc["jobs"]["deploy"]["permissions"], {"pages": "write", "id-token": "write"})
+        self.assertNotIn("permissions", doc["jobs"]["build"])
+        self.assertEqual(doc["jobs"]["deploy"]["needs"], "build")
+        self.assertEqual(doc["jobs"]["deploy"]["environment"]["name"], "github-pages")
+        uses = [s.get("uses", "").split("@")[0] for j in doc["jobs"].values() for s in j["steps"]]
+        self.assertIn("actions/upload-pages-artifact", uses)
+        self.assertIn("actions/deploy-pages", uses)
+        runs = " ".join(s.get("run", "") for s in steps(doc, "build"))
+        self.assertIn("tools/site-static/test_build.py", runs)
+        self.assertIn("tools/site-static/build.py --out _site", runs)
+        up = next(s for s in steps(doc, "build") if s.get("uses", "").startswith("actions/upload-pages-artifact"))
+        self.assertEqual(up["with"]["path"], "_site")
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("ly_export", REPO / "tools" / "leyline-repo" / "export.py")
+        ex = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ex)
+        self.assertEqual(ex.EXTRA.get(".github/workflows/leyline-site.yml"), "tools/github-workflows/leyline-site.yml")
 
     def test_solo_engine(self):
         """Leyline Solo, Phase 0 (docs/LEYLINE-SOLO-PHASE0.md): Windows; the core and database pins from the host kit's

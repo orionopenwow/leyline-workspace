@@ -1,5 +1,7 @@
 # The Agent Protocol: how AI agents build Leyline on autopilot
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): there is no server to deploy to. Step kinds such as `scripts`, `client`, `foreverui`, `slice` and `signin` are retired in Control, and a queued line for one is skipped with a log line. The deploy is `ship` (which chains `leyline`, so the website rebuilds on GitHub Pages) plus the GitHub release steps (`addons`, `hostkit`). For a Quick apply, use `"deploy": "none"`.
+
 **The short version.** Leyline is built by a human who holds the vision and AI agents who do the work, joined by
 one strict loop: the owner says *what the end product should feel like*, an agent turns that into a small numbered
 step, the step lands in `UPDATES-PENDING.txt` with one plain line saying what it brings, Leyline Control (or

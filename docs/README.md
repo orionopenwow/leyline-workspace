@@ -87,10 +87,15 @@ Specs behind them, for the curious:
 
 ## Owner runbooks (the website, the server, the Discord)
 
+**Since 26 Nov 2026 there is no server.** Read [SERVERLESS.md](SERVERLESS.md) first: the website is GitHub Pages,
+downloads are GitHub releases, and Leyline Control's server steps (`signin`, `realm`, `scripts`, `check`, HQ, the GM
+console, ...) are retired. The runbooks below that use the server describe how it worked, and how it would work again.
+
 | File | What it is |
 |---|---|
-| [ADMIN-CONSOLE.md](ADMIN-CONSOLE.md) | Leyline HQ, the admin console |
-| [AUDIT.md](AUDIT.md) | The release audit |
+| [SERVERLESS.md](SERVERLESS.md) | **Start here.** Leyline without a server (26 Nov): what was shut down, what works and from where, what Control retired, how to bring it back |
+| [ADMIN-CONSOLE.md](ADMIN-CONSOLE.md) | Leyline HQ, the admin console (gone with the server, 26 Nov) |
+| [AUDIT.md](AUDIT.md) | The release audit (retired in Control since 26 Nov; `--only den,launcher` by hand) |
 | [FIRST-RUN-TEST.md](FIRST-RUN-TEST.md), [FRESH-COMPUTER-TEST.md](FRESH-COMPUTER-TEST.md), [OWNER-TEST-PLAN.md](OWNER-TEST-PLAN.md) | Fresh-machine tests |
 | [DOMAIN-MOVE.md](DOMAIN-MOVE.md) | Moving to leylinelauncher.com (the old name keeps answering) |
 | [KILL-SWITCH.md](KILL-SWITCH.md), [GAME-DATA-ON-OUR-SERVER.md](GAME-DATA-ON-OUR-SERVER.md) | The kill switch and the game data killswitch |

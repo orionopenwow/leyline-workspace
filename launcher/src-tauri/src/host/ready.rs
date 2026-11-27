@@ -167,6 +167,17 @@ pub fn judge(f: &Facts) -> Ready {
 // ------------------------------------------------------------------------------------------------ the probes
 
 /// The game's first login message (the logon challenge, protocol 8) for `account`: what a friend's game sends first.
+/// With `SERVER_FEATURES` off (addresses.rs) there is no relay: friends come in on the same network only, so the
+/// relay's lines (connected, seen, a test login through it, its speed) are left out and the rest decides `ok`.
+pub fn same_network_only(mut r: Ready) -> Ready {
+    if crate::addresses::SERVER_FEATURES {
+        return r;
+    }
+    r.checks.retain(|c| !["tunnel", "relay", "path", "speed"].contains(&c.id));
+    r.ok = !r.checks.iter().any(|c| c.state == "bad");
+    r
+}
+
 pub fn logon_hello(account: &str) -> Vec<u8> {
     let name: Vec<u8> = account.bytes().filter(u8::is_ascii_alphanumeric).take(16).map(|b| b.to_ascii_uppercase()).collect();
     let mut b = vec![0x00, 0x08];
@@ -469,5 +480,20 @@ mod tests {
         assert!(!d.contains("ABCDEFGH") && !d.contains("PASSWORD23") && !d.contains("HUNTER2"), "{d}");
         assert!(d.contains("/join/kzdvvj2umnduyauf#…"));
         assert!(d.contains("[ok] server"));
+    }
+
+    #[test]
+    fn same_network_only_without_the_server() {
+        let r = Ready { kind: "lite".into(), ok: false, relay: String::new(), checks: vec![
+            Check { id: "server", state: "ok", label: "Your world is running", line: String::new(), fix: String::new(), action: "" },
+            Check { id: "tunnel", state: "bad", label: "Connected to the Leyline relay", line: String::new(), fix: String::new(), action: "start" },
+        ], realm_id: String::new(), relay_ms: None, path_ms: None, os: String::new() };
+        let l = same_network_only(r.clone());
+        if crate::addresses::SERVER_FEATURES {
+            assert_eq!(l, r);
+        } else {
+            assert_eq!(l.checks.iter().map(|c| c.id).collect::<Vec<_>>(), ["server"]);
+            assert!(l.ok);
+        }
     }
 }

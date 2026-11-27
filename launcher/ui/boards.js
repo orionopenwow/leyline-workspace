@@ -341,5 +341,8 @@
 
   function scan() { document.querySelectorAll("#md-boards, #br-boards, [data-board][data-lb-mount]").forEach((el) => mount(el)); } // not the Modes cards' own .md-board stat boxes
   window.LeylineBoards = { mount, load, share, scan, rank, clock, name: () => store.get(NAME_KEY, ""), data: () => data, views: () => [...views] };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", scan); else scan();
+  // lite (lite.js: no server of ours): the realms' signed boards and the website's local-run board are gone; nothing is
+  // mounted or fetched (Boss Rush keeps Your best times, from this PC)
+  if (window.LeylineLite && window.LeylineLite.lite) window.LeylineBoards = null;
+  else if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", scan); else scan();
 })();

@@ -223,7 +223,7 @@ test('not on Windows: Vanilla+ on the Host page, in Docker', async () => {
   await ctx.close();
 });
 
-test('Characters: On this PC by world, Play enters that character (a stopped world started first); Online: the official realm', async () => {
+test('Characters: On this PC by world, Play enters that character (a stopped world started first); no Online tab (the official realm is gone)', async () => {
   const local = [
     { kind: 'single', title: 'Single player', realm: 'Single player', supported: true, set_up: true, running: false, other_running: null, live: false, at: 5, chars: [BRAKKA] },
     { kind: 'vanilla', title: 'Original world', realm: 'Original world', supported: true, set_up: true, running: true, other_running: null, live: true, at: 9, chars: [TAMSIN] },
@@ -246,14 +246,8 @@ test('Characters: On this PC by world, Play enters that character (a stopped wor
   await page.waitForFunction(() => window.__calls.filter(([c]) => c === 'world_play').length === 2, null, { timeout: 15000 });
   assert.deepEqual(await callsOf(page, 'world_start'), [{ kind: 'single' }]);
   assert.deepEqual((await callsOf(page, 'world_play'))[1], { client: 'c335a-1', kind: 'single', pick: 'Brakka' });
-  // Online
-  await page.click('#ch-tab-online');
-  await page.waitForSelector('#ch-pane-online li[data-name="Odo"]');
-  assert.match(await page.textContent('#ch-pane-online'), /Online: a shared realm/);
-  assert.match(await page.textContent('#ch-world-online h3'), /Wrath Unleashed/);
-  await page.evaluate(() => { window.LeylineApp.playRealm = (r) => { window.__played = r.slug; }; });
-  await page.click('#ch-online-play');
-  assert.equal(await page.evaluate(() => window.__played), 'official');
+  // Online (the official realm) went with the server (lite.js): On this PC only
+  assert.equal(await page.locator('#ch-tab-online').count(), 0, 'no Online tab');
   await noBrand(page);
   assert.deepEqual(errors, []);
   await ctx.close();

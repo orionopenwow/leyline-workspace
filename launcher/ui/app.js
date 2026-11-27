@@ -2,6 +2,9 @@
 "use strict";
 // the site, the game and the relay on their new and old names (addresses.js; docs/DOMAIN-MOVE.md)
 const ADDR = window.LeylineAddresses;
+// Leyline as a launcher aggregator (lite.js; owner 26 Nov 2026): no server of ours, so no official realm, no sign-in,
+// no browser game, no relay, no forum. LITE: the server's features are off (the code stays behind the one switch).
+const LITE = !!(window.LeylineLite && window.LeylineLite.lite);
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -26,7 +29,19 @@ const invoke = window.__TAURI__ && window.__TAURI__.core
 
 // What's new, shown on Home and on the News page. Newest first. The website's news feed replaces these when it loads
 // (loadNews: the core's news_list, news.rs, /wrath/leyline/news.json); these are the offline copy.
-const NEWS = [
+// lite (no server of ours): the offline copy says what Leyline is now. TODO(owner): the words, his voice
+const NEWS = LITE ? [
+  { tag: "LEYLINE LAUNCHER", title: "ONE LAUNCHER FOR EVERY SERVER", items: [
+    "Other servers' realms, and any realm by its address",
+    "Single player, the original world and Your Den on this PC",
+    "Mods and addons from their makers, kept up to date",
+  ] },
+  { tag: "LEYLINE LAUNCHER", title: "EVERY CLIENT, EVERY SERVER", items: [
+    "Finds every game client on your PC",
+    "PLAY picks the client a realm needs",
+    "Updates in the background, never mid-game",
+  ] },
+] : [
   { tag: "LEYLINE LAUNCHER", title: "EVERY CLIENT, EVERY SERVER", items: [
     "Finds every game client on your PC",
     "PLAY picks the client a realm needs",
@@ -99,12 +114,17 @@ $("tb-account").addEventListener("click", () => openLink("account"));
 // friends and hub, which became the Forum on 2026-10-30) still work everywhere: show() maps them to the page + tab, so a remembered page, a
 // data-page-go button or a leyline:// link lands where it used to; a page with tabs alone opens its last tab. Single player
 // and Modes have their items in the Play fold (4 Nov: the website's menu gets Single player, Modes and Guides).
-const TABS = { mods: ["discover", "installed", "gamemodes", "dens"] };   // Game modes (owner 3 Nov): gamemods.js showSection; Dens: denmarket.js
+const TABS = { mods: LITE ? ["discover", "installed", "gamemodes"] : ["discover", "installed", "gamemodes", "dens"] };   // lite: no Den market   // Game modes (owner 3 Nov): gamemods.js showSection; Dens: denmarket.js
 // Mods & Addons opens on Discover every time it is clicked (owner 3 Nov: "make the discovery the main tab that opens when
 // its clicked"); a button or link that names a tab (Installed, Game modes) still lands there.
 const OPENS_ON = { mods: "discover" };
 const ALIASES = { mymods: ["mods", "installed"], installed: ["mods", "installed"], discover: ["mods", "discover"],
   community: ["forum", ""], friends: ["forum", ""], hub: ["forum", ""], chat: ["forum", ""] };
+// lite (no server): the pages that needed it land on what replaced them (a remembered page, a button, a link)
+const LITE_GONE = { forum: ["community", ""], community: ["community", ""], friends: ["community", ""], hub: ["community", ""],
+  chat: ["community", ""], account: ["play", ""], dens: ["mods", "discover"] };
+// (the Host page has no menu item or Home banner in lite, but stays reachable for this PC's own Docker worlds: Single
+// player and the original world away from Windows open it to manage them)
 const loaders = { "mods:discover": () => loadCatalog(), "mods:installed": () => loadInstalled(),
   "mods:gamemodes": () => window.LeylineGameMods && window.LeylineGameMods.showSection(),
   "mods:dens": () => window.LeylineDenMarket && window.LeylineDenMarket.load(), realms: () => loadRealms(), host: () => loadHost(),
@@ -114,7 +134,8 @@ let currentTab = "";
 const lastTab = {};
 try { Object.assign(lastTab, JSON.parse(localStorage.getItem("leyline.tabs") || "{}")); } catch (_) { /* storage may be off */ }
 function resolvePage(page, tab) {
-  if (ALIASES[page]) [page, tab] = ALIASES[page];
+  if (LITE && LITE_GONE[page]) [page, tab] = LITE_GONE[page];
+  else if (ALIASES[page]) [page, tab] = ALIASES[page];
   if (!document.getElementById("page-" + page)) return ["play", ""];
   if (!TABS[page]) return [page, ""];
   if (!TABS[page].includes(tab)) tab = OPENS_ON[page] || (TABS[page].includes(lastTab[page]) ? lastTab[page] : TABS[page][0]);
@@ -311,6 +332,15 @@ const FEATURES = [
   { page: "clients", words: ["game folders", "game folder", "folders", "clients"] },
   { page: "mods", tab: "installed", words: ["installed", "my mods", "my addons"] },
 ];
+// lite (no server): the pages that went with it are not found; Community is
+if (LITE) {
+  for (let i = FEATURES.length - 1; i >= 0; i--) if (["host", "forum", "account"].includes(FEATURES[i].page)) FEATURES.splice(i, 1);
+  FEATURES.push({ page: "community", words: ["community", "discord", "reddit", "forum", "chat"] });
+  const m = FEATURES.find((f) => f.page === "modes");
+  if (m) m.words = m.words.filter((x) => !["duels", "duel", "leaderboards", "leaderboard", "rankings", "arena"].includes(x));
+  const r = FEATURES.find((f) => f.page === "realms");
+  if (r) r.words = ["realms", "realm list", "servers", "other servers", "server", "realmlist"];
+}
 // the feature the words name: the whole words, or the start of one (three letters at least)
 function featureFor(q) {
   const w = q.replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
@@ -329,7 +359,7 @@ $("search-form").addEventListener("submit", (ev) => {
     if (f.section) setTimeout(() => { const s = $(f.section); if (s && !s.hidden) s.scrollIntoView({ block: "start" }); }, 60);
     return;
   }
-  if (realmNames.some((n) => n.toLowerCase().includes(q)) || "wrathunleashed".includes(q)) {
+  if (realmNames.some((n) => n.toLowerCase().includes(q)) || (!LITE && "wrathunleashed".includes(q))) {
     show("realms");
   } else {
     $("cat-q").value = q;
@@ -392,13 +422,16 @@ async function refresh() {
 }
 
 // ------------------------------------------------------------------ realm: the chosen realm, the rows, live status
-function isOfficial() { return $("play-realm").value === "official"; }
+function isOfficial() { return !LITE && $("play-realm").value === "official"; }
+// lite: there is no official realm; where it was the default, this PC's own Single player world is (WORLD_ADDR)
+if (LITE) { const o = document.querySelector('#play-realm option[value="official"]'); if (o) o.remove(); }
 // the official realm's address on either of its names (leylinelauncher.com, or play.openvanilla.app saved before the move)
 function isOfficialAddr(a) { return a === state.official_realm || ADDR.isOfficialRealm(a); }
 function chosenRealm() { return isOfficial() ? state.official_realm : $("play-custom").value.trim(); }
 // The official realm signs in with the Leyline account (app.rs play_official): signed in first, or the sign-in screen
 // with `then` to go on afterwards (gate.js). true: signed in (or no way to tell), go on now.
 function signedInFirst(then) {
+  if (LITE) return true;   // no sign-in any more: PLAY never asks to log in
   const G = window.LeylineGate;
   if (!G || G.ready()) return true;
   G.need(`${officialName()} signs you in with your Leyline account. Log in, and PLAY goes on by itself.`, then);
@@ -485,7 +518,8 @@ function renderRealmRows() {
     txt.append(el("span", "name", name));
     if (ver) { const v = el("span", "rl-ver sm", ver); v.title = "Game client version"; txt.append(v); }
     if (official && queueN()) { const q = el("span", "rr-busy", `Busy · queue ${queueN()}`); q.title = "People waiting to get in"; txt.append(q); }
-    b.append(!official && localAt(custom) && name === localAt(custom).name ? markIcon(localAt(custom).mark) : realmIcon(name, official, "sm"), txt, dot);
+    const world = !official && custom === WORLD_ADDR && worldChosen();
+    b.append(world ? markIcon("solo") : !official && localAt(custom) && name === localAt(custom).name ? markIcon(localAt(custom).mark) : realmIcon(name, official, "sm"), txt, dot);
     b.title = ver ? `${name} · ${ver}` : name;
     b.addEventListener("click", () => {
       $("play-realm").value = official ? "official" : "custom";
@@ -495,12 +529,13 @@ function renderRealmRows() {
     });
     rows.append(b);
   };
-  add(officialName(), true, "3.3.5a");
+  if (!LITE) add(officialName(), true, "3.3.5a");
   const saved = state.settings.selected_realm;
   const custom = !isOfficial() ? chosenRealm() : (saved && !isOfficialAddr(saved) ? saved : "");
   if (custom) {
     const beacon = realmsCache.find((x) => x.address === custom);
-    if (localAt(custom)) add(localAt(custom).name, false, localAt(custom).build);   // this PC's Den or Single player (the play bar's rows)
+    if (custom === WORLD_ADDR && worldChosen()) add(WORLD_TITLE[worldChosen()], false, WORLD_BUILD);   // Single player or the original world (Built-in engine)
+    else if (localAt(custom)) add(localAt(custom).name, false, localAt(custom).build);   // this PC's Den or Single player (the play bar's rows)
     else add(beacon ? beacon.name : custom, false, realmVersion(beacon));
   }
 }
@@ -607,8 +642,10 @@ document.addEventListener("visibilitychange", () => {
 // ------------------------------------------------------------------ play bar
 let mode = "online";
 try { mode = localStorage.getItem("leyline.mode") === "browser" ? "browser" : "online"; } catch (_) { /* fine */ }
+if (LITE) mode = "online";   // no browser game any more
 
 function setMode(m) {
+  if (LITE) m = "online";
   mode = m;
   try { localStorage.setItem("leyline.mode", m); } catch (_) { /* fine */ }
   renderPlayBar();
@@ -635,8 +672,14 @@ function renderPlay() {
   if ($("play-empty")) $("play-empty").hidden = s.clients.length !== 0;
   if ($("client-change")) $("client-change").textContent = s.clients.length ? "Change game folder" : "Add your game folder";
   const official = !s.selected_realm || isOfficialAddr(s.selected_realm);
-  $("play-realm").value = official ? "official" : "custom";
-  $("play-custom").value = official ? "" : s.selected_realm;
+  if (LITE) {
+    // the official realm is gone: a client saved on it (or nothing picked yet) plays Single player on this PC
+    $("play-realm").value = "custom";
+    $("play-custom").value = official ? WORLD_ADDR : s.selected_realm;
+  } else {
+    $("play-realm").value = official ? "official" : "custom";
+    $("play-custom").value = official ? "" : s.selected_realm;
+  }
   realmChanged();
 }
 
@@ -1241,7 +1284,7 @@ function localAddress(L) {
 }
 function denAddress() { return localAddress(DEN); }
 // ---- this PC's own worlds on the Built-in engine (vanilla.js window.LeylineWorlds; host/engine.rs; owner 10 Nov:
-// "robust single player in launcher"; Discord, Squishy: "why I can't select my solo server on the server list").
+// "robust single player in launcher"; a Discord report: "why I can't select my solo server on the server list").
 // Before, the realm picker had no row for the original world, and Single player's row started the game on the click
 // without ever being picked, so it never looked selected. Now both are rows like any realm: a click picks it (the bar
 // says what PLAY will do), and PLAY plays it the one way every local world plays (LeylineWorlds.run: set up once,
@@ -1640,7 +1683,8 @@ function renderRealmMenu() {
   };
   const builtinSolo = worldsHere() && !localHosted(LOCAL.solo);
   const solo = builtinSolo ? [worldRow("single"), worldRow("vanilla")] : [localRow(LOCAL.solo)];
-  const top = [realmRow(off), ...lineup.map(realmRow), localRow(DEN), ...solo];
+  // lite: no official realm, and Single player (the flagship) first
+  const top = LITE ? [...solo, localRow(DEN), ...lineup.map(realmRow)] : [realmRow(off), ...lineup.map(realmRow), localRow(DEN), ...solo];
   // Favourites: the realms starred on the Realms page (the list kit's store, leyline.list.realms.fav), the ones not
   // already above
   const favStore = window.LeylineList ? window.LeylineList.favourites("realms") : null;
@@ -1657,7 +1701,7 @@ function renderRealmMenu() {
     run: () => show("host") }));
   // and the community realms you played on: the one picked now (or saved), then the ones before it
   const saved = !isOfficial() ? here : (state.settings.selected_realm && !isOfficialAddr(state.settings.selected_realm) ? state.settings.selected_realm : "");
-  for (const addr of [...new Set([saved, ...joinedRealms()].filter(Boolean))]) {
+  for (const addr of [...new Set([saved, ...joinedRealms()].filter((a) => a && a !== WORLD_ADDR))]) {   // this PC's worlds have their rows
     const r = realmAt(addr);
     const L = localAt(addr);
     if (L) { if (L !== DEN && L !== LOCAL.solo && L !== hostedLocal) mine.push(localRow(L)); }
@@ -1665,7 +1709,11 @@ function renderRealmMenu() {
     else if (!isOfficialAddr(addr)) mine.push(row("pb-realm-opt", addr, { icon: realmIcon(addr, false, "sm"), selected: online && !isOfficial() && addr === here, sub: "Your address",
       run: () => pickRealm({ official: false, address: addr }) }));
   }
-  const acts = [
+  const acts = LITE ? [
+    // lite: no hosting through the relay and no browser game; another server by its address, and a friend's Den on this network
+    row("pb-act pb-add-realm", "Another realm…", { title: "Add any realm by its address on the Realms page", run: () => { show("realms"); const d = $("rl-paste-in"); if (d) d.focus(); } }),
+    row("pb-act pb-join-den", "Join a friend's Den…", { title: "Paste the link your friend sent you (on the same network)", run: joinFriendsDen }),
+  ] : [
     row("pb-act pb-host-act", "Host a server…", { title: "Host a realm on this PC from a template: one click", run: hostFromTemplate }),
     row("pb-browser pb-quiet", "Play in your browser", { selected: !online, title: "The official realm in your browser: nothing to install",
       run: () => setMode("browser") }),
@@ -3366,11 +3414,12 @@ function realmFilterCount() {
 // PC's own worlds), Friends' worlds (where your Leyline friends are, and friends' worlds you joined) and Favourites
 // (the star on any row). One panel; the list is the list kit's (listkit.js, docs/LAUNCHER-LISTS.md): the search, the
 // tabs, the sort, the stars, the keys and the empty states are the same as every other list in the launcher.
-const RL_TABS = ["all", "official", "community", "mine", "friends", "fav"];
+const RL_TABS = LITE ? ["all", "community", "mine", "friends", "fav"] : ["all", "official", "community", "mine", "friends", "fav"];
+// lite: no official realms; "community" is the list of other servers (the static site's realms.json)
 const RL_TAB_DEFS = [
   { id: "all", label: "All", long: "All realms", suggest: false },
-  { id: "official", label: "Official", long: "Official realms" },
-  { id: "community", label: "Community", long: "Community realms" },
+  ...(LITE ? [] : [{ id: "official", label: "Official", long: "Official realms" }]),
+  LITE ? { id: "community", label: "Other servers", long: "Other servers" } : { id: "community", label: "Community", long: "Community realms" },
   { id: "mine", label: "Single player & Den", long: "Single player & Den" },
   { id: "friends", label: "Friends' worlds", long: "Friends' worlds" },
   { id: "fav", label: "Favourites", long: "Favourites", suggest: false },
@@ -3482,7 +3531,7 @@ function setRealmsTab(tab, focus) {
   if (!RL_TABS.includes(tab) || !rlList) return;
   rlList.setTab(tab, focus);
 }
-const rlTabNow = () => (rlList ? rlList.tab() : "official");
+const rlTabNow = () => (rlList ? rlList.tab() : LITE ? "all" : "official");
 
 function networkLine(tab) {
   if (tab === "mine") return "Your own worlds, on this PC";
@@ -3493,10 +3542,17 @@ function networkLine(tab) {
   if (tab === "fav") { const n = rlList ? rlList.rows().filter((x) => rlList.isFav(x)).length : 0; return plural(n, "favourite"); }
   if (!realmsCache.length) return "";
   const rs = tab === "all" ? listedRealms() : tabRealms(tab);
-  const word = tab === "official" ? "official realm" : tab === "community" ? "community realm" : "realm";
+  const word = tab === "official" ? "official realm" : tab === "community" ? (LITE ? "server" : "community realm") : "realm";
   return `${plural(rs.length, word)} · ${livePlayers(rs, "players")} playing`;
 }
-const RL_NOTES = {
+const RL_NOTES = LITE ? {
+  // TODO(owner): the Realms notes, his voice
+  all: ["Other servers are run by their own teams: each has its own accounts and rules.", "", ""],
+  community: ["Other servers are run by their own teams. Add any other one by its address above.", "", ""],
+  mine: ["Your own worlds run on this PC: just you, or friends on the same network.", "", ""],
+  friends: ["Add friends on the Single player page: their worlds and the realms they play show here.", "", ""],
+  fav: ["Press the star on any realm to keep it here, and in the play bar's realm list.", "", ""],
+} : {
   all: ["Official realms are run by us around the clock; community realms are run by players.", "community", "See community realms"],
   official: ["Community realms are run by players and may go offline.", "community", "See community realms"],
   community: ["Official realms are run by us around the clock.", "official", "See official realms"],
@@ -3542,6 +3598,7 @@ function realmsEmpty(info) {
   const tab = info.tab;
   if (info.reason === "loading") return { text: "Loading the realm list…" };
   if (!info.inTab) {
+    if (tab === "community" && LITE) return "No other servers on the list right now. Add one by its address above.";
     if (tab === "community") return "No community realms yet. Be the first to run one: see Host your own below.";   // the banner below is the one call to action
     if (tab === "official") return "The official realms aren't on the list right now. Try Refresh in a minute.";
     if (tab === "all") return "The realm list is empty right now. Try Refresh in a minute.";
@@ -3824,7 +3881,7 @@ if (window.LeylineList) {
     render: (row, ctx) => (row.type === "realm" ? realmCard(row.r, ctx) : row.type === "fw" ? friendWorldCard(row, ctx) : localCard(row, ctx)),
     search: { input: $("rl-q"), fields: rowWords, debounce: "auto" },
     tabs: { items: RL_TAB_DEFS.map((t) => Object.assign({}, t, t.id === "fav" ? { favourites: true } : { filter: (row) => rowInTab(row, t.id) })),
-      value: "official", el: $("rl-tabs"), idPrefix: "rl-tab-", panel: $("rl-pane"), storageKey: "leyline.realmsTab", buttonClass: "page-tab",
+      value: LITE ? "all" : "official", el: $("rl-tabs"), idPrefix: "rl-tab-", panel: $("rl-pane"), storageKey: "leyline.realmsTab", buttonClass: "page-tab",
       label: "Realm lists",
       onChange: (t) => {
         say("rl-status", "");   // a line about the other tab's realm goes with it
@@ -3881,7 +3938,7 @@ rlPopover("rl-filters-btn", "rl-filters");
 const rlMenu = rlPopover("rl-more", "rl-menu");
 invoke("p2p_flags").then((v) => {
   p2pHosting = !!(v && v.effective && v.effective.p2p_hosting);
-  heroKeyOn = !!(v && v.effective && v.effective.herokey_sso);   // Hero Key sign-in on realms (docs/HERO-KEY-SSO.md)
+  heroKeyOn = !LITE && !!(v && v.effective && v.effective.herokey_sso);   // lite: no Hero Key   // Hero Key sign-in on realms (docs/HERO-KEY-SSO.md)
 }).catch(() => {});
 const CORE_LABELS = { azerothcore: "AzerothCore", trinitycore: "TrinityCore", cmangos: "CMaNGOS", vmangos: "vMaNGOS", mangos: "MaNGOS", other: "Other server" };
 $("rl-mine").addEventListener("change", () => renderRealms());
@@ -4202,20 +4259,25 @@ renderNews();
 renderModTiles();
 refresh().then(() => {
   setMode(mode);
-  catalogLoading = loadCatalog(true).finally(() => { catalogLoading = null; });
-  handleDeepLink();   // a friend's invite or a realm link doesn't wait for the mods list
+  // the mods list: from its kept copy at once, then the static site's file (lite: after Home is on screen)
+  catalogLoading = (LITE ? new Promise((ok) => setTimeout(ok, 60)) : Promise.resolve()).then(() => loadCatalog(true)).finally(() => { catalogLoading = null; });
   try {
     const ev = window.__TAURI__ && window.__TAURI__.event;
     if (ev && ev.listen) ev.listen("deep-link", () => { handleDeepLink(); });
   } catch (_) { /* no events: links still come at start */ }
-  loadRealms(true);
-  loadUpdateState();
-  loadNews();
-  readKit();   // the realm picker's My Den: hosted on this PC or not
+  readKit();   // the realm picker's My Den: hosted on this PC or not (this PC only, no network)
   setupDrop();
   let page = "play";
   try { page = localStorage.getItem("leyline.page") || "play"; } catch (_) { /* fine */ }
   show(page);   // an unknown or old page id: resolvePage maps it, or Home
+  // the network after the page is on screen (lite: startup never waits on the network): the realm list of other
+  // servers, the update state, the news (the static site's files, kept for offline)
+  setTimeout(() => {
+    loadRealms(true);
+    handleDeepLink();   // a friend's invite or a realm link doesn't wait for the mods list
+    loadUpdateState();
+    loadNews();
+  }, LITE ? 50 : 0);
 }).catch((e) => {
   document.body.prepend(el("p", "status bad", oops(e, "Leyline couldn't start. Close it and open it again, or ask on the Discord.")));
 });

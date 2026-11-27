@@ -4259,7 +4259,6 @@ refresh().then(() => {
   setMode(mode);
   // the mods list: from its kept copy at once, then the static site's file (lite: after Home is on screen)
   catalogLoading = (LITE ? new Promise((ok) => setTimeout(ok, 60)) : Promise.resolve()).then(() => loadCatalog(true)).finally(() => { catalogLoading = null; });
-  handleDeepLink();   // a friend's invite or a realm link doesn't wait for the mods list
   try {
     const ev = window.__TAURI__ && window.__TAURI__.event;
     if (ev && ev.listen) ev.listen("deep-link", () => { handleDeepLink(); });
@@ -4272,6 +4271,7 @@ refresh().then(() => {
   // servers, the update state, the news (the static site's files, kept for offline)
   setTimeout(() => {
     loadRealms(true);
+    handleDeepLink();   // a friend's invite or a realm link doesn't wait for the mods list
     loadUpdateState();
     loadNews();
     readKit();   // the realm picker's My Den: hosted on this PC or not

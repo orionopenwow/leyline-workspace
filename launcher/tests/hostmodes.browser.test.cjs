@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./fixtures/server-on.cjs');   // the server's features on: this part needed the server (ui/lite.js; docs/LAUNCHER-LITE.md)
 
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const CAT = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'modepacks.json'), 'utf8'));

@@ -124,7 +124,7 @@ async function toPage(page) {
 test('the entries: Home leads to the page (no side menu item, owner 12 Nov); nothing asked before', async () => {
   const { page, ctx, errors } = await open({});
   const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.dataset.page));
-  assert.deepEqual(nav, ['play', 'realms', 'mods', 'host', 'forum', 'news', 'single', 'modes']);
+  assert.deepEqual(nav, ['play', 'realms', 'mods', 'community', 'news', 'single', 'modes'], 'the lite menu (lite.js): Community, no Host or Forum');
   assert.equal(await page.$('.nav[data-page="bossrush"]'), null);
   assert.equal((await callsOf(page, 'bossrush_catalog')).length, 0, 'nothing asked until it is opened');
   assert.equal(await page.textContent('#hm-bossrush b'), 'Boss Rush');

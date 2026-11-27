@@ -9,6 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./fixtures/server-on.cjs');   // the server's features on: this part needed the server (ui/lite.js; docs/LAUNCHER-LITE.md)
 
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const PICTURE = path.join(__dirname, '..', 'ui', 'art', 'leyline-bg.webp');

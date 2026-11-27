@@ -2,7 +2,8 @@
 
 Add your friends in the Leyline launcher, see when they're on, and invite them into your world. No account or
 website is needed for this: you and each friend sign your friendship yourselves, and it is kept on your two PCs.
-It works on the same home network with no internet, and from anywhere through a relay that can't read your messages.
+It works on the same home network with no internet. For friends far away, see
+[Friends far away](#friends-far-away).
 
 Where it is: in the launcher, open **Single player**, then the **Friends** area. Your friends list is at the bottom.
 
@@ -28,11 +29,12 @@ A friend shows as online while their launcher is open (for up to 10 minutes afte
 while it is heard on your network. If they chose to share it, you also see what they're playing.
 
 In **Your profile** you choose your name, a short status, and what friends may see: what you're playing, and whether
-friends can reach you through the Leyline relay's mailbox.
+friends can reach you through a relay's mailbox (our relay closed in November 2026, so
+that switch does nothing for now).
 
 ## Invite a friend to your world
 
-On your Friends list, press **Invite** on a friend. Only that friend gets the invite, sealed so the relay can't read
+On your Friends list, press **Invite** on a friend. Only that friend gets the invite, sealed so only they can read
 it. They press **Join** on your name within a day. Their character stays on your world, so next time they press
 **Join again** and need no new link.
 
@@ -47,7 +49,8 @@ To be friends again, add each other again.
 
 Your launcher makes a key for you the first time (a file called `peer.key` in Leyline's own folder). It never leaves
 your PC. It is how your friends know it's you. **If you lose it, your friends need to add you again**, so keep it
-when you move to a new PC (there is no export button yet: copy the file).
+when you move to a new PC: **Settings**, **Your Leyline network key**, **Save my key…**, and on the new PC
+**Bring back my key…**. This key becomes your [Passport](passport.md).
 
 ## When something goes wrong
 
@@ -57,12 +60,24 @@ when you move to a new PC (there is no export button yet: copy the file).
   online.
 - **You don't see each other under People near you.** You must be on the same network (the same router), and your
   firewall must let Leyline talk on the local network. Use a friend code instead.
-- **Nothing arrives from a friend far away.** Their relay mailbox may be off. The relay mailbox is new and is
-  switched on per relay. Until it is on, friends on different networks need to be online at the same time. TODO(owner):
-  say here when the mailbox is on for the official relay.
+- **Nothing arrives from a friend far away.** Leyline's own relay and its mailbox closed with our server in
+  November 2026. Today a request reaches a friend on another network only if one of you shares an address the other
+  can reach. See [Friends far away](#friends-far-away).
 - **A friend shows offline but is playing.** They may have turned off sharing what they play, or their launcher is
   closed. Ask them.
 - **Something else.** Use Report a bug in the launcher, or ask on the Discord.
+
+## Friends far away
+
+**Status, 27 Nov 2026:** coming. Today, friend codes and invites work best on the same network.
+
+Friend codes used to reach friends anywhere through Leyline's own relay mailbox, which closed with our server.
+Next, your launcher will reach friends by their key: straight to their PC when it can, then through a friend you
+both know, then through community relays run by players. Messages for a friend who is offline will wait sealed
+with a shared friend or in a community mailbox that can't read them. See [Joining a world](joining.md) and
+[The way forward](way-forward.md).
+
+Your friendships, and the key they are signed with, carry over. Nothing to redo.
 
 ## What we keep
 

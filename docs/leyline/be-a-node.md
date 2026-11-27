@@ -8,6 +8,19 @@ Your PC can help the Leyline network while you're not playing. No game running, 
 > **Not open yet.** Be a node is built, but it isn't switched on for players yet. The card on the Host page says **Not open yet** and its switch stays off until the Leyline team opens it for everyone at once. This page says how it will work.
 
 <!-- end if -->
+## Why this matters now
+
+**Status, 27 Nov 2026:** built, switched off. Leyline's own relays closed with our server on 26 Nov 2026.
+
+From here on, the network stands on players. Most friends will connect straight to each other. Those who can't
+will go through community relays: PCs run by players who choose to carry others. Those relays pass sealed bytes
+they can't read, hold sealed messages for friends who are offline, and pass on the signed lists launchers use to
+find realms and releases. The more players run one, the harder the network is to switch off.
+
+Becoming a community relay is how you help keep the network up. Until it opens, the parts below that mention our
+relays describe how it worked with our server. See [Joining a world](joining.md) and
+[The way forward](way-forward.md).
+
 ## The switch
 
 In the launcher: **Host**. The **Be a node** card is at the top. Press the switch: **On**.
@@ -74,6 +87,9 @@ Hosting a realm needs no open ports. Carrying for others does, because players c
 - Hosts never see players' addresses, and players never see hosts' addresses.
 
 ### How the network stays safe
+
+How it worked with our server (the checks below came from Leyline's relay, which closed). With no centre, a node
+will be checked by the launchers that use it, from signed records, instead.
 
 - Your PC signs up with a key it makes itself. The Leyline relay checks every two minutes that it answers with that key.
 - Players are sent to a node only after it passed that check, and to the closest one with room. If it does not answer, they use our relays at once.

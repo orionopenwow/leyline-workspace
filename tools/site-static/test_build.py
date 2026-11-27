@@ -375,6 +375,42 @@ class Site(unittest.TestCase):
                 self.assertNotIn("Log In", v.replace("Log in to", ""))
                 self.assertNotRegex(v, r"Systems (online|offline)")
 
+    def test_front_page_way_forward(self):
+        page = self.pages["index.html"]
+        front = visible(page)
+        heads = ["Built so nobody can shut it down again", "Log in with no server", "Friends connect straight to each other",
+                 "Characters that outlive any server", "Nobody can switch it off, including us"]
+        at = [front.find(h) for h in heads]
+        for h, i in zip(heads, at):
+            self.assertGreaterEqual(i, 0, f"the front page lost the section {h!r}")
+        self.assertEqual(at, sorted(at), "the way forward's sections are out of order")
+        hero, ways, launcher = (front.find(x) for x in ("Every client, every server", "Ways to play", "Play, mod and meet up in one app"))
+        self.assertTrue(0 <= hero < ways < at[0], "the hero and Ways to play come first, as before")
+        self.assertLess(at[-1], launcher, "the way forward sits before the Desktop launcher")
+        self.assertIn("Three clicks: Host, pick a template, Start", front)
+        self.assertIn("Coming", front)   # what is still being built says so
+        # every picture is in the site, a small plain SVG, with its size, alt text and lazy loading
+        imgs = re.findall(r'<img\b[^>]*\bsrc="(/wrath/art/forward/[^"]+)"[^>]*>', page)
+        self.assertEqual(len(imgs), 4, imgs)
+        for tag in re.findall(r'<img\b[^>]*\bsrc="/wrath/art/forward/[^"]+"[^>]*>', page):
+            with self.subTest(img=tag[:80]):
+                for a in ('width="1280"', 'height="720"', 'loading="lazy"'):
+                    self.assertIn(a, tag)
+                alt = re.search(r'\balt="([^"]*)"', tag)
+                self.assertTrue(alt and len(alt.group(1)) > 30, "a picture needs a real alt text")
+        for src in imgs:
+            with self.subTest(src=src):
+                f = self.files.get(src.lstrip("/"))
+                self.assertIsNotNone(f, f"{src} is not in the built site")
+                b = f.read_bytes()
+                self.assertTrue(b.lstrip().startswith(b"<svg"), src)
+                self.assertLess(len(b), 20_000, src)
+                self.assertNotRegex(b.lower(), rb"<script|href=|<text\b|foreignobject", src)
+        self.assertIsNone(BANNED.search(front), "no game or maker names on the front page")
+        self.assertNotRegex(front, r"\b\d+\.\d+\.\d+[a-z]?\b", "no client version numbers in the front page's words")
+        news = json.loads(self.files["wrath/leyline/news.json"].read_text(encoding="utf-8"))
+        self.assertIn("The way forward", [p["title"] for p in news["posts"]])
+
     def test_docs_pages_the_launcher_opens(self):
         docs = (REPO / "stream" / "docs.py").read_text(encoding="utf-8")
         for n in re.findall(r'^\s*\("([a-z0-9-]+)", "', docs.split("PAGES = (", 1)[1].split("\n)", 1)[0], flags=re.M):

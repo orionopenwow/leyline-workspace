@@ -76,8 +76,9 @@ While your world runs, press **Invite a friend** on its card. Leyline makes one 
 just for them inside, and checks the way in before you send it.
 
 - A friend **on the same network** (your home or office) comes straight in.
-- A friend **anywhere else** comes in through the Leyline relay. Nothing to open on your router; your address is never
-  shown.
+- A friend **anywhere else** used to come in through the Leyline relay, which closed with our server in November
+  2026. For now, play together on the same network. Joining from anywhere, with no router settings and no relays of
+  ours, is coming: see [Joining a world](joining.md) and [Play with friends](guide-play-with-friends.md).
 
 Your friend needs Leyline and their own game folder. No Hero Key and no account: their Leyline proves it's them.
 Game files never travel between you. In the game, `/together` (or Friends, the Leyline tab) makes the link too. See
@@ -87,14 +88,17 @@ Their character stays on your world, theirs to keep. If your friend reinstalls o
 characters by bringing back their saved key (**Settings**, **Your Leyline network key**). If they didn't save it,
 invite them again and use **Give their characters to…** on their old row in your friends list.
 
+Today their character lives only on your PC. Signed saves, backups on friends and moving a character to another
+world are coming: see [Characters that survive](characters.md).
+
 ## Your world: saving, stopping, offline
 
 - Your world is saved as you play.
 - It stops (everyone saved) a minute after the game closes, and when Leyline closes. Both are switches in **Single
   player settings**. With friends in your world, Leyline asks before it closes.
 - **Offline**: after the first setup, your world plays with no internet. The internet is only needed for the first
-  setup, engine and add-on updates, logging in with your Hero Key (your characters stay reachable without it), and
-  inviting a friend through the relay (a friend on the same network needs none).
+  setup, engine and add-on updates, logging in with your Hero Key (your characters stay reachable without it),
+  and inviting a friend from far away (coming; a friend on the same network needs none).
 - **Updates**: when the engine has a fix, the world's card says **Update your world engine**. Your characters, your
   friends' characters and your settings stay; your world is backed up first.
 - **Your characters and your Hero Key**: logged in or not, Play goes in on the login that holds your characters on

@@ -21,8 +21,18 @@ What still works, because it runs on your PC or comes from other people:
 | Your Den: your own white world to build in | [Your Den](den.md) |
 | Community servers on the realm list (chosen by hand) | [Play](play.md) |
 | Mods, addons and looks, installed from their authors | [Mod format](mods.md) · [Publishing](publishing.md) |
-| Friends on the same network as you | [Friends](friends.md) |
+| Friends on the same network as you | [Friends](friends.md) · [Play with friends](guide-play-with-friends.md) |
 | Agents: your own AI assistant, only with your OK | [Agents](agents.md) |
+
+## The way forward
+
+Leyline is being rebuilt so that it needs no server of ours for anything: you log in with a key on your PC (the
+[Passport](passport.md)), friends join each other directly or through community relays run by players, and your
+characters are kept on your PC and your friends' PCs. Each page says what **works today** and what is **coming**.
+
+- [The way forward](way-forward.md): what is changing, why, and in what order
+- [Play with friends](guide-play-with-friends.md): what to click today
+- [Joining a world](joining.md) · [Characters that survive](characters.md) · [The Passport](passport.md)
 
 ## The aims
 

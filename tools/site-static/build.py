@@ -565,6 +565,12 @@ class Tidy:
         return body
 
 
+def doc_article(page: str) -> str:
+    """The docs page's own article (not the sidebar, whose titles name closed pages): what the server note checks."""
+    m = re.search(r'<article class="ld-doc"[^>]*>(.*?)</article>', page, flags=re.S)
+    return m.group(1) if m else page.split('id="main"', 1)[-1]
+
+
 def tidy_frame(page: str) -> str:
     """The frame's pieces that belonged to the server: the account chip, Play, the status dot, the footer's links."""
     page = re.sub(r'<a class="hb-signin"[^>]*>.*?</a>', "", page, flags=re.S)
@@ -658,7 +664,7 @@ FRONT_DROP = (
     r'<article class="lp-mode" id="way-official">.*?</article>',      # the official realm's card (and its picture)
     r'<section class="hb-sbar\b.*?</section>',                        # the live platform status bar
     r'<li>One sign-in everywhere</li>',
-    r'<img\b[^>]*\bsrc="/wrath/avatar/[^"]*"[^>]*>',                    # profile pictures were drawn by the server
+    r'<img\b[^>]*\bsrc="/wrath/(?:avatar|art/avatars)/[^"]*"[^>]*>',                    # profile pictures were drawn by the server
     r'<li>Duels: the 1v1 queue[^<]*</li>',
     r'<a href="[^"]*">Open the forum</a>',              # the forum closed with the server                            # Duels ran on the official realm
 )
@@ -670,7 +676,132 @@ FRONT_SWAP = (
     ("Fight the next player in the 1v1 queue, or go straight onto", "Go straight onto"),
     ("Duels and Boss Rush, one click each", "Boss Rush, one click"),
     ('<h2 id="hb-cm-h">Forum and Discord</h2>', '<h2 id="hb-cm-h">Discord</h2>'),
+    # worlds in three clicks (the way forward, 27 Nov)
+    ("The Leyline network lists it and lets friends in", "Three clicks: Host, pick a template, Start. Friends can join the moment it is up"),
 )
+
+
+# The way forward (owner's plan, 27 Nov): what replaces the server, on the front page in the features' own design (the
+# hb-fs sections, their eyebrows, points and pictures), before the Desktop launcher. Built things are plain; things
+# still being built carry a "Coming" tag or a "Building now" eyebrow tag. Pictures: our own SVG drawings in
+# stream/www-files/art/forward/ (copied by Site._forward_art). Docs links that don't exist yet are dropped by Tidy.
+FORWARD_DIR = STREAM / "www-files" / "art" / "forward"
+FORWARD_ART_RE = re.compile(r"/wrath/art/forward/[a-z][a-z0-9-]{0,40}\.svg")
+FORWARD_ART_MAX = 20_000
+FORWARD_ICONS = {
+    "forward": '<path d="M12 3l5 6-1.5 9L12 21l-3.5-3L7 9z"/><path d="M7 9h10M12 3v18"/>',
+    "passport": '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/>',
+    "joining": '<circle cx="5.5" cy="12" r="2.5"/><circle cx="18.5" cy="12" r="2.5"/>'
+               '<path d="M8 12h8M8.5 9.5C10 6 14 6 15.5 9.5M8.5 14.5C10 18 14 18 15.5 14.5"/>',
+    "characters": '<path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/>',
+    "network": '<circle cx="5" cy="7" r="2"/><circle cx="17" cy="4" r="2"/><circle cx="19" cy="15" r="2"/>'
+               '<circle cx="9" cy="19" r="2"/><path d="M7 6.5l8-2M18 6l1 7M17.2 16l-6.3 2.5M8.3 17.2 5.6 9M6.8 7.9l10.4 6.2"/>',
+}
+SOON = "Coming"
+# (id, eyebrow, building now?, heading, lede, [(point, coming?)], docs page, picture, alt)
+FORWARD = (
+    ("passport", "The Passport", True, "Log in with no server",
+     "Your Passport is a key on your PC. When you join a world, the host and your launcher sign a login agreement "
+     "together, so you never type a password and no website decides who you are.",
+     [("A key on your PC, made by the launcher", False),
+      ("A key for each device, and a separate key per world for privacy", True),
+      ("A 12-word recovery phrase you keep", True),
+      ("Friends as guardians: two of them co-sign a recovery", True)],
+     "/wrath/docs/passport", "passport.svg",
+     "A crystal key in the middle, linked to a laptop and a phone on one side and to three worlds on the other, "
+     "each with its own small key; two friends below sign together."),
+    ("joining", "Friends & joining", True, "Friends connect straight to each other",
+     "Launchers find each other by Passport key, with no relay of ours in the middle. When a relay is needed, it "
+     "only passes encrypted bytes.",
+     [("Signed friendships, kept on your PC", False),
+      ("Same network first, then direct, then hole punching: about 9 in 10 connections can go direct", True),
+      ("If not, a friend relays for you, then any community relay", True),
+      ("One-click invite links to your world", False)],
+     "/wrath/docs/joining", "joining.svg",
+     "Two launchers joined by a direct line carrying locked packets, with fallback routes below through a friend "
+     "and through a relay that only sees locked data."),
+    ("characters", "Characters", True, "Characters that outlive any server",
+     "Your character is yours, not the server's. If a world shuts down, you will be able to take your character to "
+     "another one.",
+     [("When you host, your friends' characters are kept on your world for them", False),
+      ("Signed saves on your PC", True),
+      ("Sealed backups on 3 friends' launchers", True),
+      ("Move a character to another world if one shuts down", True),
+      ("Gold never travels, and nothing is traded across worlds", False)],
+     "/wrath/docs/characters", "characters.svg",
+     "A sealed character crystal inside a shield, with locked copies on three friends' laptops and an arrow "
+     "carrying it from one world to another."),
+    ("network", "A network with no centre", False, "Nobody can switch it off, including us",
+     "Every realm, relay and release is a signed record, and launchers pass the records to each other. A public "
+     "table and several mirrors will keep copies too; this site will be one mirror among many.",
+     [("Signed records for every realm, relay and release", False),
+      ("Passed from launcher to launcher", False),
+      ("A public distributed table to find them", True),
+      ("Several mirrors, this site among them", True)],
+     "/wrath/docs/network", "network.svg",
+     "A wide mesh of launchers linked to their neighbours, with no node in the middle and signed records "
+     "travelling along the lines."),
+)
+FORWARD_CSS = (
+    "<style>"
+    ".fw-intro{position:relative;max-width:760px;margin:0 auto;padding:64px 0 8px;text-align:center}"
+    ".fw-intro::before{content:\"\";display:block;width:120px;height:2px;margin:0 auto 28px;border-radius:2px;"
+    "background:linear-gradient(90deg,#5b8def,#8b6cf0)}"
+    ".fw-intro .hb-eyebrow{justify-content:center}"
+    ".fw-intro h2{margin:0 0 12px;font-size:clamp(26px,3.8vw,36px);line-height:1.15;font-weight:800;letter-spacing:-.01em}"
+    ".fw-intro .hb-lede{margin:0 auto 14px}"
+    ".fw-key{margin:0 0 16px;color:var(--lk-muted);font-size:14px}"
+    ".fw-key .fw-tag{margin:0 6px 0 0}"
+    ".fw-tag{display:inline-block;margin-left:8px;padding:1px 8px;border:1px solid var(--lk-border-strong);border-radius:999px;"
+    "font:650 10.5px/1.5 system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--lk-text-2);vertical-align:1px}"
+    ".fw-tag.soon{color:#f1c56a;border-color:rgba(241,197,106,.45)}"
+    ".fw-intro .hb-fs-a{justify-content:center}"
+    "</style>")
+
+
+def forward_block() -> str:
+    e = html.escape
+    tag = f'<span class="fw-tag soon">{SOON}</span>'
+    # TODO(owner): the intro's wording, if you want it in your own words
+    out = [FORWARD_CSS,
+           '<section class="fw-intro hb-rv" id="forward" aria-labelledby="fw-h">'
+           f'<p class="hb-eyebrow"><span class="hb-ico"><svg viewBox="0 0 24 24" aria-hidden="true">{FORWARD_ICONS["forward"]}'
+           '</svg></span>The way forward</p><h2 id="fw-h">Built so nobody can shut it down again</h2>'
+           '<p class="hb-lede">On 26 November our only server went off for good. From here on, everything Leyline does runs '
+           'on players\' own PCs: your login, your friends, your worlds and your characters. This is the plan, and how '
+           'far along each part is.</p>'
+           f'<p class="fw-key"><span class="fw-tag">Built</span>works in the launcher today · {tag}'
+           'being built now</p>'
+           '<p class="hb-fs-a"><a class="hb-ghost" href="/wrath/docs/way-forward">Read the whole plan ›</a></p></section>']
+    for n, (key, eyebrow, building, title, lede, points, doc, pic, alt) in enumerate(FORWARD):
+        lis = "".join(f"<li>{e(t)}{tag if soon else ''}</li>" for t, soon in points)
+        brow = e(eyebrow) + ('<span class="fw-tag soon">Building now</span>' if building else "")
+        out.append(
+            f'<section class="hb-fs hb-rv{" flip" if n % 2 else ""}" id="f-{key}" aria-labelledby="hb-f-{key}">'
+            f'<div class="hb-fs-t"><p class="hb-eyebrow"><span class="hb-ico"><svg viewBox="0 0 24 24" aria-hidden="true">'
+            f'{FORWARD_ICONS[key]}</svg></span>{brow}</p><h2 id="hb-f-{key}">{e(title)}</h2><p class="hb-lede">{e(lede)}</p>'
+            f'<ul class="hb-points">{lis}</ul>'
+            f'<p class="hb-fs-a"><a class="hb-ghost" href="{doc}">Read how it works ›</a></p></div>'
+            f'<div class="hb-fs-v"><figure class="hb-shot"><img src="/wrath/art/forward/{pic}" alt="{e(alt, quote=True)}" '
+            'width="1280" height="720" loading="lazy" decoding="async"></figure></div></section>')
+    return "".join(out)
+
+
+def forward_art(url: str) -> bytes:
+    """One of the way forward's pictures, from stream/www-files/art/forward/: a plain SVG drawing, small, no script."""
+    f = FORWARD_DIR / url.rsplit("/", 1)[-1]
+    try:
+        body = f.read_bytes()
+    except OSError:
+        raise Refused(f"the front page uses {url}, but {f.name} isn't in stream/www-files/art/forward/")
+    low = body.lower()
+    if len(body) > FORWARD_ART_MAX or not body.lstrip().startswith(b"<svg") or b"<script" in low or b"href=" in low \
+            or b"<foreignobject" in low or re.search(rb"\son[a-z]+\s*=", low):
+        raise Refused(f"{f.name}: must be a small plain SVG drawing (no script, links or embedded content)")
+    return body
+
+
+FORWARD_BEFORE = '<section class="hb-fs hb-rv" id="f-launcher"'
 
 
 def front_from_portal(page: str) -> str:
@@ -678,7 +809,9 @@ def front_from_portal(page: str) -> str:
         page = re.sub(rx, "", page, flags=re.S)
     for old, new in FRONT_SWAP:
         page = page.replace(html.escape(old, quote=True), html.escape(new, quote=True)).replace(old, new)
-    return page
+    if page.count(FORWARD_BEFORE) != 1:
+        raise Refused("the front page's Desktop launcher section moved: the way forward has nowhere to go")
+    return page.replace(FORWARD_BEFORE, forward_block() + FORWARD_BEFORE, 1)
 
 
 def start_body() -> str:
@@ -951,7 +1084,7 @@ class Build:
         for path, text in sorted(self.pages.items()):
             page = strip_noindex(tidy_frame(text))
             tidy.prose = path.startswith("/wrath/docs")
-            if tidy.prose and DOCS_NOTE_WORDS.search(re.sub(r"<[^>]+>", " ", text.split('id="main"', 1)[-1])):
+            if tidy.prose and DOCS_NOTE_WORDS.search(re.sub(r"<[^>]+>", " ", doc_article(text))):
                 page = re.sub(r"(<h1\b[^>]*>.*?</h1>)", lambda m: m.group(1) + DOCS_NOTE + DOCNOTE_CSS, page, count=1, flags=re.S)
             page = tidy.page(page)
             for src in re.findall(r'\b(?:src|href)="(/wrath/art/[^"?#]*)', page) + \
@@ -974,6 +1107,9 @@ class Build:
         css_seen: set[str] = set()
         self.art = {a for a in self.art if a.rsplit("/", 1)[-1] not in PRIVATE_ART}
         for a in sorted(self.art):
+            if FORWARD_ART_RE.fullmatch(a):
+                self.put_file(out_file(a), forward_art(a))
+                continue
             st, ct, body, _ = portal.get(urllib.parse.quote(a))
             if st != 200:
                 continue

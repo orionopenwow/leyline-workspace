@@ -3,6 +3,12 @@
 Play on your own PC, alone or with friends. Leyline runs the world on your PC and brings your friends in through the
 Leyline relay: no router settings, no ports to open, and your home address is never shown to anyone.
 
+> **Since 26 Nov 2026:** Leyline's relay closed with our server, so the checks and links below that go through it no
+> longer work. Friends on the same network still join. Your Den also takes friends from far away through **Your own
+> address** (two router ports). Joining from anywhere with no relays of ours is coming. Today's steps are in
+> [Play with friends](guide-play-with-friends.md); the plan is in [Joining a world](joining.md) and
+> [The way forward](way-forward.md).
+
 ## Pick your world
 
 | | Your Den (recommended for friends) | Full realm |
@@ -61,8 +67,8 @@ login or a password.
 
 ## For your friend
 
-1. They need **Leyline**, **their own game folder** (the same version as yours, added under **Game folders**) and a
-   **Hero Key**.
+1. They need **Leyline** and **their own game folder** (the same version as yours, added under **Game folders**).
+   No account: their launcher's own key proves it's them.
 2. They open your link and press **Open in Leyline**, then **Join**. Or, in Leyline: **Realms**, **Got an invite
    link?**, paste it, **Join**.
 3. Leyline shows what's happening: **Reaching your friend's world**, **Their world answers**, **Logging in**. If a
@@ -92,6 +98,7 @@ or ask a friend with a faster connection to host.
 
 ## More
 
+- [Play with friends](guide-play-with-friends.md): what to click today, and what will change.
 - [Invite a friend to your Den](den-invite.md): the three ways in (same network, your own address, the relay).
 - [Host a realm](host-a-realm.md): the Host page, start to finish.
 - [Your Den](den.md): building, saving and sharing your Den.

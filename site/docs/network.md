@@ -15,4 +15,6 @@ itself. Both closed with Leyline's own server in November 2026.
 - Order the list by money or votes.
 - Ask for your password to any server.
 
+What comes next, with no server of ours: [The way forward](way-forward.md) and [Joining a world](joining.md).
+
 Run a server and want it listed? Ask on the [Leyline Discord](https://discord.gg/RfChVr8J7T).

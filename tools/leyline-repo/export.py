@@ -78,6 +78,7 @@ ALLOW = [
     "stream/hub/community-index.json",            # the approved community index (tools/hub-index, merged by a person)
     "stream/www-files/art/hub-thumbs",            # its preview pictures (each project's own GitHub preview)
     "stream/www-files/art/looks",                 # the Looks pictures (the launcher shows them too)
+    "stream/www-files/art/forward",               # the front page's way-forward drawings (our own SVG)
     "stream/www-files/art/stone-*",               # the site frame's art
     "stream/www-files/art/window-edge.png",
     "stream/www-files/art/play-stone.webp",

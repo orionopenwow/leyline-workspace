@@ -110,6 +110,12 @@ Caveats on the kept steps:
 `UPDATE.bat` (the old double-click runner, without Control) doesn't know about `RETIRED`. Don't use it for the
 server's steps: they would try to reach the server and fail.
 
+## What comes next
+
+The plan is not to bring the server back but to need none: [UNSTOPPABLE.md](UNSTOPPABLE.md) (the Passport, joins
+with no relay of ours, three-click worlds, characters that survive, a network with no centre). Player pages:
+`docs/leyline/way-forward.md` and the pages it links.
+
 ## Bringing server features back
 
 Nothing was deleted from the repo, so the server's features can return.

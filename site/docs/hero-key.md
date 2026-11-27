@@ -9,6 +9,7 @@ What this means for you:
 - **The launcher** works without logging in: single player, Your Den, mods and the community servers on the realm
   list do not need an account with us.
 - **Community servers** have their own accounts. Make one on the server's own website.
-- **Your Hero Key file** can be deleted. Nothing reads it now.
+- **Your Hero Key file**: nothing reads it now, but keep it. When the [Passport](passport.md) arrives (logging in
+  with a key on your PC, no server), the launcher will offer to import it once.
 
 Questions: the [Leyline Discord](https://discord.gg/RfChVr8J7T).

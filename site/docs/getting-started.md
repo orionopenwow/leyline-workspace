@@ -32,6 +32,12 @@ Each server on the realm list is run by other people, with its own accounts and 
 server's own website (the list links it), then pick the server in the launcher and press **PLAY**. The list says
 which game version each server takes.
 
+## Playing with friends
+
+Friends on the same network can join your single player world or your Den today. Your Den also takes friends from
+far away if you open two router ports. See [Play with friends](guide-play-with-friends.md) for the steps, and
+[The way forward](way-forward.md) for what is coming: logging in with no server, and joining a friend from anywhere.
+
 ## Your Den
 
 Your Den is your own white world to build in, on your PC. Open **Your Den** in the launcher and press **Play solo**.

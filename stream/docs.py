@@ -29,12 +29,17 @@ import threading
 # The fixed, allow-listed pages: (name, title in the table of contents). The order is the contents' order.
 PAGES = (
     ("index", "Overview"),
+    ("way-forward", "The way forward"),   # the plan after the server closed (26 Nov 2026): what works today, what is coming (docs/UNSTOPPABLE.md)
     ("network", "The network"),
+    ("passport", "The Passport"),   # log in with no server: your launcher key, devices, recovery (coming; docs/UNSTOPPABLE.md)
     ("getting-started", "Getting started"),   # the player guide (the launcher's Help and Find your game files link it). TODO(owner): his words
     ("play", "Play"),
     ("single-player", "Single player"),   # one click, no server: the original world, Quick start, Characters, a friend (docs/SINGLE-PLAYER-ONE-CLICK.md)
     ("solo", "Leyline Solo"),   # the standalone first-era app: install, companions, a friend, fixes (stream/solo_page.py is the showcase, /wrath/solo)
     ("friends", "Friends"),   # Friends on the Leyline network: friend codes, people near you, invites, fixes (docs/LEYLINE-FRIENDS.md)
+    ("guide-play-with-friends", "Play with friends"),   # step by step: what to click today, what will change
+    ("joining", "Joining a world"),   # how a game reaches a friend's world with no relays of ours (today and coming)
+    ("characters", "Characters that survive"),   # characters on friends' worlds; signed saves, backups, moving (coming)
     ("wrath-unleashed", "Wrath Unleashed notes"),   # the realm's features (docs/realm-guide/wrath-unleashed.json, tools/realm-guide)
     ("commands", "Commands"),
     ("mods", "Mod format"),
@@ -59,8 +64,8 @@ TITLES = dict(PAGES)
 # The contents, grouped (audit 12 Nov: one flat list of 24 mixed player, host and developer pages). Every page is in
 # exactly one group; within a group, this order.
 GROUPS = (
-    ("Start", ("index", "getting-started", "launcher", "hero-key", "mobile", "agents")),
-    ("Play", ("play", "single-player", "solo", "friends", "den", "den-invite", "commands", "wrath-unleashed")),
+    ("Start", ("index", "way-forward", "getting-started", "passport", "launcher", "hero-key", "mobile", "agents")),
+    ("Play", ("play", "single-player", "solo", "friends", "guide-play-with-friends", "joining", "characters", "den", "den-invite", "commands", "wrath-unleashed")),
     ("Host", ("host-a-realm", "host-for-friends", "hosting", "always-on", "join-network")),
     ("Make mods", ("mods", "publishing", "themes")),
     ("Network", ("network", "be-a-node", "cross-server", "unite")),

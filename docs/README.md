@@ -8,13 +8,18 @@
   history. Grouped below. A file's own first lines say its status and date; when they disagree with this list, the
   file wins.
 
+**After the server (26 Nov 2026):** [SERVERLESS.md](SERVERLESS.md) says what closed and what still works;
+[UNSTOPPABLE.md](UNSTOPPABLE.md) is the plan for what comes next (Passport, joins with no relay of ours, characters
+that survive, a network with no centre).
+
 Marks: **(superseded)** means a newer page covers it, so read that one first; **(history)** means a record of what
 happened, kept as it was.
 
 ## For players
 
 The player guides live in [`leyline/`](leyline/): Getting started, Play, Single player, Leyline Solo, Friends,
-Your Den, Hero Key (and "Lost your key?"), On your phone, Commands, the Launcher, Agents.
+Your Den, Hero Key (and "Lost your key?"), On your phone, Commands, the Launcher, Agents, and the way forward
+(The way forward, The Passport, Joining a world, Characters that survive, Play with friends).
 
 Specs behind them, for the curious:
 
@@ -77,6 +82,7 @@ Specs behind them, for the curious:
 
 | File | What it is |
 |---|---|
+| [UNSTOPPABLE.md](UNSTOPPABLE.md) | The plan for a network with no centre (record types, chaos-test gates) |
 | [LEYLINE-MESH.md](LEYLINE-MESH.md) | The mesh: a realm list and relays that don't depend on us (flags off live) |
 | [COMMONHOLD-V1.md](COMMONHOLD-V1.md) | The network protocol (draft) |
 | [P2P-AND-TORRENT.md](P2P-AND-TORRENT.md) | P2P and torrent: built, tested, off |
@@ -113,6 +119,7 @@ console, ...) are retired. The runbooks below that use the server describe how i
 
 | File | What it is |
 |---|---|
+| [UNSTOPPABLE.md](UNSTOPPABLE.md) | The plan after the server (27 Nov 2026): Passport, connections, three-click worlds, characters that survive, a network with no centre, open decisions |
 | [ROADMAP.md](ROADMAP.md) | The master roadmap |
 | [SEEDED-REALM-PLAN.md](SEEDED-REALM-PLAN.md), [SEEDED-REALM-ADDENDUM.md](SEEDED-REALM-ADDENDUM.md) | The seeded first-era realm |
 | [SMARTER-BOTS-PLAN.md](SMARTER-BOTS-PLAN.md) | Smarter bots |

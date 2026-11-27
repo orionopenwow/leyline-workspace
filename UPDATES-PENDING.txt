@@ -940,3 +940,4 @@
 1366b ship  Save as Orion: other projects no longer named in the Simple mode notes (nothing players see changes)
 1367b ship  Save as Orion and release: Leyline without its server (no sign-in, no official realm or relay, the realm list and mods from the static site, Control's server steps retired) and the website rebuilt as a static site on GitHub Pages
 1368a ship  Save as Orion: the website front page back as it was (hero, featured mods, ways to play, launcher, looks, Host, Discord, hot mods) minus the official realm, sign-in, forum and live status; the network, Be a node, Join the network and Host for friends docs back in full
+1369a ship  Save as Orion: the way forward on the website (Passport, joining friends, characters that survive, a network with no centre, with new pictures), new docs and guide pages, the plan in docs/UNSTOPPABLE.md, new launcher screenshots, the server note only where it is true

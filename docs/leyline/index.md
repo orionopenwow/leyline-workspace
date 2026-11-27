@@ -2,6 +2,8 @@
 
 Leyline is a mod launcher and an open, peer-to-peer network for community game realms. Anyone can host a realm in one click, from the browser or the desktop launcher, and it is listed for everyone. You can find and install mods and addons, and play in the browser or with your own client. Everything is on GitHub under the MIT licence.
 
+> **Since 26 Nov 2026** Leyline runs no server of its own. What still works, and what comes next with no server at all: [The way forward](way-forward.md).
+
 Our own realm is Wrath Unleashed, the official realm, which gets our client additions first. It runs the game client you already have, on AzerothCore, and you can play it in the browser at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath).
 
 ## The aims

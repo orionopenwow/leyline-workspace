@@ -1,5 +1,17 @@
 {
   "format": 1,
   "about": "The launcher's News page and the site's News page (/wrath/leyline/news.json). Newest first, at most 20 posts. How to add one: site/README.md.",
-  "posts": []
+  "posts": [
+    {
+      "id": "2026-11-27-the-way-forward",
+      "date": "2026-11-27",
+      "tag": "Plan",
+      "title": "The way forward",
+      "items": [
+        "Leyline is moving everything onto players' own PCs: a Passport key instead of a password, friends who connect straight to each other, and characters that can move to another world if one shuts down.",
+        "Some of it already works in the launcher, like your key, signed friendships and friends keeping their characters on your world. The rest is being built now, and the front page marks which is which.",
+        "Read the whole plan: https://leylinelauncher.com/wrath/docs/way-forward"
+      ]
+    }
+  ]
 }

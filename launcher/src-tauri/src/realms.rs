@@ -486,7 +486,45 @@ pub fn fetch_all(app_dir: &Path) -> RealmList {
         let _ = crate::settings::write_atomic(&cache_path(app_dir), doc.to_string().as_bytes());
         return list_of(&doc, false, Some(crate::p2p::mesh::now_secs()), None);
     }
+    if !crate::addresses::SERVER_FEATURES {
+        // the static website's list of other servers only (the relay is gone): see `aggregate`
+        return aggregate(fetch_all_within(NETWORK_URL, app_dir, net::REALMS_BUDGET));
+    }
     fetch_network(&[NETWORK_URL, URL], app_dir)
+}
+
+/// With `SERVER_FEATURES` off (addresses.rs) Leyline is a launcher aggregator: no official realm of ours, and no realm
+/// reached through the relay (a community realm hosted through it, its invite link, its status file). What stays is a
+/// list of other servers, each played straight at its own realmlist.
+pub fn keep_realm(r: &Realm) -> bool {
+    use crate::addresses::dead_host;
+    if crate::addresses::SERVER_FEATURES {
+        return true;
+    }
+    let host = |a: &str| a.rsplit_once(':').filter(|(_, p)| p.parse::<u16>().is_ok()).map(|(h, _)| h.to_string()).unwrap_or_else(|| a.to_string());
+    !r.official
+        && !r.relay.as_deref().is_some_and(dead_host)
+        && !r.address.as_deref().is_some_and(|a| dead_host(&host(a)) || crate::addresses::is_official_realm(a))
+        && r.address.as_deref().is_some_and(|a| !a.trim().is_empty())
+}
+
+/// `list` without what `keep_realm` leaves out, counted again; links to the dead hosts dropped from what stays.
+pub fn aggregate(mut list: RealmList) -> RealmList {
+    if crate::addresses::SERVER_FEATURES {
+        return list;
+    }
+    list.realms.retain(keep_realm);
+    for r in list.realms.iter_mut() {
+        if r.join_url.as_deref().is_some_and(crate::addresses::off) {
+            r.join_url = None;
+        }
+        if r.status_url.as_deref().is_some_and(crate::addresses::off) {
+            r.status_url = None;
+        }
+        r.report_url = None;   // a report went to the old server (/wrath/realms/report)
+    }
+    list.network = totals(&list.realms);
+    list
 }
 
 fn has_realms(v: &Value) -> Result<(), String> {
@@ -529,7 +567,7 @@ fn fetch_network_within(urls: &[&str], app_dir: &Path, budget: Duration) -> Real
 pub fn cached_list(app_dir: &Path) -> Option<RealmList> {
     let (doc, saved_at) = net::read_cache(&cache_path(app_dir))?;
     has_realms(&doc).ok()?;
-    Some(list_of(&doc, true, saved_at, None))
+    Some(aggregate(list_of(&doc, true, saved_at, None)))
 }
 
 /// The network listing's `sample` block names the official realm: the Sample Hangout's name (temporary) while it
@@ -595,6 +633,7 @@ pub fn cached(app_dir: &Path) -> Vec<Realm> {
         v.extend(parse_community(&doc));
     }
     order(&mut v);
+    v.retain(keep_realm);
     v
 }
 
@@ -957,5 +996,24 @@ mod tests {
         assert!(status_url_ok(&format!("https://relay.openvanilla.app/r/{RID}/status.json")));
         assert!(!status_url_ok("https://relay.openvanilla.app/r/x/status.json"));
         assert!(!status_url_ok(&format!("http://relay.openvanilla.app/r/{RID}/status.json")));
+    }
+
+    #[test]
+    fn an_aggregator_lists_other_servers_only() {
+        if crate::addresses::SERVER_FEATURES {
+            return;
+        }
+        let doc: Value = serde_json::from_str(r#"{"kind":"network","realms":[
+          {"name":"Through the relay","state":"live","profile":{"version":"3.3.5a","address":"relay.openvanilla.app","port":40002},
+           "community":{"realmId":"abcdefghijk2345a","relay":"relay.openvanilla.app"}},
+          {"name":"Elsewhere","state":"live","profile":{"version":"3.3.5a","address":"logon.example.org","port":3724},
+           "community":{"realmId":"abcdefghijk2345b"},
+           "status":{"url":"https://relay.leylinelauncher.com/r/abcdefghijk2345b/status.json"}}]}"#).unwrap();
+        let l = aggregate(list_of(&doc, false, None, None));
+        let names: Vec<&str> = l.realms.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["Elsewhere"], "no official realm, nothing through the relay");
+        assert!(l.realms.iter().all(|r| r.report_url.is_none() && r.status_url.is_none() && r.join_url.is_none()));
+        assert_eq!(l.network.realms, 1);
+        assert!(!keep_realm(&official()));
     }
 }

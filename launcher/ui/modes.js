@@ -21,7 +21,7 @@
     if (text !== undefined) e.textContent = text;
     return e;
   };
-  const KIND = { realm: "On our realm", offline: "No server", "realm-type": "Its own realm type", "in-game": "In game" };
+  const KIND = { realm: window.LeylineLite && window.LeylineLite.lite ? "On this PC" : "On our realm", offline: "No server", "realm-type": "Its own realm type", "in-game": "In game" };
   const OFFICIAL = window.LeylineAddresses.SITE_HOST;
   // Key art shipped with the launcher (art/modes/), by mode id: on the mode's card and, for the featured mode, as a
   // banner on Home. A mode without art, or art that fails to load, simply has none (the card and Home as before).
@@ -137,7 +137,7 @@
     modes = every.filter(listed).sort(byOrder);
     const live = modes.filter((m) => m.status === "live").length;
     let line = `${live} to play` + (modes.length - live ? ` · ${modes.length - live} coming soon` : "");
-    if (l.builtin) line += " · offline: the list built into Leyline";
+    if (l.builtin && !LITE) line += " · offline: the list built into Leyline";   // lite: the built-in list is the list
     else if (l.from_cache) line += " · offline: the last list Leyline saw";
     $("md-net").textContent = line;
     render();

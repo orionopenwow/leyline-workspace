@@ -237,6 +237,7 @@ test('Modes: Boss Rush on this PC, no Duels and no boards; the tour and the i bu
   assert.deepEqual(await page.$$eval('.page.on', (p) => p.map((x) => x.id)), ['page-bossrush'], 'a fight on this PC');
   assert.equal(await page.isVisible('#br-boards'), false);
   await page.evaluate(() => window.LeylineNav.show('modes'));
+  await page.waitForTimeout(500);   // the page's fade-in
   const text = await visibleText(page);
   assert.doesNotMatch(text, BRAND);
   assert.doesNotMatch(text, /duel|leaderboard|official realm|log in/i);

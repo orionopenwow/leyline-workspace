@@ -15,7 +15,8 @@ const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const HTML = fs.readFileSync(path.join(__dirname, '..', 'ui', 'index.html'), 'utf8');
 const LIB = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'lib.rs'), 'utf8');
 const LINKS = new Set([...LIB.split('pub const LINKS')[1].split('];')[0].matchAll(/^\s*\("([a-z0-9-]+)",/gm)].map((m) => m[1]));
-const PAGE_IDS = [...HTML.matchAll(/<section class="page[^"]*" id="page-([a-z0-9-]+)"/g)].map((m) => m[1]);
+// (a page only the lite app has, data-lite, is not on this server-on page: lite.browser.test.cjs checks its bubble)
+const PAGE_IDS = [...HTML.matchAll(/<section class="page[^"]*" id="page-([a-z0-9-]+)"( data-lite)?/g)].filter((m) => !m[2]).map((m) => m[1]);
 
 const FAKE = () => {
   try { localStorage.setItem('leyline.page', 'play'); } catch (_) { /* fine */ }

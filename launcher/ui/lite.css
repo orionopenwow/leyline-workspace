@@ -10,3 +10,5 @@ html:not(.lite) [data-lite] { display: none !important; }
 .cm-card .row { margin-top: 6px; }
 /* Help › Found a bug?: the debug info, copied */
 .dbg-out { width: 100%; min-height: 9em; font: 12px/1.45 ui-monospace, Consolas, monospace; margin-top: 8px; }
+/* the official leaderboards (boards.js) on Modes and Boss Rush: gone with the server; Boss Rush keeps its own runs */
+html.lite #md-boards, html.lite #md-list .md-board[data-board] { display: none !important; }

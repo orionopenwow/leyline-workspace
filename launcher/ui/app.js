@@ -29,7 +29,19 @@ const invoke = window.__TAURI__ && window.__TAURI__.core
 
 // What's new, shown on Home and on the News page. Newest first. The website's news feed replaces these when it loads
 // (loadNews: the core's news_list, news.rs, /wrath/leyline/news.json); these are the offline copy.
-const NEWS = [
+// lite (no server of ours): the offline copy says what Leyline is now. TODO(owner): the words, his voice
+const NEWS = LITE ? [
+  { tag: "LEYLINE LAUNCHER", title: "ONE LAUNCHER FOR EVERY SERVER", items: [
+    "Other servers' realms, and any realm by its address",
+    "Single player, the original world and Your Den on this PC",
+    "Mods and addons from their makers, kept up to date",
+  ] },
+  { tag: "LEYLINE LAUNCHER", title: "EVERY CLIENT, EVERY SERVER", items: [
+    "Finds every game client on your PC",
+    "PLAY picks the client a realm needs",
+    "Updates in the background, never mid-game",
+  ] },
+] : [
   { tag: "LEYLINE LAUNCHER", title: "EVERY CLIENT, EVERY SERVER", items: [
     "Finds every game client on your PC",
     "PLAY picks the client a realm needs",
@@ -318,6 +330,15 @@ const FEATURES = [
   { page: "clients", words: ["game folders", "game folder", "folders", "clients"] },
   { page: "mods", tab: "installed", words: ["installed", "my mods", "my addons"] },
 ];
+// lite (no server): the pages that went with it are not found; Community is
+if (LITE) {
+  for (let i = FEATURES.length - 1; i >= 0; i--) if (["host", "forum", "account"].includes(FEATURES[i].page)) FEATURES.splice(i, 1);
+  FEATURES.push({ page: "community", words: ["community", "discord", "reddit", "forum", "chat"] });
+  const m = FEATURES.find((f) => f.page === "modes");
+  if (m) m.words = m.words.filter((x) => !["duels", "duel", "leaderboards", "leaderboard", "rankings", "arena"].includes(x));
+  const r = FEATURES.find((f) => f.page === "realms");
+  if (r) r.words = ["realms", "realm list", "servers", "other servers", "server", "realmlist"];
+}
 // the feature the words name: the whole words, or the start of one (three letters at least)
 function featureFor(q) {
   const w = q.replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
@@ -336,7 +357,7 @@ $("search-form").addEventListener("submit", (ev) => {
     if (f.section) setTimeout(() => { const s = $(f.section); if (s && !s.hidden) s.scrollIntoView({ block: "start" }); }, 60);
     return;
   }
-  if (realmNames.some((n) => n.toLowerCase().includes(q)) || "wrathunleashed".includes(q)) {
+  if (realmNames.some((n) => n.toLowerCase().includes(q)) || (!LITE && "wrathunleashed".includes(q))) {
     show("realms");
   } else {
     $("cat-q").value = q;

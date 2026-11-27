@@ -742,6 +742,12 @@
   // ---------------------------------------------------------------- Share on the Workshop
   function workshop(f) {
     const d = mk("div", "yd-share");
+    if (window.LeylineLite && window.LeylineLite.lite) {   // lite.js: no Workshop listing any more; a file to send a friend
+      const row = mk("div", "yd-row");
+      row.append(btn("Save a copy", "btn small", () => saveCopy(f)));
+      d.append(mk("p", "", `Save a copy of '${f.name}' and send the file to a friend: they add it under Saved Dens.`), row);
+      return d;
+    }
     // Shared Dens (denmarket.js, docs/DEN-MARKETPLACE.md): one step, pictures from the game, a moderator's look
     if (window.LeylineDenMarket) {
       const one = btn("Share it on Leyline", "btn small primary", () => window.LeylineDenMarket.share(f.name));
@@ -960,13 +966,14 @@
     grid.append(groundTile());
     // Share on the Workshop
     const ws = mk("div", "");
-    ws.append(btn("Share on the Workshop", "btn small", () => {
+    ws.append(btn(window.LeylineLite && window.LeylineLite.lite ? "Save a copy" : "Share on the Workshop", "btn small", () => {
       if (!list.length) { say("Save your Den first: in your Den, type .den save and a name.", "warn"); return; }
       const li = ul.querySelector("li");
       if (li && !li.querySelector(".yd-share")) li.append(workshop(list[0]));
       ul.scrollIntoView({ block: "nearest" });
     }));
-    grid.append(tile("Share on the Workshop", "Put a saved Den on the Workshop for anyone to add.", ws));
+    if (window.LeylineLite && window.LeylineLite.lite) grid.append(tile("Share a Den", "Save a copy of a saved Den to send to a friend.", ws));
+    else grid.append(tile("Share on the Workshop", "Put a saved Den on the Workshop for anyone to add.", ws));
     root.append(grid);
     paintCard();
   }

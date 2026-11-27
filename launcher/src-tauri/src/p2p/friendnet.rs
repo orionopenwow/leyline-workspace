@@ -208,6 +208,15 @@ impl Hub {
         if !self.seen.lock().unwrap().first(&nonce) {
             return Ok(Event::Ignored("seen"));
         }
+        // character saves, sealed backups and witnesses (host/charsave.rs): from friends only
+        if rec["msg"]["kind"] == "chars" {
+            let from = rec["msg"]["from"].as_str().unwrap_or("").to_string();
+            if !self.book.lock().unwrap().is_friend(&self.me, &identity::peer_id(&identity::unhex32(&from).unwrap_or([0; 32]))) {
+                return Ok(Event::Ignored("not a friend"));
+            }
+            let link = crate::host::charsave::HubLink(self);
+            return crate::host::charsave::on_message(&self.app, &self.me, &from, &rec["msg"]["body"], &link, now).map(Event::Ignored);
+        }
         let ev = self.book.lock().unwrap().receive(&self.me, &rec, via, now)?;
         if !matches!(ev, Event::Ignored(_)) {
             self.save()?;

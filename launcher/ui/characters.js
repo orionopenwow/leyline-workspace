@@ -7,6 +7,9 @@
 //     world (set up once, started when stopped; another world running is said, with "Stop it and play") and enters
 //     that character (world_play's pick: the game's own character select, signed in by itself). An empty world offers
 //     Quick start (the Single player page).
+//     Each character also shows its last backup (a signed save, host/charsave.rs) and which friends hold a sealed
+//     copy; each world has Back up now; Bring to another world picks a world, previews what comes, what goes to the
+//     vault and what stays, then brings it (chars_saves, chars_backup_now, chars_bring_preview, chars_bring).
 //   * Online: the official realm. Its characters live on the realm; the ones this PC's game folders played there are
 //     listed by name (online_characters: the game's own settings folders, nothing else is read). Play joins the realm
 //     as its card on the Realms page does (sign-in first).
@@ -37,6 +40,8 @@
   let ask = null;        // { kind, name, other }
   let job = null;
   let line = ["", ""];
+  let saves = null;      // chars_saves
+  let bring = null;      // { id, name, from, to, plan, busy }
 
   const W = () => window.LeylineWorlds || null;
   function say(text, kind) { line = [text || "", kind || ""]; const s = byId("ch-status"); if (s) { s.textContent = line[0]; s.className = "status ch-status" + (line[1] ? " " + line[1] : ""); } }
@@ -45,6 +50,7 @@
   async function read() {
     try { worlds = await call("local_characters"); } catch (_) { worlds = worlds || []; }
     try { online = await call("online_characters"); } catch (_) { online = online || { realm: "", chars: [] }; }
+    try { saves = await call("chars_saves"); } catch (_) { saves = saves || { chars: [] }; }
     paint();
   }
 
@@ -76,11 +82,110 @@
     nav("realms");
   }
 
+  const ago = (t) => {
+    const s = Math.max(0, Math.floor(Date.now() / 1000) - (t || 0));
+    if (s < 90) return "just now";
+    if (s < 5400) return `${Math.round(s / 60)} min ago`;
+    if (s < 172800) return `${Math.round(s / 3600)} h ago`;
+    return `${Math.round(s / 86400)} days ago`;
+  };
+  const saveOf = (kind, name) => ((saves && saves.chars) || []).find((x) => x.world === kind && x.name === name) || null;
+  // the worlds a character can be brought into (Boss Rush's heroes are its own)
+  const TAKES = [["single", "Single player"], ["vanilla", "Original world"]];
+  function backupLine(sv) {
+    if (!sv) return "Not backed up yet.";
+    const who = sv.holders && sv.holders.length ? ` · copies with ${sv.holders.join(", ")}` : "";
+    return `Backed up ${ago(sv.made)}${who}`;
+  }
+
+  async function backUp(kind) {
+    say("Backing up…");
+    try { say(await call("chars_backup_now", { kind }), "ok"); } catch (e) { say(oops(e, "That didn't work. Try again."), "bad"); }
+    read();
+  }
+
+  function openBring(sv, from) {
+    const to = TAKES.find(([k]) => k !== from && (worlds || []).some((w) => w.kind === k && w.set_up));
+    bring = { id: sv.id, name: sv.name, from, to: to ? to[0] : "", plan: null, busy: false };
+    say("");
+    paint();
+  }
+
+  async function previewBring() {
+    if (!bring || !bring.to) return;
+    bring.busy = true; bring.plan = null; paint();
+    try { bring.plan = await call("chars_bring_preview", { id: bring.id, to: bring.to }); }
+    catch (e) { say(oops(e, "That world couldn't be read. Try again."), "bad"); }
+    if (bring) bring.busy = false;
+    paint();
+  }
+
+  async function doBring() {
+    if (!bring || !bring.plan || !bring.plan.ok) return;
+    bring.busy = true; paint();
+    try { say(await call("chars_bring", { id: bring.id, to: bring.to }), "ok"); bring = null; }
+    catch (e) { say(oops(e, "Nothing was brought. Try again."), "bad"); if (bring) bring.busy = false; }
+    read();
+  }
+
+  function bringPanel() {
+    const b = mk("div", "sv-other ch-bring");
+    b.id = "ch-bring";
+    b.append(mk("p", "sp-line", `Bring ${bring.name} to another world`));
+    const choices = TAKES.filter(([k]) => k !== bring.from && (worlds || []).some((w) => w.kind === k && w.set_up));
+    if (!choices.length) {
+      b.append(mk("p", "ch-fine", "Set up another world first (Single player or the original world)."));
+      const r = mk("div", "sp-row");
+      r.append(btn("Close", "btn small", () => { bring = null; paint(); }, "ch-bring-close"));
+      b.append(r);
+      return b;
+    }
+    const sel = mk("select", "ch-bring-to");
+    sel.id = "ch-bring-to";
+    sel.setAttribute("aria-label", "Bring to");
+    for (const [k, t] of choices) { const o = mk("option", "", t); o.value = k; if (k === bring.to) o.selected = true; sel.append(o); }
+    sel.addEventListener("change", () => { bring.to = sel.value; bring.plan = null; paint(); });
+    b.append(sel);
+    const p = bring.plan;
+    if (p && !p.ok) b.append(mk("p", "ch-fine bad", p.why));
+    if (p && p.ok) {
+      const list = (title, items, id) => {
+        const box = mk("div", "ch-bring-list");
+        box.id = id;
+        box.append(mk("b", "", title));
+        const ul = mk("ul", "");
+        for (const x of items) ul.append(mk("li", "", x));
+        if (!items.length) ul.append(mk("li", "", "Nothing."));
+        box.append(ul);
+        return box;
+      };
+      b.append(list("What comes", p.comes, "ch-bring-comes"));
+      b.append(list("Goes to your vault (kept for a world that has it)", p.vault.map((v) => `${v.id.replace(/^[^:]+:item:/, "Item ")}${v.n > 1 ? ` ×${v.n}` : ""}: ${v.why}`), "ch-bring-vault"));
+      b.append(list("Stays behind", p.stays, "ch-bring-stays"));
+    }
+    const r = mk("div", "sp-row");
+    if (p && p.ok) r.append(btn(bring.busy ? "Bringing…" : "Bring", "btn small primary", doBring, "ch-bring-go"));
+    else r.append(btn(bring.busy ? "Looking…" : "See what comes", "btn small primary", previewBring, "ch-bring-look"));
+    r.append(btn("Not now", "btn small", () => { bring = null; paint(); }, "ch-bring-close"));
+    for (const x of r.querySelectorAll("button")) if (bring.busy && x.id !== "ch-bring-close") x.disabled = true;
+    b.append(r);
+    b.append(mk("p", "ch-fine", "Gold never travels, and items can't be sent between worlds. The world is backed up first, and both worlds must be stopped."));
+    return b;
+  }
+
   function charCard(w, c) {
     const card = mk("li", "ch-card " + (c.side || ""));
     card.dataset.name = c.name;
     const t = mk("div", "ch-card-t");
     t.append(mk("b", "", c.name), mk("span", "ch-fine", `Level ${c.level} ${c.race_label} ${c.class_label}`.replace(/\s+/g, " ").trim()), mk("span", "ch-fine", played(c.played)));
+    const sv = saveOf(w.kind, c.name);
+    const bl = mk("span", "ch-fine ch-backup", backupLine(sv));
+    t.append(bl);
+    if (sv && w.kind !== "bossrush") {
+      const mv = btn("Bring to another world", "linkish ch-bring-open", () => openBring(sv, w.kind));
+      mv.setAttribute("aria-label", `Bring ${c.name} to another world`);
+      t.append(mv);
+    }
     const key = `${w.kind}:${c.name}`;
     const go = btn(busy === key ? "Starting…" : "Play", "btn small primary", () => play(w.kind, c.name, false));
     go.disabled = !!busy || !w.supported;
@@ -119,6 +224,9 @@
     for (const c of w.chars) ul.append(charCard(w, c));
     sec.append(ul);
     if (!w.live && w.at) sec.append(mk("p", "ch-fine", "As they were when this world last ran."));
+    const br = mk("div", "sp-row");
+    br.append(btn("Back up now", "btn small", () => backUp(w.kind), `ch-backup-${w.kind}`));
+    sec.append(br);
     return sec;
   }
 
@@ -142,9 +250,42 @@
       p.id = "ch-job";
       box.append(p);
     }
+    if (bring) box.append(bringPanel());
     if (!worlds) { box.append(mk("p", "ch-fine", "Reading your worlds…")); return box; }
     for (const w of worlds) box.append(worldBlock(w));
+    box.append(backupsBlock());
     return box;
+  }
+
+  // characters brought back from friends' sealed copies (not in a world on this PC yet), and asking for them
+  function backupsBlock() {
+    const sec = mk("section", "ch-world");
+    sec.id = "ch-world-backups";
+    const head = mk("div", "ch-world-h");
+    head.append(mk("h3", "", "Your backups"));
+    sec.append(head);
+    const loose = ((saves && saves.chars) || []).filter((x) => !x.world);
+    if (loose.length) {
+      const ul = mk("ul", "ch-list");
+      for (const x of loose) {
+        const li = mk("li", "ch-card");
+        li.dataset.name = x.name;
+        const t = mk("div", "ch-card-t");
+        t.append(mk("b", "", x.name), mk("span", "ch-fine", `Saved ${ago(x.made)}, from a friend's copy`));
+        const go = btn("Bring to a world", "btn small primary", () => openBring(x, ""));
+        go.setAttribute("aria-label", `Bring ${x.name} to a world`);
+        li.append(t, go);
+        ul.append(li);
+      }
+      sec.append(ul);
+    } else sec.append(mk("p", "ch-fine", "Each character is saved and signed when its world stops, and every 30 minutes while it runs. A sealed copy goes to friends you play with: they can't open it."));
+    const r = mk("div", "sp-row");
+    r.append(btn("Get my characters back from friends", "btn small", async () => {
+      try { say(await call("chars_ask_back"), "ok"); } catch (e) { say(oops(e, "That didn't work. Try again."), "bad"); }
+      setTimeout(read, 4000);
+    }, "ch-ask-back"));
+    sec.append(r);
+    return sec;
   }
 
   function onlinePane() {
@@ -202,7 +343,7 @@
   }
 
   document.addEventListener("leyline:page", (e) => { if (e.detail && e.detail.page === "characters") read(); });
-  window.LeylineCharacters = { read, play, tab: () => tab };
+  window.LeylineCharacters = { read, play, backUp, tab: () => tab };
   paint();
   if (page.classList.contains("on")) read();
 })();

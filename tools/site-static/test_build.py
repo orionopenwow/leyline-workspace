@@ -358,7 +358,9 @@ class Site(unittest.TestCase):
 
     def test_own_pages_read_honestly(self):
         front = visible(self.pages["index.html"])
-        self.assertIn("runs no server of its own", front)
+        self.assertIn("Every client, every server", front)   # the portal's own front page, hero and all
+        for w in ("The official realm", "Platform status", "Systems are down", "Open the forum", "signs you in"):
+            self.assertNotIn(w, front)
         for w in ("Log In", "Play in your browser", "Hero Key"):
             self.assertNotIn(w, front)
         realms = visible(self.pages["wrath/leyline/realms/index.html"])

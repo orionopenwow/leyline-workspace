@@ -108,8 +108,7 @@ FILTER_PAGES = ("/wrath/leyline/catalog", "/wrath/leyline/addons")
 FILTER_KEYS = ("cat", "group", "tag", "build", "source", "view", "page", "sort", "works")
 MAX_FILTER_PAGES = 400
 # The docs pages about what the server did: shown with a short, plain page instead (site/docs/<name>.md).
-RETIRED_DOCS = ("index", "getting-started", "hero-key", "network", "be-a-node", "join-network", "always-on", "mobile", "wrath-unleashed",
-                "host-for-friends", "play")
+RETIRED_DOCS = ("index", "getting-started", "hero-key", "always-on", "mobile", "wrath-unleashed", "play")
 # Links that only meant something with the server (the whole path, or anything under it). They are taken out.
 DROPPED_EXACT = frozenset({"/wrath", "/wrath/leyline/p"})
 DROPPED = ("/wrath/play", "/wrath/account", "/wrath/signin", "/wrath/key", "/wrath/profile", "/wrath/link",
@@ -653,6 +652,35 @@ def front_body() -> str:
         'under the licence they chose. Leyline is free and open source; there is nothing to buy.</p></div>')
 
 
+# The portal's own front page (the hero, Ways to play, the launcher, Looks, Host, modes, the Discord), with what
+# needed the server taken out. Owner 27 Nov: "the way it was minus the live server connotations".
+FRONT_DROP = (
+    r'<article class="lp-mode" id="way-official">.*?</article>',      # the official realm's card (and its picture)
+    r'<section class="hb-sbar\b.*?</section>',                        # the live platform status bar
+    r'<li>One sign-in everywhere</li>',
+    r'<img\b[^>]*\bsrc="/wrath/avatar/[^"]*"[^>]*>',                    # profile pictures were drawn by the server
+    r'<li>Duels: the 1v1 queue[^<]*</li>',
+    r'<a href="[^"]*">Open the forum</a>',              # the forum closed with the server                            # Duels ran on the official realm
+)
+FRONT_SWAP = (
+    ("Or play in your browser, nothing to install", "Leyline finds it for you"),
+    ("finds the game folders you already have, signs you in once, installs", "finds the game folders you already have, installs"),
+    (" PLAY signs you in and starts once your character is in the world.", ""),
+    ("Ranked by players online and uptime, never by money.", "Never ranked by money."),
+    ("Fight the next player in the 1v1 queue, or go straight onto", "Go straight onto"),
+    ("Duels and Boss Rush, one click each", "Boss Rush, one click"),
+    ('<h2 id="hb-cm-h">Forum and Discord</h2>', '<h2 id="hb-cm-h">Discord</h2>'),
+)
+
+
+def front_from_portal(page: str) -> str:
+    for rx in FRONT_DROP:
+        page = re.sub(rx, "", page, flags=re.S)
+    for old, new in FRONT_SWAP:
+        page = page.replace(html.escape(old, quote=True), html.escape(new, quote=True)).replace(old, new)
+    return page
+
+
 def start_body() -> str:
     return (
         '<div class="st-wrap"><section class="st-hero"><h1>Start here</h1>'
@@ -856,11 +884,12 @@ class Build:
 
     # the pages drawn here
     def _own(self, portal: Portal, realms: list[dict]) -> None:
-        front = portal.frame("Leyline", front_body(), "/wrath/leyline", "home", css=OWN_CSS,
-                             desc="Leyline: a launcher for your own game clients. Community servers, single player, "
-                                  "Your Den and mods from their authors.")
-        self.pages["/wrath/leyline"] = front.decode("utf-8")
-        self.pages["/"] = front.decode("utf-8")
+        st, ct, body, _ = portal.get("/wrath/leyline")
+        if st != 200 or not ct.startswith("text/html"):
+            raise Refused(f"the portal's front page answered {st}")
+        front = front_from_portal(body.decode("utf-8"))
+        self.pages["/wrath/leyline"] = front
+        self.pages["/"] = front
         self.pages["/wrath/start"] = portal.frame("Start here · Leyline", start_body(), "/wrath/start", "start",
                                                   css=OWN_CSS, desc="Start here: get the launcher, add your game folder, pick a way to play.").decode("utf-8")
         self.pages["/wrath/leyline/realms"] = portal.frame("Realms · Leyline", realms_body(realms), "/wrath/leyline/realms",

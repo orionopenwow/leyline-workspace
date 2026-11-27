@@ -68,8 +68,9 @@ Each way is sealed end to end with your two keys. Whoever carries the bytes in b
 ## Invite links
 
 An invite link for a single player world or the original world carries your friend's key and the world, never an
-address. If your friend's PC moves to a new network, the same link still works. Opening the launcher on **Join** from
-the link is **coming**.
+address. If your friend's PC moves to a new network, the same link still works. Clicking the link opens the launcher
+on **Join** (built: the `leyline://join/…` link and the site's `/j/#…` page). Join tries the same network first,
+then your friend's key from anywhere (built, tested on one PC only).
 
 ## What other people see
 

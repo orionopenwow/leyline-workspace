@@ -664,6 +664,9 @@ def front_body() -> str:
 FRONT_DROP = (
     r'<article class="lp-mode" id="way-official">.*?</article>',      # the official realm's card (and its picture)
     r'<section class="hb-sbar\b.*?</section>',                        # the live platform status bar
+    # the live realm list block: its first row is always the official realm ("Official realm", "Plays in your
+    # browser", the client version) and its line counts players online; the realm list has its own page now
+    r'<section class="hb-sec hb-realms" id="realms".*?</section>',
     r'<li>One sign-in everywhere</li>',
     r'<img\b[^>]*\bsrc="/wrath/(?:avatar|art/avatars)/[^"]*"[^>]*>',                    # profile pictures were drawn by the server
     r'<li>Duels: the 1v1 queue[^<]*</li>',

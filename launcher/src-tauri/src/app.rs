@@ -2437,7 +2437,9 @@ async fn world_invite_link(kind: String) -> Result<WorldInviteLink, String> {
         let me = crate::identity::peer_identity()?;
         let app = settings::app_dir();
         let name = crate::p2p::friends::Book::load(&app, &me, now_secs()).0.profile.name;
-        let inv = invite::make(&me, &invite::Make { world: &rid, kind: k.word(), name: &name, secret: &secret, user: &user, pass: &pass, lan: lan.as_deref(), now: now_secs() })?;
+        // this PC's device key when its connections run (world_invite_now offered the world by key): friends dial it
+        let device = crate::p2p::link::device_in(&d.link).map(|k| crate::identity::hex(&k));
+        let inv = invite::make(&me, &invite::Make { world: &rid, kind: k.word(), name: &name, secret: &secret, user: &user, pass: &pass, lan: lan.as_deref(), device: device.as_deref(), now: now_secs() })?;
         let (app_link, site_link) = invite::links(&inv);
         let expires = invite::open(&inv, now_secs())?.expires;
         Ok(WorldInviteLink { invite: inv, app_link, site_link, expires, ways: d.ways })
@@ -3056,6 +3058,24 @@ fn world_invite_now(k: crate::host::engine::Kind) -> Result<DenInvite, String> {
     Ok(DenInvite { link, code, name: "your friend".into(), expires: now_secs() + wf::TICKET_DAYS * 86_400, tunnel, ways: vec![lan_way, key_way, own_way, relay_way] })
 }
 
+/// A world on the public list, from anywhere (p2p/dht.rs `publish_realm` under the world's realm key: this PC's
+/// connection key as its endpoint, no address; put again every 30 minutes while the launcher runs). `listed` false
+/// takes it off. Sharing the world ending takes it off too. Not kept across launches yet.
+#[tauri::command]
+async fn world_set_listed(kind: String, listed: bool) -> Result<bool, String> {
+    let k = world_kind(&kind)?;
+    blocking(move || {
+        use crate::host::{litenet, worldshare as ws};
+        let share = ws::dir(&world_paths(k).root);
+        std::fs::create_dir_all(&share).map_err(|e| e.to_string())?;
+        let seed = litenet::load_or_create_key(&litenet::key_path(&share))?;
+        let dev = if listed { crate::p2p::link::my_device_hex() } else { None };
+        crate::p2p::link::list_world(&settings::app_dir(), seed, listed, dev.as_deref())?;
+        Ok(listed)
+    })
+    .await
+}
+
 /// Sharing a world ends: the same-network way, and its tunnel when the tunnel is this world's; friends' lasting
 /// logins disabled until they are invited again (or trusted), one-time logins with no characters removed
 /// (host/worldfriends.rs).
@@ -3068,6 +3088,9 @@ fn world_share_off(k: crate::host::engine::Kind) {
     }
     if let Some(m) = &mine {
         crate::p2p::link::withdraw_world(m);
+    }
+    if let Ok(seed) = litenet::load_or_create_key(&litenet::key_path(&share)) {
+        let _ = crate::p2p::link::list_world(&settings::app_dir(), seed, false, None); // off the public list too
     }
     ws::lan_stop();
     wf::front_stop();
@@ -5522,6 +5545,7 @@ pub fn run() {
             world_choices,
             world_settings_get, // Single player's world settings before the first load and later (host/spsettings.rs)
             world_settings_set,
+            world_set_listed, // a world on the public list via the DHT (p2p/dht.rs publish_realm; no button yet)
             world_mods_get, // Single player's "Mods in this world": the engine's own modules, off or on (host/worldmods.rs)
             world_mods_set,
             world_play,

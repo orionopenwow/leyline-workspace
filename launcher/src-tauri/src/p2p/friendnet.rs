@@ -313,7 +313,7 @@ impl Hub {
         #[cfg(all(feature = "link", desktop))]
         if let Some(l) = super::linknet::current() {
             let env = friends::envelope(&pk, msg, None)?;
-            let quick = matches!(kind, "presence" | "card");
+            let quick = matches!(kind, "presence" | "card" | "mesh");
             let total = if quick { super::linknet::QUICK_TOTAL } else { Duration::from_secs(40) };
             match super::linknet::block(l.send_envelope(&pk, &env, total, !quick)) {
                 Ok(_) => return Ok("link"),

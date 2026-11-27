@@ -346,7 +346,7 @@ mod tests {
         let k = crate::identity::PeerIdentity::from_seed([3; 32]).unwrap();
         let inv = crate::host::invite::make(&k, &crate::host::invite::Make {
             world: "abcdefghijk2345a", kind: "single", name: "Bo", secret: "ABCDEFGHJKLMNPQRSTUVWXYZ",
-            user: "GABC12345", pass: "PASS1234WORD", lan: None, now: 1,
+            user: "GABC12345", pass: "PASS1234WORD", lan: None, device: None, now: 1,
         }).unwrap();
         assert_eq!(parse(&format!("leyline://join/{inv}")), Some(Link::Invite(inv.clone())));
         assert_eq!(parse(&format!("leyline://join/{inv}/")), Some(Link::Invite(inv.clone())));

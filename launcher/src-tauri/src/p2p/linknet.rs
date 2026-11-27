@@ -3,8 +3,8 @@
 //! relay cards or Settings › Network; address hints come from friends' sealed presence messages, the LAN beacon and
 //! the DHT lookup (`link::Lookup`).
 //!
-//! One endpoint per launcher, keyed by this PC's device key (identity.rs `device_seed`, never the root key). Every
-//! stream starts with both sides' device certs (`identity::device_cert`: the root's signature over the device key),
+//! One endpoint per launcher, keyed by this PC's Passport device key (`passport::DeviceKey`, never the root key). Every
+//! stream starts with both sides' Passport device records (`passport::check_device_cert`: the root's signature over the device key),
 //! checked against the QUIC key, so each side knows the other's peer key; then a [`Header`]. Services:
 //! * `friend`: one sealed friend message (friendnet.rs takes it as from the same network or direct);
 //! * `world:<realm id>:login|world`: a shared world's port on 127.0.0.1, behind the invite's knock;
@@ -172,11 +172,13 @@ pub struct Options {
     /// Look up and publish on the Mainline DHT (iroh-mainline-address-lookup: only the hole-punch helper is
     /// published, never addresses). Off in tests (no internet).
     pub dht: bool,
+    /// This PC's device key and record (None: the Passport's, from the app folder; a fresh one with no folder).
+    pub device: Option<crate::passport::DeviceKey>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { bind: None, step_timeout: STEP_TIMEOUT, dht: true }
+        Options { bind: None, step_timeout: STEP_TIMEOUT, dht: true, device: None }
     }
 }
 
@@ -209,6 +211,7 @@ pub struct Link {
     /// Peer key -> device key, learned from checked device certs (and invite links, checked at connect time).
     devices: Mutex<HashMap<[u8; 32], [u8; 32]>>,
     my_cert: Value,
+    device: crate::passport::DeviceKey,
     dht: bool,
 }
 
@@ -216,12 +219,9 @@ fn device_of(c: &Connection) -> [u8; 32] {
     *c.remote_id().as_bytes()
 }
 
-/// The other side's device cert, checked against the QUIC key: its peer key.
-fn check_hello(v: &Value, c: &Connection) -> Result<[u8; 32], String> {
-    match identity::check_device_cert(&v["cert"]) {
-        Some((root, dev)) if dev == device_of(c) => Ok(root),
-        _ => Err("the other side isn't who it says".into()),
-    }
+/// The other side's Passport device record, checked against the QUIC key: its peer key (the Passport root).
+fn check_hello(me: &crate::passport::DeviceKey, v: &Value, c: &Connection) -> Result<[u8; 32], String> {
+    me.check_peer(&v["cert"], &device_of(c)).ok_or_else(|| "the other side isn't who it says".into())
 }
 
 fn now() -> u64 {
@@ -232,10 +232,18 @@ impl Link {
     /// A new endpoint for `me`. Needs the runtime (call inside it).
     pub async fn bind(me: PeerIdentity, app: Option<PathBuf>, cfg: LinkSettings, book: Arc<dyn Book>, opts: Options) -> Result<Arc<Link>, String> {
         let cfg = link::clean(cfg);
+        let device = match (opts.device.clone(), app.as_deref()) {
+            (Some(d), _) => d,
+            (None, Some(a)) => crate::passport::DeviceKey::for_app(a, &me)?,
+            (None, None) => crate::passport::DeviceKey::fresh(&me)?,
+        };
+        if device.public == me.public_key {
+            return Err("The connection key must be a device key, never the Passport itself.".into());
+        }
         let helpers: Vec<RelayUrl> = cfg.helpers.iter().filter_map(|h| h.parse().ok()).collect();
         let base = || {
             let b = Endpoint::builder(presets::Minimal)
-                .secret_key(SecretKey::from_bytes(&me.device_seed()))
+                .secret_key(SecretKey::from_bytes(&device.secret()))
                 .alpns(vec![ALPN.to_vec()])
                 .relay_mode(if helpers.is_empty() { RelayMode::Disabled } else { RelayMode::custom(helpers.clone()) })
                 .portmapper_config(if cfg.router_port { PortmapperConfig::default() } else { PortmapperConfig::Disabled });
@@ -258,8 +266,8 @@ impl Link {
                 }
             }
         };
-        debug_assert_eq!(ep.id().as_bytes(), &me.device_public(), "the endpoint id is the device key");
-        let my_cert = me.device_cert();
+        debug_assert_eq!(ep.id().as_bytes(), &device.public, "the endpoint id is the device key");
+        let my_cert = device.record.clone();
         let help = cfg.help_day_mb as u64 * 1024 * 1024;
         let held = app.as_deref().map(Held::load).unwrap_or_default();
         let l = Arc::new(Link {
@@ -280,6 +288,7 @@ impl Link {
             last_way: Mutex::new(HashMap::new()),
             devices: Mutex::new(HashMap::new()),
             my_cert,
+            device,
             dht: opts.dht,
         });
         let a = l.clone();
@@ -291,8 +300,18 @@ impl Link {
         self.me.public_key
     }
 
+    /// The Passport pointer on the DHT (p2p/dht.rs `publish_passport`, under the root): this device while the player
+    /// keeps "findable by my Passport key" on, withdrawn otherwise. Only with an app folder (not in tests).
+    pub fn publish_pointer(&self) {
+        let Some(app) = &self.app else { return };
+        let cfg = self.cfg.lock().unwrap().clone();
+        let eps = link::passport_pointer(&cfg, &identity::hex(&self.device.public));
+        let root = super::dht::Key::from_identity(Arc::new(self.me.duplicate()));
+        let _ = super::dht::publish_passport(app, root, eps, Vec::new()); // refused only for a bad key: nothing to tell
+    }
+
     pub fn device_key(&self) -> [u8; 32] {
-        self.me.device_public()
+        self.device.public
     }
 
     /// `peer`'s device key, as an invite link or a hint said (checked when connecting).
@@ -347,8 +366,11 @@ impl Link {
     /// Everything known about reaching `peer`.
     pub fn hints_for(&self, peer: &[u8; 32]) -> Hints {
         let mut h = Hints::default();
-        for l in self.lookups.lock().unwrap().iter() {
-            h.add(l.lookup(peer));
+        let lookups: Vec<Arc<dyn Lookup>> = self.lookups.lock().unwrap().clone();
+        for l in lookups {
+            // the DHT lookup may block a few seconds: let the runtime move other work off this thread meanwhile
+            let multi = tokio::runtime::Handle::try_current().is_ok_and(|r| r.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+            h.add(if multi { tokio::task::block_in_place(|| l.lookup(peer)) } else { l.lookup(peer) });
         }
         let mine: Vec<Hint> = self.cfg.lock().unwrap().helpers.iter().chain(self.card_helpers.lock().unwrap().iter()).cloned().map(Hint::Helper).collect();
         h.add(mine);
@@ -420,7 +442,7 @@ impl Link {
         let c2 = c.clone();
         let mut s: Stream = Box::new(Quic { recv, send, _conn: c });
         write_json(&mut s, &self.hello()).await?;
-        if check_hello(&read_json(&mut s).await?, &c2)? != *root {
+        if check_hello(&self.device, &read_json(&mut s).await?, &c2)? != *root {
             return Err("the other side isn't who it should be".into());
         }
         self.learn_device(*root, device_of(&c2));
@@ -575,7 +597,7 @@ impl Link {
                         let c3 = c2.clone();
                         let mut s: Stream = Box::new(Quic { recv, send, _conn: c2 });
                         let hello = async {
-                            let from = check_hello(&read_json(&mut s).await?, &c3)?;
+                            let from = check_hello(&me2.device, &read_json(&mut s).await?, &c3)?;
                             write_json(&mut s, &me2.hello()).await?;
                             Ok::<[u8; 32], String>(from)
                         };
@@ -799,7 +821,7 @@ impl Lookup for HubHints {
             out.push(Hint::Ip(SocketAddr::new(n.addr.ip(), port)));
         }
         if let Some(b) = body {
-            if let Some((root, dev)) = identity::check_device_cert(&b["link"]["cert"]) {
+            if let Some((root, dev)) = crate::passport::check_device_cert(&b["link"]["cert"]) {
                 if root == *peer {
                     out.push(Hint::Device(dev));
                 }
@@ -881,6 +903,7 @@ pub fn start_for(hub: &Arc<super::friendnet::Hub>) -> Result<(), String> {
         l.add_lookup(dht);
     }
     *LINK.lock().unwrap() = Some(l.clone());
+    l.publish_pointer();
     // messages kept for friends go out when they're reachable
     runtime().spawn(async move {
         loop {
@@ -1039,7 +1062,7 @@ mod tests {
 
     async fn node(n: u8, book: TestBook, cfg: LinkSettings) -> (Arc<Link>, Arc<TestBook>) {
         let book = Arc::new(book);
-        let opts = Options { bind: Some("127.0.0.1:0".parse().unwrap()), step_timeout: Duration::from_secs(5), dht: false };
+        let opts = Options { bind: Some("127.0.0.1:0".parse().unwrap()), step_timeout: Duration::from_secs(5), dht: false, device: None };
         let l = Link::bind(id(n), None, cfg, book.clone(), opts).await.unwrap();
         (l, book)
     }
@@ -1058,16 +1081,68 @@ mod tests {
     }
 
     #[test]
-    fn the_endpoint_key_is_a_device_key_vouched_for_by_the_peer_key() {
+    fn the_endpoint_key_is_the_passport_device_key() {
         let me = id(7);
-        let sk = SecretKey::from_bytes(&me.device_seed());
-        assert_eq!(sk.public().as_bytes(), &me.device_public(), "iroh and ring agree on the key");
-        assert_ne!(me.device_public(), me.public_key, "never the root key");
-        assert_eq!(identity::check_device_cert(&me.device_cert()), Some((me.public_key, me.device_public())));
-        let mut forged = me.device_cert();
-        forged["doc"]["device"] = serde_json::json!(identity::hex(&id(8).device_public()));
-        assert!(identity::check_device_cert(&forged).is_none());
-        assert_eq!(id(7).device_public(), me.device_public(), "the same every time");
+        let d = tempfile::tempdir().unwrap();
+        // a launcher with no Passport device record yet makes one on first run, and the same key every run after
+        let dev = crate::passport::DeviceKey::for_app(d.path(), &me).unwrap();
+        let sk = SecretKey::from_bytes(&dev.secret());
+        assert_eq!(sk.public().as_bytes(), &dev.public, "iroh and ring agree on the key");
+        assert_ne!(dev.public, me.public_key, "never the root key");
+        assert_eq!(crate::passport::check_device_cert(&dev.record), Some((me.public_key, dev.public)));
+        assert_eq!(dev.check_peer(&dev.record, &dev.public), Some(me.public_key));
+        assert_eq!(crate::passport::DeviceKey::for_app(d.path(), &me).unwrap().public, dev.public, "the same every time");
+        let st = crate::passport::State::load(d.path(), &me);
+        assert!(st.devices.iter().any(|r| crate::passport::check_device_cert(r) == Some((me.public_key, dev.public))), "on the Passport page");
+        // a record naming another key, or forged, is refused
+        let other = crate::passport::DeviceKey::fresh(&id(8)).unwrap();
+        assert_eq!(dev.check_peer(&dev.record, &other.public), None);
+        let mut forged = dev.record.clone();
+        forged["doc"]["device"] = serde_json::json!(identity::hex(&other.public));
+        assert!(crate::passport::check_device_cert(&forged).is_none());
+        // a device this Passport removed can't connect as it
+        let mut st = crate::passport::State::load(d.path(), &me);
+        let seq = st.next_seq(1);
+        let rev = crate::passport::make_device_revoke(&me, &identity::hex(&dev.public), 1, seq);
+        st.add_revoke(&rev, &me.public_hex()).unwrap();
+        let mut checker = crate::passport::DeviceKey::fresh(&me).unwrap();
+        checker.revoked = vec![rev];
+        assert_eq!(checker.check_peer(&dev.record, &dev.public), None);
+    }
+
+    /// A DHT of our own in memory (p2p/dht.rs `Board`).
+    #[derive(Default)]
+    struct MemBoard(Mutex<HashMap<[u8; 32], mainline::MutableItem>>);
+    impl super::super::dht::Board for MemBoard {
+        fn put(&self, item: mainline::MutableItem) -> Result<(), String> {
+            self.0.lock().unwrap().insert(*item.key(), item);
+            Ok(())
+        }
+        fn get(&self, key: &[u8; 32]) -> Option<mainline::MutableItem> {
+            self.0.lock().unwrap().get(key).cloned()
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_passport_pointer_on_the_dht_is_enough_to_reach_a_friend() {
+        use super::super::dht;
+        let (a, _) = node(1, TestBook::default(), LinkSettings::default()).await;
+        let (b, bbook) = node(2, TestBook::default(), LinkSettings::default()).await;
+        let (m, _) = node(3, TestBook::default(), LinkSettings::default()).await;
+        // b's Passport pointer (under its root): its device key and its address; nothing else tells a where b is
+        let board = Arc::new(MemBoard::default());
+        let h = dht::Hints { kind: "passport".into(), ts: now(), endpoints: vec![identity::hex(&b.device_key())], addrs: vec![addr_of(&b).to_string()], record_sha256: None, fetch: vec!["peer".into()] };
+        dht::publish_with(board.as_ref(), &dht::Key::from_identity(Arc::new(id(2))), &h, 1).unwrap();
+        let d = tempfile::tempdir().unwrap();
+        let (dir, bb) = (d.path().to_path_buf(), board.clone());
+        a.add_lookup(Arc::new(link::DhtLookup::with(move |peer| dht::lookup_with(bb.as_ref(), &dir, peer, now()))));
+        let env = json!({"v": 1, "to": id(2).peer_id, "box": "sealed"});
+        a.send_envelope(&b.public_key(), &env, Duration::from_secs(20), false).await.unwrap();
+        assert_eq!(bbook.got.lock().unwrap()[0], (env.clone(), a.public_key()));
+        // a pointer for c (key 4) naming m's device and address: m's device record doesn't vouch for c, refused
+        let h = dht::Hints { endpoints: vec![identity::hex(&m.device_key())], addrs: vec![addr_of(&m).to_string()], ..h };
+        dht::publish_with(board.as_ref(), &dht::Key::from_identity(Arc::new(id(4))), &h, 2).unwrap();
+        assert!(a.send_envelope(&id(4).public_key, &env, Duration::from_secs(8), false).await.is_err());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -734,6 +734,7 @@ pub async fn link_set(settings: crate::p2p::link::LinkSettings) -> Result<LinkVi
         if let Some(l) = crate::p2p::linknet::current() {
             if settings.on {
                 l.set_cfg(crate::p2p::link::load(&dir));
+                l.publish_pointer();
             } else {
                 crate::p2p::linknet::stop();
             }

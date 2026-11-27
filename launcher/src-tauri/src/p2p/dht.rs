@@ -5,8 +5,10 @@
 //! sha256 of its full signed mesh record and where that record can be fetched. Anyone who knows the key can find the
 //! packet; nobody else can write it.
 //!
-//! **Never under the device key** (`peer.key`): the transport (p2p/link.rs, iroh) publishes its own packet under
-//! that key, and a key has one packet on the DHT, so ours would overwrite it. `set_job` refuses it.
+//! **Never under the device key** (the Passport's `passport/device.key`, the iroh endpoint key): the transport
+//! (p2p/link.rs, iroh) publishes its own packet under that key, and a key has one packet on the DHT, so ours would
+//! overwrite it. `set_job` refuses it. The Passport root (`peer.key`) is a different key and carries the Passport
+//! pointer.
 //!
 //! * **Format:** a pkarr signed packet (BEP 44 mutable item, no salt, `seq` = microseconds): the value is a DNS
 //!   reply of TXT records named `_leyline.<z-base-32 key>`, one string each: `v=1`, `k=realm|passport`, `t=<unix
@@ -528,10 +530,10 @@ pub fn lookup(peer: &str) -> Found {
     }
 }
 
-/// The device key of this PC (`peer.key`'s public half), if it has one: never published under (the transport's).
+/// The device key of this PC (the Passport's `device.key`, the transport's endpoint key), if it has one: never
+/// published under here (iroh's own address record lives there).
 fn device_public(app: &Path) -> Option<[u8; 32]> {
-    let t = std::fs::read_to_string(crate::identity::key_path(app)).ok()?;
-    crate::identity::PeerIdentity::from_seed(crate::identity::unhex32(t.trim())?).ok().map(|i| i.public_key)
+    crate::passport::device_public_if_any(app)
 }
 
 /// The https fetch pointers of every cached packet (extra record sources for the mesh: p2p/mesh.rs `gather_all`).
@@ -774,9 +776,10 @@ mod tests {
     fn never_under_the_device_key() {
         let d = tempfile::tempdir().unwrap();
         let me = crate::identity::load_or_create(d.path()).unwrap();
-        let seed = crate::identity::unhex32(std::fs::read_to_string(crate::identity::key_path(d.path())).unwrap().trim()).unwrap();
-        let device = Key::from_seed(seed).unwrap();
-        assert_eq!(device.public, me.public_key);
+        let dev = crate::passport::DeviceKey::for_app(d.path(), &me).unwrap();
+        let device = Key::from_seed(dev.secret()).unwrap();
+        assert_eq!(device.public, dev.public);
+        assert_ne!(device.public, me.public_key, "the Passport root is not the device key");
         let e = publish_passport(d.path(), device.clone(), vec!["ab".repeat(32)], vec![]).unwrap_err();
         assert!(e.contains("device key"), "{e}");
         assert!(publish_realm(d.path(), device, true, vec![], vec![], None, vec![]).is_err());

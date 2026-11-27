@@ -11,16 +11,19 @@
 //! ```text
 //!   {"v":1, "pk":<host public key, hex>, "w":<the world's realm id>, "k":<single|vanilla|bossrush>,
 //!    "n":<host's name or "">, "s":<the world's invite secret>, "c":<one-time code: USER.PASS>,
-//!    "l":<same-network hint ip:port, private addresses only, or absent>, "x":<expires, unix seconds>}
+//!    "l":<same-network hint ip:port, private addresses only, or absent>, "x":<expires, unix seconds>,
+//!    "d":<the host's Passport device key, hex: its connection key (p2p/linknet.rs), or absent>}
 //! ```
 //!
 //! `s` and `c` are what the lasting-login handshake already takes (host/worldfriends.rs): the claim's AEAD key comes
 //! from `s`, and `c` is the one-time ticket a new friend claims their lasting login with (one identity, 7 days). So an
 //! opened invite becomes the link `join_invite` already understands ([`Invite::legacy_link`]) and joins the same way.
 //!
-//! **How the friend reaches the host** is [`ways`]: the transport's own dial-by-key when it is built (the
-//! `feat-connect` work: one function, [`dial_by_key`], is the whole boundary), the same-network hint, then whatever
-//! the old link's ways still do. Never a public address in the invite.
+//! **How the friend reaches the host:** the same-network hint first, then the transport by the host's key from
+//! anywhere ([`dial_by_key`]: p2p/link.rs `guest_join`, a forwarder on 127.0.0.1 here; the device key comes from the
+//! invite's `d`, friends' presence or the host's DHT pointer, and is checked against `pk` at connect time), then
+//! whatever the old link's ways still do. [`Invite::legacy_link`] carries `~~key=` (and `~~dev=`) so `join_invite`
+//! takes the key way after the same network. Never a public address in the invite.
 
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -52,6 +55,9 @@ pub struct Invite {
     pub code: String,
     #[serde(skip)]
     pub lan: Option<String>,
+    /// The host's device key (hex), when the invite carries it.
+    #[serde(skip)]
+    pub device: Option<String>,
     pub expires: u64,
 }
 
@@ -64,6 +70,8 @@ pub struct Make<'a> {
     pub user: &'a str,
     pub pass: &'a str,
     pub lan: Option<&'a str>,
+    /// The host's Passport device key (hex), when its connections run.
+    pub device: Option<&'a str>,
     pub now: u64,
 }
 
@@ -106,6 +114,9 @@ pub fn doc(m: &Make) -> Result<Value, String> {
     d.insert("c".into(), json!(code));
     if let Some(l) = m.lan.filter(|l| lan_ok(l)) {
         d.insert("l".into(), json!(l));
+    }
+    if let Some(k) = m.device.and_then(crate::identity::unhex32) {
+        d.insert("d".into(), json!(crate::identity::hex(&k)));
     }
     d.insert("x".into(), json!(m.now + DAYS * 86_400));
     Ok(Value::Object(d))
@@ -151,7 +162,7 @@ pub fn open(invite: &str, now: u64) -> Result<Invite, String> {
     let sig = crate::host::bossrush::un_b64url(sig).ok_or(BAD)?;
     let d: Value = serde_json::from_slice(&raw).map_err(|_| BAD.to_string())?;
     let o = d.as_object().ok_or(BAD)?;
-    let allowed = ["v", "pk", "w", "k", "n", "s", "c", "l", "x"];
+    let allowed = ["v", "pk", "w", "k", "n", "s", "c", "l", "x", "d"];
     if o.keys().any(|k| !allowed.contains(&k.as_str())) || o.get("v") != Some(&json!(1)) {
         return Err("That invite is from a newer Leyline. Update Leyline, then open it again.".into());
     }
@@ -170,6 +181,10 @@ pub fn open(invite: &str, now: u64) -> Result<Invite, String> {
     if clean_name(name) != name {
         return Err(BAD.into());
     }
+    let device = match o.get("d") {
+        None => None,
+        Some(v) => Some(v.as_str().and_then(crate::identity::unhex32).filter(|k| *k != pk_bytes).map(|k| crate::identity::hex(&k)).ok_or(BAD)?),
+    };
     let expires = o.get("x").and_then(Value::as_u64).ok_or(BAD)?;
     if expires < now {
         return Err("That invite has run out (they last a week). Ask your friend for a new one.".into());
@@ -183,6 +198,7 @@ pub fn open(invite: &str, now: u64) -> Result<Invite, String> {
         secret: secret.into(),
         code: code.into(),
         lan,
+        device,
         expires,
     })
 }
@@ -193,7 +209,13 @@ impl Invite {
     pub fn legacy_link(&self) -> String {
         let (u, p) = self.code.split_once('.').unwrap_or_default();
         let base = crate::host::litenet::invite_link(crate::realms::RELAY, &self.world, &self.secret, Some((u, p)));
-        crate::host::worldfriends::with_mark(&crate::host::denways::with_ways(&base, self.lan.as_deref(), None))
+        let l = crate::host::worldfriends::with_mark(&crate::host::denways::with_ways(&base, self.lan.as_deref(), None));
+        // the host's key (and device key) for the way from anywhere (p2p/link.rs `key_in`, `device_in`)
+        match &self.device {
+            Some(d) => crate::p2p::link::with_key(&l, &self.pk, d),
+            None if crate::p2p::link::key_in(&l).is_none() => format!("{l}~~key={}", self.pk),
+            None => l,
+        }
     }
 
     /// "Join Bo's world?" (the name the Friends list knows them by wins over the one in the link).
@@ -207,23 +229,21 @@ impl Invite {
     }
 }
 
-/// The transport's dial-by-key (the `feat-connect` work): the address its forwarder opened on this PC for the host's
-/// key and world, when it can reach them. Not built on this branch: None, so the ways below are used.
-pub fn dial_by_key(_pk: &str, _world: &str) -> Option<String> {
-    None
+/// The transport's dial-by-key (p2p/link.rs `guest_join`): this PC's forwarder address on 127.0.0.1 for the host's
+/// world, reached by the host's key from anywhere (same network, direct, hole punching, a mutual friend or a
+/// community relay). None when this build has no connections. Dials: only at Join, never when a card is shown.
+pub fn dial_by_key(inv: &Invite) -> Option<Result<String, String>> {
+    crate::p2p::link::guest_join(&inv.legacy_link(), &inv.world, &inv.secret).map(|r| r.map(|(addr, _)| addr))
 }
 
-/// The ways to try, in order, as "ip:port" addresses: the transport's own, then the same-network hint.
+/// The ways a Join tries, in order, for the card: the same-network hint ("ip:port"), then "key" (by the host's key
+/// from anywhere, [`dial_by_key`], which `join_invite` runs after the same network). Nothing is dialed here.
 pub fn ways(inv: &Invite) -> Vec<String> {
     let mut v: Vec<String> = Vec::new();
-    if let Some(a) = dial_by_key(&inv.pk, &inv.world) {
-        v.push(a);
-    }
     if let Some(l) = &inv.lan {
-        if !v.contains(l) {
-            v.push(l.clone());
-        }
+        v.push(l.clone());
     }
+    v.push("key".into());
     v
 }
 
@@ -243,6 +263,7 @@ mod tests {
             user: "GABC12345",
             pass: "PASS1234WORD",
             lan: Some("192.168.1.20:3724"),
+            device: None,
             now: 1_000,
         }
     }
@@ -274,7 +295,27 @@ mod tests {
         assert_eq!(crate::host::litenet::guest_in(&l), Some(("GABC12345".into(), "PASS1234WORD".into())));
         assert!(crate::host::worldfriends::marked(&l));
         assert_eq!(crate::host::denways::ways_in(&l).0.as_deref(), Some("192.168.1.20:3724"));
-        assert_eq!(ways(&o), vec!["192.168.1.20:3724".to_string()]);
+        assert_eq!(ways(&o), vec!["192.168.1.20:3724".to_string(), "key".to_string()], "same network first, then by key");
+        // the key way: the host's key in the link join_invite takes (p2p/link.rs guest_join reads it)
+        assert_eq!(crate::p2p::link::key_in(&l), Some(me(7).public_key));
+        assert_eq!(crate::p2p::link::device_in(&l), None, "no device key in this invite: the DHT or presence gives it");
+    }
+
+    #[test]
+    fn an_invite_can_carry_the_hosts_device_key() {
+        let dev = crate::identity::hex(&[9u8; 32]);
+        let o = open(&make(&me(7), &Make { device: Some(&dev), ..m() }).unwrap(), 2_000).unwrap();
+        assert_eq!(o.device.as_deref(), Some(dev.as_str()));
+        let l = o.legacy_link();
+        assert_eq!(crate::p2p::link::key_in(&l), Some(me(7).public_key));
+        assert_eq!(crate::p2p::link::device_in(&l), Some([9u8; 32]));
+        assert!(crate::realms::parse_invite(&l).is_some(), "still the link join_invite takes");
+        assert!(!serde_json::to_string(&o).unwrap().contains(&dev), "not shown to the page");
+        // the root itself is never a device key; a bad one is never signed
+        let root = me(7).public_hex();
+        assert!(open(&make(&me(7), &Make { device: Some(&root), ..m() }).unwrap(), 2_000).is_err());
+        let o = open(&make(&me(7), &Make { device: Some("nope"), ..m() }).unwrap(), 2_000).unwrap();
+        assert_eq!(o.device, None);
     }
 
     #[test]
@@ -322,6 +363,6 @@ mod tests {
         assert_eq!(o.lan, None);
         let o = open(&make(&k, &Make { lan: None, name: "  <b>Bo</b>  ", ..m() }).unwrap(), 2_000).unwrap();
         assert_eq!(o.name, "bBob");
-        assert!(ways(&o).is_empty());
+        assert_eq!(ways(&o), vec!["key".to_string()]);
     }
 }

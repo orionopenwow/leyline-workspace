@@ -780,6 +780,66 @@ pub fn device_secret_seed(app: &Path) -> Result<[u8; 32], String> {
     Ok(device_identity(app)?.secret_seed())
 }
 
+/// This PC's connection key (the iroh endpoint key, p2p/linknet.rs) with the root's device record naming it: the one
+/// device key of the launcher. The record is what a peer checks ([`check_device_cert`]) to learn the Passport behind
+/// the QUIC key. A launcher with no device record yet (made before the Passport) makes one here on first run.
+#[derive(Clone)]
+pub struct DeviceKey {
+    seed: [u8; 32],
+    pub public: [u8; 32],
+    pub record: Value,
+    /// This Passport's own revocations (a removed device of mine can't connect as me).
+    pub revoked: Vec<Value>,
+}
+
+impl std::fmt::Debug for DeviceKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DeviceKey({})", hex(&self.public))
+    }
+}
+
+impl DeviceKey {
+    /// `<app>/passport/device.key` and its record in `state.json` (both made when missing).
+    pub fn for_app(app: &Path, root: &PeerIdentity) -> Result<DeviceKey, String> {
+        let id = device_identity(app)?;
+        let record = this_device_record(app, root)?;
+        let revoked = State::load(app, root).revoked;
+        Ok(DeviceKey { seed: id.secret_seed(), public: id.public_key, record, revoked })
+    }
+
+    /// A new random device key with its record, kept nowhere (tests, and a launcher with no app folder).
+    pub fn fresh(root: &PeerIdentity) -> Result<DeviceKey, String> {
+        let id = PeerIdentity::from_seed(random()?)?;
+        let t = now();
+        let record = make_device(root, &id.public_hex(), &default_device_name(), t, t);
+        Ok(DeviceKey { seed: id.secret_seed(), public: id.public_key, record, revoked: Vec::new() })
+    }
+
+    /// The secret seed, for the endpoint only. Never logged or sent.
+    pub(crate) fn secret(&self) -> [u8; 32] {
+        self.seed
+    }
+
+    /// The root (Passport key) behind `device` when `rec` is a good device record naming it, checked against this
+    /// Passport's own revocations too.
+    pub fn check_peer(&self, rec: &Value, device: &[u8; 32]) -> Option<[u8; 32]> {
+        verify_device_for(rec, &hex(device), &self.revoked).ok().and_then(|r| unhex32(&r))
+    }
+}
+
+/// A device record's (root key, device key), when the root's signature holds (no revocation check: see
+/// [`verify_device_for`] for that).
+pub fn check_device_cert(rec: &Value) -> Option<([u8; 32], [u8; 32])> {
+    let d = check_device(rec, None).ok()?;
+    Some((unhex32(&d.root)?, unhex32(&d.device)?))
+}
+
+/// The device key of this PC if it has one already (read only; never made here).
+pub fn device_public_if_any(app: &Path) -> Option<[u8; 32]> {
+    let t = std::fs::read_to_string(dir(app).join("device.key")).ok()?;
+    PeerIdentity::from_seed(unhex32(t.trim())?).ok().map(|i| i.public_key)
+}
+
 /// The Passport root (hex) a device key belongs to: a good device record naming `device_pk`, not revoked by any of
 /// `revocations` at that seq or later.
 pub fn verify_device_for(rec: &Value, device_pk: &str, revocations: &[Value]) -> Result<String, String> {

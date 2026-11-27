@@ -114,11 +114,13 @@ Friend requests and messages go direct, or wait sealed with a shared friend or i
   relays or DNS of iroh's maker. Relays (hole-punch helpers) come only from signed relay cards or Settings ›
   Network; address lookup from friends' sealed presence, the LAN beacon, invite links and the Mainline DHT
   (`iroh-mainline-address-lookup`, which publishes only the helper URL, never addresses). `link::Lookup` is the
-  boundary for the DHT records of `p2p/dht.rs` (`link::dht_lookup`, a stub until that lands).
-- **Keys:** the QUIC key is a **device key** (`identity.rs` `device_seed`: HKDF of the root seed, "leyline device
-  v1", until the Passport's device records replace it in that one function). Every stream starts with both sides'
-  device certs (`leyline-device-v1`, signed by the root key), so the peer key and peer id are unchanged and a wrong
-  device key from any hint is refused.
+  boundary for the DHT pointers of `p2p/dht.rs` (`link::dht_lookup` = `link::DhtLookup` over `dht::lookup`: a
+  Passport's or listed realm's devices and signed addresses; device keys from it are still checked at connect time).
+- **Keys:** the QUIC key is this PC's **Passport device key** (`passport::DeviceKey`: `passport/device.key`, random,
+  made once; a launcher from before the Passport makes it and its root-signed device record on first run). Every
+  stream starts with both sides' Passport device records (`leyline-passport-device-v1`, signed by the root,
+  checked with `passport::verify_device_for`, including this Passport's own revocations), so the peer key and peer id
+  are unchanged, a removed device can't connect as its Passport, and a wrong device key from any hint is refused.
 - **Go-betweens:** a mutual friend (Settings › Network › Help friends connect: on by default, 1 GB a day, 4 at once)
   or a community relay (Be a node plus "Carry sealed connections for other players", within Be a node's caps).
   A second seal end to end (`leyline-link-seal-v1`: X25519 with both peer keys signing the transcript, then

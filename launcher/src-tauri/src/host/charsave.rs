@@ -23,8 +23,11 @@
 //!   raid lockouts and quests in progress stay behind, talents are picked again. Items arrive by in-game mail (no
 //!   bag-slot guessing). Written in one transaction, while the worlds are stopped, after a back-up of that world.
 //!
-//! The keys and the friend transport are behind two small traits ([`Keys`], [`FriendLink`]) so the Passport's world
-//! keys (feat-passport) and a new transport (feat-connect) can replace today's peer key and `friendnet` messages.
+//! The keys and the friend transport are behind two small traits ([`Keys`], [`FriendLink`]). The player signs with the
+//! Passport's world key for the save's world (`passport::world_identity`: a host sees only that key, as at login);
+//! saves made with the root key before that stay the player's ([`my_player_key`]). Friends' messages go by
+//! `friendnet` `deliver`: the same network, a shared direct address, then the connections by key from anywhere
+//! (p2p/linknet.rs), then sealed and kept by a friend you both have until they are back.
 //! No game data is ever copied or sent: only ids and numbers.
 
 use crate::host::engine::{self as eng, Kind};
@@ -119,12 +122,24 @@ fn inflate(b: &[u8], max: usize) -> Result<Vec<u8>, String> {
 /// The keys a save is signed with. Today: the player's peer key (identity.rs) and each world's realm key (litenet.rs,
 /// `<world>/share/realm.key`). The Passport (feat-passport) replaces [`Keys::player`] with its own key.
 pub trait Keys {
-    fn player(&self) -> Result<PeerIdentity, String>;
+    /// The player's key for the world with this realm id (the Passport's world key).
+    fn player(&self, realm: &str) -> Result<PeerIdentity, String>;
     fn world(&self, kind: Kind) -> Result<PeerIdentity, String>;
 }
 
-/// Sending a small signed body to a friend, and who the friends are. Today: friendnet's sealed messages (kind
-/// `chars`). A new transport (feat-connect) can stand in.
+/// The key that signs as the player of `rec` on this PC (`root`: the Passport): the world key for the save's world, or
+/// the root itself for a save made before world keys. None: not this player's save.
+pub fn my_player_key(root: &PeerIdentity, rec: &Value) -> Option<PeerIdentity> {
+    let p = rec["save"]["player"].as_str()?;
+    if p == root.public_hex() {
+        return Some(root.duplicate());
+    }
+    let w = crate::passport::world_identity(root, rec["save"]["world"].as_str()?);
+    (w.public_hex() == p).then_some(w)
+}
+
+/// Sending a small signed body to a friend, and who the friends are: friendnet's sealed messages (kind `chars`),
+/// which go the same network, direct, by key from anywhere (p2p/linknet.rs) or wait sealed with a shared friend.
 pub trait FriendLink {
     /// Each friend: (public key hex, name, last seen).
     fn friends(&self) -> Vec<(String, String, u64)>;
@@ -137,8 +152,8 @@ pub struct LocalKeys {
 }
 
 impl Keys for LocalKeys {
-    fn player(&self) -> Result<PeerIdentity, String> {
-        identity::load_or_create(&self.app)
+    fn player(&self, realm: &str) -> Result<PeerIdentity, String> {
+        Ok(crate::passport::world_identity(&identity::load_or_create(&self.app)?, realm))
     }
     fn world(&self, kind: Kind) -> Result<PeerIdentity, String> {
         use crate::host::{litenet, worldshare as ws};
@@ -691,8 +706,8 @@ fn entry_for<'a>(idx: &'a mut Index, realm: &str, guid: u64, mine: bool) -> &'a 
 /// newest. The ids saved.
 pub fn make_saves_with(app: &Path, kind: Kind, q: &dyn Fn(&str) -> Result<String, String>, guids: &[u64], keys: &dyn Keys, made: u64) -> Result<Vec<String>, String> {
     let host = keys.world(kind)?;
-    let player = keys.player()?;
     let realm = identity::peer_id(&host.public_key);
+    let player = keys.player(&realm)?;
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut idx = load_index(app);
     let mut out = Vec::new();
@@ -871,13 +886,20 @@ fn host_friend_saves(p: &eng::Paths) {
         crate::host::worldfriends::FRIEND_REGEXP)) else { return };
     let q = |t: &str| eng::query(p, "acore_characters", t);
     let keys = LocalKeys { app: p.app.clone() };
+    let link = HubLink(&h);
+    let reachable: Vec<String> = link.friends().into_iter().map(|f| f.0).collect();
     for line in rows.lines() {
         let f: Vec<&str> = line.trim().split('\t').collect();
         let (Some(g), Some(u)) = (f.first().and_then(|g| g.parse::<u64>().ok()), f.get(1)) else { continue };
+        // only a friend whose world login is their Friends key can be asked to countersign: a Passport world key
+        // (a v2 login) can't be reached by its key, by design, so that friend's save stays host-signed (pending)
         let Some(fr) = book.friends.iter().find(|x| x.user == *u && hex64(&x.key)) else { continue };
         let Ok(st) = read_char(&q, g) else { continue };
         if let Ok(Some(rec)) = half_save(&p.app, p.kind, &st, &fr.key, &keys, now()) {
-            let _ = send_parts(&HubLink(&h), &fr.key, "cosign", &rec["save"]["char"].as_str().unwrap_or("").to_string(),
+            if !reachable.contains(&fr.key) {
+                continue;
+            }
+            let _ = send_parts(&link, &fr.key, "cosign", &rec["save"]["char"].as_str().unwrap_or("").to_string(),
                 rec["save"]["seq"].as_u64().unwrap_or(0), &identity::b32(&deflate(identity::canonical(&rec).as_bytes())));
         }
     }
@@ -885,9 +907,10 @@ fn host_friend_saves(p: &eng::Paths) {
 
 // ------------------------------------------------------------------------------------------------ sealed backups
 
-/// The newest save sealed to its own player: base32 of `seal(player, deflate(canonical(record)))`.
-pub fn seal_save(rec: &Value) -> Result<String, String> {
-    let pk = identity::unhex32(rec["save"]["player"].as_str().unwrap_or("")).ok_or("player key")?;
+/// The newest save sealed to its own player's Passport root (`owner`; not the world key, so the recovery phrase alone
+/// opens it on a new PC, without knowing which worlds it played on): base32 of `seal(owner, deflate(canonical(record)))`.
+pub fn seal_save(rec: &Value, owner: &[u8; 32]) -> Result<String, String> {
+    let pk = *owner;
     let b = identity::b32(&identity::seal(&pk, &deflate(identity::canonical(rec).as_bytes()))?);
     if b.len() > BLOB_MAX {
         return Err("That save is too big to send.".into());
@@ -900,7 +923,7 @@ pub fn open_save(me: &PeerIdentity, blob: &str) -> Result<Value, String> {
     let b = identity::unb32(blob).ok_or("not a backup")?;
     let rec: Value = serde_json::from_slice(&inflate(&me.open(&b)?, SAVE_MAX + 4096)?).map_err(|_| "not a save".to_string())?;
     check_record(&rec)?;
-    if rec["save"]["player"].as_str() != Some(me.public_hex().as_str()) {
+    if my_player_key(me, &rec).is_none() {
         return Err("another player's save".into());
     }
     Ok(rec)
@@ -930,12 +953,10 @@ pub fn send_parts(link: &dyn FriendLink, to: &str, op: &str, char: &str, seq: u6
 pub fn share_newest(app: &Path, link: &dyn FriendLink, id: &str, t: u64) -> Result<usize, String> {
     let rec = newest(app, id).ok_or("no save yet")?;
     let me = identity::load_or_create(app)?;
-    if rec["save"]["player"].as_str() != Some(me.public_hex().as_str()) {
-        return Ok(0);
-    }
+    let Some(signer) = my_player_key(&me, &rec) else { return Ok(0) };
     let settings = load_index(app).settings;
     let friends = link.friends();
-    let blob = seal_save(&rec)?;
+    let blob = seal_save(&rec, &me.public_key)?;
     let seq = rec["save"]["seq"].as_u64().unwrap_or(0);
     let mut held = Vec::new();
     for (k, n) in pick_holders(&friends, &settings.picked, settings.holders) {
@@ -943,7 +964,7 @@ pub fn share_newest(app: &Path, link: &dyn FriendLink, id: &str, t: u64) -> Resu
             held.push(Holder { key: k, name: n, seq, at: t });
         }
     }
-    let w = make_witness(&me, &rec, t);
+    let w = make_witness(&signer, &rec, t);
     for (k, _, _) in friends.iter().filter(|f| hex64(&f.0)).take(20) {
         let _ = link.send(k, json!({"op": "witness", "witness": w}));
     }
@@ -1115,8 +1136,10 @@ pub fn on_message(app: &Path, me: &PeerIdentity, from: &str, body: &Value, link:
         }
         "witness" => {
             let w = &body["witness"];
-            if w["witness"]["player"].as_str() != Some(from) {
-                return Err("a witness for someone else".into());
+            // signed by the player's key for that world (a world key can't be tied to `from`, the friend's Passport,
+            // by design): the signature is checked in keep_witness; only friends' messages reach here
+            if w["witness"]["player"].as_str().is_none() {
+                return Err("a witness with no player".into());
             }
             keep_witness(app, w)?;
             Ok("kept a witness")
@@ -1145,11 +1168,11 @@ pub fn on_message(app: &Path, me: &PeerIdentity, from: &str, body: &Value, link:
 /// my key as the player, after my newest. Signed, kept. (seq, char id, my signature)
 pub fn countersign(app: &Path, me: &PeerIdentity, rec: &Value, _from: &str) -> Result<(u64, String, String), String> {
     check_half(rec)?;
-    if rec["save"]["player"].as_str() != Some(me.public_hex().as_str()) {
+    let Some(signer) = my_player_key(me, rec) else {
         return Err("a save of someone else's character".into());
-    }
+    };
     let mut full = rec.clone();
-    let sig = me.sign_doc(CTX_SAVE, &rec["save"]);
+    let sig = signer.sign_doc(CTX_SAVE, &rec["save"]);
     full["player_sig"] = json!(sig);
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // a host may lose saves (a world restored from a back-up): a gap after my newest is taken; an older one isn't
@@ -1182,7 +1205,10 @@ pub fn cosigned(app: &Path, from: &str, body: &Value) -> Result<(), String> {
     }
     let file = char_dir(app, char).join("pending.json");
     let mut rec = read_json(&file).ok_or("no save waiting")?;
-    if rec["save"]["player"].as_str() != Some(from) || rec["save"]["seq"].as_u64() != body["seq"].as_u64() || body["hash"].as_str() != Some(hash_doc(&rec["save"]).as_str()) {
+    // the player may sign with a world key that isn't `from` (their Passport): the signature itself is what counts
+    // (check_record below, against the save's player key)
+    let _ = from;
+    if rec["save"]["seq"].as_u64() != body["seq"].as_u64() || body["hash"].as_str() != Some(hash_doc(&rec["save"]).as_str()) {
         return Err("not the save waiting".into());
     }
     rec["player_sig"] = body["sig"].clone();
@@ -1603,7 +1629,7 @@ fn target_account(p: &eng::Paths) -> String {
 fn my_newest(app: &Path, id: &str) -> Result<Value, String> {
     let rec = newest(app, id).ok_or("There is no save of that character on this PC yet.")?;
     let me = identity::load_or_create(app)?;
-    if rec["save"]["player"].as_str() != Some(me.public_hex().as_str()) {
+    if my_player_key(&me, &rec).is_none() {
         return Err("That character's saves aren't yours.".into());
     }
     Ok(rec)
@@ -1766,7 +1792,7 @@ mod tests {
         world: u8,
     }
     impl Keys for TestKeys {
-        fn player(&self) -> Result<PeerIdentity, String> {
+        fn player(&self, _realm: &str) -> Result<PeerIdentity, String> {
             Ok(key(self.player))
         }
         fn world(&self, kind: Kind) -> Result<PeerIdentity, String> {
@@ -2025,9 +2051,56 @@ mod tests {
         assert_eq!(last, "got a copy back");
         assert_eq!(newest(a2.path(), &id).unwrap(), r);
         assert_eq!(view(a2.path()).chars[0].name, "Tamsin");
-        // a witness sent by someone for another player is refused
-        let w = make_witness(&key(1), &r, 1);
+        // a witness passed on by someone else is only kept when the player's own signature holds (a world key can't
+        // be tied to the sender, so the signature is the check)
+        let mut w = make_witness(&key(1), &r, 1);
+        w["witness"]["seq"] = json!(99);
         assert!(on_message(b.path(), &key(2), &key(9).public_hex(), &json!({"op": "witness", "witness": w}), &none, 1).is_err());
+    }
+
+    #[test]
+    fn the_player_signs_with_the_passports_world_key_and_the_phrase_alone_brings_it_back() {
+        let (a, b, a2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        with_key(a.path(), 1);
+        with_key(a2.path(), 1);
+        let keys = LocalKeys { app: a.path().to_path_buf() };
+        let ids = make_saves_with(a.path(), Kind::Single, &fixture, &[7], &keys, 1_000).unwrap();
+        let id = ids[0].clone();
+        let r = newest(a.path(), &id).unwrap();
+        check_record(&r).unwrap();
+        let world = r["save"]["world"].as_str().unwrap();
+        let wk = crate::passport::world_identity(&key(1), world);
+        assert_eq!(r["save"]["player"].as_str(), Some(wk.public_hex().as_str()), "the world key, not the Passport root");
+        assert_ne!(wk.public_key, key(1).public_key);
+        assert_eq!(my_player_key(&key(1), &r).map(|k| k.public_key), Some(wk.public_key));
+        assert!(my_player_key(&key(2), &r).is_none(), "another Passport's");
+        assert!(my_newest(a.path(), &id).is_ok());
+        // a friend keeps the sealed copy and the world-key witness; a new PC with only the root gets it back
+        let link = FakeLink { friends: vec![(key(2).public_hex(), "F2".into(), 5)], sent: RefCell::new(Vec::new()) };
+        assert_eq!(share_newest(a.path(), &link, &id, 100).unwrap(), 1);
+        let none = FakeLink { friends: vec![], sent: RefCell::new(Vec::new()) };
+        for (_, body) in link.sent.borrow().iter() {
+            on_message(b.path(), &key(2), &key(1).public_hex(), body, &none, 101).unwrap();
+        }
+        assert!(witness_of(b.path(), &wk.public_hex(), &id).is_some(), "the witness is under the world key");
+        let back = FakeLink { friends: vec![], sent: RefCell::new(Vec::new()) };
+        assert_eq!(on_message(b.path(), &key(2), &key(1).public_hex(), &json!({"op": "ask"}), &back, 200).unwrap(), "handed copies back");
+        let mut last = "";
+        for (_, body) in back.sent.borrow().iter() {
+            last = on_message(a2.path(), &key(1), &key(2).public_hex(), body, &none, 201).unwrap();
+        }
+        assert_eq!(last, "got a copy back");
+        assert_eq!(newest(a2.path(), &id).unwrap(), r);
+        // a host's half save for my world key is countersigned with that world key
+        let host = key(30);
+        let realm = identity::peer_id(&host.public_key);
+        let st = read_char(&fixture, 7).unwrap();
+        let mine = crate::passport::world_identity(&key(1), &realm);
+        let half = make_record(save_doc(&st, None, &char_id(&realm, 7), &realm, &mine.public_hex(), &host.public_hex(), 5), Some(&host), None);
+        let (_, _, sig) = countersign(a2.path(), &key(1), &half, &host.public_hex()).unwrap();
+        let mut full = half.clone();
+        full["player_sig"] = json!(sig);
+        check_record(&full).unwrap();
     }
 
     #[test]

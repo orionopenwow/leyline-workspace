@@ -16,9 +16,9 @@
 //! Ways 1 to 3 are QUIC, sealed by the two launchers' own keys. Ways 4 and 5 add a second seal end to end
 //! ([`Handshake`]) inside, so the go-between only ever sees sealed bytes.
 //!
-//! The peer key stays the identity. The QUIC key is this PC's *device* key (identity.rs `device_seed`), never the
+//! The peer key stays the identity. The QUIC key is this PC's *device* key (the Passport's, `passport::DeviceKey`), never the
 //! root, so the DHT packet iroh publishes under it can't collide with records under the root key. Every stream
-//! starts with both sides' device certs (the root's signature over the device key), so each side knows the other's
+//! starts with both sides' Passport device records (the root's signature over the device key), so each side knows the other's
 //! peer key and peer id (base32(sha256(root key))[:16], unchanged); a device key from any hint is checked that way.
 
 use serde::{Deserialize, Serialize};
@@ -70,11 +70,15 @@ pub struct LinkSettings {
     pub helpers: Vec<String>,
     /// Be a node: carry sealed connections for anyone (within Be a node's caps). Off by default.
     pub community_relay: bool,
+    /// "Anyone with my Passport key can find this PC": a pointer under the Passport root on the public DHT naming
+    /// this PC's connection key (no address; p2p/dht.rs `publish_passport`). Off by default: friends find each
+    /// other through presence and the same network without it.
+    pub public_pointer: bool,
 }
 
 impl Default for LinkSettings {
     fn default() -> Self {
-        LinkSettings { on: true, help_friends: true, help_day_mb: 1024, help_streams: 4, router_port: false, community: true, helpers: Vec::new(), community_relay: false }
+        LinkSettings { on: true, help_friends: true, help_day_mb: 1024, help_streams: 4, router_port: false, community: true, helpers: Vec::new(), community_relay: false, public_pointer: false }
     }
 }
 
@@ -716,9 +720,74 @@ pub fn device_in(link: &str) -> Option<[u8; 32]> {
 
 // ------------------------------------------------------------------------------------------------ for the app
 
-/// The DHT address lookup (pkarr records, `p2p/dht.rs`) once that module is there; none until then.
+/// Hints from the Mainline DHT pointers (`p2p/dht.rs` `lookup`): the devices (endpoint ids) a Passport root or a
+/// listed realm names, and the addresses its owner signed. A device key is still checked against the peer key at
+/// connect time, so a pointer can't send a launcher to the wrong player. Blocks briefly (the DHT's answer is cached).
+pub struct DhtLookup(Box<dyn Fn(&str) -> super::dht::Found + Send + Sync>);
+
+impl DhtLookup {
+    /// The real DHT (`dht::lookup`, which follows the `dht` switch in the network flags).
+    pub fn live() -> DhtLookup {
+        DhtLookup(Box::new(super::dht::lookup))
+    }
+
+    /// Any lookup with `dht::lookup`'s shape (tests: `dht::lookup_with` over a board of their own).
+    pub fn with(f: impl Fn(&str) -> super::dht::Found + Send + Sync + 'static) -> DhtLookup {
+        DhtLookup(Box::new(f))
+    }
+}
+
+/// What a DHT pointer says, as hints: its endpoints as device keys (never the peer key itself: a key with no pointer
+/// is given back as itself, and a root is no QUIC key), its `a.b.c.d:port` / `[v6]:port` addresses as IPs (names
+/// are skipped: no name lookups on the way to a friend).
+pub fn hints_from_found(peer: &[u8; 32], f: &super::dht::Found) -> Vec<Hint> {
+    let mut out: Vec<Hint> = f.endpoints.iter().filter_map(|e| identity::unhex32(e)).filter(|d| d != peer).take(4).map(Hint::Device).collect();
+    out.extend(f.addrs.iter().filter_map(|a| a.parse::<SocketAddr>().ok()).take(8).map(Hint::Ip));
+    out
+}
+
+impl Lookup for DhtLookup {
+    fn lookup(&self, peer: &[u8; 32]) -> Vec<Hint> {
+        hints_from_found(peer, &(self.0)(&identity::hex(peer)))
+    }
+}
+
+/// The endpoints this PC's Passport pointer names (`dht::publish_passport`): this device while the player keeps
+/// "findable by my Passport key" on and the connections run; none (withdrawn) otherwise.
+pub fn passport_pointer(cfg: &LinkSettings, device_hex: &str) -> Vec<String> {
+    if cfg.on && cfg.public_pointer && identity::unhex32(device_hex).is_some() {
+        vec![device_hex.to_ascii_lowercase()]
+    } else {
+        Vec::new()
+    }
+}
+
+/// A world's public listing on the DHT (`dht::publish_realm` under the world's realm key): this PC's connection key
+/// as its endpoint, no address, its full record fetched from the host itself (`peer`). `listed` false withdraws it.
+pub fn list_world(app: &Path, realm_seed: [u8; 32], listed: bool, device_hex: Option<&str>) -> Result<(), String> {
+    let key = super::dht::Key::from_seed(realm_seed)?;
+    let endpoints: Vec<String> = device_hex.filter(|d| identity::unhex32(d).is_some()).map(|d| d.to_ascii_lowercase()).into_iter().collect();
+    if listed && endpoints.is_empty() {
+        return Err("Listing a world needs this PC's connections on (Settings › Network).".into());
+    }
+    super::dht::publish_realm(app, key, listed, endpoints, Vec::new(), None, vec!["peer".into()])
+}
+
+/// This PC's connection (device) key, starting the connections if they aren't running. None in a build without them.
+pub fn my_device_hex() -> Option<String> {
+    #[cfg(all(feature = "link", desktop))]
+    {
+        super::linknet::ensure().ok().map(|l| identity::hex(&l.device_key()))
+    }
+    #[cfg(not(all(feature = "link", desktop)))]
+    {
+        None
+    }
+}
+
+/// The DHT address lookup (`p2p/dht.rs` pointers) for the launcher's connections.
 pub fn dht_lookup() -> Option<std::sync::Arc<dyn Lookup>> {
-    None
+    Some(std::sync::Arc::new(DhtLookup::live()))
 }
 
 /// Offer a shared world's ports (the login front and the world port on 127.0.0.1) to friends holding its invite,
@@ -916,6 +985,26 @@ mod tests {
         assert!(h2.items.is_empty());
         h.sweep(100 + HELD_TTL + 1);
         assert!(h.items.is_empty(), "old messages are dropped");
+    }
+
+    #[test]
+    fn dht_pointers_become_hints_and_pointers_follow_the_settings() {
+        let f = super::super::dht::Found { endpoints: vec![identity::hex(&k(9)), identity::hex(&k(8)), "zz".into()], addrs: vec!["203.0.113.4:41192".into(), "[2001:db8::5]:41192".into(), "realm.example.org:443".into()] };
+        let h = hints_from_found(&k(9), &f);
+        assert_eq!(h, vec![Hint::Device(k(8)), Hint::Ip("203.0.113.4:41192".parse().unwrap()), Hint::Ip("[2001:db8::5]:41192".parse().unwrap())], "never the key itself; names skipped");
+        let l = DhtLookup::with(|p| super::super::dht::Found { endpoints: vec![p.to_string(), identity::hex(&[7; 32])], addrs: vec![] });
+        assert_eq!(l.lookup(&k(9)), vec![Hint::Device([7; 32])]);
+        assert!(dht_lookup().is_some(), "wired to p2p/dht.rs");
+        // the Passport pointer only while the player keeps it on
+        let dev = identity::hex(&k(5));
+        assert!(passport_pointer(&LinkSettings::default(), &dev).is_empty(), "off by default");
+        let on = LinkSettings { public_pointer: true, ..LinkSettings::default() };
+        assert_eq!(passport_pointer(&on, &dev), vec![dev.clone()]);
+        assert!(passport_pointer(&LinkSettings { on: false, ..on.clone() }, &dev).is_empty());
+        // a world listed needs this PC's connection key; taking it off always works
+        let d = tempfile::tempdir().unwrap();
+        assert!(list_world(d.path(), [3; 32], true, None).unwrap_err().contains("connections"));
+        assert!(list_world(d.path(), [3; 32], false, None).is_ok());
     }
 
     #[test]

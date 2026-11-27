@@ -75,6 +75,10 @@ pub struct Settings {
     /// PC (nothing would watch it, and friends couldn't reach it without the launcher). With friends in it, the
     /// launcher asks first. On by default; a file without it: on.
     pub world_stop_on_close: bool,
+    /// Settings › "Get worlds ready in the background" (host/quickworld.rs): once the game folder is found, the
+    /// Built-in engine is fetched and the maps read quietly at low priority, so a world's Start is fast later. On by
+    /// default; a file without it: on.
+    pub world_get_ready: bool,
 }
 
 impl Default for Settings {
@@ -95,6 +99,7 @@ impl Default for Settings {
             solo_signin: "prefill".into(),
             world_stop_on_exit: true,
             world_stop_on_close: true,
+            world_get_ready: true,
         }
     }
 }
@@ -298,6 +303,7 @@ mod tests {
         let s = load(d.path());
         assert!(s.signin_cover, "a file from before the switch: on");
         assert!(s.world_stop_on_exit, "a file from before the setting: on");
+        assert!(s.world_get_ready, "background readiness: on for a file from before the setting");
         assert!(s.world_stop_on_close, "stop the world when Leyline closes: on for a file from before it");
         assert!(Settings::default().world_stop_on_close);
         save(d.path(), &Settings { signin_cover: false, ..s }).unwrap();

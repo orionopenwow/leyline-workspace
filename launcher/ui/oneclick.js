@@ -839,6 +839,10 @@
       toggle("oc-stop-close", "set_world_stop_on_close", "world_stop_on_close", "Stop the world when Leyline closes",
         "Closing Leyline saves and stops your world (it asks first when friends are in it).", "Your world keeps running after Leyline closes, until you restart the PC."),
       mk("p", "oc-fine", "On: closing Leyline saves everyone and stops your world, so nothing keeps running unwatched. Leyline asks first when friends are in it. Off: the world keeps running, but friends can't join without Leyline open."),
+      // background readiness (worlds.js, host/quickworld.rs): the engine and the maps, quietly, so Start is quick later
+      toggle("oc-get-ready", "set_world_get_ready", "world_get_ready", "Get worlds ready in the background",
+        "Leyline gets the engine and reads your maps quietly, so Start is quick later.", "Nothing is fetched or read until you press Start."),
+      mk("p", "oc-fine", "On: once your game folder is found, Leyline gets the engine and reads the maps from your own game folder, slowly and quietly, so starting a world later takes seconds. Nothing of your game is sent anywhere."),
       line];
     // the world's own settings (host/spsettings.rs), for later changes
     if (!PS.missing && PS.unsupported) nodes.push(mk("p", "oc-fine", "Your world's companion and population settings are for the Built-in engine, on Windows PCs."));

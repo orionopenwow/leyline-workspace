@@ -65,7 +65,7 @@ pub fn classify(step: Step, msg: String) -> String {
         match step {
             Step::Download | Step::Unpack | Step::Verify => "download",
             Step::Maps => "maps",
-            Step::Database | Step::Fill => "db",
+            Step::Database | Step::Fill | Step::Copy => "db",
             Step::Account | Step::Login => "login",
             Step::Ports => "ports",
             Step::Start => {

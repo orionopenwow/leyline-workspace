@@ -2801,6 +2801,8 @@ async function handleDeepLink() {
   if (link && link.action === "host" && typeof link.id === "string") return showHostLink(link.id);
   // a friend's invite (leyline://join?link=…, deeplink.rs): one Join button, nothing joins before it (solo.js)
   if (link && link.action === "join" && typeof link.id === "string") return window.LeylineSolo && window.LeylineSolo.offerJoin(link.id);
+  // a world's one-click invite (leyline://join/lw1.…, host/invite.rs): "Join <name>'s world?", one Join (solo.js)
+  if (link && link.action === "invite" && typeof link.id === "string") return window.LeylineSolo && window.LeylineSolo.offerInvite(link.id);
   // a shared Den's "Open in Leyline" on the website (leyline://den/<id>): its detail in Mods & Addons › Dens (denmarket.js)
   // (it may come before denmarket.js has loaded: then it takes the id when it does)
   if (link && link.action === "den" && typeof link.id === "string") {

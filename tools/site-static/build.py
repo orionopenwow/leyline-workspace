@@ -895,6 +895,49 @@ def moved_page(to: str) -> bytes:
             f'</html>\n').encode("utf-8")
 
 
+# --------------------------------------------------------------------------------------------- the invite page (/j/)
+# A world's one-click invite (launcher/src-tauri/src/host/invite.rs): https://leylinelauncher.com/j/#<invite>. The
+# invite sits after "#", so it never reaches this site's server or its logs; the page's script reads it in the browser,
+# checks only its shape, and opens the launcher with leyline://join/<invite> (the launcher checks the host's signature
+# and asks "Join <name>'s world?"). When the launcher doesn't open: Get Leyline. Its own small page: no frame, no other
+# file, a script allowed by its hash only, no referrer.
+JOIN_PATH = "j/index.html"
+JOIN_SCRIPT = (
+    "(function(){var h=location.hash.slice(1),ok=/^lw1\\.[A-Za-z0-9_-]{8,600}\\.[A-Za-z0-9_-]{40,120}$/.test(h),"
+    "a=document.getElementById('j-open'),m=document.getElementById('j-msg');"
+    "if(!ok){a.hidden=true;m.textContent='This invite link is not complete. Ask your friend to copy it again.';return;}"
+    "var l='leyline://join/'+h;a.href=l;a.hidden=false;"
+    "m.textContent='Opening Leyline\\u2026 If nothing happens, press Open in Leyline, or get Leyline first.';"
+    "setTimeout(function(){location.href=l;},150);})();"
+)
+
+
+def join_page() -> bytes:
+    """The /j/ page: open the launcher on the invite after '#', with Get Leyline when it isn't installed."""
+    sha = base64.b64encode(hashlib.sha256(JOIN_SCRIPT.encode("utf-8")).digest()).decode("ascii")
+    csp = f"default-src 'none'; script-src 'sha256-{sha}'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    style = ("body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0d0f1a;color:#e8e6f0;"
+             "font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:440px;padding:24px;text-align:center}"
+             "h1{font-size:24px;margin:0 0 8px}p{margin:8px 0;color:#b9b6c9}.b{display:inline-block;margin:12px 6px 0;"
+             "padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600}.p{background:#7c5cff;color:#fff}"
+             ".s{border:1px solid #7c5cff;color:#cfc4ff}footer{margin-top:28px;font-size:12px;color:#8a879b}")
+    return (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        f'<meta http-equiv="Content-Security-Policy" content="{esc(csp)}">'
+        '<meta name="referrer" content="no-referrer"><meta name="robots" content="noindex">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Join a friend's world · Leyline</title>"
+        f"<style>{style}</style></head><body><main>"
+        "<h1>Join a friend's world</h1>"
+        '<p id="j-msg">This link opens Leyline, which asks before anything joins.</p>'
+        '<a class="b p" id="j-open" href="/wrath/download" hidden>Open in Leyline</a>'
+        '<a class="b s" id="j-get" href="/wrath/download">Get Leyline</a>'
+        "<p>Your friend's invite stays in this link: it is not sent to this website.</p>"
+        f'<footer>Leyline is a fan project, {LEGAL}.</footer>'
+        f"</main><script>{JOIN_SCRIPT}</script></body></html>\n"
+    ).encode("utf-8")
+
+
 # --------------------------------------------------------------------------------------------- feeds
 def flags_doc(leyline_net, stamp: str) -> dict:
     """Every server feature off, hashed as the launcher checks it (p2p/flags.rs)."""
@@ -1134,6 +1177,8 @@ class Build:
                     st2, _, b2, _ = portal.get(urllib.parse.quote(u))
                     if st2 == 200:
                         self.put_file(out_file(u), b2)
+        # the one-click invite page (its own section above; kept out of the sitemap: it is noindex)
+        self.put_file(JOIN_PATH, join_page())
         # the favicon at the root, robots, sitemap, the domain
         ico = self.files.get("wrath/art/leyline-favicon-32.png")
         if ico:
@@ -1141,6 +1186,7 @@ class Build:
         pages = sorted({"/" + f[:-len("index.html")].rstrip("/") if f != "index.html" else "/"
                         for f in self.files if f.endswith("index.html")} - {"/" + o.strip("/") for o in list(MOVED) + list(CLOSED) + list(ELSEWHERE)})
         pages = [p for p in pages if not any(p.startswith(fp + "/") or p == fp for fp in self.filters)]
+        pages = [p for p in pages if p != "/" + JOIN_PATH[:-len("/index.html")]]
         self.put_file("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {ORIGIN}/sitemap.xml\n")
         self.put_file("sitemap.xml", '<?xml version="1.0" encoding="UTF-8"?>\n'
                       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'

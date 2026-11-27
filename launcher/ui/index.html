@@ -42,6 +42,7 @@
 <link rel="stylesheet" href="bossrush.css"><!-- Boss Rush: its page and Home row (bossrush.js) -->
 <link rel="stylesheet" href="boards.css"><!-- Leaderboards: Boss Rush and Duels, signed by the realms (boards.js) -->
 <link rel="stylesheet" href="bossstart.css"><!-- Boss Rush, start anywhere: its picker and the raid's state (bossstart.js) -->
+<link rel="stylesheet" href="worlds.css"><!-- Host a world in three clicks: templates, Start, the one-click invite (worlds.js) -->
 <link rel="stylesheet" href="solo.css"><!-- Play solo everywhere, Invite a friend, the GM command center (solo.js, gmcenter.js) -->
 <link rel="stylesheet" href="hostfriends.css"><!-- Play with friends: the one window, Ready for friends?, the friend's steps (hostfriends.js) -->
 <link rel="stylesheet" href="info.css"><!-- the "i" button and its bubble (info.js) -->
@@ -112,6 +113,7 @@
     <button class="nav" data-page="realms"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Realms</button>
     <button class="nav" data-page="mods" title="Mods &amp; Addons"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span class="nav-txt">Mods</span><span class="badge" id="nav-mods-count" hidden></span></button>
     <button class="nav" data-page="host" data-srv><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Host</button>
+    <button class="nav" data-page="worlds" data-lite id="nav-worlds" title="Host a world on this PC"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Host</button>
     <button class="nav" data-page="forum" data-srv><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M16 8h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1v3.5L15 17h-4a1 1 0 0 1-1-1v-1"/></svg>Forum</button>
     <button class="nav" data-page="community" data-lite><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.8-3.4 3.2-5.2 6-5.2s5.2 1.8 6 5.2"/><circle cx="17" cy="9" r="2.4"/><path d="M15.6 13.9c2.6-.4 4.7 1.2 5.4 4.1"/></svg>Community</button>
     <button class="nav" data-page="news"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2M8 9h5M8 13h5"/></svg>News</button>
@@ -599,6 +601,11 @@
   </section>
 
   <!-- COMMUNITY (lite.js, owner 26 Nov: the forum went with the server): the Discord and Reddit, the allowed links -->
+  <!-- Host a world in three clicks (worlds.js; docs/UNSTOPPABLE.md "Worlds in three clicks"): a template, Start, an invite -->
+  <section class="page" id="page-worlds" data-lite>
+    <div class="panel wd" id="wd" aria-label="Host a world"></div>
+  </section>
+
   <section class="page" id="page-community" data-lite>
     <div class="panel">
       <h2>Community</h2>
@@ -1065,6 +1072,7 @@
 <script src="single.js"></script><!-- Single player: its page, three steps, then Manage (window.LeylineSingle; after app.js, den.js and solo.js) -->
 <script src="vanilla.js"></script><!-- the original world in one click, and window.LeylineWorlds: every local world's play path (after single.js) -->
 <script src="oneclick.js"></script><!-- single player in one click: folder, room, Quick start, the setup card, errors (window.LeylineOneClick; after vanilla.js) -->
+<script src="worlds.js"></script><!-- Host a world in three clicks: templates, Start, World running, the one-click invite (window.LeylineHostWorlds; after oneclick.js) -->
 <script src="spmods.js"></script><!-- Single player: Mods in this world, Get mods for single player (window.LeylineSPMods; after oneclick.js) -->
 <script src="characters.js"></script><!-- Characters: On this PC and Online (window.LeylineCharacters; after vanilla.js) -->
 <script src="bossrush.js"></script><!-- Boss Rush: its page (window.LeylineBossRush; after app.js) -->

@@ -287,7 +287,9 @@
 
   // ---------------------------------------------------------------- the friend's side: one Join
   // leyline://join?link=… (app.js handleDeepLink): one card with Join. Nothing joins until it is pressed.
-  async function offerJoin(link) {
+  // o.title: a one-click invite's "Join <name>'s world?" (offerInvite)
+  async function offerJoin(link, o) {
+    o = o || {};
     if (typeof link !== "string" || !/^https:\/\/[a-z0-9.-]+\/join\/[a-z2-7]{16}#/.test(link)) return;
     let box = byId("solo-join");
     if (box) box.remove();
@@ -296,8 +298,9 @@
     box.setAttribute("role", "dialog");
     box.setAttribute("aria-label", "Join your friend's world");
     const card = mk("div", "solo-join-card");
-    card.append(mk("b", "", "A friend invited you to their world"),
-      mk("p", "solo-join-line", "Join starts your game on their world, through the Leyline relay. Your address isn't shown to them."));
+    card.append(mk("b", "", o.title || "A friend invited you to their world"),
+      mk("p", "solo-join-line", o.title ? "Join starts your game on their world. Your characters there stay yours."
+        : "Join starts your game on their world, through the Leyline relay. Your address isn't shown to them."));
     const st = mk("p", "status solo-join-status");
     st.setAttribute("role", "status");
     // what's happening (hostfriends.js, looked up on Join: a leyline:// link can arrive before it loads): reaching the
@@ -363,6 +366,31 @@
     join.focus();
   }
 
+  // A world's one-click invite (leyline://join/lw1.…, host/invite.rs; the site's /j/ page opens the same link): its
+  // signature and time checked by the core (invite_open), then the one Join card titled "Join <name>'s world?".
+  async function offerInvite(invite) {
+    if (typeof invite !== "string" || !/^lw1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(invite)) return;
+    let c = null;
+    try { c = await call("invite_open", { invite }); }
+    catch (e) {
+      let box = byId("solo-join");
+      if (box) box.remove();
+      box = mk("div", "solo-join");
+      box.id = "solo-join";
+      box.setAttribute("role", "dialog");
+      box.setAttribute("aria-label", "Join your friend's world");
+      const card = mk("div", "solo-join-card");
+      const close = mk("button", "btn small", "Close");
+      close.type = "button";
+      close.addEventListener("click", () => box.remove());
+      card.append(mk("b", "", "That invite can't be used"), mk("p", "status bad solo-join-status", oops(e, "That invite link isn't complete. Ask your friend to copy it again.")), close);
+      box.append(card);
+      document.body.append(box);
+      return;
+    }
+    if (c && typeof c.link === "string") return offerJoin(c.link, { title: c.title });
+  }
+
   // ---------------------------------------------------------------- Home: every way to play solo, in one row
   function homeRow() {
     const den = byId("hm-den");
@@ -385,6 +413,6 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", homeRow); else homeRow();
 
-  window.LeylineSolo = { LABEL, WHERE, forMode, forPack, forRealm, button, note, attach, go, invite, inviteLink, inviteButton, offerJoin,
+  window.LeylineSolo = { LABEL, WHERE, forMode, forPack, forRealm, button, note, attach, go, invite, inviteLink, inviteButton, offerJoin, offerInvite,
     docker: () => docker(), DEN, SOLO_LEVELING, PACK_FOR_MODE };
 })();

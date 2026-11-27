@@ -751,7 +751,7 @@ pub fn read_code(code: &str) -> Result<Pick, String> {
 
 const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-fn b64url(b: &[u8]) -> String {
+pub fn b64url(b: &[u8]) -> String {
     let mut o = String::new();
     for c in b.chunks(3) {
         let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
@@ -762,7 +762,7 @@ fn b64url(b: &[u8]) -> String {
     o
 }
 
-fn un_b64url(s: &str) -> Option<Vec<u8>> {
+pub fn un_b64url(s: &str) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     let vals: Vec<u32> = s.bytes().map(|c| B64.iter().position(|x| *x == c).map(|p| p as u32)).collect::<Option<_>>()?;
     for ch in vals.chunks(4) {

@@ -46,6 +46,8 @@ pub mod pack;
 pub mod profiles;
 pub mod scan;
 pub mod localclick; // Single player on a stock game: the launcher types the login and Quick start's name (host/localclick.rs)
+pub mod invite; // one-click invite links to a world on this PC: lw1 signed invites, leyline://join/ and the site's /j/ (host/invite.rs)
+pub mod quickworld; // worlds in three clicks: the prepared database and maps reused, background readiness, timings (host/quickworld.rs)
 pub mod oneclick; // Single player in one click: error codes, finding the game folder, the disk check, the Hero Key's login, Repair's files (host/oneclick.rs)
 
 use crate::realms;

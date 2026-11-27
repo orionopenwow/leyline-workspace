@@ -9,6 +9,36 @@ Leyline relay: no router settings, no ports to open, and your home address is ne
 > [Play with friends](guide-play-with-friends.md); the plan is in [Joining a world](joining.md) and
 > [The way forward](way-forward.md).
 
+## Host a world in three clicks
+
+**Works today** on a Windows PC, for friends on the same network. **Coming:** friends far away (the new connection
+with no relay of ours).
+
+1. Press **Host** in the side menu.
+2. Pick a template: **Your own world**, **The original world**, or **Your Den** (which opens its own page).
+3. Press **Start**. When the card says **World running**, press **Play**, or **Invite a friend**.
+
+A new world starts private (only friends you invite), at twice the normal levelling speed, with no roaming bots and
+helpers in dungeons. Change these later on the world's card (Single player › **Your world**).
+
+The first world on a PC still takes the longest: Leyline gets its engine, reads the maps from your own game folder and
+fills the world once. It then keeps a prepared copy of that filled world on your PC, so every later world (another
+template, or a world made again) is copied in seconds instead of filled again. With **Get worlds ready in the
+background** on (Single player settings, on by default), the engine and the maps are done quietly as soon as your game
+folder is found, so your first Start is quicker too. Nothing of your game is sent anywhere: the copies are made on your
+PC from your own folder.
+
+### The invite link
+
+**Invite a friend** on the running world's card makes one link for one friend, good for a week:
+`https://leylinelauncher.com/j/#…`. Your friend opens it, their Leyline opens and asks **Join (your name)'s world?**,
+and one press of **Join** starts their game on your world. Their characters stay theirs on your world next time too.
+
+- The invite is signed with your Leyline key, so it can't be changed on the way, and it names no internet address.
+- Everything after `#` stays in your friend's browser: the website never sees the invite.
+- Your name in the question is the name on your Friends profile. With no name set, it says "your friend's world".
+- A friend who already has Leyline open can use **Copy the Leyline link** instead (`leyline://join/…`).
+
 ## Pick your world
 
 | | Your Den (recommended for friends) | Full realm |

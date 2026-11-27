@@ -27,6 +27,8 @@ a status line at the top, and never name the game, its maker or a client version
 | Signed release log and file sharing over BitTorrent | `p2p/share.rs`, `p2p/torrent.rs`, [P2P-AND-TORRENT.md](P2P-AND-TORRENT.md) | built, off |
 | Be a node | `p2p/node.rs`, `host/network.rs`, [BE-A-NODE.md](BE-A-NODE.md) | built, off |
 | NAT type check (classifies only; no hole punching) | `p2p/nat.rs` | built |
+| Worlds in three clicks: Host › template › Start, the prepared database copied, Boss Rush's maps copied, background readiness, step timings | `host/quickworld.rs`, `host/engine.rs` (`Step::Copy`, `begin_prepare`), `ui/worlds.js` | built (branch `feat-worlds`); Windows proof and phase 0 numbers to come |
+| One-click invite links (`leyline://join/lw1.…`, `https://leylinelauncher.com/j/#lw1.…`, signed by the peer key) | `host/invite.rs`, `deeplink.rs`, `ui/solo.js` `offerInvite`, `tools/site-static/build.py` `join_page` | built; joins through the same network today, far away needs phase 2 |
 
 Everything below is to build.
 
@@ -71,12 +73,45 @@ Friend requests and messages go direct, or wait sealed with a shared friend or i
 (today's `mailbox.py` design, run by anyone).
 
 Invite links carry the host's Passport key and world id, never an address, and open the launcher on Join
-(`leyline://join?...`).
+(`leyline://join/lw1.…`, built: `host/invite.rs`). The one place phase 2 plugs in is `host/invite.rs` `dial_by_key`
+(the forwarder's local address for a host key and world); today it returns nothing and the same-network hint is used.
 
 ## 4. Worlds in three clicks (phase 3)
 
 Host › template › Start, under a minute on a PC that has played before. Templates cover single player, the original
 world and Your Den first. The invite link opens the friend's launcher on Join. Phase 0's timings are the baseline.
+
+**Built (branch `feat-worlds`, 27 Nov 2026), not yet proven on Windows:**
+
+- **The click path** (`ui/worlds.js`, the side menu's **Host** while Leyline has no server): a tile per template
+  (Your own world, The original world, Your Den, which opens its own page), a Start card with the defaults in one list
+  (private, levelling ×2, no roaming bots, dungeon helpers; changed later on the world's card), one **Start**, then
+  **World running** with Play, Invite a friend and Stop. Playwright: at most 3 clicks from Home to World running
+  (`launcher/tests/worlds.browser.test.cjs`).
+- **The prepared database** (`host/quickworld.rs`): after the first `dbimport` on a PC, MySQL is stopped and its data
+  folder copied to `<app>/engine-cache/base-<engine sha>/` with its root password, before any template's own SQL,
+  login or realm row. A later world of any template plans `Copy` instead of `Database` + `Fill`: the copy, then its
+  template SQL. One per engine; never over a world's saves; never without 2 GB to spare; an engine update fills from
+  scratch. What this saves is the fill (the slowest step); the world server's first start (bots made) is unchanged.
+- **Maps read once**: Single player and the original world already shared one read; Boss Rush now copies its raid maps
+  from that read instead of running the map reader again.
+- **Background readiness** (`engine.rs` `begin_prepare`, setting `world_get_ready`, on by default): once a game folder
+  is known, the engine is fetched and the maps read on their own progress line, the map reader at below-normal
+  priority. A Start pressed meanwhile waits for it and goes on with what's left.
+- **Timings**: each step's seconds in the world's `logs/setup.log` and in `<app>/world-timings.log`
+  (`<unix> <world> <step> <secs>`, plus `total-fresh`, `total-prepared`, `total-start` or `total-prepare`). The table
+  to fill is [smoke/worlds-three-clicks.md](smoke/worlds-three-clicks.md).
+- **Invite links** (`host/invite.rs`): `lw1.<base64url doc>.<base64url Ed25519 sig>`, signed by the peer key over
+  `leyline-world-invite-v1`; the doc carries the host key, the world's realm id, the template, the host's name, the
+  world's invite secret, a one-time code (the 7-day ticket login), an optional same-network hint (private addresses
+  only) and the expiry. Opening it checks all of that and shows "Join <name>'s world?"; Join turns it into the link
+  `join_invite` already takes, so the lasting-login handshake (`host/worldfriends.rs`) is unchanged. The site's `/j/`
+  page reads the invite from the fragment only (never sent to the site), opens `leyline://join/<invite>`, and offers
+  Get Leyline. Playwright: 1 click from the invite to joining.
+
+**Not done:** the Windows run (the copy of a real MySQL data folder, the first start on it, the low-priority reader);
+phase 0's numbers; far-away joins (phase 2); a Your Den template that starts in place (its tile opens the Your Den
+page); the world's name in the invite comes from the Friends profile name, not a per-world name.
 
 ## 5. Characters that survive any server (phase 4)
 

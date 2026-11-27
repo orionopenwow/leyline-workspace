@@ -21,6 +21,9 @@
 //! join page (hosting/relay/wurelay/www/join.html, "Open in Leyline") makes it in the browser from the link it was
 //! opened with, so the secret after `#` never reaches a server. Only an invite link on Leyline's own relay is taken
 //! (`join_link`); the launcher then shows one Join button, and nothing joins until the player presses it.
+//!
+//! `leyline://join/lw1.<doc>.<sig>` is a world's one-click invite (host/invite.rs): signed by the host's peer key,
+//! opened by the site's `https://leylinelauncher.com/j/#<invite>` page too. Only its shape is checked here.
 
 /// What a link asks for.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -35,6 +38,9 @@ pub enum Link {
     Host(String),
     /// A friend's invite link (`join_link`): the launcher offers Join with it. Nothing joins until the player clicks.
     Join(String),
+    /// A world's one-click invite (`leyline://join/lw1.…`, host/invite.rs; the site's `/j/#lw1.…` opens the same):
+    /// "Join <name>'s world?" with one Join. Its signature is checked by `invite_open`; nothing joins until the click.
+    Invite(String),
     /// A shared Den's showcase on the website ("Open in Leyline", stream/denmarket.py): Mods & Addons › Dens opens
     /// that build with its Open in my Den button. Nothing is downloaded until the player clicks.
     Den(String),
@@ -94,6 +100,11 @@ pub fn parse(url: &str) -> Option<Link> {
     }
     if let Some(code) = rest.strip_prefix("pack/") {
         return pack_code(code.trim_end_matches('/')).map(Link::Pack);
+    }
+    // a world's one-click invite (host/invite.rs): shape only here; its signature is checked when the card opens
+    if let Some(inv) = rest.strip_prefix("join/").filter(|r| r.starts_with(crate::host::invite::PREFIX)) {
+        let inv = inv.trim_end_matches('/');
+        return crate::host::invite::shape_ok(inv).then(|| Link::Invite(inv.to_string()));
     }
     if url.len() > 700 {
         return None;
@@ -328,6 +339,22 @@ mod tests {
         assert_eq!(parse("leyline://join?nolink=1"), None);
         let json = serde_json::to_value(Link::Join(link.into())).unwrap();
         assert_eq!(json, serde_json::json!({"action": "join", "id": link}));
+    }
+
+    #[test]
+    fn parses_world_invites() {
+        let k = crate::identity::PeerIdentity::from_seed([3; 32]).unwrap();
+        let inv = crate::host::invite::make(&k, &crate::host::invite::Make {
+            world: "abcdefghijk2345a", kind: "single", name: "Bo", secret: "ABCDEFGHJKLMNPQRSTUVWXYZ",
+            user: "GABC12345", pass: "PASS1234WORD", lan: None, now: 1,
+        }).unwrap();
+        assert_eq!(parse(&format!("leyline://join/{inv}")), Some(Link::Invite(inv.clone())));
+        assert_eq!(parse(&format!("leyline://join/{inv}/")), Some(Link::Invite(inv.clone())));
+        let json = serde_json::to_value(Link::Invite(inv.clone())).unwrap();
+        assert_eq!(json, serde_json::json!({"action": "invite", "id": inv}));
+        for bad in ["leyline://join/lw1.", "leyline://join/lw1.a", "leyline://join/lw1.a.b.c", "leyline://join/lw1.a<b.c"] {
+            assert_eq!(parse(bad), None, "{bad}");
+        }
     }
 
     #[test]

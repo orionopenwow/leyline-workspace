@@ -28,6 +28,20 @@ After the first time, the same button takes a minute or two.
 The original world is the world as it first was: every character is held in its first era, the level cap is 60, and
 the races and classes are that era's. Experience comes twice as fast as normal, so a solo player keeps moving.
 
+## Faster worlds: Host › a template › Start
+
+The **Host** page starts a world in three clicks (see [Host for friends](host-for-friends.md#host-a-world-in-three-clicks)).
+Two things make it quicker than the first time above:
+
+- **A prepared copy.** The first world filled on your PC is kept as a prepared copy (on your PC only, made from the
+  engine and your own game folder). Every later world copies it in seconds instead of filling for many minutes. It
+  takes several GB of disk space; Leyline only makes it when there's room to spare, and a newer engine replaces it.
+- **Getting ready in the background.** Once your game folder is found, Leyline gets the engine and reads your maps
+  quietly, at low priority, with a small note on the Host page. Turn it off under Single player settings: **Get
+  worlds ready in the background**. Press Start while it's still working and your world simply goes on from there.
+
+How long each step takes is written to `world-timings.log` in Leyline's data folder, so a slow step can be found.
+
 ## Quick start: straight into the world
 
 Press **Quick start: a new character** under the big button. Pick a race, a class, male or female, and a name (or keep

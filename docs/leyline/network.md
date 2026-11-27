@@ -5,7 +5,9 @@ A plain guide for players: how your launcher finds worlds and friends, and what 
 ## The network now
 
 **Status, 27 Nov 2026:** Leyline runs no server and no relays of its own. Same-network joins and the hand-picked
-realm list **work today**. The rest of this section is **coming** ([the way forward](way-forward.md)).
+realm list **work today**. Finding signed records with no centre is **built and on by default** in the launcher
+(see "Finding realms with no centre" below), but there are no signed realm records on the network yet. The rest of
+this section is **coming** ([the way forward](way-forward.md)).
 
 ```
   You (launcher)  <---- straight to your friend's PC when it can ---->  Your friend's PC
@@ -27,6 +29,27 @@ realm list **work today**. The rest of this section is **coming** ([the way forw
 5. **Blocks need two of three.** A block (a bad realm, a bad release) counts only when two of a three-person council
    sign it.
 6. **Anyone can fork.** The code, the record formats and a kit to start your own copy are public.
+
+### Finding realms with no centre (built)
+
+Your launcher keeps the hand-picked list from our site, and adds to it every signed realm it can find from:
+
+* **records it already holds** (from earlier visits, kept for as long as they are fresh);
+* **mirrors:** a copy of the signed record list on our site, in our public repo and (later) on Codeberg. Any one
+  that answers is enough. A mirror can leave records out but can't change one;
+* **friends and your home network:** launchers hand each other the records they hold, a few kilobytes every 15
+  minutes at most;
+* **the public lookup network** (the Mainline DHT, which BitTorrent uses): a realm whose host lists it, or a
+  Passport, can publish a tiny signed pointer there: which devices serve it and where its full record is. Your
+  launcher only asks; it never answers other people's lookups. It publishes nothing about you unless you choose it.
+  You can turn it off in Settings › Advanced ("dht").
+
+A realm record lives 15 minutes, so a realm only shows while its host keeps it fresh. Our mirrors are rebuilt with
+the site, so they mostly carry blocks and long-lived records, not live realms.
+
+**Blocks:** a council block counts only with two of three council signatures, a reason and an end date. The three
+council keys aren't named yet, so no council block can be made today. You can also hide a realm or relay just for
+yourself; that stays on your PC.
 
 ## How it worked until November 2026
 

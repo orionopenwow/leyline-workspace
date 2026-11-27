@@ -67,6 +67,7 @@ ALLOW = [
     # portal it runs in-process to draw the pages. Only these portal modules: never the sign-in, forum, social, admin,
     # queue or browser-game ones, and never stream/slices or the browser kit.
     "tools/site-static",                          # build.py and its test (the one tools/ folder in the public repo)
+    "mesh/snapshot.json",                         # the mesh's signed record list: a static mirror the launcher reads
     "site",                                       # realms.json, news.json, the retired docs pages, the owner's README
     "docs/STATIC-SITE.md",                        # how the site builds, what's static, what was dropped
     "mods/categories.json",                       # the Mods page's categories

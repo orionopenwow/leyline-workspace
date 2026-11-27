@@ -8,7 +8,8 @@
 //!
 //! What the launcher does with it:
 //! * keeps a verified copy in `cache/release-log.json` (only ever a chain that verifies is written);
-//! * refreshes it from the addresses in branding.json, the seed relays and (with `mesh_realms` on) mesh peers
+//! * refreshes it from the addresses in branding.json, the seed relays (only with a server), friends' gossip
+//!   (`p2p::gossip`, the log's newest entries) and (with `mesh_realms` on) mesh peers
 //!   (`/api/mesh/chain`): the longest good chain wins, anything not signed by the key, broken, reordered or cut in
 //!   the middle is refused whole, a shorter copy never replaces a longer one;
 //! * uses it as an update source (the newest launcher entry's mirrors; `update::sources`) and as the allow-list of
@@ -306,20 +307,22 @@ pub fn load(app_dir: &Path, key: &str) -> Chain {
         .unwrap_or_else(|| Chain::empty(key))
 }
 
-fn save(app_dir: &Path, c: &Chain) -> Result<(), String> {
+/// Write a chain that verified (gossip: a friend's tail that extended ours).
+pub fn save(app_dir: &Path, c: &Chain) -> Result<(), String> {
     let _ = std::fs::create_dir_all(app_dir.join("cache"));
     crate::settings::write_atomic(&cache_path(app_dir), c.to_doc().to_string().as_bytes()).map_err(|e| e.to_string())
 }
 
-/// Where to ask: branding.json's addresses (our server, the GitHub release), then the seed relays' and mesh
-/// peers' `/api/mesh/chain`. A whole document, or (`/api/mesh/chain?from=n`) the entries after `n`.
+/// Where to ask: branding.json's addresses (the website, the GitHub release), then the seed relays' (only while
+/// Leyline runs a server: `mesh::seeds`) and mesh peers' `/api/mesh/chain`. A whole document, or
+/// (`/api/mesh/chain?from=n`) the entries after `n`. Friends hand on the log's tail too (`p2p::gossip`).
 pub fn sources(app_dir: &Path, mesh_on: bool) -> Vec<String> {
     let b = crate::branding::get();
     let mut out: Vec<String> = b.release_log.urls.clone();
     let relays: Vec<String> = if mesh_on {
-        crate::p2p::mesh::sources(app_dir, crate::p2p::mesh::SEEDS)
+        crate::p2p::mesh::sources(app_dir, crate::p2p::mesh::seeds())
     } else {
-        crate::p2p::mesh::SEEDS.iter().map(|s| s.to_string()).collect()
+        crate::p2p::mesh::seeds().iter().map(|s| s.to_string()).collect()
     };
     out.extend(relays.into_iter().map(|r| format!("{}/api/mesh/chain?from=", r.trim_end_matches('/'))));
     out

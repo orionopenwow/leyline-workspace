@@ -38,5 +38,13 @@
     "https://relay.leylinelauncher.com",
     "https://relay.openvanilla.app"
   ],
-  "flags_url": "https://leylinelauncher.com/wrath/leyline/flags.json"
+  "flags_url": "https://leylinelauncher.com/wrath/leyline/flags.json",
+  "_mesh_mirrors": "Static copies of the mesh's signed record list (p2p/mesh.rs): the website's, the repo's raw file, and a Codeberg Pages copy. TODO(owner): the Codeberg Pages copy is a placeholder until that mirror is set up. Any one answering is enough; every record is checked the same way.",
+  "mesh_mirrors": [
+    "https://leylinelauncher.com/mesh/snapshot.json",
+    "https://raw.githubusercontent.com/orionopenwow/Leyline/main/mesh/snapshot.json",
+    "https://orionopenwow.codeberg.page/leyline/mesh/snapshot.json"
+  ],
+  "_council_keys": "The block council (docs/LEYLINE-MESH.md): three hex Ed25519 public keys made offline by three different people; a block of a realm or relay counts only with two of their signatures, a reason and an expiry. TODO(owner): name the three keys. Empty: no council block is valid.",
+  "council_keys": []
 }

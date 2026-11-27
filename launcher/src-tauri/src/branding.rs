@@ -61,6 +61,14 @@ pub struct Branding {
     pub release_log: ReleaseLog,
     pub relays: Vec<String>,
     pub flags_url: String,
+    /// Static copies of the mesh's record list (`{"records": [...]}`, p2p/mesh.rs `gather_all`): any one answering is
+    /// enough, and every record is checked the same way whoever serves it.
+    #[serde(default)]
+    pub mesh_mirrors: Vec<String>,
+    /// The block council (p2p/mesh.rs): three hex Ed25519 public keys; a block counts with two of their signatures.
+    /// Empty until the owner names them (no council block is valid then).
+    #[serde(default)]
+    pub council_keys: Vec<String>,
 }
 
 fn colour_ok(c: &str) -> bool {
@@ -88,6 +96,7 @@ pub fn parse(text: &str) -> Result<Branding, String> {
     urls.extend(b.updates.mirrors.iter());
     urls.extend(b.release_log.urls.iter());
     urls.extend(b.relays.iter());
+    urls.extend(b.mesh_mirrors.iter());
     for u in urls {
         if !crate::net::plain_https(u) {
             return Err(format!("branding.json: {u:?} is not a plain https address"));
@@ -101,6 +110,10 @@ pub fn parse(text: &str) -> Result<Branding, String> {
     let k = &b.release_log.public_key;
     if !(k.is_empty() || (k.len() == 64 && k.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)))) {
         return Err("branding.json: release_log.public_key must be empty or 64 lower-case hex digits".into());
+    }
+    let hex64 = |k: &str| k.len() == 64 && k.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c));
+    if b.council_keys.len() > crate::p2p::mesh::COUNCIL_MAX || !b.council_keys.iter().all(|k| hex64(k)) {
+        return Err("branding.json: council_keys must be at most three 64-digit lower-case hex keys".into());
     }
     if let Some(k) = b.updates.backup_pubkeys.iter().find(|k| !crate::update::pubkey_ok(k)) {
         return Err(format!("branding.json: updates.backup_pubkeys: {k:?} is not a minisign public key"));
@@ -168,6 +181,10 @@ mod tests {
         assert!(with(&|v| v["repo"] = "noslash".into()).is_err());
         assert!(with(&|v| v["format"] = 2.into()).is_err());
         assert!(with(&|v| v["updates"]["backup_pubkeys"] = serde_json::json!(["TODO"])).is_err());
+        assert!(with(&|v| v["mesh_mirrors"] = serde_json::json!(["http://plain.example.com/mesh/snapshot.json"])).is_err());
+        assert!(with(&|v| v["council_keys"] = serde_json::json!(["ab".repeat(32), "cd".repeat(32), "ef".repeat(32)])).is_ok());
+        assert!(with(&|v| v["council_keys"] = serde_json::json!(vec!["ab".repeat(32); 4])).is_err(), "three at most");
+        assert!(with(&|v| v["council_keys"] = serde_json::json!(["TODO"])).is_err());
         let pk = serde_json::from_str::<serde_json::Value>(include_str!("../tauri.conf.json")).unwrap()["plugins"]["updater"]["pubkey"].clone();
         if crate::update::pubkey_ok(pk.as_str().unwrap()) {
             assert!(with(&|v| v["updates"]["backup_pubkeys"] = serde_json::json!([pk])).is_ok());

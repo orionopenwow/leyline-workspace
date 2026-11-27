@@ -1,4 +1,5 @@
-//! Feature flags for the P2P and torrent features. Everything ships OFF.
+//! Feature flags for the P2P and torrent features. Everything ships OFF except [`DEFAULT_ON`]: the realm list from
+//! signed records (`mesh_realms`) and the DHT lookup (`dht`), which need no server of ours (docs/leyline/network.md).
 //!
 //! Two layers:
 //! * the site's file, `https://leylinelauncher.com/wrath/leyline/flags.json` (written by the admin console
@@ -35,7 +36,13 @@ pub const KNOWN: &[(&str, &str)] = &[
     ("magnet_links", "Open shared magnet links, only for Leyline's own checked packages"),
     ("share_own_files", "Help share Leyline's own files: our signed installers, Host packs, addons and server source code (uses your upload; only when you turn it on for this PC)"),
     ("be_a_node", "Offer Be a node on the Host page: this PC shares Leyline's own files while idle (only when you turn it on for this PC)"),
+    ("dht", "Find realms and friends on the public DHT (signed address records; nothing about you is published unless you choose to)"),
 ];
+
+/// Flags that are on unless the site's file (or this PC) says off: they work with no server of ours.
+pub const DEFAULT_ON: &[&str] = &["mesh_realms", "dht"];
+/// Flags only this PC sets: the site's file can't switch them either way (the DHT needs no site at all).
+pub const LOCAL_ONLY: &[&str] = &["dht"];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -48,7 +55,7 @@ pub struct Limits {
     pub max_peers: u32,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Flags {
     pub p2p_hosting: bool,
     pub torrent_downloads: bool,
@@ -73,9 +80,26 @@ pub struct Flags {
     /// everyone, and the kill switch: off here stops every node at its next look (30 minutes at most). Like
     /// `relay_volunteer` it never starts a node on the site's word alone: each PC turns it on itself.
     pub be_a_node: bool,
+    /// The DHT (`p2p::dht`): resolve signed address records of peers and realms. On by default, this PC's own switch.
+    pub dht: bool,
     pub limits: Limits,
     /// STUN servers for the NAT check (`host:port`), only used when `p2p_hosting` is on.
     pub stun: Vec<String>,
+}
+
+impl Default for Flags {
+    /// Everything off but [`DEFAULT_ON`].
+    fn default() -> Self {
+        let mut f = Flags {
+            p2p_hosting: false, torrent_downloads: false, torrent_seeding: false, webrtc_presence: false, mesh_realms: false,
+            mesh_relays: false, relay_volunteer: false, herokey_sso: false, magnet_links: false, share_own_files: false,
+            be_a_node: false, dht: false, limits: Limits::default(), stun: vec![],
+        };
+        for k in DEFAULT_ON {
+            f.set(k, true);
+        }
+        f
+    }
 }
 
 impl Flags {
@@ -92,6 +116,7 @@ impl Flags {
             "magnet_links" => self.magnet_links,
             "share_own_files" => self.share_own_files,
             "be_a_node" => self.be_a_node,
+            "dht" => self.dht,
             _ => return None,
         })
     }
@@ -108,6 +133,7 @@ impl Flags {
             "magnet_links" => self.magnet_links = on,
             "share_own_files" => self.share_own_files = on,
             "be_a_node" => self.be_a_node = on,
+            "dht" => self.dht = on,
             _ => {}
         }
     }
@@ -165,12 +191,13 @@ fn stun_ok(s: &str) -> bool {
     }
 }
 
-/// The flags a (checked) site document sets. Anything malformed is off.
+/// The flags a (checked) site document sets. Anything malformed is off; a [`DEFAULT_ON`] flag the file doesn't name
+/// stays on, and a [`LOCAL_ONLY`] one is never read from it.
 pub fn from_doc(doc: &Value) -> Flags {
     let mut f = Flags::default();
     if let Some(m) = doc.get("flags").and_then(Value::as_object) {
-        for (k, _) in KNOWN {
-            f.set(k, m.get(*k).and_then(Value::as_bool).unwrap_or(false));
+        for (k, _) in KNOWN.iter().filter(|(k, _)| !LOCAL_ONLY.contains(k)) {
+            f.set(k, m.get(*k).and_then(Value::as_bool).unwrap_or(m.get(*k).is_none() && DEFAULT_ON.contains(k)));
         }
     }
     if let Some(l) = doc.get("limits") {
@@ -297,7 +324,7 @@ pub mod tests {
     /// A site document as `stream/leyline_net.py` writes it (its test checks the same bytes).
     pub fn doc(flags: &[(&str, bool)]) -> Value {
         let mut fl = serde_json::Map::new();
-        for (k, _) in KNOWN {
+        for (k, _) in KNOWN.iter().filter(|(k, _)| !LOCAL_ONLY.contains(k)) {
             fl.insert(k.to_string(), Value::Bool(false));
         }
         for (k, v) in flags {
@@ -313,11 +340,12 @@ pub mod tests {
     #[test]
     fn defaults_are_all_off() {
         let f = Flags::default();
-        assert!(KNOWN.iter().all(|(k, _)| f.get(k) == Some(false)));
+        assert!(KNOWN.iter().all(|(k, _)| f.get(k) == Some(DEFAULT_ON.contains(k))), "off but the serverless two");
+        assert!(f.mesh_realms && f.dht && !f.mesh_relays && !f.relay_volunteer && !f.share_own_files);
         assert!(!f.seeding_allowed());
         let d = tempfile::tempdir().unwrap();
         let v = load(d.path(), &dead_url());
-        assert_eq!(v.effective, Flags::default());
+        assert_eq!(v.effective, Flags::default(), "no site file: the defaults (the mesh and the DHT still work)");
         assert!(v.error.is_some());
     }
 
@@ -361,7 +389,8 @@ pub mod tests {
         assert!(!volunteer_allowed(&Flags::default(), &load_local(d.path())), "the site took the offer away");
         set_local(d.path(), "relay_volunteer", Some(false)).unwrap();
         assert!(!volunteer_allowed(&site, &load_local(d.path())));
-        assert!(!Flags::default().mesh_realms && !Flags::default().relay_volunteer);
+        assert!(Flags::default().mesh_realms && !Flags::default().relay_volunteer, "the mesh list is on by default now");
+        assert!(!from_doc(&doc(&[])).mesh_realms, "the site's file can still switch it off");
         assert!(!Flags::default().herokey_sso && !from_doc(&doc(&[])).herokey_sso, "Hero Key sign-in ships off");
     }
 
@@ -375,6 +404,19 @@ pub mod tests {
         assert!(!effective(&site, &load_local(d.path())).magnet_links, "this PC can switch it off");
         set_local(d.path(), "magnet_links", Some(true)).unwrap();
         assert!(effective(&Flags::default(), &load_local(d.path())).magnet_links, "or try it early");
+    }
+
+    #[test]
+    fn the_dht_is_this_pcs_switch_only() {
+        let mut site = doc(&[]);
+        site["flags"]["dht"] = Value::Bool(false);
+        assert!(from_doc(&site).dht, "the site can't switch the DHT off");
+        let mut no_mention = doc(&[]);
+        no_mention["flags"].as_object_mut().unwrap().remove("mesh_realms");
+        assert!(from_doc(&no_mention).mesh_realms, "a file from before the switch: on");
+        let d = tempfile::tempdir().unwrap();
+        set_local(d.path(), "dht", Some(false)).unwrap();
+        assert!(!effective(&from_doc(&site), &load_local(d.path())).dht, "this PC can");
     }
 
     #[test]

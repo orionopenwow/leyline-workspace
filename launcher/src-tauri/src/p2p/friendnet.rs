@@ -212,10 +212,26 @@ impl Hub {
         if !matches!(ev, Event::Ignored(_)) {
             self.save()?;
         }
+        // the Passport (crate::passport): guardians lists kept, rotations answered, a rotation of my own key told
+        let body = &rec["msg"]["body"];
+        match &ev {
+            Event::Guardian(_) => {
+                let roster: Vec<String> = body["roster"].as_array().map(|a| a.iter().filter_map(|k| k.as_str().map(String::from)).collect()).unwrap_or_default();
+                let _ = crate::passport::keep_guarding(&self.app, &self.me, rec["msg"]["from"].as_str().unwrap_or(""), &body["guardians"], &roster);
+            }
+            Event::Rotated(_) => self.send_due_rotations(),
+            Event::RotationOfMe(rot) => {
+                let _ = crate::passport::keep_alert(&self.app, &self.me, rot);
+            }
+            _ => {}
+        }
         let say = match &ev {
             Event::Request(p) => Some(format!("{} wants to be friends.", self.name_of(p))),
             Event::Accepted(p) => Some(format!("{} accepted: you're friends now.", self.name_of(p))),
             Event::Invite(p) => Some(format!("{} invited you to their world.", self.name_of(p))),
+            Event::Rotated(_) => Some("A friend got their Passport back on a new PC: you're still friends.".to_string()),
+            Event::RotationWaiting(p) => Some(format!("{} is getting their Passport back with their guardians. It takes effect in 3 days.", self.name_of(p))),
+            Event::RotationOfMe(_) => Some("Someone is asking your guardians for your Passport. If that isn't you, open Passport and stop it.".to_string()),
             _ => None,
         };
         if let Some(s) = say {
@@ -338,6 +354,17 @@ impl Hub {
     }
 
     /// Requests still waiting go out again (start-up: the other side may be reachable now).
+    /// Friends' Passport rotations whose wait is over: applied, and the accepts sent.
+    pub fn send_due_rotations(&self) {
+        let out = self.book.lock().unwrap().due_rotations(&self.me, now());
+        if !out.is_empty() {
+            let _ = self.save();
+        }
+        for (to, m) in out {
+            let _ = self.deliver(&to, &m, None);
+        }
+    }
+
     fn resend_requests(&self) {
         let out: Vec<(String, Option<String>)> = self.book.lock().unwrap().outgoing.iter().map(|o| (o.to.clone(), o.relay.clone())).collect();
         for (to, relay) in out {
@@ -379,6 +406,8 @@ fn serve_conn(hub: &Hub, mut s: TcpStream, peer: SocketAddr) {
         let r = s.try_clone().map(|c| BufReader::new(c.take(friends::ENVELOPE_MAX as u64 + 2)).read_until(b'\n', &mut line));
         match r {
             Ok(Ok(_)) if line.ends_with(b"\n") => match serde_json::from_slice::<Value>(&line) {
+                // a second PC joining this player's Passport (crate::passport pair_*): its own short exchange
+                Ok(env) if env.get("pair").is_some() => crate::passport::pair_serve(&hub.app, &env),
                 Ok(env) => {
                     let via = if local_ip(&peer.ip()) { Via::Lan } else { Via::Direct };
                     match hub.take(&env, via, t) {
@@ -435,6 +464,15 @@ pub fn hub(app: &Path) -> Result<Arc<Hub>, String> {
     let x = Hub::new(app, identity::load_or_create(app)?);
     *h = Some(x.clone());
     Ok(x)
+}
+
+/// This PC's key changed (the Passport: a recovery, a second device): the old hub stops and the next [`hub`] is made
+/// for the new key.
+pub fn reset() {
+    let old = HUB.lock().ok().and_then(|mut h| h.take());
+    if let Some(h) = old {
+        stop(&h);
+    }
 }
 
 /// Start listening and beaconing (once). Ports in use: any free one for TCP (the beacon says which), and beacons
@@ -522,6 +560,7 @@ pub fn start(hub: &Arc<Hub>) -> NetState {
             }
             if tick % PRESENCE_EVERY == 15 {
                 h.presence_all(true);
+                h.send_due_rotations();
             }
             std::thread::sleep(Duration::from_secs(1));
             tick += 1;

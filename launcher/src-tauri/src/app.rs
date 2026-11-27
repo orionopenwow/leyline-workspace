@@ -769,6 +769,7 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
         // a single player world (host/worldfriends.rs): this launcher's identity claims its lasting login there before
         // the game logs in, so the same characters are there every time; a world that doesn't answer claims (an older
         // Leyline) takes the invite's one-time login as before
+        let mut joined_key = 1;
         let (user, pass) = if lasting {
             let app = settings::app_dir();
             let (addr, rid3, secret3, game, ticket) = (address.clone(), rid.clone(), secret.clone(), profile.path.clone(), guest.clone());
@@ -784,11 +785,22 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
                 }
                 old.retain(|u| wf::ticket_ok(u));
                 old.dedup();
-                wf::claim_at(&addr, &peer, &rid3, &secret3, ticket.as_ref().map(|(u, p)| (u.as_str(), p.as_str())), &old)
+                // the Passport: a new join uses this world's own world key (and keeps a login agreement); a world
+                // joined before with the root key keeps using it (passport.rs, Joined.key)
+                let (signer, pp) = crate::passport::claim_for(&app, &peer, &rid3);
+                let v2 = pp.v2;
+                let (u, p, rec) = wf::claim_at_passport(&addr, &signer, &rid3, &secret3, ticket.as_ref().map(|(u, p)| (u.as_str(), p.as_str())), &old, &pp)?;
+                if let Some(r) = rec {
+                    let _ = crate::passport::keep_player_login(&app, &r);
+                }
+                Ok((u, p, if v2 { 2 } else { 1 }))
             })
             .await;
             match (claimed, guest) {
-                (Ok(up), _) => up,
+                (Ok((u, p, k)), _) => {
+                    joined_key = k;
+                    (u, p)
+                }
                 (Err(_), Some(g)) => g,
                 (Err(e), None) => return Err(format!("Your friend's world: {e}")),
             }
@@ -796,7 +808,7 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
             guest.ok_or("That invite has no login in it.")?
         };
         if lasting {
-            let j = wf::Joined { relay: relay.clone(), secret: secret.clone(), lan: lan_kept, user: user.clone(), old: Vec::new(), name: name.clone(), at: now_secs() };
+            let j = wf::Joined { relay: relay.clone(), secret: secret.clone(), lan: lan_kept, user: user.clone(), old: Vec::new(), name: name.clone(), at: now_secs(), key: joined_key };
             let _ = wf::remember(&settings::app_dir(), &rid, j);
         }
         let _ = crate::herokey::set_login(&profile.path, &user, None);
@@ -3336,6 +3348,204 @@ async fn friends_join(peer_id: String) -> Result<String, String> {
     .await
 }
 
+// ---- The Passport (passport.rs; docs/leyline/passport.md; ui/passport.js): the peer key grown up. Thin wrappers:
+// everything is in passport.rs. Never a key in an answer except the phrase on its own screen.
+
+#[tauri::command]
+async fn passport_state() -> Result<serde_json::Value, String> {
+    blocking(|| Ok(crate::passport::page(&*friends_hub()?))).await
+}
+
+#[tauri::command]
+async fn passport_setup(name: String, picture: String) -> Result<Vec<String>, String> {
+    blocking(move || crate::passport::setup(&*friends_hub()?, &name, &picture)).await
+}
+
+/// The recovery phrase (Back up › Show my phrase): 12 words while a new key's wait, else 24.
+#[tauri::command]
+async fn passport_phrase() -> Result<Vec<String>, String> {
+    blocking(|| {
+        let h = friends_hub()?;
+        Ok(crate::passport::phrase_for(&h.app, &h.me).split(' ').map(String::from).collect())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn passport_finish() -> Result<(), String> {
+    blocking(|| crate::passport::finish(&*friends_hub()?)).await
+}
+
+/// Recover with the phrase: this PC becomes that Passport (the key it had kept aside).
+#[tauri::command]
+async fn passport_restore(phrase: String) -> Result<String, String> {
+    blocking(move || {
+        let seed = crate::passport::seed_from_phrase(&phrase)?;
+        let app = settings::app_dir();
+        if crate::identity::load_or_create(&app).map(|me| me.secret_seed() == seed).unwrap_or(false) {
+            return Ok("That's already this PC's Passport.".to_string());
+        }
+        let short = crate::identity::import_seed(&app, seed)?;
+        let _ = crate::passport::phrase_saved(&app);
+        crate::p2p::friendnet::reset();
+        let h = friends_hub()?;
+        let mut st = crate::passport::State::load(&app, &h.me);
+        st.setup_done = true;
+        crate::passport::ensure_this_device(&app, &h.me, &mut st)?;
+        st.save(&app)?;
+        Ok(format!("Done: this PC is your Passport again (Hero {short}). Restart Leyline to finish."))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn passport_guardians(peer_ids: Vec<String>) -> Result<String, String> {
+    blocking(move || crate::passport::set_guardians(&*friends_hub()?, &peer_ids)).await
+}
+
+#[tauri::command]
+async fn passport_device_revoke(id: String) -> Result<String, String> {
+    blocking(move || {
+        let h = friends_hub()?;
+        crate::passport::revoke_device(&h.app, &h.me, &id)
+    })
+    .await
+}
+
+/// The new PC: wait for the other one (the friends' listener carries the exchange).
+#[tauri::command]
+async fn passport_pair_wait() -> Result<(), String> {
+    blocking(|| {
+        let h = friends_hub()?;
+        crate::p2p::friendnet::start(&h);
+        crate::passport::pair_wait(&h.app)
+    })
+    .await
+}
+
+#[tauri::command]
+fn passport_pair_status() -> serde_json::Value {
+    crate::passport::pair_status()
+}
+
+#[tauri::command]
+fn passport_pair_cancel() {
+    crate::passport::pair_cancel()
+}
+
+/// The PC with the Passport: find the new one (on this network, or at an address typed as host:port).
+#[tauri::command]
+async fn passport_pair_find(addr: Option<String>) -> Result<String, String> {
+    blocking(move || {
+        let h = friends_hub()?;
+        crate::p2p::friendnet::start(&h);
+        let mut addrs: Vec<std::net::SocketAddr> = h.near.lock().map(|n| n.values().map(|x| x.addr).collect()).unwrap_or_default();
+        if let Some(a) = addr.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+            let a = if a.contains(':') { a.to_string() } else { format!("{a}:{}", crate::p2p::friendnet::TCP_PORT) };
+            use std::net::ToSocketAddrs;
+            addrs.insert(0, a.to_socket_addrs().map_err(|_| "That address doesn't look right.".to_string())?.next().ok_or("That address doesn't look right.")?);
+        }
+        crate::passport::pair_find(&addrs)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn passport_pair_confirm(code: String) -> Result<String, String> {
+    blocking(move || {
+        let h = friends_hub()?;
+        crate::passport::pair_confirm(&h.app, &h.me, &code)
+    })
+    .await
+}
+
+/// No network between the PCs: a sealed file saved where the player picks; the 6 words that open it come back.
+#[tauri::command]
+async fn passport_pair_file_export(app: AppHandle) -> Result<Option<String>, String> {
+    let (text, six) = blocking(|| {
+        let h = friends_hub()?;
+        crate::passport::file_export(&h.me, &crate::passport::State::load(&h.app, &h.me))
+    })
+    .await?;
+    let to = tauri::async_runtime::spawn_blocking(move || app.dialog().file().set_title("Save your Passport for your other PC").set_file_name("leyline-passport-for-other-pc.txt").add_filter("Text", &["txt"]).blocking_save_file())
+        .await
+        .ok()
+        .flatten()
+        .and_then(|p| p.into_path().ok());
+    let Some(to) = to else { return Ok(None) };
+    std::fs::write(&to, text.as_bytes()).map_err(|e| format!("It wasn't saved: {e}"))?;
+    Ok(Some(six))
+}
+
+#[tauri::command]
+async fn passport_pair_file_import(app: AppHandle, words: String) -> Result<Option<String>, String> {
+    let Some(from) = pick(app, "Pick the Passport file from your other PC", true, false).await else { return Ok(None) };
+    blocking(move || {
+        if std::fs::metadata(&from).map(|m| m.len()).unwrap_or(u64::MAX) > 64 * 1024 {
+            return Err("That isn't a Leyline Passport file.".to_string());
+        }
+        let text = std::fs::read_to_string(&from).map_err(|_| "That isn't a Leyline Passport file.".to_string())?;
+        let p = crate::passport::file_import(&text, &words)?;
+        let m = crate::passport::install_payload(&settings::app_dir(), &p)?;
+        crate::p2p::friendnet::reset();
+        Ok(Some(m))
+    })
+    .await
+}
+
+/// Recover with guardians: the code to give them.
+#[tauri::command]
+async fn passport_recover_start() -> Result<String, String> {
+    blocking(|| crate::passport::recovery_start(&settings::app_dir())).await
+}
+
+#[tauri::command]
+fn passport_recover_cancel() {
+    crate::passport::recovery_cancel(&settings::app_dir())
+}
+
+/// A guardian's answer pasted: "1 of 2", or done (this PC is the Passport now; friends are asked to follow).
+#[tauri::command]
+async fn passport_recover_add(text: String) -> Result<serde_json::Value, String> {
+    blocking(move || {
+        let app = settings::app_dir();
+        match crate::passport::recovery_add(&app, &text)? {
+            None => Ok(serde_json::json!({"done": false, "approvals": crate::passport::recovery_load(&app).map(|r| r.approvals.len()).unwrap_or(0)})),
+            Some((rot, roster)) => {
+                crate::p2p::friendnet::reset();
+                let h = friends_hub()?;
+                crate::p2p::friendnet::start(&h);
+                let told = crate::passport::announce_rotation(&h, &rot, &roster);
+                Ok(serde_json::json!({"done": true, "told": told, "friends": roster.len()}))
+            }
+        }
+    })
+    .await
+}
+
+/// A guardian helps a friend: their code and who they are; the answer to send back.
+#[tauri::command]
+async fn passport_help_friend(code: String, peer_id: String) -> Result<String, String> {
+    blocking(move || crate::passport::help_friend(&*friends_hub()?, &code, &peer_id)).await
+}
+
+#[tauri::command]
+async fn passport_veto(id: String) -> Result<String, String> {
+    blocking(move || crate::passport::veto(&*friends_hub()?, &id)).await
+}
+
+/// The old Hero Key file, imported once as an alias (the key itself is never kept).
+#[tauri::command]
+async fn passport_herokey_import(app: AppHandle) -> Result<Option<String>, String> {
+    let Some(from) = pick(app, "Pick your Hero Key file", true, false).await else { return Ok(None) };
+    blocking(move || {
+        let text = crate::social::key_file_text(std::path::Path::new(&from))?;
+        let h = friends_hub()?;
+        crate::passport::import_herokey(&h.app, &h.me, &text).map(Some)
+    })
+    .await
+}
+
 // ---- Leyline Solo (host/classic.rs, host/classicsign.rs; docs/LEYLINE-SOLO.md: the contract the Solo app codes
 // against): the first-era world on this PC, its fast sign-in, its characters and companions, Invite a friend.
 
@@ -5190,6 +5400,26 @@ pub fn run() {
             join_friend_again,
             friends_state,
             friends_start,
+            passport_state,
+            passport_setup,
+            passport_phrase,
+            passport_finish,
+            passport_restore,
+            passport_guardians,
+            passport_device_revoke,
+            passport_pair_wait,
+            passport_pair_status,
+            passport_pair_cancel,
+            passport_pair_find,
+            passport_pair_confirm,
+            passport_pair_file_export,
+            passport_pair_file_import,
+            passport_recover_start,
+            passport_recover_cancel,
+            passport_recover_add,
+            passport_help_friend,
+            passport_veto,
+            passport_herokey_import,
             friends_stop,
             friends_profile,
             friends_code,

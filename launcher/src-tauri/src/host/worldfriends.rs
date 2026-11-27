@@ -191,9 +191,31 @@ pub fn signed_text(realm_id: &str, chal: &str, ticket: &str, pass: &str) -> Stri
 
 /// The friend's side: the sealed claim for the host's challenge `chal`.
 pub fn make_claim(peer: &Peer, realm_id: &str, secret: &str, chal: &str, ticket: Option<(&str, &str)>, pass: &str, old: &[String]) -> Result<String, String> {
+    make_claim_with(peer, realm_id, secret, chal, ticket, pass, old, &Passport::default())
+}
+
+/// What a Passport adds to a claim (crate::passport): `v2` (the key is this world's own world key, and the host and
+/// the friend sign a login agreement after OK), the friend's copy of an earlier agreement for this world (`rec`: a
+/// host that lost its friends list makes the login again from it), and the rotation that moved the friend's root to
+/// this key (`rot`: a v1 login made with the old key follows it).
+#[derive(Debug, Clone, Default)]
+pub struct Passport {
+    pub v2: bool,
+    pub rec: Option<serde_json::Value>,
+    pub rot: Option<serde_json::Value>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn make_claim_with(peer: &Peer, realm_id: &str, secret: &str, chal: &str, ticket: Option<(&str, &str)>, pass: &str, old: &[String], p: &Passport) -> Result<String, String> {
     let (t, tp) = ticket.unwrap_or(("", ""));
     let sig = peer.sign(signed_text(realm_id, chal, t, pass).as_bytes());
-    let doc = json!({ "v": 1, "pk": peer.public_hex(), "sig": hex(&sig), "pass": pass, "ticket": t, "tpass": tp, "old": old });
+    let mut doc = json!({ "v": if p.v2 { 2 } else { 1 }, "pk": peer.public_hex(), "sig": hex(&sig), "pass": pass, "ticket": t, "tpass": tp, "old": old });
+    if let Some(r) = &p.rec {
+        doc["rec"] = r.clone();
+    }
+    if let Some(r) = &p.rot {
+        doc["rot"] = r.clone();
+    }
     seal(&claim_key(secret, realm_id), doc.to_string().as_bytes())
 }
 
@@ -207,6 +229,8 @@ struct ClaimDoc {
     ticket: String,
     tpass: String,
     old: Vec<String>,
+    rec: serde_json::Value,
+    rot: serde_json::Value,
 }
 
 /// A claim the host could read and whose signature holds. Its Debug never shows a password.
@@ -218,6 +242,10 @@ pub struct Opened {
     pub ticket: String,
     pub tpass: String,
     pub old: Vec<String>,
+    /// 2: a Passport world key (a login agreement follows OK).
+    pub v: u32,
+    pub rec: Option<serde_json::Value>,
+    pub rot: Option<serde_json::Value>,
 }
 
 impl std::fmt::Debug for Opened {
@@ -230,7 +258,7 @@ impl std::fmt::Debug for Opened {
 pub fn open_claim(realm_id: &str, secret: &str, chal: &str, sealed: &str) -> Result<Opened, String> {
     let plain = open(&claim_key(secret, realm_id), sealed).ok_or("That isn't this world's invite.")?;
     let c: ClaimDoc = serde_json::from_slice(&plain).map_err(|_| "The claim didn't read.".to_string())?;
-    if c.v != 1 {
+    if c.v != 1 && c.v != 2 {
         return Err("A newer Leyline made this claim: update Leyline.".into());
     }
     let pk = unhex(&c.pk).filter(|k| k.len() == 32).ok_or("The claim's key didn't read.")?;
@@ -243,7 +271,9 @@ pub fn open_claim(realm_id: &str, secret: &str, chal: &str, sealed: &str) -> Res
     }
     let pk: [u8; 32] = pk.try_into().map_err(|_| "The claim's key didn't read.".to_string())?;
     let old = c.old.into_iter().filter(|u| ticket_ok(u)).take(4).collect();
-    Ok(Opened { peer: peer_id(&pk), key: hex(&pk), pass: c.pass, ticket: c.ticket, tpass: c.tpass, old })
+    let rec = Some(c.rec).filter(|r| !r.is_null());
+    let rot = Some(c.rot).filter(|r| !r.is_null());
+    Ok(Opened { peer: peer_id(&pk), key: hex(&pk), pass: c.pass, ticket: c.ticket, tpass: c.tpass, old, v: c.v, rec, rot })
 }
 
 // ------------------------------------------------------------------------------------------------ the book
@@ -339,8 +369,40 @@ pub struct Granted {
     pub adopted: bool,
 }
 
+/// A claim from a key the book doesn't know yet that carries proof it is a friend already: a Passport rotation in
+/// force from a known friend's old key (the login follows the new key), or the friend's copy of a login agreement
+/// this world signed (the login made again). Whether the book changed.
+pub fn passport_rekey(b: &mut Book, realm_id: &str, o: &Opened, t: u64) -> bool {
+    if b.friends.iter().any(|f| f.peer == o.peer) {
+        return false;
+    }
+    if let Some(rot) = &o.rot {
+        if let Ok(r) = crate::passport::rotation_in_force(rot, t, &[]) {
+            let old_peer = crate::identity::peer_id(&unhex(&r.old).unwrap_or_default());
+            if r.new == o.key {
+                if let Some(f) = b.friends.iter_mut().find(|f| f.peer == old_peer) {
+                    f.peer = o.peer.clone();
+                    f.key = o.key.clone();
+                    return true;
+                }
+            }
+        }
+    }
+    if let Some(rec) = &o.rec {
+        if let Ok(f) = crate::passport::rebuild_friend(rec, realm_id, &o.key, t) {
+            if !b.friends.iter().any(|x| x.user == f.user) {
+                b.removed.retain(|x| *x != f.user);
+                b.friends.push(f);
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Whether `o` comes in at `t`, and as whom (the book changed to match; saved by the caller once the world agreed).
 pub fn admit(b: &mut Book, realm_id: &str, o: &Opened, t: u64) -> Result<Granted, String> {
+    passport_rekey(b, realm_id, o, t);
     let thash = sha_hex(o.tpass.as_bytes());
     let ti = if o.ticket.is_empty() { None } else { b.tickets.iter().position(|k| k.user == o.ticket && k.hash == thash) };
     let good = ti.is_some_and(|i| b.tickets[i].expires > t && (b.tickets[i].by.is_empty() || b.tickets[i].by == o.peer));
@@ -466,6 +528,46 @@ fn run(w: &World, line: &str) -> Result<(), String> {
 
 /// One claim, answered: the login to use (made or given the claim's password), or why not.
 pub fn handle(w: &World, chal: &str, sealed: &str) -> Result<String, String> {
+    handle_full(w, chal, sealed).map(|(u, _)| u)
+}
+
+/// The world's own key (`<share>/state/realm.key`, host/litenet.rs), when it is there and is this world's.
+fn realm_identity(w: &World) -> Option<Peer> {
+    let k = crate::host::litenet::key_path(&w.share);
+    if !k.is_file() {
+        return None;
+    }
+    let p = Peer::from_seed(crate::host::litenet::load_or_create_key(&k).ok()?).ok()?;
+    (p.peer_id == w.realm_id).then_some(p)
+}
+
+/// The host's half of the login agreement for a Passport claim (v2): this world's key signs
+/// `{player, realm, account, created, seq}`, seq one more than the last one kept for that key.
+pub fn agreement_half(w: &World, player_pk: &str, account: &str, t: u64) -> Option<serde_json::Value> {
+    let host = realm_identity(w)?;
+    let seq = crate::passport::login_book(&crate::passport::host_logins_path(&w.share))
+        .get(player_pk)
+        .and_then(|r| crate::passport::check_login(r).ok())
+        .map_or(1, |n| n.seq + 1);
+    Some(crate::passport::login_half(&host, &crate::passport::login_doc(player_pk, &w.realm_id, account, t, seq)))
+}
+
+/// The whole agreement (the friend's signature added) kept on the host's side.
+pub fn keep_agreement(w: &World, rec: &serde_json::Value) -> Result<(), String> {
+    let n = crate::passport::check_login(rec)?;
+    if n.realm != w.realm_id {
+        return Err("another world's record".into());
+    }
+    let p = crate::passport::host_logins_path(&w.share);
+    let mut b = crate::passport::login_book(&p);
+    if crate::passport::keep_login(&mut b, &n.player, rec)? {
+        crate::passport::save_login_book(&p, &b)?;
+    }
+    Ok(())
+}
+
+/// [`handle`], and for a Passport claim (v2) the host's half of the login agreement to send with OK.
+pub fn handle_full(w: &World, chal: &str, sealed: &str) -> Result<(String, Option<serde_json::Value>), String> {
     let o = open_claim(&w.realm_id, &w.secret, chal, sealed)?;
     let _g = BOOK_LOCK.lock().map_err(|_| "busy")?;
     let mut b = load(&w.share);
@@ -482,9 +584,10 @@ pub fn handle(w: &World, chal: &str, sealed: &str) -> Result<String, String> {
         }
     }
     save(&w.share, &b)?;
+    let half = if o.v == 2 { agreement_half(w, &o.key, &g.user, now()) } else { None };
     match &w.login_for {
-        Some(f) => f(&g.user, &o.pass),
-        None => Ok(g.user),
+        Some(f) => f(&g.user, &o.pass).map(|u| (u, half)),
+        None => Ok((g.user, half)),
     }
 }
 
@@ -671,7 +774,7 @@ fn front_one(c: TcpStream, to: u16, world: Arc<Mutex<Option<World>>>, stop: Arc<
     if first[0] == b'L' {
         let w = world.lock().ok().and_then(|g| g.clone());
         if let Some(w) = w {
-            let _ = converse(c, &|chal: &str, sealed: &str| handle(&w, chal, sealed));
+            let _ = converse_full(c, &|chal: &str, sealed: &str| handle_full(&w, chal, sealed), &|rec: &serde_json::Value| keep_agreement(&w, rec));
         }
         return;
     }
@@ -705,7 +808,18 @@ fn rate_ok() -> bool {
 }
 
 /// The host's side of one claim conversation (`answer`: challenge, sealed claim -> login or why not).
-pub fn converse<S: Read + Write>(mut c: S, answer: &dyn Fn(&str, &str) -> Result<String, String>) -> Result<(), String> {
+pub fn converse<S: Read + Write>(c: S, answer: &dyn Fn(&str, &str) -> Result<String, String>) -> Result<(), String> {
+    converse_full(c, &|ch: &str, s: &str| answer(ch, s).map(|u| (u, None)), &|_: &serde_json::Value| Ok(()))
+}
+
+/// [`converse`] with the Passport's login agreement: when the answer has the host's half, OK carries it
+/// (`LLC1 OK <login> <base32 half>`), the friend signs (`LLC1 SIGN <hex>`), the whole record is checked and kept
+/// (`keep`), and the host says `LLC1 KEPT`. An older friend's launcher never sees the extra (it sends v1 claims).
+pub fn converse_full<S: Read + Write>(
+    mut c: S,
+    answer: &dyn Fn(&str, &str) -> Result<(String, Option<serde_json::Value>), String>,
+    keep: &dyn Fn(&serde_json::Value) -> Result<(), String>,
+) -> Result<(), String> {
     if !rate_ok() {
         let _ = c.write_all(format!("{MAGIC} NO Too many tries: wait a minute.\n").as_bytes());
         return Err("busy".into());
@@ -718,40 +832,86 @@ pub fn converse<S: Read + Write>(mut c: S, answer: &dyn Fn(&str, &str) -> Result
     c.write_all(format!("{MAGIC} CHAL {chal}\n").as_bytes()).map_err(|e| e.to_string())?;
     let line = read_line(&mut c, LINE_MAX).ok_or("no claim")?;
     let sealed = line.trim_end_matches('\r').strip_prefix(&format!("{MAGIC} CLAIM ")).ok_or("not a claim")?.to_string();
-    let reply = match answer(&chal, &sealed) {
-        Ok(u) => format!("{MAGIC} OK {u}\n"),
-        Err(e) => format!("{MAGIC} NO {}\n", e.replace('\n', " ").replace('\r', " ").chars().take(160).collect::<String>()),
+    let (reply, half) = match answer(&chal, &sealed) {
+        Ok((u, Some(h))) => (format!("{MAGIC} OK {u} {}\n", crate::identity::b32(crate::identity::canonical(&h).as_bytes())), Some(h)),
+        Ok((u, None)) => (format!("{MAGIC} OK {u}\n"), None),
+        Err(e) => (format!("{MAGIC} NO {}\n", e.replace('\n', " ").replace('\r', " ").chars().take(160).collect::<String>()), None),
     };
-    c.write_all(reply.as_bytes()).map_err(|e| e.to_string())
+    c.write_all(reply.as_bytes()).map_err(|e| e.to_string())?;
+    let Some(mut rec) = half else { return Ok(()) };
+    // the login works already; the agreement is kept when the friend signs it
+    let line = read_line(&mut c, 256).ok_or("no signature")?;
+    let sig = line.trim_end_matches('\r').strip_prefix(&format!("{MAGIC} SIGN ")).filter(|h| h.len() == 128 && unhex(h).is_some()).ok_or("no signature")?;
+    rec["sig_player"] = json!(sig);
+    let r = crate::passport::check_login(&rec).and_then(|_| keep(&rec));
+    let out = match &r {
+        Ok(()) => format!("{MAGIC} KEPT\n"),
+        Err(_) => format!("{MAGIC} NO The login record didn't hold.\n"),
+    };
+    c.write_all(out.as_bytes()).map_err(|e| e.to_string())?;
+    r
 }
 
 /// The friend's side of the conversation over `c`: (lasting login, its new one-time password).
-pub fn claim_with<S: Read + Write>(mut c: S, peer: &Peer, realm_id: &str, secret: &str, ticket: Option<(&str, &str)>, old: &[String]) -> Result<(String, String), String> {
+pub fn claim_with<S: Read + Write>(c: S, peer: &Peer, realm_id: &str, secret: &str, ticket: Option<(&str, &str)>, old: &[String]) -> Result<(String, String), String> {
+    claim_with_passport(c, peer, realm_id, secret, ticket, old, &Passport::default()).map(|(u, p, _)| (u, p))
+}
+
+/// [`claim_with`] with what a Passport adds ([`Passport`]): for a v2 claim (`peer` is this world's world key) the
+/// host's half of the login agreement is checked, signed and sent back; the whole record comes back third (None
+/// from a host that didn't offer one, or when it didn't hold: the login works either way).
+#[allow(clippy::too_many_arguments)]
+pub fn claim_with_passport<S: Read + Write>(mut c: S, peer: &Peer, realm_id: &str, secret: &str, ticket: Option<(&str, &str)>, old: &[String], p: &Passport) -> Result<(String, String, Option<serde_json::Value>), String> {
     let pass = crate::host::engine::secret(12)?;
     c.write_all(format!("{MAGIC} HELLO\n").as_bytes()).map_err(|e| e.to_string())?;
     let l = read_line(&mut c, 128).ok_or("The world didn't answer (an older Leyline on your friend's PC).")?;
     let chal = l.trim_end_matches('\r').strip_prefix(&format!("{MAGIC} CHAL ")).filter(|h| h.len() == 32 && unhex(h).is_some()).ok_or("The world didn't answer as expected.")?.to_string();
-    let sealed = make_claim(peer, realm_id, secret, &chal, ticket, &pass, old)?;
+    let sealed = make_claim_with(peer, realm_id, secret, &chal, ticket, &pass, old, p)?;
     c.write_all(format!("{MAGIC} CLAIM {sealed}\n").as_bytes()).map_err(|e| e.to_string())?;
-    let r = read_line(&mut c, 256).ok_or("The world didn't answer.")?;
+    let r = read_line(&mut c, LINE_MAX).ok_or("The world didn't answer.")?;
     let r = r.trim_end_matches('\r');
-    if let Some(u) = r.strip_prefix(&format!("{MAGIC} OK ")) {
-        if friend_login_ok(u.trim()) {
-            return Ok((u.trim().to_string(), pass));
+    if let Some(rest) = r.strip_prefix(&format!("{MAGIC} OK ")) {
+        let (u, half) = rest.trim().split_once(' ').map_or((rest.trim(), None), |(u, h)| (u, Some(h)));
+        if friend_login_ok(u) || (half.is_some() && login_shape(u)) {
+            let rec = match half.filter(|_| p.v2) {
+                Some(h) => agree(&mut c, peer, realm_id, u, h),
+                None => None,
+            };
+            return Ok((u.to_string(), pass, rec));
         }
     }
     Err(r.strip_prefix(&format!("{MAGIC} NO ")).unwrap_or("The world didn't answer as expected.").chars().take(160).collect())
 }
 
+/// Any login a world may answer with (a friend's, or another a world makes for them, as Boss Rush's heroes).
+pub fn login_shape(u: &str) -> bool {
+    (1..=32).contains(&u.len()) && upper_digits(u)
+}
+
+/// The friend's side of the agreement: the host's half checked and signed, sent; the whole record if the host kept it.
+fn agree<S: Read + Write>(c: &mut S, peer: &Peer, realm_id: &str, account: &str, half_b32: &str) -> Option<serde_json::Value> {
+    let half: serde_json::Value = serde_json::from_slice(&crate::identity::unb32(half_b32)?).ok()?;
+    let rec = crate::passport::login_countersign(peer, &half, realm_id, account).ok()?;
+    c.write_all(format!("{MAGIC} SIGN {}\n", rec["sig_player"].as_str()?).as_bytes()).ok()?;
+    let r = read_line(c, 256)?;
+    (r.trim_end_matches('\r') == format!("{MAGIC} KEPT")).then_some(rec)
+}
+
 /// [`claim_with`] over TCP to the world's login address ("host" or "host:port"; 3724 when none).
 pub fn claim_at(addr: &str, peer: &Peer, realm_id: &str, secret: &str, ticket: Option<(&str, &str)>, old: &[String]) -> Result<(String, String), String> {
+    claim_at_passport(addr, peer, realm_id, secret, ticket, old, &Passport::default()).map(|(u, p, _)| (u, p))
+}
+
+/// [`claim_with_passport`] over TCP.
+#[allow(clippy::too_many_arguments)]
+pub fn claim_at_passport(addr: &str, peer: &Peer, realm_id: &str, secret: &str, ticket: Option<(&str, &str)>, old: &[String], p: &Passport) -> Result<(String, String, Option<serde_json::Value>), String> {
     let a = if addr.rsplit_once(':').is_some_and(|(h, p)| !h.is_empty() && p.parse::<u16>().is_ok()) { addr.to_string() } else { format!("{addr}:3724") };
     let down = |e: String| format!("it didn't answer ({e}). Ask your friend to start their world and share it (Invite a friend).");
     let sa = a.to_socket_addrs().map_err(|e| down(e.to_string()))?.next().ok_or_else(|| down("no address".into()))?;
     let c = TcpStream::connect_timeout(&sa, Duration::from_secs(5)).map_err(|e| down(e.to_string()))?;
     let _ = c.set_read_timeout(Some(Duration::from_secs(8)));
     let _ = c.set_write_timeout(Some(Duration::from_secs(8)));
-    claim_with(c, peer, realm_id, secret, ticket, old)
+    claim_with_passport(c, peer, realm_id, secret, ticket, old, p)
 }
 
 /// The claim answerer runs (the world is shared through it).
@@ -860,6 +1020,9 @@ pub struct Joined {
     pub old: Vec<String>,
     pub name: String,
     pub at: u64,
+    /// Which key joined: 2 = this world's Passport world key (crate::passport::world_identity); 0 or 1 = the root
+    /// peer key, as before the Passport (kept, so an existing friend's login keeps working).
+    pub key: u32,
 }
 
 impl std::fmt::Debug for Joined {
@@ -1104,6 +1267,86 @@ mod tests {
         // a hook that fails: the claim is refused with its words
         w.login_for = Some(Arc::new(|_: &str, _: &str| Err("no fight picked".to_string())));
         assert_eq!(handle(&w, "ab", &make_claim(&a, RID, SECRET, "ab", None, "PASSWORD3456", &[]).unwrap()).unwrap_err(), "no fight picked");
+    }
+
+    #[test]
+    fn passport_world_keys_and_login_agreements_over_the_wire() {
+        use crate::passport as pp;
+        let d = tempfile::tempdir().unwrap();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        // a world with its own realm key in its share folder (litenet's realm.key): its realm id is that key's
+        let realm_seed = [33u8; 32];
+        std::fs::create_dir_all(d.path().join("state")).unwrap();
+        std::fs::write(crate::host::litenet::key_path(d.path()), hex(&realm_seed) + "\n").unwrap();
+        let rid = Peer::from_seed(realm_seed).unwrap().peer_id;
+        let mut w = world(d.path(), log.clone());
+        w.realm_id = rid.clone();
+        add_ticket(d.path(), "GTICKET234", "TPASS2345678", now()).unwrap();
+        let front = spawn_front(1, w.clone()).unwrap();
+        let at = format!("127.0.0.1:{}", front.port);
+        let root = peer(40);
+        let wk = pp::world_identity(&root, &rid);
+        let v2 = Passport { v2: true, ..Default::default() };
+        // a new join with the world key: the login comes from the world key, and both sides keep the agreement
+        let (u, _, rec) = claim_at_passport(&at, &wk, &rid, SECRET, Some(("GTICKET234", "TPASS2345678")), &[], &v2).unwrap();
+        assert_eq!(u, name_for(&rid, &wk.peer_id));
+        assert_ne!(u, name_for(&rid, &root.peer_id), "the host can't tell it from the root's");
+        let rec = rec.expect("the agreement came back");
+        let n = pp::check_login(&rec).unwrap();
+        assert_eq!((n.account.as_str(), n.realm.as_str(), n.seq), (u.as_str(), rid.as_str(), 1));
+        assert_eq!(pp::login_book(&pp::host_logins_path(d.path())).get(&wk.public_hex()), Some(&rec), "the host keeps the same record");
+        assert!(!load(d.path()).friends.iter().any(|f| f.peer == root.peer_id), "the root never reached the host");
+        // again: seq 2
+        let (_, _, rec2) = claim_at_passport(&at, &wk, &rid, SECRET, None, &[], &v2).unwrap();
+        assert_eq!(pp::check_login(&rec2.unwrap()).unwrap().seq, 2);
+        // an old friend (a v1 claim with the root key) keeps working beside it, with no agreement
+        let old = peer(41);
+        add_ticket(d.path(), "GTICKET567", "TPASS2345678", now()).unwrap();
+        let (u1, _) = claim_at(&at, &old, &rid, SECRET, Some(("GTICKET567", "TPASS2345678")), &[]).unwrap();
+        assert_eq!(u1, name_for(&rid, &old.peer_id));
+        // the host loses its friends list (its realm key kept): the player's copy makes the login again, no ticket
+        std::fs::remove_file(book_path(d.path())).unwrap();
+        let keep = pp::player_login(d.path(), &rid);
+        assert!(keep.is_none());
+        let rec_now = pp::login_book(&pp::host_logins_path(d.path())).get(&wk.public_hex()).cloned().unwrap();
+        assert!(claim_at_passport(&at, &wk, &rid, SECRET, None, &[], &v2).is_err(), "without the record: a stranger now");
+        let back = Passport { v2: true, rec: Some(rec_now), rot: None };
+        let (u3, _, _) = claim_at_passport(&at, &wk, &rid, SECRET, None, &[], &back).unwrap();
+        assert_eq!(u3, u, "the same account, from the player's copy");
+        // a record for another key doesn't let a stranger in
+        let other = pp::world_identity(&peer(42), &rid);
+        assert!(claim_at_passport(&at, &other, &rid, SECRET, None, &[], &back).is_err());
+        front.stop.store(true, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn a_rotated_root_keeps_its_old_login() {
+        use crate::passport as pp;
+        use serde_json::Value;
+        let (old, new, g1, g2) = (peer(50), peer(51), peer(52), peer(53));
+        let mut book = Book::default();
+        let t = 2_000_000_000;
+        book.tickets.push(Ticket { user: "GTICKET234".into(), hash: sha_hex(b"TPASS2345678"), made: t, expires: t + 100, by: String::new() });
+        let g = admit(&mut book, RID, &claim(&old, "aa", Some(("GTICKET234", "TPASS2345678")), "PASSWORD2345", &[]), t).unwrap();
+        book.friends[0].enabled = true;
+        let gl = pp::make_guardians(&old, &[g1.public_hex(), g2.public_hex()], 1, 1).unwrap();
+        let (o, n) = (old.public_hex(), new.public_hex());
+        let one = pp::rotation_bundle(&gl, &n, &[pp::approve_rotation(&g1, &o, &n, t), pp::approve_rotation(&g2, &o, &n, t)]).unwrap();
+        let with = |rot: Option<Value>| {
+            let p = Passport { v2: false, rec: None, rot };
+            let s = make_claim_with(&new, RID, SECRET, "bb", None, "PASSWORD2345", &[], &p).unwrap();
+            open_claim(RID, SECRET, "bb", &s).unwrap()
+        };
+        // in the waiting time: not yet
+        assert!(admit(&mut book.clone(), RID, &with(Some(one.clone())), t + 10).is_err());
+        // a rotation with one guardian: never
+        let mut half = one.clone();
+        half["approvals"] = serde_json::json!([one["approvals"][0]]);
+        assert!(admit(&mut book.clone(), RID, &with(Some(half)), t + pp::GUARDIAN_WAIT + 1).is_err());
+        // two guardians, the wait over: the old login, now the new key's
+        let got = admit(&mut book, RID, &with(Some(one)), t + pp::GUARDIAN_WAIT + 1).unwrap();
+        assert_eq!((got.user, got.create), (g.user, false));
+        assert_eq!(book.friends[0].peer, new.peer_id);
     }
 
     #[test]

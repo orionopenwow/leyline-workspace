@@ -64,7 +64,9 @@ Every signature is Ed25519 over `context + "\n" + canonical JSON` (sorted keys, 
 | Envelope (wire) | none (sealed) | | `{v, to: peer id, box: base32(sealed message), tag?}` | 15 KB |
 | LAN beacon | `leyline-friend-beacon-v1` | its owner | `{pubkey, port, ts, name?}` | 600 bytes; 60 s |
 
-Message kinds: `request`, `accept`, `decline`, `revoke`, `presence`, `invite`, `card`.
+Message kinds: `request`, `accept`, `decline`, `revoke`, `presence`, `invite`, `card`, and for the Passport
+(`passport.rs`, [leyline/passport.md](leyline/passport.md)) `guardian` (a guardians list for a friend to keep) and
+`rotate` (a friend's Passport moved to a new key, or the old key's veto).
 
 **Sealed box:** an ephemeral X25519 key, then X25519 with the recipient's key, then HKDF-SHA256 (salt = ephemeral
 public + recipient public, info `leyline-friends-seal-v1`), then ChaCha20-Poly1305. The output is

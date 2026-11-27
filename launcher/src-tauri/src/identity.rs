@@ -2,6 +2,8 @@
 //! kept in `<app data>/peer.key`, never sent anywhere. Friends, profile cards, presence and lasting world logins for
 //! friends (host side: keyed on the friend's peer id) all stand on it; no website and no server is needed.
 //!
+//! * The Passport (crate::passport) is this key grown up: a new key is made from a 12-word recovery phrase; a key
+//!   made before that backs up as 24 words; world keys are derived from it ([`PeerIdentity::derive`]).
 //! * `peer.key`: 64 hex characters, the Ed25519 seed (the same shape as a Den's `realm.key`, host/litenet.rs), made
 //!   once with the system's random source, owner-only on Mac and Linux. Settings › Your Leyline network key saves it
 //!   to a file and brings it back ([`export_text`], [`import`]): it is the only thing that makes "you" you to your
@@ -170,6 +172,19 @@ impl PeerIdentity {
         s
     }
 
+    /// A key made from this one for one purpose (HKDF-SHA256, crate::passport::hkdf32): the Passport's world keys
+    /// (`salt` = "leyline-world-key-v1", `info` = the world's realm id). Nobody can tell two children came from one
+    /// parent without the parent's seed.
+    pub fn derive(&self, salt: &str, info: &str) -> PeerIdentity {
+        PeerIdentity::from_seed(crate::passport::hkdf32(salt.as_bytes(), &self.seed, info.as_bytes())).expect("any 32 bytes are a seed")
+    }
+
+    /// The seed itself, for the Passport only (its 24-word phrase, a sealed copy for this player's own second PC).
+    /// Never logged, never shown except as the recovery phrase on the Passport's phrase screen.
+    pub(crate) fn secret_seed(&self) -> [u8; 32] {
+        self.seed
+    }
+
     /// Open a box sealed to this identity ([`seal`]).
     pub fn open(&self, sealed: &[u8]) -> Result<Vec<u8>, String> {
         open_with(&self.x_secret(), &ed_to_x_public(&self.public_key).ok_or("bad key")?, sealed)
@@ -194,18 +209,27 @@ pub fn load_or_create(app: &Path) -> Result<PeerIdentity, String> {
             PeerIdentity::from_seed(seed)
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let seed: [u8; 32] = random()?;
+            // the Passport (crate::passport): a new key is made FROM a 12-word recovery phrase's 128 bits, so the
+            // phrase alone brings the same key back; the phrase waits (owner-only) until the player has seen it once
+            let entropy: [u8; 16] = random()?;
+            let seed = crate::passport::seed_from_entropy(&entropy);
             std::fs::create_dir_all(app).map_err(|e| e.to_string())?;
-            crate::settings::write_atomic(&path, (hex(&seed) + "\n").as_bytes()).map_err(|e| e.to_string())?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-            }
+            crate::passport::keep_pending_phrase(app, &entropy)?;
+            write_key(&path, &seed)?;
             PeerIdentity::from_seed(seed)
         }
         Err(e) => Err(format!("Leyline couldn't read its network key: {e}")),
     }
+}
+
+fn write_key(path: &Path, seed: &[u8; 32]) -> Result<(), String> {
+    crate::settings::write_atomic(path, (hex(seed) + "\n").as_bytes()).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
 }
 
 /// The first line of a saved key file: what it is and the warning, in plain words.
@@ -229,6 +253,12 @@ pub fn parse_export(text: &str) -> Option<[u8; 32]> {
 /// characters (what friends see as "Hero XXXX"), or why not.
 pub fn import(app: &Path, text: &str) -> Result<String, String> {
     let seed = parse_export(text).ok_or("That file isn't a saved Leyline network key.")?;
+    import_seed(app, seed)
+}
+
+/// This PC becomes the identity of `seed` (a saved key, a recovery phrase, the Passport from another PC); the key it
+/// had is kept beside it, never deleted. The new peer id's first four characters, upper case.
+pub fn import_seed(app: &Path, seed: [u8; 32]) -> Result<String, String> {
     let id = PeerIdentity::from_seed(seed)?;
     let path = key_path(app);
     if let Ok(t) = std::fs::read_to_string(&path) {
@@ -239,12 +269,7 @@ pub fn import(app: &Path, text: &str) -> Result<String, String> {
         std::fs::copy(&path, app.join(format!("{KEY_FILE}.before-{now}"))).map_err(|e| format!("Your current key couldn't be kept aside, so nothing changed: {e}"))?;
     }
     std::fs::create_dir_all(app).map_err(|e| e.to_string())?;
-    crate::settings::write_atomic(&path, (hex(&seed) + "\n").as_bytes()).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
+    write_key(&path, &seed)?;
     Ok(id.peer_id.chars().take(4).collect::<String>().to_ascii_uppercase())
 }
 

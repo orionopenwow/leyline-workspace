@@ -1,0 +1,185 @@
+{
+  "about": "Ed25519 over context + \"\\n\" + canonical JSON (sorted keys, no spaces). Seeds are 32 bytes of the byte shown. world key = Ed25519 seed HKDF-SHA256(salt \"leyline-world-key-v1\", root seed, info realm id). 12-word root seed = HKDF-SHA256(salt \"leyline-passport-root-v1\", 128-bit entropy, info \"root\"); 24 words are the seed itself.",
+  "cases": [
+    {
+      "context": "leyline-passport-device-v1",
+      "expect": "ok",
+      "name": "device",
+      "record": {
+        "doc": {
+          "created": 1764200000,
+          "device": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+          "name": "Desk PC",
+          "root": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "seq": 1,
+          "v": 1
+        },
+        "sig": "fc0592911c32cdc1da4961cc688be693e30dd788e50b1546fe71239a3f4739e96e63e32cbb11d332ae22181291a16005b6eee4cb82488c28bfbbc562c5bd1d0e"
+      }
+    },
+    {
+      "context": "leyline-passport-device-revoke-v1",
+      "expect": "ok",
+      "name": "device-revoke",
+      "record": {
+        "doc": {
+          "created": 1764200100,
+          "device": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+          "root": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "seq": 2,
+          "v": 1
+        },
+        "sig": "654ed67e91cb0b718232c1707dc40cf44302c87890ed5df668527b35d7c42d966625beff1ba93eeed9f164101b98e5ad8850981add5c09d86a43b7cdc804cd04"
+      }
+    },
+    {
+      "context": "leyline-passport-guardians-v1",
+      "expect": "ok",
+      "name": "guardians",
+      "record": {
+        "doc": {
+          "created": 1764200000,
+          "guardians": [
+            "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+            "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+          ],
+          "needed": 2,
+          "root": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "seq": 1,
+          "v": 1
+        },
+        "sig": "09191365e94566ec59a07033eded1082e4349eecf9ef11930a034be295c0dd7261ed9a9d6bbbb3525da6e8965b570826c8d6aeab73e3d9a7adbb364c42e81f0a"
+      }
+    },
+    {
+      "context": "leyline-passport-rotate-v1",
+      "effective": 1764559300,
+      "expect": "ok",
+      "name": "rotation-two-guardians",
+      "record": {
+        "approvals": [
+          {
+            "guardian": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+            "sig": "7bb868a684f3a4262f6e6b123eed092236893632c81ccd9428bc7d9718cac407546c3eaf731ce6df26d1c9c045029f49a04ef9adbef6caa97dba3b1d060ef704",
+            "ts": 1764300000
+          },
+          {
+            "guardian": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+            "sig": "d5688b4b4955bda3c622c584d1a049a665e51d50586b52fdd2afba9196a66bc018f35245e749cfe84868dffe477c0ad1c8dabac509a3573a3b6f77e1c91bc708",
+            "ts": 1764300100
+          }
+        ],
+        "doc": {
+          "kind": "guardians",
+          "new": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1",
+          "old": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "v": 1
+        },
+        "guardians": {
+          "doc": {
+            "created": 1764200000,
+            "guardians": [
+              "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+              "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+            ],
+            "needed": 2,
+            "root": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "seq": 1,
+            "v": 1
+          },
+          "sig": "09191365e94566ec59a07033eded1082e4349eecf9ef11930a034be295c0dd7261ed9a9d6bbbb3525da6e8965b570826c8d6aeab73e3d9a7adbb364c42e81f0a"
+        }
+      }
+    },
+    {
+      "context": "leyline-passport-rotate-v1",
+      "expect": "refused",
+      "name": "rotation-one-guardian",
+      "record": {
+        "approvals": [
+          {
+            "guardian": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+            "sig": "7bb868a684f3a4262f6e6b123eed092236893632c81ccd9428bc7d9718cac407546c3eaf731ce6df26d1c9c045029f49a04ef9adbef6caa97dba3b1d060ef704",
+            "ts": 1764300000
+          }
+        ],
+        "doc": {
+          "kind": "guardians",
+          "new": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1",
+          "old": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "v": 1
+        },
+        "guardians": {
+          "doc": {
+            "created": 1764200000,
+            "guardians": [
+              "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+              "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+            ],
+            "needed": 2,
+            "root": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "seq": 1,
+            "v": 1
+          },
+          "sig": "09191365e94566ec59a07033eded1082e4349eecf9ef11930a034be295c0dd7261ed9a9d6bbbb3525da6e8965b570826c8d6aeab73e3d9a7adbb364c42e81f0a"
+        }
+      }
+    },
+    {
+      "context": "leyline-login-v1",
+      "expect": "ok",
+      "name": "login",
+      "record": {
+        "doc": {
+          "account": "GUORUZU76ADWMOWM",
+          "created": 1764200000,
+          "player": "a21a4482df1c0bb8e149a1cc840a8a7660c87ebfe1246a4298eb4566e6af00b4",
+          "realm": "ni4ahvpqlgicuhdn",
+          "seq": 1,
+          "v": 1
+        },
+        "host": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+        "sig_host": "b5cd0f50ff8da7393618b2ec8fbc372d30d878e361d7ba3ed68a5a6772b93591660ca3c2723be28a0a24e890f4b1d7e759c4966a845254cbe415f33d48726e0d",
+        "sig_player": "5294c888ffb1141b125e08e5be8f3ce027742d5378cfed0e99c4901a86a40b75e7f777ac992d6aa4d44559a1b31d1e837dbffd6d7f6dc7ccdfd9eb06d1fad407"
+      }
+    },
+    {
+      "context": "leyline-login-v1",
+      "expect": "refused",
+      "name": "login-tampered",
+      "record": {
+        "doc": {
+          "account": "GUORUZU76ADWMOWM",
+          "created": 1764200000,
+          "player": "a21a4482df1c0bb8e149a1cc840a8a7660c87ebfe1246a4298eb4566e6af00b4",
+          "realm": "ni4ahvpqlgicuhdn",
+          "seq": 2,
+          "v": 1
+        },
+        "host": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+        "sig_host": "b5cd0f50ff8da7393618b2ec8fbc372d30d878e361d7ba3ed68a5a6772b93591660ca3c2723be28a0a24e890f4b1d7e759c4966a845254cbe415f33d48726e0d",
+        "sig_player": "5294c888ffb1141b125e08e5be8f3ce027742d5378cfed0e99c4901a86a40b75e7f777ac992d6aa4d44559a1b31d1e837dbffd6d7f6dc7ccdfd9eb06d1fad407"
+      }
+    }
+  ],
+  "format": "leyline-passport-v1-vectors",
+  "keys": {
+    "guardian_seed_bytes": [
+      3,
+      4
+    ],
+    "host_seed_byte": 2,
+    "new_root_public": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1",
+    "realm_id": "ni4ahvpqlgicuhdn",
+    "root_public": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+    "root_seed_byte": 1,
+    "world_peer_id": "b67af6iu5fxurecz",
+    "world_public": "a21a4482df1c0bb8e149a1cc840a8a7660c87ebfe1246a4298eb4566e6af00b4"
+  },
+  "phrase": {
+    "entropy": "11111111111111111111111111111111",
+    "root_public": "5b3ea4548efac88543074e8119723e06846186cf351ece1d2f68ef7312fce1f1",
+    "root_seed": "7dd15203f0902aae550de3d86520281a0a764d7d951d5d59fa797cc680679882",
+    "words": "baby mass dust captain baby mass dust captain baby mass dust casino"
+  }
+}

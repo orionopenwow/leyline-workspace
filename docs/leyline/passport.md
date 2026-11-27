@@ -1,73 +1,86 @@
 # The Passport
 
-**Status, 27 Nov 2026:** coming (phase 1 of [the way forward](way-forward.md)). Your launcher's own key, the base the
-Passport stands on, **works today**.
+**Status, 27 Nov 2026:** partly works today. The recovery phrase, devices, guardians, a key for each world and the
+login record are built and tested inside the launcher. The test on two real PCs ([the way forward](way-forward.md),
+phase 1's gate) is still to do, so treat it as new.
 
-The Passport is how you will log in with Leyline when no website and no server of ours is there to log in to. It is
-a key on your PC. Your friends and the worlds you play on know you by it.
+The Passport is how you log in with Leyline when no website and no server of ours is there to log in to. It is a
+key on your PC. Your friends and the worlds you play on know you by it. You find it with your friends: **Single
+player**, **Friends**, **Your Passport**.
 
 ## What works today
 
-Your launcher already has its own key. It made it the first time it ran, in a file called `peer.key` in Leyline's
-own folder. It never leaves your PC.
+### Your Passport key and your recovery phrase
 
-- Your **friend code** (`LF1-…`) is made from it. Friends add you with that code.
-- Your friendships are signed with it, on your PC and your friend's.
-- When a friend invites you into their world, your launcher proves it's you with it, so your character is there
-  next time.
+Your launcher has its own key, in a file called `peer.key` in Leyline's own folder. It never leaves your PC unless
+you move it to your own other PC. Your **friend code** (`LF1-…`) is made from it, your friendships are signed with
+it, and your friends' worlds know you by it.
 
-Keep a copy: **Settings**, **Your Leyline network key**, **Save my key…**. On a new PC, **Bring back my key…**
-makes that PC you again. Without a copy, a lost PC means your friends add you again.
+- **A new launcher** makes its key from **12 words**. The first time you open Your Passport, give a name (and a
+  picture if you like), press **Make my Passport**, write the 12 words on paper, tick **I wrote these words down**
+  and press **Done**. With those words, any PC becomes you again.
+- **A launcher from before the Passport** keeps the key it has, so your friends and your characters stay as they
+  are. Its phrase is **24 words** (**Back up**, **Show my phrase**). They bring back the same key.
+- **Back up** also has **Save a backup file…**: the same key as a file. Keep it private.
+- **Recover**, **With your recovery phrase**: type the words and this PC is you again (the key it had is kept aside
+  in Leyline's folder). Restart Leyline after.
 
-## What is coming
+### Your devices
 
-### One key, many devices
-
-- **Your Passport key** stays where it is safest. It is today's launcher key.
-- **A device key** for each PC or phone you play on. The Passport key signs each one, so your friends see one
-  person, not three.
-- **A second device** joins by scanning a QR code on the first, or typing a 6-digit code it shows. Nothing goes
-  through a website.
-- **Remove a device** from any other one, if a PC is lost or sold.
+- **Devices** lists every PC on your Passport.
+- **Add a device**: on the new PC, open **Your Passport**, **Recover**, **From my other PC**, **Add this PC**. On the
+  PC that has your Passport, **Devices**, **Find it**. The new PC shows a 6-digit code; type it on the old one and
+  press **Send my Passport**. Both PCs need to be on the same network (or the new one reachable at an address you
+  type). Nothing goes through a website. If the code doesn't match, nothing is sent.
+- **No network between them?** **Use a file**: the old PC saves a sealed file and shows 6 words. On the new PC, pick
+  the file and type the 6 words.
+- **Remove** takes a device off your Passport. Every device holds your whole Passport today, so if a PC was lost,
+  also think about guardians or a new phrase.
 
 ### A different key for each world
 
-Each world you play on gets its own key, made from your Passport. A host sees that key only. Two hosts can't put
-their notes together to follow you from world to world. Your friends still see you as you.
+When you join a friend's world for the first time, your launcher uses a key made only for that world. The host sees
+that key, never your Passport key, so two hosts can't put their notes together to follow you. Your account name on
+that world is made from the world key, the same every time. Worlds you joined before keep the login they gave you.
 
-### Your profile card
+### The login record
 
-A name, a short status and a picture, signed by your Passport. You choose who sees it: friends only, or anyone you
-play with.
+When you join, your launcher and the host's launcher write one short record together: this world key, this world,
+this account name, and a number that goes up each time. Both launchers sign it and both keep a copy. If the host
+loses their list of friends but keeps their world, your copy brings your account back.
 
-### Getting it back if a PC dies
+### Guardians
 
-Two ways, and you can set up both:
+**Back up**, **Guardians**: pick 2 to 5 friends and press **Save guardians**. Their launchers get the list.
 
-- **A 12-word recovery phrase.** Leyline shows it once. Write it on paper. With the 12 words, any PC becomes you.
-- **Guardians.** Pick 2 to 5 friends. If you lose every device, any 2 of them confirm it's you from their
-  launchers, and your new PC gets your Passport back. No single guardian can do it alone.
-
-### Logging in to a world
-
-1. You press **Join** on a friend's world.
-2. Your launcher and the host's launcher write one short record together: this Passport, this world, this account.
-   Both launchers sign it, and both keep a copy.
-3. Your account name on that world is made from your world key, the same every time.
-4. Your launcher makes a long random password for the game and types it in for you. You never see it or need it.
-
-If the host's PC is replaced, the record still shows the account is yours.
+- If you lose every PC and your words: on a new PC, **Recover**, **Ask 2 guardians**. It shows a code (`LR1-…`).
+  Call or meet two guardians; each opens **Your Passport**, **Help a friend**, pastes your code and sends you back
+  an answer (`LG1-…`). Paste both answers. Your new PC is your Passport, with new 12 words to write down.
+- One guardian alone can't do it.
+- Your friends see the change after **3 days**. If someone else tries it, any PC that still has your Passport hears
+  of it and shows **Stop it**.
+- Worlds you joined before the Passport follow you to the new key after the 3 days. Worlds you joined with a world
+  key come back with your words, or with your copy of the login record.
 
 ### The old website key
 
-The key you used to sign in on our website stopped working when the server closed. When the Passport arrives, the
-launcher will offer to import it once, so anything tied to it comes along. You don't need it for anything else.
-Keep the file until then.
+The key you used on our website stopped working when the server closed. **Back up**, **Bring in my Hero Key
+file…** imports it once: your Passport keeps its id and a fingerprint, never the key. You don't need it for anything
+else; you can delete the file after.
+
+## What is coming
+
+- **Scanning a QR code** instead of typing the 6 digits.
+- **Device keys for every day**: today each device holds the whole Passport. Next, devices sign day to day with
+  their own keys and the Passport key stays where it is safest.
+- **Your profile card**: who sees it (friends only, or anyone you play with).
+- **The game password**: your launcher makes a long random one and types it for you (it does this today; joining by
+  Passport alone, without an invite, is coming with [connections](way-forward.md)).
 
 ## What we keep
 
 Nothing. No keys, no emails, no internet addresses, no passwords. Your Passport, your devices and your recovery
-setup live on your PCs and, sealed, with the friends you choose.
+setup live on your PCs and with the friends you choose.
 
 ## Still being decided
 

@@ -13,7 +13,7 @@
 //!   old friendship can't be replayed back in.
 //! * **Messages** (`leyline-friend-msg-v1`): `{kind, from, to, ts, nonce, body}` signed by the sender, then sealed to
 //!   the recipient (identity::seal) inside an envelope that shows only the recipient's peer id. Kinds: request,
-//!   accept, decline, revoke, presence, invite, card. Good for 10 minutes; each nonce once (friendnet.rs).
+//!   accept, decline, revoke, presence, invite, card; and the Passport's guardian and rotate (crate::passport). Good for 10 minutes; each nonce once (friendnet.rs).
 //! * **LAN beacon** (`leyline-friend-beacon-v1`): `{pubkey, port, ts, name?}` signed, broadcast on the local
 //!   network only.
 //!
@@ -52,7 +52,9 @@ pub const REVOKE_KEEP: u64 = 60 * 86400;
 /// A friend code's rendezvous token is good this long.
 pub const CODE_TTL: u64 = 24 * 3600;
 pub const CACHE_MAX: u64 = 2 * 1024 * 1024;
-const KINDS: &[&str] = &["request", "accept", "decline", "revoke", "presence", "invite", "card"];
+const KINDS: &[&str] = &["request", "accept", "decline", "revoke", "presence", "invite", "card", "guardian", "rotate"];
+/// Pending Passport rotations of friends (waiting for their guardians' wait to end) and vetoes seen, at most.
+pub const MAX_ROTATIONS: usize = 20;
 const WORLD_KINDS: &[&str] = &["single", "vanilla", "original", "den", "realm", "solo", "survivors", "other"];
 
 fn hex64(v: Option<&Value>) -> Option<&str> {
@@ -433,6 +435,10 @@ pub struct Outgoing {
     /// The friend code's token (sent again if the request is re-sent).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// A Passport rotation (crate::passport): this "request" re-makes an existing friendship with my new key, and goes
+    /// out as a "rotate" message with the rotation in it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -454,6 +460,10 @@ pub struct Book {
     pub outgoing: Vec<Outgoing>,
     pub revoked: Vec<Value>,
     pub tokens: Vec<Token>,
+    /// Friends' Passport rotations (signed "rotate" messages) waiting for their guardians' wait to end.
+    pub rotations: Vec<Value>,
+    /// Vetoes of rotations, signed by the friend's old key.
+    pub vetoes: Vec<Value>,
 }
 
 /// What a received message did (for the UI's notice).
@@ -466,6 +476,14 @@ pub enum Event {
     Presence(String),
     Invite(String),
     Card(String),
+    /// A friend named me one of their guardians (the caller keeps their list: crate::passport::keep_guarding).
+    Guardian(String),
+    /// A friend's Passport moved to a new key: the friendship is theirs again under it (the caller sends the accept).
+    Rotated(String),
+    /// A friend's guardians are moving their Passport; it takes effect after the wait unless they stop it.
+    RotationWaiting(String),
+    /// Someone is moving MY key with my guardians (the caller tells the player, who can stop it).
+    RotationOfMe(Value),
     Ignored(&'static str),
 }
 
@@ -537,6 +555,11 @@ impl Book {
         self.outgoing.retain(|o| o.to.len() == 64 && o.to.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) && now.saturating_sub(o.ts) <= REQUEST_TTL && verify_doc(&mine, &o.doc, CTX_FRIENDSHIP, &o.sig) && !friends.contains(&o.to));
         self.outgoing.truncate(MAX_REQUESTS_OUT);
         dropped += n - self.outgoing.len();
+        let vet = self.vetoes.clone();
+        self.vetoes.retain(|v| crate::passport::check_veto(v).is_ok());
+        self.vetoes.truncate(MAX_ROTATIONS);
+        self.rotations.retain(|m| check_msg_sig(m, &mine).is_ok() && crate::passport::check_rotation(&m["msg"]["body"]["rotation"]).is_ok_and(|r| !vet.iter().filter_map(|v| crate::passport::check_veto(v).ok()).any(|(o, id)| o == r.old && id == r.id)));
+        self.rotations.truncate(MAX_ROTATIONS);
         self.tokens.retain(|t| t.exp > now && t.token.len() == 8);
         self.tokens.truncate(MAX_TOKENS);
         if !["off", "friends", "everyone"].contains(&self.profile.lan.as_str()) {
@@ -626,7 +649,7 @@ impl Book {
         if let Some(t) = token {
             body["token"] = json!(t);
         }
-        self.outgoing.push(Outgoing { to: theirs.clone(), doc, sig, ts: now, relay: relay.map(String::from), token: token.map(String::from) });
+        self.outgoing.push(Outgoing { to: theirs.clone(), doc, sig, ts: now, relay: relay.map(String::from), token: token.map(String::from), rotation: None });
         make_msg(me, &theirs, "request", body, now)
     }
 
@@ -637,7 +660,76 @@ impl Book {
         if let Some(t) = &o.token {
             body["token"] = json!(t);
         }
+        if let Some(r) = &o.rotation {
+            body["rotation"] = r.clone();
+            return make_msg(me, to, "rotate", body, now).ok();
+        }
         make_msg(me, to, "request", body, now).ok()
+    }
+
+    /// My Passport moved to this key (crate::passport rotation `rotation`, old key -> mine): ask `to`, a friend of my
+    /// old key, to make our friendship again with this key. Their launcher checks the rotation and countersigns on
+    /// its own (no click), and the accept comes back like any accepted request.
+    pub fn rotate_request(&mut self, me: &PeerIdentity, to: &str, rotation: &Value, now: u64) -> Result<Value, String> {
+        let mine = me.public_hex();
+        let r = crate::passport::check_rotation(rotation)?;
+        if r.new != mine || to == mine || to == r.old {
+            return Err("That rotation isn't this key's.".into());
+        }
+        identity::unhex32(to).ok_or("bad key")?;
+        self.outgoing.retain(|o| o.to != to);
+        if self.outgoing.len() >= MAX_REQUESTS_OUT {
+            self.outgoing.remove(0);
+        }
+        let doc = friendship_doc(&mine, to, now);
+        let sig = me.sign_doc(CTX_FRIENDSHIP, &doc);
+        self.outgoing.push(Outgoing { to: to.to_string(), doc, sig, ts: now, relay: None, token: None, rotation: Some(rotation.clone()) });
+        self.request_again(me, to, now).ok_or("rotate".into())
+    }
+
+    /// A friend's rotate message applied (its rotation in force, not vetoed): the friendship with their old key is
+    /// replaced by one with the new key, countersigned here. The accept message for them.
+    fn apply_rotate(&mut self, me: &PeerIdentity, rec: &Value, now: u64) -> Result<(String, Value), String> {
+        let mine = me.public_hex();
+        let body = &rec["msg"]["body"];
+        let from = rec["msg"]["from"].as_str().unwrap_or("").to_string();
+        let r = crate::passport::rotation_in_force(&body["rotation"], now, &self.vetoes)?;
+        if r.new != from {
+            return Err("rotation of someone else".into());
+        }
+        let i = self.find(&mine, &pid_of(&r.old)).ok_or("not a friend's old key")?;
+        let doc = body.get("friendship").cloned().ok_or("no friendship")?;
+        if doc != friendship_doc(&from, &mine, doc["ts"].as_u64().unwrap_or(0)) {
+            return Err("friendship".into());
+        }
+        let mut f = json!({"doc": doc});
+        let (my_sig, their) = (me.sign_doc(CTX_FRIENDSHIP, &doc), body["sig"].as_str().unwrap_or("").to_string());
+        if doc["a"].as_str() == Some(mine.as_str()) {
+            f["sig_a"] = json!(my_sig);
+            f["sig_b"] = json!(their);
+        } else {
+            f["sig_a"] = json!(their);
+            f["sig_b"] = json!(my_sig);
+        }
+        check_friendship(&f, &mine, now)?;
+        self.friends[i] = Friend { friendship: f.clone(), card: None, presence: None, invite: None, last_seen: now };
+        self.rotations.retain(|m| m["msg"]["from"].as_str() != Some(from.as_str()));
+        let body = json!({"friendship": f, "card": make_card(me, &self.profile, now)});
+        Ok((from.clone(), make_msg(me, &from, "accept", body, now)?))
+    }
+
+    /// Friends' rotations whose wait is over now: applied; the accept messages to send.
+    pub fn due_rotations(&mut self, me: &PeerIdentity, now: u64) -> Vec<(String, Value)> {
+        let waiting = std::mem::take(&mut self.rotations);
+        let mut out = Vec::new();
+        for m in waiting {
+            match self.apply_rotate(me, &m, now) {
+                Ok(x) => out.push(x),
+                Err(e) if e.starts_with("waiting") => self.rotations.push(m),
+                Err(_) => {}
+            }
+        }
+        out
     }
 
     /// Accept a waiting request: the friendship countersigned and kept; the accept message for the asker.
@@ -790,6 +882,49 @@ impl Book {
                 let c = body.get("card").ok_or("no card")?;
                 Self::take_card(&mut self.friends[i], c, &from_pid, now);
                 Ok(Event::Card(from_pid))
+            }
+            ("guardian", Some(_)) => {
+                let (root, list, _) = crate::passport::check_guardians(body.get("guardians").ok_or("no guardians")?)?;
+                if root != from {
+                    return Err("guardians of someone else".into());
+                }
+                Ok(if list.contains(&mine) { Event::Guardian(from_pid) } else { Event::Ignored("not a guardian") })
+            }
+            ("rotate", Some(i)) => {
+                // a friend's old key: a veto of their rotation
+                let Some(v) = body.get("veto") else { return Ok(Event::Ignored("already friends")) };
+                let (root, id) = crate::passport::check_veto(v)?;
+                if root != from || Self::other(&self.friends[i], &mine) != from {
+                    return Err("veto of someone else".into());
+                }
+                self.rotations.retain(|m| crate::passport::check_rotation(&m["msg"]["body"]["rotation"]).map_or(false, |r| r.id != id));
+                self.vetoes.insert(0, v.clone());
+                self.vetoes.truncate(MAX_ROTATIONS);
+                Ok(Event::Ignored("vetoed"))
+            }
+            ("rotate", None) => {
+                let rot = body.get("rotation").ok_or("no rotation")?;
+                let r = crate::passport::check_rotation(rot)?;
+                if r.old == mine {
+                    return Ok(Event::RotationOfMe(rot.clone()));
+                }
+                if r.new != from || self.find(&mine, &pid_of(&r.old)).is_none() {
+                    return Ok(Event::Ignored("not a friend's rotation"));
+                }
+                match crate::passport::rotation_in_force(rot, now, &self.vetoes) {
+                    Ok(_) => {
+                        self.rotations.retain(|m| m["msg"]["from"].as_str() != Some(from.as_str()));
+                        self.rotations.insert(0, rec.clone());
+                        Ok(Event::Rotated(from_pid))
+                    }
+                    Err(e) if e.starts_with("waiting") => {
+                        self.rotations.retain(|m| m["msg"]["from"].as_str() != Some(from.as_str()));
+                        self.rotations.insert(0, rec.clone());
+                        self.rotations.truncate(MAX_ROTATIONS);
+                        Ok(Event::RotationWaiting(pid_of(&r.old)))
+                    }
+                    Err(_) => Ok(Event::Ignored("stopped")),
+                }
             }
             _ => Ok(Event::Ignored("not a friend")),
         }
@@ -960,6 +1095,73 @@ mod tests {
         let (to, acc) = bb.accept(b, &a.peer_id, NOW + 2).unwrap();
         assert_eq!(to, a.public_hex());
         assert_eq!(ba.receive(a, &acc, Via::Mailbox, NOW + 3).unwrap(), Event::Accepted(b.peer_id.clone()));
+    }
+
+    #[test]
+    fn a_friends_passport_rotation_with_two_guardians_keeps_the_friendship() {
+        use crate::passport as pp;
+        let (old, b, g2, new) = (id(30), id(31), id(32), id(33));
+        let (mut bo, mut bb) = (Book::default(), Book::default());
+        befriend(&old, &mut bo, &b, &mut bb);
+        // b and g2 are old's guardians
+        let gl = pp::make_guardians(&old, &[b.public_hex(), g2.public_hex()], NOW, 1).unwrap();
+        let gm = make_msg(&old, &b.public_hex(), "guardian", json!({"guardians": gl, "roster": []}), NOW + 4).unwrap();
+        assert_eq!(bb.receive(&b, &gm, Via::Lan, NOW + 4).unwrap(), Event::Guardian(old.peer_id.clone()));
+        let (o, n) = (old.public_hex(), new.public_hex());
+        let t = NOW + 10;
+        let one = json!({"doc": {"v": 1, "kind": "guardians", "old": o, "new": n}, "guardians": gl, "approvals": [pp::approve_rotation(&b, &o, &n, t)]});
+        let two = pp::rotation_bundle(&gl, &n, &[pp::approve_rotation(&b, &o, &n, t), pp::approve_rotation(&g2, &o, &n, t)]).unwrap();
+        // the new PC asks: refused with one guardian
+        let mut bn = Book::default();
+        assert!(bn.rotate_request(&new, &b.public_hex(), &one, t).is_err());
+        let m = bn.rotate_request(&new, &b.public_hex(), &two, t).unwrap();
+        // within the wait: kept, not applied; the friendship with the old key stands
+        let ev = bb.receive(&b, &m, Via::Mailbox, t + 1).unwrap();
+        assert_eq!(ev, Event::RotationWaiting(old.peer_id.clone()));
+        assert!(bb.is_friend(&b, &old.peer_id) && bb.due_rotations(&b, t + 2).is_empty());
+        // after the wait: applied, the old key's friendship replaced, the accept goes back
+        let after = t + pp::GUARDIAN_WAIT + 5;
+        let out = bb.due_rotations(&b, after);
+        assert_eq!(out.len(), 1);
+        assert!(bb.is_friend(&b, &new.peer_id) && !bb.is_friend(&b, &old.peer_id));
+        let (to, acc) = &out[0];
+        assert_eq!(to, &n);
+        assert_eq!(bn.receive(&new, acc, Via::Mailbox, after + 1).unwrap(), Event::Accepted(b.peer_id.clone()));
+        assert!(bn.is_friend(&new, &b.peer_id), "friends again, under the new key, with no click");
+        // replay of the same rotate after: nothing changes
+        assert!(!matches!(bb.receive(&b, &m, Via::Mailbox, t + 2).unwrap(), Event::Rotated(_)));
+    }
+
+    #[test]
+    fn a_vetoed_rotation_never_applies_and_the_owner_hears_of_it() {
+        use crate::passport as pp;
+        let (old, b, g2, thief) = (id(40), id(41), id(42), id(43));
+        let (mut bo, mut bb) = (Book::default(), Book::default());
+        befriend(&old, &mut bo, &b, &mut bb);
+        let gl = pp::make_guardians(&old, &[b.public_hex(), g2.public_hex()], NOW, 1).unwrap();
+        let (o, n) = (old.public_hex(), thief.public_hex());
+        let rot = pp::rotation_bundle(&gl, &n, &[pp::approve_rotation(&b, &o, &n, NOW), pp::approve_rotation(&g2, &o, &n, NOW)]).unwrap();
+        let mut bt = Book::default();
+        let m = bt.rotate_request(&thief, &b.public_hex(), &rot, NOW).unwrap();
+        assert_eq!(bb.receive(&b, &m, Via::Mailbox, NOW + 1).unwrap(), Event::RotationWaiting(old.peer_id.clone()));
+        // the owner's own launcher gets told (a rotate to the old key)
+        let to_me = bt.rotate_request(&thief, &o, &rot, NOW);
+        assert!(to_me.is_err(), "never a friendship with the key being replaced");
+        let tell = make_msg(&thief, &o, "rotate", json!({"rotation": rot}), NOW).unwrap();
+        assert!(matches!(bo.receive(&old, &tell, Via::Mailbox, NOW + 1).unwrap(), Event::RotationOfMe(_)));
+        // the owner vetoes: the friend drops it, and it never applies
+        let v = pp::make_veto(&old, &pp::check_rotation(&rot).unwrap().id, NOW + 2);
+        let vm = make_msg(&old, &b.public_hex(), "rotate", json!({"veto": v}), NOW + 2).unwrap();
+        bb.receive(&b, &vm, Via::Mailbox, NOW + 3).unwrap();
+        assert!(bb.due_rotations(&b, NOW + pp::GUARDIAN_WAIT + 10).is_empty());
+        assert!(bb.is_friend(&b, &old.peer_id));
+        // a veto from someone else's key is refused
+        let fake = make_msg(&b, &bo_key(&old), "rotate", json!({"veto": pp::make_veto(&thief, "0".repeat(32).as_str(), NOW)}), NOW).unwrap();
+        assert!(bo.receive(&old, &fake, Via::Mailbox, NOW).is_err());
+    }
+
+    fn bo_key(p: &PeerIdentity) -> String {
+        p.public_hex()
     }
 
     #[test]

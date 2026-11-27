@@ -298,8 +298,13 @@ pub fn envelope(to_pub: &[u8; 32], msg: &Value, tag: Option<&str>) -> Result<Val
 }
 
 /// The mailbox tag for a kind of message from `from` to `to`: opaque to the relay, the same every time.
-pub fn tag_for(from: &str, to: &str, kind: &str) -> String {
-    sha_hex(&format!("leyline-friends-tag-v1\n{from}\n{to}\n{kind}"))[..32].to_string()
+/// The mailbox tag that lets a newer presence or card replace the older one (hosting/relay/wurelay/mailbox.py). Made
+/// from the sender's own deterministic signature, so only the sender can make it: anyone who knows two friend codes
+/// could compute a tag made from public keys alone, and post junk under it to wipe the real box. The recipient never
+/// needs to make a tag; only the relay compares them.
+pub fn tag_for(me: &PeerIdentity, to: &str, kind: &str) -> String {
+    let sig = me.sign(format!("leyline-friends-tag-v2\n{to}\n{kind}").as_bytes());
+    sha_hex(&crate::identity::hex(&sig))[..32].to_string()
 }
 
 /// Open an envelope for `me`: the signed message inside (checked by the caller with [`check_msg`]).
@@ -1104,6 +1109,17 @@ mod tests {
     }
 
     #[test]
+    fn mailbox_tags_only_the_sender_can_make() {
+        let (a, b, c) = (id(1), id(2), id(3));
+        let t = tag_for(&a, &b.public_hex(), "presence");
+        assert_eq!(t.len(), 32);
+        assert_eq!(t, tag_for(&a, &b.public_hex(), "presence"), "the same each time, so a newer box replaces the old one");
+        assert_ne!(t, tag_for(&c, &b.public_hex(), "presence"), "another key can't make a's tag");
+        assert_ne!(t, tag_for(&a, &b.public_hex(), "card"));
+        assert_ne!(t, tag_for(&a, &c.public_hex(), "presence"));
+    }
+
+    #[test]
     fn messages_and_envelopes() {
         let (a, b, c) = (id(1), id(2), id(3));
         let m = make_msg(&a, &b.public_hex(), "presence", json!({"online": true}), NOW).unwrap();
@@ -1114,7 +1130,7 @@ mod tests {
         t["msg"]["body"]["online"] = json!(false);
         assert!(check_msg(&t, &b.public_hex(), NOW).is_err(), "changed");
         assert!(make_msg(&a, &b.public_hex(), "presence", json!({"x": "y".repeat(MSG_MAX)}), NOW).is_err(), "too big");
-        let e = envelope(&b.public_key, &m, Some(&tag_for("a", "b", "presence"))).unwrap();
+        let e = envelope(&b.public_key, &m, Some(&tag_for(&a, "b", "presence"))).unwrap();
         assert_eq!(e["to"], json!(b.peer_id));
         assert!(!e.to_string().contains("presence"), "nothing readable on the way");
         assert_eq!(open_envelope(&b, &e).unwrap(), m);

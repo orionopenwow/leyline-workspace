@@ -223,7 +223,7 @@ test('Duels and Boss Rush only: two rich cards, how to start, board mounts, Play
     assert.equal(await c.getAttribute('data-board'), board);
     assert.equal(await c.locator('.md-steps li').count(), 3, `${id}: how to start, three steps`);
     assert.equal(await c.locator(`.md-board#md-board-${board}[data-board="${board}"]`).count(), 1, `${id}: the board mount`);
-    assert.match(await c.locator('.md-board').textContent(), /Your best.*Your rank.*show here soon/);
+    assert.match(await c.locator('.md-board').textContent(), /Your best.*Your rank.*(show here soon|full leaderboard is below)/);
     assert.equal(await c.locator('.md-play').textContent(), play);
   }
   assert.equal(await page.evaluate(() => window.LeylineModes.boards().map((b) => b.dataset.board).join()), 'duels,bossrush');

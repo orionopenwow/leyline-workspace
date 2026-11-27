@@ -277,7 +277,7 @@ impl Hub {
             }
         }
         if let Some(r) = mailbox.or(relay.map(String::from)).filter(|r| crate::realms::relay_ok(r)) {
-            let tag = matches!(kind, "presence" | "card").then(|| friends::tag_for(&self.me.public_hex(), to, kind));
+            let tag = matches!(kind, "presence" | "card").then(|| friends::tag_for(&self.me, to, kind));
             match mailbox_post(&r, &friends::envelope(&pk, msg, tag.as_deref())?) {
                 Ok(()) => return Ok("relay"),
                 Err(e) => tried.push(format!("relay mailbox: {e}")),

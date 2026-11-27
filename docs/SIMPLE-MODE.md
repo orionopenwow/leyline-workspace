@@ -46,7 +46,7 @@ Once the passport works between two worlds:
 2. **Branding with `launcher/scripts/rebrand.py`** (docs/FORKING.md): name, colours, update channel and relays from
    one `branding.json`, so anyone can fork it as their own door into the network.
 3. **Published in the neutral org** as "the simple launcher anyone can reskin". Leyline stays its own launcher, and
-   CoreCraft, Project Eternal and others can ship theirs from the same code.
+   other projects can ship theirs from the same code.
 4. **Visit becomes the passport flow:** pick a world, see the fit, go, come home, approve.
 
 Stage 2 shouldn't start before stage 1 has been used by real players, because the four buttons need to be right before

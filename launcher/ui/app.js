@@ -1241,7 +1241,7 @@ function localAddress(L) {
 }
 function denAddress() { return localAddress(DEN); }
 // ---- this PC's own worlds on the Built-in engine (vanilla.js window.LeylineWorlds; host/engine.rs; owner 10 Nov:
-// "robust single player in launcher"; Discord, Squishy: "why I can't select my solo server on the server list").
+// "robust single player in launcher"; a Discord report: "why I can't select my solo server on the server list").
 // Before, the realm picker had no row for the original world, and Single player's row started the game on the click
 // without ever being picked, so it never looked selected. Now both are rows like any realm: a click picks it (the bar
 // says what PLAY will do), and PLAY plays it the one way every local world plays (LeylineWorlds.run: set up once,

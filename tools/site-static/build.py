@@ -10,8 +10,9 @@ saves its read-only pages at the same URL paths, so launchers already installed 
 /wrath/mods/all.json stays /wrath/mods/all.json, /wrath/docs/mods becomes /wrath/docs/mods/index.html, and so on.
 
 What it writes:
-  * the feeds the launcher reads: flags.json (every server feature off), news.json, mods.json, catalog.json,
-    all.json, modes.json, realms.json (from site/realms.json), status.json, the boards index;
+  * the feeds the launcher reads: flags.json (every server feature off; the mesh list, which needs no server, on),
+    news.json, mods.json, catalog.json, all.json, modes.json, realms.json (from site/realms.json), status.json, the
+    boards index, and mesh/snapshot.json (the signed mesh records in the repo's mesh/snapshot.json, checked here);
   * the pages: the front page, Start here, Realms, Download, Mods, Addons, Looks, each mod's page, Creators, News,
     the docs and their search, robots.txt, sitemap.xml, 404.html, CNAME;
   * the art those pages use, and the Looks pictures the launcher shows.
@@ -101,7 +102,7 @@ DOCS_NOTE_WORDS = re.compile(r"(?i)\brelay\b|hero key|official realm|wrath unlea
 # The feeds launchers read (path -> how it is made). Every one is a plain file.
 FEEDS = ("/wrath/leyline/flags.json", "/wrath/leyline/news.json", "/wrath/leyline/mods.json",
          "/wrath/leyline/catalog.json", "/wrath/mods/all.json", "/wrath/modes.json", "/wrath/realms.json",
-         "/wrath/status.json", "/wrath/api/boards/index.json", "/wrath/docs/search.json")
+         "/wrath/status.json", "/wrath/api/boards/index.json", "/wrath/docs/search.json", "/mesh/snapshot.json")
 # A catalog page's filter links (one parameter) become pages of their own: /wrath/leyline/catalog?cat=ui is saved as
 # /wrath/leyline/catalog/cat-ui/ and the links point there. Links with more parameters go to the plain page.
 FILTER_PAGES = ("/wrath/leyline/catalog", "/wrath/leyline/addons")
@@ -896,11 +897,88 @@ def moved_page(to: str) -> bytes:
 
 
 # --------------------------------------------------------------------------------------------- feeds
+# Flags that need no server of ours: on in the site's file (p2p/flags.rs DEFAULT_ON; the realm list from signed
+# records reads mirrors, cached peers, friends and the DHT).
+SERVERLESS_FLAGS = ("mesh_realms",)
+
+
 def flags_doc(leyline_net, stamp: str) -> dict:
-    """Every server feature off, hashed as the launcher checks it (p2p/flags.rs)."""
+    """Every server feature off (the serverless ones on), hashed as the launcher checks it (p2p/flags.rs)."""
     if leyline_net is None:
         raise Refused("stream/leyline_net.py did not load: the flags file needs its hash")
-    return leyline_net.make_doc(flags={}, limits={}, stun=[], updated_at=stamp)
+    return leyline_net.make_doc(flags={k: True for k in SERVERLESS_FLAGS}, limits={}, stun=[], updated_at=stamp)
+
+
+# --------------------------------------------------------------------------------------------- the mesh snapshot
+MESH_SNAPSHOT = REPO / "mesh" / "snapshot.json"
+MESH_KINDS = {"realm": ("beat", "wu-listing-heartbeat-v1"), "relay": ("node", "leyline-mesh-node-v1"),
+              "info": ("info", "leyline-mesh-info-v1"), "block": ("block", "leyline-mesh-block-v1")}
+COUNCIL_CTX = "leyline-mesh-council-block-v1"
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+HEX128 = re.compile(r"^[0-9a-f]{128}$")
+
+
+def _wunet_keys():
+    """hosting/kit/tools/wunet/keys.py (pure-Python Ed25519 when `cryptography` isn't installed)."""
+    tools = str(REPO / "hosting" / "kit" / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from wunet import keys  # noqa: E402
+    return keys
+
+
+def _canon(d) -> str:
+    return json.dumps(d, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def mesh_record_ok(rec, keys) -> str | None:
+    """Why a mesh record can't go in the snapshot (None: it can). Signed records only, each signature checked; the
+    launcher checks everything again (p2p/mesh.rs), expiry included, so an old record does no harm."""
+    if not isinstance(rec, dict) or rec.get("kind") not in MESH_KINDS:
+        return "not a mesh record (kind realm, relay, info or block)"
+    if len(_canon(rec)) > 6000:
+        return "bigger than 6000 bytes"
+    part, ctx = MESH_KINDS[rec["kind"]]
+    doc = rec.get(part)
+    if not isinstance(doc, dict) or doc.get("v") != 1:
+        return f"no {part} document"
+    if rec["kind"] == "block" and "council" in doc:
+        sigs = rec.get("sigs")
+        if not isinstance(sigs, list) or not 2 <= len(sigs) <= 8:
+            return "a council block needs two to eight signatures"
+        for s in sigs:
+            if not (isinstance(s, dict) and HEX64.match(str(s.get("key"))) and HEX128.match(str(s.get("sig")))
+                    and keys.verify_doc(bytes.fromhex(s["key"]), doc, COUNCIL_CTX, s["sig"])):
+                return "a council signature does not verify"
+        return None
+    signer = doc.get("staff") if rec["kind"] == "block" else doc.get("pubkey")
+    if not (HEX64.match(str(signer)) and HEX128.match(str(rec.get("sig")))):
+        return "unsigned"
+    if not keys.verify_doc(bytes.fromhex(signer), doc, ctx, rec["sig"]):
+        return "the signature does not verify"
+    return None
+
+
+def mesh_snapshot_doc(path: Path = MESH_SNAPSHOT) -> dict:
+    """/mesh/snapshot.json: the format p2p/mesh.rs reads ({"v": 1, "records": [...]}), signed records only, in the
+    file's order; empty but valid when there is no file or no record."""
+    if not path.is_file():
+        return {"v": 1, "records": []}
+    try:
+        src = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise Refused(f"{path.name}: not JSON ({e})")
+    recs = src.get("records") if isinstance(src, dict) else None
+    if not isinstance(recs, list):
+        raise Refused(f"{path.name}: no \"records\" list")
+    if not recs:
+        return {"v": 1, "records": []}
+    keys = _wunet_keys()
+    for i, r in enumerate(recs):
+        why = mesh_record_ok(r, keys)
+        if why:
+            raise Refused(f"{path.name}: record {i}: {why}")
+    return {"v": 1, "records": recs}
 
 
 def status_doc(stamp: str) -> dict:
@@ -992,6 +1070,7 @@ class Build:
         self.put_file("wrath/leyline/news.json", dump(news))
         self.put_file("wrath/realms.json", dump(realms_doc(realms, self.stamp)))
         self.put_file("wrath/status.json", dump(status_doc(self.stamp)))
+        self.put_file("mesh/snapshot.json", dump(mesh_snapshot_doc()))
         # the modes the launcher offered all ran on the official realm: none now (the launcher's own copy is built in)
         self.put_file("wrath/modes.json", dump({"schema": 1, "modes": []}))
         self.put_file("wrath/api/boards/index.json", dump({"v": 1, "week": None, "official": [], "community": []}))

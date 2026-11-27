@@ -1,13 +1,21 @@
 //! The Leyline mesh, launcher side (docs/LEYLINE-MESH.md): the realm list read from the network itself, verified
-//! here, so it does not depend on any one server. OFF unless the `mesh_realms` flag is on; with it off nothing in
-//! this file runs and the Realms page reads today's listings (`realms::fetch_network`).
+//! here, so it does not depend on any one server. On by default (`mesh_realms`, p2p/flags.rs `DEFAULT_ON`); with it
+//! off nothing in this file runs. Either way the Realms page keeps the static list (`realms::fetch_all` adds what
+//! the mesh found to it, never replaces it).
 //!
-//! * Sources: up to two peers from this PC's peers cache (`cache/mesh-peers.json`, learned from signed relay
-//!   records), then the seed relays (`SEEDS`). Each answers `GET /api/mesh/snapshot` with every record it holds.
+//! * Sources, none of them ours alone (`gather_all`): the records this PC already holds (`p2p::gossip`'s store:
+//!   from earlier refreshes, friends and the same network), the static mirrors of the record list (branding.json
+//!   `mesh_mirrors`: the website's `/mesh/snapshot.json`, the repo's raw file, a Codeberg Pages copy; any one is
+//!   enough), up to two peers from this PC's peers cache (`cache/mesh-peers.json`, learned from signed relay records,
+//!   `GET /api/mesh/snapshot`) and the fetch pointers in DHT packets (`p2p::dht`). The seed relays (`SEEDS`) only
+//!   with `addresses::SERVER_FEATURES` on: ours are gone.
 //! * Every record is checked here, whoever sent it (the same rules as `hosting/kit/tools/wunet/mesh.py`): the
 //!   realm's own Ed25519 signature over its heartbeat (`realm id = base32(sha256(key))[..16]`), the relay's
 //!   signature over each endpoint, the relay chosen by the realm itself, expiry (15 minutes for realms), staff
-//!   blocks only from pinned keys. A node can leave records out, but it can't add, change or revive one.
+//!   blocks only from pinned keys (one staff key, or two of the three council keys in branding.json, with a reason
+//!   and an expiry), and this player's own block list on top (`local_blocks`). A node can leave records out, but it
+//!   can't add, change or revive one. This file is the one place records are checked: gossip, mirrors and the DHT's
+//!   pointers all come through `Merged::offer`.
 //! * Merge: the newest per realm (`seq`), endpoints merged, ties settled by the smaller sha256 of the signature.
 //! * Relay per realm (`choose`): our seed relays and the realm's own relay; with `mesh_relays` also community
 //!   relays, by measured round trip and published load.
@@ -26,10 +34,26 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::flags::{canonical, Flags};
 
-/// The seed relays: always tried, last. TODO(owner): more seeds as they come up.
+/// The seed relays (branding.json "relays"): asked only with `addresses::SERVER_FEATURES` on (`seeds`); ours are gone,
+/// so today the mesh starts from cached peers, mirrors, the DHT, friends and the same network.
 pub const SEEDS: &[&str] = &[crate::relay!(""), "https://relay.openvanilla.app"];   // the relay on both names (addresses.rs)
 /// Staff keys whose signed blocks count (hex Ed25519 public keys). TODO(owner): the staff key, once made.
 pub const STAFF_KEYS: &[&str] = &[];
+/// Council blocks: valid with this many signatures from distinct pinned council keys (branding.json `council_keys`,
+/// three of them; fewer than two pinned and no council block is ever valid).
+pub const COUNCIL_NEED: usize = 2;
+pub const COUNCIL_MAX: usize = 3;
+const CTX_COUNCIL: &str = "leyline-mesh-council-block-v1";
+
+/// The seed relays to ask: none while Leyline runs no server (`addresses::SERVER_FEATURES` off).
+pub fn seeds() -> &'static [&'static str] {
+    if crate::addresses::SERVER_FEATURES { SEEDS } else { &[] }
+}
+
+/// The council's public keys this build trusts (branding.json), at most [`COUNCIL_MAX`].
+pub fn council() -> Vec<String> {
+    crate::branding::get().council_keys.iter().take(COUNCIL_MAX).cloned().collect()
+}
 pub const REALM_TTL: u64 = 15 * 60;
 pub const ENDPOINT_TTL: u64 = 15 * 60;
 pub const NODE_TTL: u64 = 30 * 60;
@@ -224,9 +248,53 @@ fn info_fields_ok(d: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn block_target_ok(t: &str) -> bool {
+    t.len() == 18 && (t.starts_with("r-") || t.starts_with("n-")) && crate::realms::realm_id_ok(&t[2..])
+}
+
+/// A council block: `{"kind": "block", "block": {"v": 1, "council": 1, "target", "reason", "ts", "expires"}, "sigs":
+/// [{"key", "sig"}, ...]}`, each signature over `CTX_COUNCIL + "\n" + canonical(block)`, valid with [`COUNCIL_NEED`]
+/// of them from distinct keys in `council`. A reason (1-200 characters) and an expiry (at most 90 days) always.
+fn check_council_block(rec: &Value, now: u64, council: &[String]) -> Result<(String, u64, Value), String> {
+    let b = &rec["block"];
+    if b.get("council").and_then(Value::as_u64) != Some(1) || b.get("staff").is_some() {
+        return Err("council block shape".into());
+    }
+    let t = b.get("target").and_then(Value::as_str).unwrap_or("");
+    if !block_target_ok(t) {
+        return Err("block target".into());
+    }
+    let reason = b.get("reason").and_then(Value::as_str).unwrap_or("").trim();
+    if reason.is_empty() || reason.chars().count() > 200 {
+        return Err("a council block needs a reason".into());
+    }
+    let (ts, exp) = (int(b.get("ts")).ok_or("block ts")?, int(b.get("expires")).ok_or("block expires")?);
+    if ts > now + SKEW || exp <= now || exp.saturating_sub(ts) > BLOCK_MAX_TTL {
+        return Err("block expired or too long".into());
+    }
+    let sigs = rec.get("sigs").and_then(Value::as_array).filter(|a| a.len() <= 8).ok_or("council signatures")?;
+    let mut good: HashSet<&str> = HashSet::new();
+    for s in sigs {
+        let (Some(k), Some(sig)) = (hex64(s.get("key")), s.get("sig").and_then(Value::as_str)) else { continue };
+        if council.iter().take(COUNCIL_MAX).any(|c| c == k) && verify_doc(k, b, CTX_COUNCIL, sig) {
+            good.insert(k);
+        }
+    }
+    if good.len() < COUNCIL_NEED {
+        return Err(format!("{} of {COUNCIL_NEED} council signatures", good.len()));
+    }
+    Ok((format!("b-{t}"), ts, rec.clone()))
+}
+
 /// A checked record: (id, version, the record with only its good endpoints). The rules of wunet/mesh.py `check`.
 /// `Err` starting "ignored:" is the tolerant reader's answer (a kind or version from a newer spec), not a refusal.
+/// Council blocks count with this build's pinned council (`check_with` names another).
 pub fn check(rec: &Value, now: u64, staff: &[&str]) -> Result<(String, u64, Value), String> {
+    check_with(rec, now, staff, &council())
+}
+
+/// [`check`] with the council keys given.
+pub fn check_with(rec: &Value, now: u64, staff: &[&str], council: &[String]) -> Result<(String, u64, Value), String> {
     if canonical(rec).len() > 6000 {
         return Err("too big".into());
     }
@@ -280,9 +348,12 @@ pub fn check(rec: &Value, now: u64, staff: &[&str]) -> Result<(String, u64, Valu
         Some("block") => {
             version(rec.get("block"), "block")?;
             let b = &rec["block"];
+            if b.get("council").is_some() {
+                return check_council_block(rec, now, council);
+            }
             let st = b.get("staff").and_then(Value::as_str).filter(|s| staff.contains(s)).ok_or("not a staff key")?;
             let t = b.get("target").and_then(Value::as_str).unwrap_or("");
-            if !(t.len() == 18 && (t.starts_with("r-") || t.starts_with("n-")) && crate::realms::realm_id_ok(&t[2..])) {
+            if !block_target_ok(t) {
                 return Err("block target".into());
             }
             let (ts, exp) = (int(b.get("ts")).ok_or("block ts")?, int(b.get("expires")).ok_or("block expires")?);
@@ -316,7 +387,11 @@ pub fn check(rec: &Value, now: u64, staff: &[&str]) -> Result<(String, u64, Valu
 
 fn sig_rank(rec: &Value) -> String {
     use sha2::{Digest, Sha256};
-    crate::net::hex(&Sha256::digest(rec.get("sig").and_then(Value::as_str).unwrap_or("").as_bytes()))
+    let s = match rec.get("sig").and_then(Value::as_str) {
+        Some(s) => s.to_string(),
+        None => canonical(rec.get("sigs").unwrap_or(&Value::Null)),   // a council block
+    };
+    crate::net::hex(&Sha256::digest(s.as_bytes()))
 }
 
 /// The verified records from every source, merged.
@@ -326,6 +401,8 @@ pub struct Merged {
     pub refused: usize,
     /// Records of a kind or version this launcher doesn't know (the tolerant reader): not stored, not refusals.
     pub ignored: usize,
+    /// The council keys blocks are checked against (`Merged::new`: this build's; `default`: none).
+    pub council: Vec<String>,
 }
 
 /// The id a block names for a record: an info document is blocked with the relay or realm it describes.
@@ -338,9 +415,14 @@ fn subject(id: &str, rec: &Value) -> String {
 }
 
 impl Merged {
+    /// Empty, with this build's council keys.
+    pub fn new() -> Merged {
+        Merged { council: council(), ..Default::default() }
+    }
+
     /// Offer one record; true when it changed what is known.
     pub fn offer(&mut self, rec: &Value, now: u64, staff: &[&str]) -> bool {
-        let (id, ver, mut rec) = match check(rec, now, staff) {
+        let (id, ver, mut rec) = match check_with(rec, now, staff, &self.council) {
             Ok(x) => x,
             Err(e) => {
                 if e.starts_with("ignored:") {
@@ -360,7 +442,7 @@ impl Merged {
                 return false;
             }
             if ver == *cv {
-                if rec.get("sig") == cur.get("sig") {
+                if sig_rank(&rec) == sig_rank(cur) {
                     if !id.starts_with("r-") {
                         return false;
                     }
@@ -559,7 +641,7 @@ pub fn learn_peers(app_dir: &Path, m: &Merged) {
     let _ = crate::settings::write_atomic(&peers_path(app_dir), json!({"peers": peers}).to_string().as_bytes());
 }
 
-/// Who to ask, in order: two cached peers (a different pair each minute), then the seeds.
+/// Who to ask, in order: two cached peers (a different pair each minute), then the seeds. Origins (`https://host`).
 pub fn sources(app_dir: &Path, seeds: &[&str]) -> Vec<String> {
     let mut peers: Vec<String> = load_peers(app_dir).into_iter().filter(|p| !seeds.contains(&p.as_str())).collect();
     let mut out = Vec::new();
@@ -572,22 +654,112 @@ pub fn sources(app_dir: &Path, seeds: &[&str]) -> Vec<String> {
     out
 }
 
-/// Ask sources for their snapshot until `SOURCES` answered; merge what verifies. None when nobody answered.
-pub fn gather(sources: &[String], fetch: &dyn Fn(&str) -> Result<Value, String>, now: u64, staff: &[&str]) -> Option<Merged> {
-    let mut m = Merged::default();
+/// A peer's or relay's snapshot address.
+pub fn snapshot_url(origin: &str) -> String {
+    format!("{}/api/mesh/snapshot", origin.trim_end_matches('/'))
+}
+
+/// The static mirrors of the record list this build knows (branding.json `mesh_mirrors`).
+pub fn mirrors() -> Vec<String> {
+    crate::branding::get().mesh_mirrors.clone()
+}
+
+/// Every record-list address to ask (full addresses of `{"records": [...]}` documents): the static mirrors, the
+/// cached peers and `seeds`, then the https pointers of cached DHT packets. At most 12.
+pub fn all_sources(app_dir: &Path, seeds: &[&str], mirrors: &[String], now: u64) -> Vec<String> {
+    let mut out: Vec<String> = mirrors.to_vec();   // branding.json checked them (plain https)
+    out.extend(sources(app_dir, seeds).iter().map(|o| snapshot_url(o)));
+    out.extend(super::dht::cached_pointers(app_dir, now));
+    let mut seen = HashSet::new();
+    out.retain(|u| seen.insert(u.clone()));
+    out.truncate(12);
+    out
+}
+
+/// Ask every source at once (each within the fetch's own timeout) and merge what verifies into `m`, in source order.
+/// How many answered with a record list.
+pub fn gather_into(m: &mut Merged, sources: &[String], fetch: &(dyn Fn(&str) -> Result<Value, String> + Sync), now: u64, staff: &[&str]) -> usize {
+    let docs: Vec<Option<Value>> = std::thread::scope(|sc| {
+        let hs: Vec<_> = sources.iter().map(|s| sc.spawn(move || fetch(s).ok())).collect();
+        hs.into_iter().map(|h| h.join().ok().flatten()).collect()
+    });
     let mut answered = 0;
-    for s in sources {
-        if answered >= SOURCES {
-            break;
-        }
-        let Ok(doc) = fetch(&format!("{}/api/mesh/snapshot", s.trim_end_matches('/'))) else { continue };
+    for doc in docs.into_iter().flatten() {
         let Some(recs) = doc.get("records").and_then(Value::as_array) else { continue };
         answered += 1;
         for r in recs.iter().take(MAX_RECORDS) {
             m.offer(r, now, staff);
         }
     }
-    (answered > 0).then_some(m)
+    answered
+}
+
+/// Ask peers' snapshots (origins); merge what verifies. None when nobody answered.
+pub fn gather(sources: &[String], fetch: &(dyn Fn(&str) -> Result<Value, String> + Sync), now: u64, staff: &[&str]) -> Option<Merged> {
+    let mut m = Merged::new();
+    let urls: Vec<String> = sources.iter().take(SOURCES).map(|s| snapshot_url(s)).collect();
+    (gather_into(&mut m, &urls, fetch, now, staff) > 0).then_some(m)
+}
+
+/// Everything this PC can learn with no server of ours: the records it holds (gossip store), then every source
+/// (`all_sources`). The store is updated with what verified (so friends get it too). None when nothing at all.
+pub fn gather_all(app_dir: &Path, seeds: &[&str], mirrors: &[String], fetch: &(dyn Fn(&str) -> Result<Value, String> + Sync), now: u64) -> Option<Merged> {
+    let mut m = super::gossip::load_store(app_dir, now);
+    let held = !m.recs.is_empty();
+    let answered = gather_into(&mut m, &all_sources(app_dir, seeds, mirrors, now), fetch, now, STAFF_KEYS);
+    if answered == 0 && !held {
+        return None;
+    }
+    super::gossip::save_store(app_dir, &m);
+    Some(m)
+}
+
+// ------------------------------------------------------------------------------------------- this player's blocks
+pub fn local_blocks_path(app_dir: &Path) -> PathBuf {
+    app_dir.join("mesh-blocks-local.json")
+}
+
+/// The realms and relays this player blocked for themselves (`r-<id>` / `n-<id>`): never shown, never passed on.
+pub fn local_blocks(app_dir: &Path) -> HashSet<String> {
+    std::fs::read(local_blocks_path(app_dir)).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .and_then(|v| v.get("blocked").and_then(Value::as_array).cloned()).unwrap_or_default()
+        .iter().filter_map(Value::as_str).filter(|t| block_target_ok(t)).take(10_000).map(String::from).collect()
+}
+
+/// Block (or unblock) a realm or relay for this player only.
+pub fn set_local_block(app_dir: &Path, target: &str, blocked: bool) -> Result<(), String> {
+    if !block_target_ok(target) {
+        return Err("That isn't a realm or relay id.".into());
+    }
+    let mut all: Vec<String> = local_blocks(app_dir).into_iter().collect();
+    all.retain(|t| t != target);
+    if blocked {
+        all.push(target.to_string());
+    }
+    all.sort();
+    crate::settings::write_atomic(&local_blocks_path(app_dir), json!({"v": 1, "blocked": all}).to_string().as_bytes()).map_err(|e| e.to_string())
+}
+
+impl Merged {
+    /// Without what this player blocked: the records themselves, their info documents and endpoints through a
+    /// blocked relay.
+    pub fn without(&self, blocked: &HashSet<String>) -> Merged {
+        if blocked.is_empty() {
+            return self.clone();
+        }
+        let hosts: HashSet<String> = self.recs.iter().filter(|(k, _)| blocked.contains(k.as_str()))
+            .filter_map(|(_, (_, v))| v["node"]["host"].as_str().map(String::from)).collect();
+        let mut m = self.clone();
+        m.recs.retain(|k, (_, v)| !blocked.contains(k) && !blocked.contains(&subject(k, v)));
+        for (k, (_, v)) in m.recs.iter_mut() {
+            if k.starts_with("r-") {
+                if let Some(eps) = v.get_mut("endpoints").and_then(Value::as_array_mut) {
+                    eps.retain(|e| !e["att"]["relay"].as_str().is_some_and(|h| hosts.contains(h)));
+                }
+            }
+        }
+        m
+    }
 }
 
 /// Round trips to each relay (a TCP connect to port 443), in parallel, at most `timeout` each.
@@ -602,15 +774,17 @@ pub fn probe(hosts: &[String], timeout: Duration) -> HashMap<String, f64> {
     handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
 }
 
-/// The realm list from the mesh, or None (flag off, or no source answered): the caller then uses today's listings.
-pub fn realms_doc_for(app_dir: &Path, flags: &Flags, seeds: &[&str], fetch: &dyn Fn(&str) -> Result<Value, String>,
+/// The realm list from the mesh, or None (flag off, or nothing held and no source answered): the caller keeps the
+/// static list either way.
+pub fn realms_doc_for(app_dir: &Path, flags: &Flags, seeds: &[&str], mirrors: &[String], fetch: &(dyn Fn(&str) -> Result<Value, String> + Sync),
                       rtt: &dyn Fn(&[String]) -> HashMap<String, f64>) -> Option<Value> {
     if !flags.mesh_realms {
         return None;
     }
     let now = now_secs();
-    let m = gather(&sources(app_dir, seeds), fetch, now, STAFF_KEYS)?;
+    let m = gather_all(app_dir, seeds, mirrors, fetch, now)?;
     learn_peers(app_dir, &m);
+    let m = m.without(&local_blocks(app_dir));
     let seeds_h: Vec<String> = seeds.iter().filter_map(|s| s.split("://").nth(1)).map(|h| h.split(':').next().unwrap_or(h).to_string()).collect();
     // community nodes: only the ones a seed checked lately, and none at all while the Leyline team's switch is off
     let (mut volunteers, mut m) = (flags.mesh_relays, m);
@@ -632,9 +806,9 @@ pub fn realms_doc_for(app_dir: &Path, flags: &Flags, seeds: &[&str], fetch: &dyn
     Some(doc)
 }
 
-/// What `realms::fetch_all` calls: the real network.
+/// What `realms::fetch_all` calls: the real network (each source within 5 seconds, all at once).
 pub fn fetch_doc(app_dir: &Path, flags: &Flags) -> Option<Value> {
-    realms_doc_for(app_dir, flags, SEEDS, &|u| crate::net::get_json(u, crate::net::TIMEOUT), &|h| probe(h, Duration::from_millis(1500)))
+    realms_doc_for(app_dir, flags, seeds(), &mirrors(), &|u| crate::net::get_json(u, Duration::from_secs(5)), &|h| probe(h, Duration::from_millis(1500)))
 }
 
 #[cfg(test)]
@@ -796,9 +970,9 @@ mod tests {
         let rtt = |_: &[String]| -> HashMap<String, f64> { [("relay.openvanilla.app".to_string(), 200.0), ("v1.example.org".to_string(), 10.0)].into_iter().collect() };
         let on = Flags { mesh_realms: true, mesh_relays: true, ..Default::default() };
         let seeds = ["https://relay.openvanilla.app"];
-        let doc = realms_doc_for(d.path(), &on, &seeds, &fetch_with(false), &rtt).unwrap();
+        let doc = realms_doc_for(d.path(), &on, &seeds, &[], &fetch_with(false), &rtt).unwrap();
         assert_eq!(doc["realms"][0]["profile"]["address"], "v1.example.org", "the closer healthy node");
-        let doc = realms_doc_for(d.path(), &on, &seeds, &fetch_with(true), &rtt).unwrap();
+        let doc = realms_doc_for(d.path(), &on, &seeds, &[], &fetch_with(true), &rtt).unwrap();
         assert_eq!(doc["realms"][0]["profile"]["address"], "relay.openvanilla.app", "the team's switch: ours only");
     }
 
@@ -816,10 +990,10 @@ mod tests {
         let seeds: Vec<&str> = seeds_owned.iter().map(|s| s.as_str()).collect();
         let fetch = |u: &str| crate::net::get_json(u, Duration::from_secs(3));
         let no_rtt = |_: &[String]| HashMap::new();
-        let off = Flags::default();
-        assert!(realms_doc_for(d.path(), &off, &seeds, &fetch, &no_rtt).is_none(), "flag off: the mesh is never asked");
+        let off = Flags { mesh_realms: false, ..Default::default() };
+        assert!(realms_doc_for(d.path(), &off, &seeds, &[], &fetch, &no_rtt).is_none(), "flag off: the mesh is never asked");
         let on = Flags { mesh_realms: true, ..Default::default() };
-        let doc = realms_doc_for(d.path(), &on, &seeds, &fetch, &no_rtt).unwrap();
+        let doc = realms_doc_for(d.path(), &on, &seeds, &[], &fetch, &no_rtt).unwrap();
         let realms = crate::realms::parse_community(&doc);
         assert_eq!(realms.len(), 1);
         assert_eq!(realms[0].address.as_deref(), Some("relay.openvanilla.app:40002"));
@@ -829,7 +1003,121 @@ mod tests {
         let dead = [dead_url()];
         let dead: Vec<&str> = dead.iter().map(|s| s.as_str()).collect();
         let e = tempfile::tempdir().unwrap();
-        assert!(realms_doc_for(e.path(), &on, &dead, &fetch, &no_rtt).is_none(), "nobody answered: today's listings");
+        assert!(realms_doc_for(e.path(), &on, &dead, &[], &fetch, &no_rtt).is_none(), "nobody answered: today's listings");
+        // what d learned stays in its store: with every source gone it still has the realm (while it is fresh)
+        let doc = realms_doc_for(d.path(), &on, &dead, &[], &fetch, &no_rtt).unwrap();
+        assert_eq!(crate::realms::parse_community(&doc).len(), 1, "held records, no server needed");
+    }
+
+    /// Static mirrors: any one is enough, a broken or hostile one changes nothing, and none of our relays is asked.
+    #[test]
+    fn mirrors_are_record_sources_like_any_other() {
+        let (r, n) = (Key::new(1), Key::new(2));
+        let now = now_secs();
+        let rid = r.rid();
+        let good = json!({"v": 1, "records": [r.realm(3, now, "Mirror Realm", "relay.community.example",
+            vec![n.ep(&rid, "relay.community.example", now, 40002, true)])]});
+        let mut forged = good.clone();
+        forged["records"][0]["beat"]["record"]["name"] = json!("Hijacked");
+        let a = serve_routes(vec![("/mesh/snapshot.json", "200 OK", good.to_string().into_bytes())]);
+        let bad = serve_routes(vec![("/mesh/snapshot.json", "200 OK", forged.to_string().into_bytes())]);
+        let junk = serve_routes(vec![("/mesh/snapshot.json", "200 OK", b"<html>not json</html>".to_vec())]);
+        let mirrors = vec![dead_url() + "/mesh/snapshot.json", format!("{junk}/mesh/snapshot.json"), format!("{bad}/mesh/snapshot.json"), format!("{a}/mesh/snapshot.json")];
+        let d = tempfile::tempdir().unwrap();
+        let asked = std::sync::Mutex::new(Vec::<String>::new());
+        let fetch = |u: &str| {
+            asked.lock().unwrap().push(u.to_string());
+            crate::net::get_json(u, Duration::from_secs(3))
+        };
+        let on = Flags::default();
+        assert!(on.mesh_realms, "on by default");
+        let doc = realms_doc_for(d.path(), &on, seeds(), &mirrors, &fetch, &|_: &[String]| HashMap::new()).unwrap();
+        let realms = crate::realms::parse_community(&doc);
+        assert_eq!(realms.len(), 1);
+        assert_eq!(realms[0].name, "Mirror Realm", "the forged copy lost");
+        assert!(asked.lock().unwrap().iter().all(|u| !SEEDS.iter().any(|s| u.starts_with(s))), "no relay of ours is asked");
+        // only dead mirrors and nothing held: nothing (the Realms page keeps its static list)
+        let e = tempfile::tempdir().unwrap();
+        assert!(realms_doc_for(e.path(), &on, seeds(), &[dead_url() + "/x.json"], &fetch, &|_: &[String]| HashMap::new()).is_none());
+        // the static list is never cut: the mesh's realms are added beside it
+        let mut l = crate::realms::RealmList { realms: crate::realms::parse_community(&realms_doc(&{
+            let mut m = Merged::default();
+            m.offer(&Key::new(7).realm(1, now, "Static One", "relay.static.example", vec![Key::new(8).ep(&Key::new(7).rid(), "relay.static.example", now, 40010, false)]), now, &[]);
+            m
+        }, &HashMap::new(), false, &[], now)), network: Default::default(), from_cache: false, saved_at: None, error: None };
+        assert_eq!(l.realms.len(), 1);
+        crate::realms::with_mesh(&mut l, &doc);
+        crate::realms::with_mesh(&mut l, &doc);
+        let names: HashSet<String> = l.realms.iter().map(|r| r.name.clone()).collect();
+        assert_eq!(names, ["Static One", "Mirror Realm"].iter().map(|s| s.to_string()).collect(), "added once, nothing cut");
+        crate::realms::with_mesh(&mut l, &json!({"schema": 1, "realms": []}));
+        assert_eq!(l.realms.len(), 2);
+    }
+
+    fn council_block(target: &str, signers: &[&Key], reason: &str, ts: u64, exp: u64) -> Value {
+        let b = json!({"v": 1, "council": 1, "target": target, "reason": reason, "ts": ts, "expires": exp});
+        let sigs: Vec<Value> = signers.iter().map(|k| json!({"key": k.pubhex(), "sig": k.sign(CTX_COUNCIL, &b)})).collect();
+        json!({"kind": "block", "block": b, "sigs": sigs})
+    }
+
+    #[test]
+    fn council_blocks_need_two_of_the_three_pinned_keys() {
+        let (c1, c2, c3, outsider) = (Key::new(31), Key::new(32), Key::new(33), Key::new(34));
+        let council = vec![c1.pubhex(), c2.pubhex(), c3.pubhex()];
+        let r = Key::new(1);
+        let now = now_secs();
+        let target = format!("r-{}", r.rid());
+        let ok = |rec: &Value| check_with(rec, now, &[], &council);
+        assert!(ok(&council_block(&target, &[&c1, &c3], "spam", now, now + 3600)).is_ok());
+        assert_eq!(ok(&council_block(&target, &[&c1], "spam", now, now + 3600)).unwrap_err(), "1 of 2 council signatures");
+        assert!(ok(&council_block(&target, &[&c1, &c1], "spam", now, now + 3600)).is_err(), "the same key twice is one");
+        assert!(ok(&council_block(&target, &[&c1, &outsider], "spam", now, now + 3600)).is_err(), "not on the council");
+        assert!(ok(&council_block(&target, &[&c1, &c2], "  ", now, now + 3600)).is_err(), "a reason always");
+        assert!(ok(&council_block(&target, &[&c1, &c2], "spam", now - 7200, now - 10)).is_err(), "expired");
+        assert!(ok(&council_block(&target, &[&c1, &c2], "spam", now, now + BLOCK_MAX_TTL + 10)).is_err(), "too long");
+        assert!(ok(&council_block("r-nope", &[&c1, &c2], "spam", now, now + 3600)).is_err());
+        let mut t = council_block(&target, &[&c1, &c2], "spam", now, now + 3600);
+        t["block"]["reason"] = json!("something else");
+        assert!(ok(&t).is_err(), "signed text changed");
+        // this build pins no council yet: no council block counts anywhere
+        assert!(check(&council_block(&target, &[&c1, &c2], "spam", now, now + 3600), now, &[]).is_err());
+        // in the merge: the block hides the realm and stops it coming back, whoever passes it on
+        let mut m = Merged { council: council.clone(), ..Default::default() };
+        assert!(m.offer(&r.realm(1, now, "Spam Realm", "a.example.org", vec![]), now, &[]));
+        assert!(m.offer(&council_block(&target, &[&c2, &c3], "spam", now, now + 3600), now, &[]));
+        assert_eq!(m.realms().count(), 0);
+        assert!(!m.offer(&r.realm(2, now, "Back Again", "a.example.org", vec![]), now, &[]));
+        // the same block in any order of signatures settles the same way
+        let (x, y) = (council_block(&target, &[&c1, &c2], "spam", now + 1, now + 3600), council_block(&target, &[&c3, &c2], "spam", now + 1, now + 3600));
+        let (mut m1, mut m2) = (Merged { council: council.clone(), ..Default::default() }, Merged { council, ..Default::default() });
+        m1.offer(&x, now, &[]);
+        m1.offer(&y, now, &[]);
+        m2.offer(&y, now, &[]);
+        m2.offer(&x, now, &[]);
+        assert_eq!(m1.recs[&format!("b-{target}")].1, m2.recs[&format!("b-{target}")].1);
+    }
+
+    #[test]
+    fn a_players_own_block_list() {
+        let (r, n, relay) = (Key::new(1), Key::new(2), Key::new(3));
+        let now = now_secs();
+        let rid = r.rid();
+        let d = tempfile::tempdir().unwrap();
+        assert!(set_local_block(d.path(), "not-an-id", true).is_err());
+        let mut m = Merged::default();
+        m.offer(&r.realm(1, now, "Mine", "a.example.org", vec![n.ep(&rid, "a.example.org", now, 40000, true)]), now, &[]);
+        m.offer(&Key::new(5).realm(1, now, "Other", "a.example.org", vec![]), now, &[]);
+        m.offer(&relay.node("a.example.org", "https://a.example.org", now, (0, 10)), now, &[]);
+        set_local_block(d.path(), &format!("r-{rid}"), true).unwrap();
+        let shown = m.without(&local_blocks(d.path()));
+        assert_eq!(shown.realms().count(), 1);
+        assert!(super::super::gossip::pack(&m, &local_blocks(d.path()), 100_000).iter().all(|x| x["beat"]["realm_id"] != rid.as_str()), "not passed on");
+        set_local_block(d.path(), &format!("r-{rid}"), false).unwrap();
+        set_local_block(d.path(), &format!("n-{}", relay.rid()), true).unwrap();
+        let shown = m.without(&local_blocks(d.path()));
+        assert_eq!(shown.realms().count(), 2);
+        assert!(shown.realms().all(|x| x["endpoints"].as_array().unwrap().is_empty()), "nothing through a blocked relay");
+        assert!(shown.relays().is_empty());
     }
 
     /// The Commonhold v1 conformance vectors (made by hosting/kit/tools/wunet/commonhold.py, checked there too).

@@ -23,7 +23,9 @@ a status line at the top, and never name the game, its maker or a client version
 | LAN joins (LAN finding, forwarder to the engine's 127.0.0.1 ports, realm-list rewrite) | `host/worldshare.rs` | on |
 | One-click single player and the original world | `host/oneclick.rs`, `host/engine.rs`, [SINGLE-PLAYER-ONE-CLICK.md](SINGLE-PLAYER-ONE-CLICK.md) | on |
 | Your Den with "Your own address" (port forward) | `host/denways.rs`, [DEN-INVITE.md](DEN-INVITE.md) | on |
-| Mesh record format (`leyline-mesh-*-v1`), merge rules, blocks | `p2p/mesh.rs`, [LEYLINE-MESH.md](LEYLINE-MESH.md), [COMMONHOLD-V1.md](COMMONHOLD-V1.md) | built, off |
+| Mesh record format (`leyline-mesh-*-v1`), merge rules, blocks | `p2p/mesh.rs`, [LEYLINE-MESH.md](LEYLINE-MESH.md), [COMMONHOLD-V1.md](COMMONHOLD-V1.md) | built, on by default (no relay of ours needed) |
+| Record sources with no centre: held records, static mirrors, cached peers, gossip, DHT pointers | `p2p/mesh.rs`, `p2p/gossip.rs`, `p2p/dht.rs` | built, on; tested in process and on a local test DHT only |
+| Council blocks (2 of 3) and a player's own block list | `p2p/mesh.rs`, branding.json `council_keys` | built; no council keys named yet |
 | Signed release log and file sharing over BitTorrent | `p2p/share.rs`, `p2p/torrent.rs`, [P2P-AND-TORRENT.md](P2P-AND-TORRENT.md) | built, off |
 | Be a node | `p2p/node.rs`, `host/network.rs`, [BE-A-NODE.md](BE-A-NODE.md) | built, off |
 | NAT type check (classifies only; no hole punching) | `p2p/nat.rs` | built |
@@ -92,12 +94,18 @@ world and Your Den first. The invite link opens the friend's launcher on Join. P
 
 Signed records from six sources, merged by the same rules (newest valid `seq`, expiry, blocks):
 
-1. other launchers (gossip);
-2. the Mainline DHT, via pkarr records keyed by the publisher's key;
-3. static mirrors: the site, a Codeberg copy, the repo;
-4. community relays and nodes;
-5. the LAN;
-6. friends.
+1. other launchers (gossip): **built** over the friends' channel (`p2p/gossip.rs`), the new transport next;
+2. the Mainline DHT, via pkarr packets keyed by the publisher's key: **built** (`p2p/dht.rs`, resolving on by
+   default; pointers under realm and Passport keys, never the device key). Publishing isn't wired to hosting yet;
+3. static mirrors: the site (`/mesh/snapshot.json`, **built**), the repo's raw file (**built**), a Codeberg copy
+   (placeholder);
+4. community relays and nodes (cached peers' `/api/mesh/snapshot`, as before);
+5. the LAN: **built** (gossip to launchers on the same network);
+6. friends: **built** (gossip).
+
+Realm records live 15 minutes, so mirrors rebuilt with the site carry mostly blocks and long-lived records; live
+realms come from gossip and peers. Updates already come from GitHub, our mirrors and the release log's mirrors,
+the updater key deciding; friends now pass on the release log's newest entries too.
 
 **Blocks** need 2 of a 3-person council's signatures. **Spare signing keys** are held by trusted people, so a lost
 key or a lost owner doesn't end the project. A **fork kit** ([FORKING.md](FORKING.md)) lets anyone start their own

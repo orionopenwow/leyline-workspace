@@ -59,6 +59,10 @@ minisign-verify = "0.3"
 # Only with the lua-recipes feature (off by default).
 mlua = { version = "0.10", default-features = false, features = ["lua51", "vendored"], optional = true }
 
+# The network with no centre (src/p2p/dht.rs, docs/leyline/network.md): signed address records on the public Mainline
+# DHT (BEP 44 mutable items, pkarr-compatible packets). MIT. Only the synchronous client ("node"), no async runtime.
+mainline = { version = "8.0.1", default-features = false, features = ["node"] }
+
 # The Den's ground (host/terrain.rs): our own MIT map tile code, also used by Den Lite (labs/den-lite).
 leyline-terrain = { path = "terrain" }
 

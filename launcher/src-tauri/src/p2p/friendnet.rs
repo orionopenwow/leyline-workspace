@@ -209,6 +209,13 @@ impl Hub {
             return Ok(Event::Ignored("seen"));
         }
         let ev = self.book.lock().unwrap().receive(&self.me, &rec, via, now)?;
+        if let Event::Mesh(from) = &ev {
+            // the mesh's own rules decide what is kept (p2p/gossip.rs); the book doesn't change
+            if super::flags::current(&self.app).mesh_realms {
+                super::gossip::take(&self.app, from, &rec["msg"]["body"], now)?;
+            }
+            return Ok(ev);
+        }
         if !matches!(ev, Event::Ignored(_)) {
             self.save()?;
         }
@@ -277,7 +284,7 @@ impl Hub {
             }
         }
         if let Some(r) = mailbox.or(relay.map(String::from)).filter(|r| crate::realms::relay_ok(r)) {
-            let tag = matches!(kind, "presence" | "card").then(|| friends::tag_for(&self.me, to, kind));
+            let tag = matches!(kind, "presence" | "card" | "mesh").then(|| friends::tag_for(&self.me, to, kind));
             match mailbox_post(&r, &friends::envelope(&pk, msg, tag.as_deref())?) {
                 Ok(()) => return Ok("relay"),
                 Err(e) => tried.push(format!("relay mailbox: {e}")),
@@ -316,6 +323,36 @@ impl Hub {
                 let _ = self.deliver(&k, &m, None);
             }
         }
+    }
+
+    /// Gossip (p2p/gossip.rs): this PC's mesh records to each friend and each launcher near, at most
+    /// `gossip::MAX_PEERS`, one message each. Off with `mesh_realms`.
+    pub fn gossip_all(&self) -> usize {
+        if !super::flags::current(&self.app).mesh_realms {
+            return 0;
+        }
+        let body = super::gossip::body(&self.app, now());
+        if body["recs"].as_array().map_or(true, |a| a.is_empty()) && body.get("chain").is_none() {
+            return 0;
+        }
+        let mut keys = self.book.lock().unwrap().keys(&self.me);
+        if self.book.lock().unwrap().profile.lan != "off" {
+            for (k, _) in self.near_list(now()) {
+                if !keys.contains(&k) {
+                    keys.push(k);
+                }
+            }
+        }
+        let mut sent = 0;
+        for k in keys.into_iter().take(super::gossip::MAX_PEERS) {
+            if self.stop.load(Ordering::Relaxed) {
+                break;
+            }
+            if let Ok(m) = friends::make_msg(&self.me, &k, "mesh", body.clone(), now()) {
+                sent += self.deliver(&k, &m, None).is_ok() as usize;
+            }
+        }
+        sent
     }
 
     /// Fetch and apply this PC's mailbox at its relay.
@@ -523,6 +560,10 @@ pub fn start(hub: &Arc<Hub>) -> NetState {
             if tick % PRESENCE_EVERY == 15 {
                 h.presence_all(true);
             }
+            if tick % super::gossip::EVERY == 45 {
+                h.gossip_all();
+            }
+
             std::thread::sleep(Duration::from_secs(1));
             tick += 1;
         }

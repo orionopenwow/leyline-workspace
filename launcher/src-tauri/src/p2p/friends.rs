@@ -52,7 +52,7 @@ pub const REVOKE_KEEP: u64 = 60 * 86400;
 /// A friend code's rendezvous token is good this long.
 pub const CODE_TTL: u64 = 24 * 3600;
 pub const CACHE_MAX: u64 = 2 * 1024 * 1024;
-const KINDS: &[&str] = &["request", "accept", "decline", "revoke", "presence", "invite", "card"];
+const KINDS: &[&str] = &["request", "accept", "decline", "revoke", "presence", "invite", "card", "mesh"];
 const WORLD_KINDS: &[&str] = &["single", "vanilla", "original", "den", "realm", "solo", "survivors", "other"];
 
 fn hex64(v: Option<&Value>) -> Option<&str> {
@@ -466,6 +466,8 @@ pub enum Event {
     Presence(String),
     Invite(String),
     Card(String),
+    /// Mesh records (p2p/gossip.rs) from a friend, or from this network while it may see this player.
+    Mesh(String),
     Ignored(&'static str),
 }
 
@@ -778,6 +780,9 @@ impl Book {
                 }
                 Ok(Event::Presence(from_pid))
             }
+            ("mesh", Some(_)) => Ok(Event::Mesh(from_pid)),
+            ("mesh", None) if via == Via::Lan && self.profile.lan != "off" => Ok(Event::Mesh(from_pid)),
+            ("mesh", None) => Ok(Event::Ignored("records only from friends and this network")),
             ("invite", Some(i)) => {
                 if !invite_ok(body) {
                     return Err("invite".into());

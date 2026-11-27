@@ -483,21 +483,42 @@ pub fn cache_path(app_dir: &Path) -> PathBuf {
     app_dir.join("cache").join("realms.json")
 }
 
-/// Every realm on the network in its order: the website's network listing, else the relay's own.
+/// Every realm on the network in its order: the website's network listing, else the relay's own; plus what the
+/// Leyline mesh found (p2p/mesh.rs, `mesh_realms`, on by default), asked at the same time.
 pub fn fetch_all(app_dir: &Path) -> RealmList {
-    // The Leyline mesh (p2p/mesh.rs), only with the mesh_realms flag on; when it finds nothing, today's listings.
-    if let Some(doc) = crate::p2p::mesh::fetch_doc(app_dir, &crate::p2p::flags::current(app_dir)) {
-        let _ = crate::settings::write_atomic(&cache_path(app_dir), doc.to_string().as_bytes());
-        return list_of(&doc, false, Some(crate::p2p::mesh::now_secs()), None);
-    }
+    let flags = crate::p2p::flags::current(app_dir);
     if !crate::addresses::SERVER_FEATURES {
-        // the static website's list of other servers only (the relay is gone): see `aggregate`
-        let mut l = aggregate(fetch_all_within(NETWORK_URL, app_dir, net::REALMS_BUDGET));
-        reachable(&mut l.realms, Duration::from_millis(1500));
+        // the static website's list of other servers (the relay is gone: see `aggregate`), and beside it the mesh's
+        // signed records from mirrors, cached peers, friends and the DHT; the static list stays when the mesh is quiet
+        let (mut l, mesh) = std::thread::scope(|s| {
+            let mesh = s.spawn(|| crate::p2p::mesh::fetch_doc(app_dir, &flags));
+            let mut l = aggregate(fetch_all_within(NETWORK_URL, app_dir, net::REALMS_BUDGET));
+            reachable(&mut l.realms, Duration::from_millis(1500));
+            (l, mesh.join().ok().flatten())
+        });
+        if let Some(doc) = mesh {
+            with_mesh(&mut l, &doc);
+        }
         l.network = totals(&l.realms);
         return l;
     }
+    // with a server: the mesh's list when it found one, else today's listings
+    if let Some(doc) = crate::p2p::mesh::fetch_doc(app_dir, &flags) {
+        let _ = crate::settings::write_atomic(&cache_path(app_dir), doc.to_string().as_bytes());
+        return list_of(&doc, false, Some(crate::p2p::mesh::now_secs()), None);
+    }
     fetch_network(&[NETWORK_URL, URL], app_dir)
+}
+
+/// The mesh's realms (a `source: mesh` realms.json document) added to a list: the ones `keep_realm` allows and that
+/// aren't in it already. The list itself is never cut.
+pub fn with_mesh(l: &mut RealmList, doc: &Value) {
+    let have: std::collections::HashSet<String> = l.realms.iter().map(|r| r.slug.clone()).collect();
+    let more: Vec<Realm> = parse_community(doc).into_iter().filter(|r| !have.contains(&r.slug) && keep_realm(r)).collect();
+    if !more.is_empty() {
+        l.realms.extend(more);
+        order(&mut l.realms);
+    }
 }
 
 /// With `SERVER_FEATURES` off (addresses.rs) Leyline is a launcher aggregator: no official realm of ours, and no realm

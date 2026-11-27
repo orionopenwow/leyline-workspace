@@ -1,0 +1,5 @@
+{
+ "v": 1,
+ "_about": "The mesh's signed record list (docs/LEYLINE-MESH.md): the launcher reads it from the repo's raw file and from the website's /mesh/snapshot.json (tools/site-static/build.py checks every signature). Signed records only; empty is valid.",
+ "records": []
+}

@@ -52,6 +52,24 @@ packages that passed the checker, theme packs and the Host pack. Never game data
 
 ## 2. Bootstrap and peer discovery
 
+**Since 27 Nov 2026 (no server of ours):** a launcher starts from what needs no relay of ours (`mesh::gather_all`):
+
+1. the records it already holds (`cache/mesh-records.json`, `p2p/gossip.rs`; checked again at every load, so
+   expired ones fall away);
+2. the static mirrors of the record list (branding.json `mesh_mirrors`: `https://leylinelauncher.com/mesh/snapshot.json`,
+   the public repo's raw `mesh/snapshot.json`, and a Codeberg Pages copy that is a `TODO(owner)` placeholder). Any one
+   that answers is enough;
+3. two cached mesh peers (`cache/mesh-peers.json`, `/api/mesh/snapshot`);
+4. the https fetch pointers in cached DHT packets (`p2p/dht.rs`);
+5. friends and launchers on the same network push records to it (gossip, below).
+
+All sources are asked at once (5 s each). `mesh::SEEDS` (our relays) are asked only with `addresses::SERVER_FEATURES`
+on (`mesh::seeds()`). There is no eclipse defence from a seed any more: a set of poisoned sources can hide records,
+never forge them. The `mesh_realms` flag is on by default; the Realms page always keeps the static list and adds the
+mesh's realms beside it (`realms::with_mesh`).
+
+The rest of this section is how it worked with our relays.
+
 Each node finds peers in this order:
 
 1. its own **peers cache**:
@@ -85,6 +103,7 @@ strings are versioned.
 | endpoint, inside a realm record | the **relay's node key** (`leyline-mesh-endpoint-v1`) | relay host, the realm's auth and world ports, `ws` (whether the browser bridge is served), `ts` | 15 min |
 | `relay` | the **node key** (`leyline-mesh-node-v1`) | host, `http` base, region, `volunteer`, `ws`, `mesh`, caps (realms, streams, KB/s), load (realms, streams) | 30 min |
 | `block` | a **pinned staff key** (`leyline-mesh-block-v1`) | target (`r-<realm id>` or `n-<node id>`), reason, `ts`, `expires` | at most 90 days |
+| `block` with `"council": 1` (launcher only, 27 Nov) | **two of the three council keys** in branding.json `council_keys`, each in `sigs: [{key, sig}]` over `leyline-mesh-council-block-v1` | target, a reason (1-200 characters, required), `ts`, `expires` | at most 90 days |
 | `info` | the **node key** or the **realm key** (`leyline-mesh-info-v1`) | the capability document: role, `proto_min`/`proto_max`, software, `supported` capability ids, limits, `admin` (abuse contact as a peer id), rules, region, languages, `restricted` | 24 h |
 
 The written spec, the tolerant-reader rule (unknown fields kept, unknown kinds and versions ignored) and the
@@ -107,6 +126,12 @@ Why no node can forge a realm or keep a dead one alive:
   * at an equal `seq` with different bytes (the key holder equivocating), the record with the smaller
     sha256(signature) wins, so every node keeps the same one;
   * a blocked target is refused and dropped.
+* **Council blocks** (`mesh.rs check_council_block`): valid only with two signatures from distinct keys among the
+  three pinned council keys; the merge treats them like any block (newest `ts`, then the smaller hash of the
+  signatures). `council_keys` is empty until the owner names the three keys (`TODO(owner)`), so none is valid
+  today. `wunet/mesh.py` doesn't know council blocks yet (it refuses them as "not a staff key").
+* **This player's own blocks** (`mesh-blocks-local.json`, `mesh::set_local_block`): hidden from the list, and the
+  records are not gossiped on. Not shared with anyone.
 * **Freshness:** the seed relay re-publishes an unchanged realm every 5 minutes (TTL / 3), and at once when the
   list text, online status, player count (in steps of 5) or signed relays change. Agents still beat every 60 s
   to their relay. The mesh carries at most one record per realm per 5 minutes.
@@ -133,8 +158,25 @@ partitioned. Each full node holds every record. The gossip, in `hosting/relay/wu
 * **Backward compatible:** `/api/listing/realms.json`, the heartbeat endpoint and claims are untouched. Today's
   relay simply also becomes one node of the mesh.
 
-**DHT (designed, simulated, not built).** A Kademlia-style DHT is for two things the replicated list doesn't
-cover:
+**Launcher gossip (built, 27 Nov; `p2p/gossip.rs`).** Launchers hand each other the records they hold over the
+friends' sealed channel (message kind `mesh`, to friends and to launchers on the same network while "Be seen on this
+network" isn't off; the new transport can carry the same body). Caps: one message per peer every 15 minutes, at
+most 6.5 KB of records (blocks first, then relays, info, realms, newest first) plus 1.2 KB of the release log's
+newest entries; from one sender at most one message per 5 minutes and 64 records; the store keeps 2000 records.
+Every record goes through `Merged::offer`, every release-log entry through `releaselog::extend` under the release
+key. Not yet run between two real PCs.
+
+**Mainline DHT (built, 27 Nov; `p2p/dht.rs`).** Not a DHT of our own: the public BitTorrent DHT, through the
+`mainline` crate (MIT, synchronous client only, no HTTP relay). A realm whose host lists it, or a Passport root,
+publishes a pkarr-format signed packet (BEP 44 mutable item, under 1000 bytes, `_leyline` TXT records: version,
+kind, time, endpoint ids, address hints, the sha256 of the full mesh record, where to fetch it), put again every 30
+minutes. **Never under the device key**: the transport publishes its own packet there. `dht::lookup(peer)` (peer id
+or key) returns endpoint ids and address hints. On by default for resolving (`dht`, this PC's own switch). Tested
+on an in-process test DHT only; the host side doesn't call `publish_realm` yet (no listing path since the relays
+went).
+
+The designed DHT of our own (below) is not needed while the public one serves. It was for two things the
+replicated list doesn't cover:
 
 * finding a single record by id without the whole list: an invite link, or a realm too new to have spread;
 * peer discovery once there are more than about 10 000 full nodes.
@@ -444,7 +486,11 @@ snapshots a second network-wide. Spread over the full nodes, that is:
 | Community nodes, 2026-10-31 ("Help carry the network", `wurelay/nodes.py`): seed registry (`RELAY_NODE_REGISTRY=1`, `POST /api/nodes/register` with the node's signed relay record, `GET /api/nodes.json`), health checks every 2 min (the node's own `/api/mesh/node` must answer with its key), bans and the "stop every node" switch from HQ's block feed (`nodes`, `nodes_off`), the node pausing itself (HQ's answer, or the owner's `state/node/pause`), `RELAY_TOTAL_KBPS`, `state/node/status.json`; the launcher picks only healthy nodes and names our relay as `community.fallback` | **Built**, tested (`hosting/tests/test_join_network.py`, `p2p/mesh.rs`, `host/network.rs`, `stream/tests/test_hq_network.py`). Off: needs `RELAY_NODE_REGISTRY=1` on the seed, `relay_volunteer` and `mesh_relays` |
 | Multi-relay agents and the realm-list rewrite on the relay | Designed |
 | Sealed path (end-to-end encryption past the relay) | Designed |
-| DHT | Designed, simulated |
+| Launcher sources with no relay of ours: held records, static mirrors (`/mesh/snapshot.json`), cached peers, DHT pointers; on by default, static list kept | **Built**, tested (`p2p/mesh.rs`, `tools/site-static`) |
+| Gossip of records and the release log's tail over the friends' channel | **Built**, tested in process (`p2p/gossip.rs`) |
+| Pointers on the public Mainline DHT (pkarr packets), `dht::lookup` | **Built**, tested on a local test DHT (`p2p/dht.rs`); publishing not wired to the host yet |
+| Council blocks (2 of 3) and a player's own blocks | **Built**, tested (`p2p/mesh.rs`); no council keys named yet |
+| Our own DHT | Designed, simulated (not needed while the public DHT serves) |
 | Hole punching, UPnP | Not built |
 | `package` records and relays as trackers | Designed |
 
@@ -480,6 +526,9 @@ because the hash covers the whole document. Old launchers ignore unknown flags.
 
 ## Decisions for the owner
 
+* **The block council.** Name three people and put their public keys in branding.json `council_keys`. Until then no
+  council block is valid.
+* **The Codeberg mirror.** Set up Codeberg Pages with `mesh/snapshot.json` (branding.json names a placeholder).
 * **The staff key.** Make it and pin it in `STAFF_KEYS`, in both `wunet/mesh.py` and `p2p/mesh.rs`. Until then
   network-wide blocks can't be issued.
 * **The seed list and seed keys.** Name more seed relays (`SEEDS`), and pin each seed's node key (`SEED_KEYS`).

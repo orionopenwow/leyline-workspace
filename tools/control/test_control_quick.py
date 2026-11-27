@@ -31,6 +31,17 @@ class Rig(unittest.TestCase):
         quick.QUICK = self.root / "control" / "quick"
         quick.APPLIED = quick.QUICK / "applied.jsonl"
         self.ran = []
+        # these tests use the server's deploys (signin, scripts) to test the checks, so the server switch is on here;
+        # Serverless below tests them refused without it (docs/SERVERLESS.md)
+        self.server(True)
+
+    def server(self, on):
+        p = self.root / "control" / "server.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if on is None:
+            p.unlink(missing_ok=True)
+        else:
+            p.write_text(json.dumps(on if isinstance(on, dict) else {"on": on}), encoding="utf-8")
 
     def put(self, rel, data=b"print('hi')\n"):
         p = self.root / rel
@@ -54,6 +65,47 @@ class Rig(unittest.TestCase):
             return [json.loads(l) for l in quick.APPLIED.read_text(encoding="utf-8").splitlines()]
         except FileNotFoundError:
             return []
+
+
+class Serverless(Rig):
+    """Since the server shutdown (26 Nov 2026) signin and scripts are refused, nothing deployed; addons and none work;
+    control/server.json brings one back by its step name, or all with "on"."""
+    def test_server_deploys_refused_without_the_switch(self):
+        for off in (None, False, {"steps": ["relay"]}):
+            self.server(off)
+            for deploy, rel in (("signin", "stream/forum.py"), ("scripts", "realm/custom/x.lua")):
+                self.ran = []
+                f = self.put(rel)
+                self.manifest("1311a", {"files": [f], "deploy": deploy})
+                rc, out = self.run_quick("apply", "--id", "1311a")
+                self.assertEqual(rc, 1, out)
+                self.assertIn("shut down on 26 Nov 2026", out)
+                self.assertIn('Use deploy "none"', out)
+                self.assertEqual(self.ran, [], "nothing deployed")
+
+    def test_addons_and_none_still_work(self):
+        self.server(None)
+        f = self.put("addons/WrathUnleashedUI/x.lua")
+        self.manifest("a1", {"files": [f], "deploy": "addons"})
+        rc, out = self.run_quick("apply", "--id", "a1")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.ran, ["addons/pack/Publish Leyline addons.bat"])
+        g = self.put("stream/forum.py")
+        self.manifest("n1", {"files": [g], "deploy": "none"})
+        rc, out = self.run_quick("apply", "--id", "n1")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(len(self.ran), 1, "none runs no step")
+
+    def test_the_switch_brings_one_back(self):
+        self.server({"steps": ["scripts"]})
+        f = self.put("realm/custom/x.lua")
+        self.manifest("s1", {"files": [f], "deploy": "scripts"})
+        rc, out = self.run_quick("apply", "--id", "s1")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.ran, ["realm/Server pass - finder 10 and bug reports.bat"])
+        g = self.put("stream/forum.py")
+        self.manifest("s2", {"files": [g], "deploy": "signin"})
+        self.assertEqual(self.run_quick("apply", "--id", "s2")[0], 1, "signin is still off")
 
 
 class Apply(Rig):

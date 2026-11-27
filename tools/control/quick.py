@@ -20,7 +20,8 @@ note. It says exactly which files and how they are deployed:
     or secret) and not game data or a program (.mpq, .exe, .dll);
   * there, at most 5 MB, and byte for byte the sha256 the manifest gives (so what deploys is what Claude meant);
   * under the folders its deploy step ships: signin: stream/; addons: addons/ or stream/fui-web/; scripts:
-    realm/custom/; none: anywhere (checked and logged only; the next ship carries it).
+    realm/custom/; none: anywhere (checked and logged only; the next ship carries it). Since the server shutdown
+    (26 Nov 2026, docs/SERVERLESS.md) signin and scripts are refused unless control/server.json turns them back on.
 Then it runs that existing step's own .bat (the same one Control runs for "signin", "addons" or "scripts"), with its
 backup, self-check and rollback, and appends one line to control/quick/applied.jsonl. It prints paths and short
 hashes only, never a file's contents. Any other key, deploy name or shape is refused.
@@ -48,6 +49,21 @@ DEPLOY = {
     "scripts": ("realm/Server pass - finder 10 and bug reports.bat", ("realm/custom/",)),
     "none": (None, ("",)),
 }
+# Serverless (26 Nov 2026, docs/SERVERLESS.md): signin and scripts deployed to the server that was shut down, so they
+# are refused (their steps are retired in Control too) unless control/server.json turns them back on ({"on": true}, or
+# their step name in "steps"; LEYLINE_SERVER=1 too). Use "none": the next ship carries the files, and the website
+# rebuilds from the public Leyline repo on that push. "addons" publishes to GitHub and still works.
+SERVER_DEPLOYS = {"signin", "scripts"}
+
+
+def server_allows(deploy: str, root: Path = None) -> bool:
+    if deploy not in SERVER_DEPLOYS or os.environ.get("LEYLINE_SERVER") == "1":
+        return True
+    try:
+        d = json.loads(((root or ROOT) / "control" / "server.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(d, dict) and (d.get("on") is True or (isinstance(d.get("steps"), list) and deploy in d["steps"]))
 DENY_DIRS = (".git/", "control/", "logs/", ".repos/", "_local/")
 SECRET = re.compile(r"(?i)(^|/)(\.env(\.[^/]*)?|[^/]*\.env|token\.txt|control-token|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|"
                     r"[^/]*\.(pem|key|pfx|p12|crt|kdbx|keystore|jks)|credentials?(\.[^/]*)?|[^/]*(password|passwd|secret)[^/]*)$")
@@ -114,6 +130,9 @@ def load(path: Path) -> dict:
 def verify(m: dict, root: Path = None) -> list[dict]:
     """Every file checked (see the module's text). Returns [{path, sha256, bytes}] or raises Refused."""
     root = (root or ROOT).resolve()
+    if not server_allows(m["deploy"], root):
+        raise Refused(f"'{m['deploy']}' deployed to the server, which was shut down on 26 Nov 2026 (docs/SERVERLESS.md). "
+                      "Use deploy \"none\": the next ship carries the files and the website rebuilds from it.")
     _, under = DEPLOY[m["deploy"]]
     seen, out = set(), []
     for f in m["files"]:

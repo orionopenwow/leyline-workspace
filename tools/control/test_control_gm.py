@@ -18,7 +18,8 @@ spec.loader.exec_module(ctl)
 T = Path(tempfile.mkdtemp())
 for k, rel in {"BUGS_BACKLOG": "bugs/backlog.json", "SERVER_CHECK": "logs/server-check-latest.txt", "UPSTREAM": "mods/upstream.json",
                "LOOKS": "stream/looks.json", "QUICK_LOG": "control/quick/applied.jsonl", "LAST_CHECK": "last-check.json",
-               "DISCORD_DOC": "discord.json", "DISCORD_TOKEN": "token.txt", "AUTO": "autopilot.json"}.items():
+               "DISCORD_DOC": "discord.json", "DISCORD_TOKEN": "token.txt", "AUTO": "autopilot.json",
+               "SERVER_DOC": "control/server.json"}.items():
     setattr(ctl, k, T / rel)
 srv = ThreadingHTTPServer(("127.0.0.1", PORT), ctl.H)
 srv.daemon_threads = True
@@ -118,7 +119,18 @@ class Filled(unittest.TestCase):
         self.assertNotIn(b"abc.def.ghi", body)
 
     def test_actions_are_existing_steps_never_owner_only(self):
-        acts = [a["step"] for a in ctl.gm_overview()["actions"]]
+        g = ctl.gm_overview()
+        acts = [a["step"] for a in g["actions"]]
+        # serverless (docs/SERVERLESS.md): check, bugs and worldlog needed the server, so their buttons are gone
+        self.assertTrue(g["serverless"])
+        self.assertEqual(acts, ["discord-check", "discord-preview", "mods-daily"])
+        os.environ["LEYLINE_SERVER"] = "1"
+        try:
+            g = ctl.gm_overview()
+        finally:
+            os.environ.pop("LEYLINE_SERVER", None)
+        self.assertFalse(g["serverless"])
+        acts = [a["step"] for a in g["actions"]]
         self.assertEqual(acts, ["check", "bugs", "discord-check", "discord-preview", "worldlog", "mods-daily"])
         self.assertTrue(all(a in ctl.STEPS for a in acts))
         self.assertNotIn("discord-apply", acts)

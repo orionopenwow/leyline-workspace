@@ -3,8 +3,13 @@
 
     py -3 tools\\control\\control.py          (or double-click "Leyline Control.bat")
 
-Serves a page on http://127.0.0.1:8097 (this PC only) and opens it. The page shows:
-  * Live: the realm, Play page and game files answering (checked from this PC every 30 s).
+Serves a page on http://127.0.0.1:8097 (this PC only) and opens it.
+
+Serverless since 26 Nov 2026 (docs/SERVERLESS.md): the owner shut down Leyline's only server. The steps that needed it
+are in RETIRED (below STEPS): hidden from the page's buttons, skipped with a log line by Launch all and Autopilot, refused
+by every button; the header shows GitHub (the launcher release, the public repo's builds) every 10 minutes instead of
+the server; no server check, HQ sync, GM console or release audit. control/server.json brings them back. The page shows:
+  * Live: GitHub (serverless), or with the server switch on the realm, Play page and game files (every 30 s).
   * Claude: what Claude is working on, what is waiting for you, what finished (control/claude-status.json,
     which Claude keeps up to date in this folder).
   * Waiting on you: each thing Claude needs, with its own buttons (Do it: runs a step; Open the page; Open the
@@ -251,7 +256,9 @@ STEPS = {
     "slice":   ("stream/Make mini slice.bat", "Streamed game files (30-60 min)", False),
     # docs/INCIDENT-2026-11-01-SLICE.md: the streamed slice's files on the server, checked (read-only)
     "slice-health": ("stream/Slice health - check.bat", "Read-only: is the streamed slice whole (key files, its tier lists, what wu-play answers)", False),
-    "ship":    ("Ship to GitHub.bat", "Save everything to GitHub", True),
+    # ship -> leyline -> leyline-launcher (run_all queues the next by itself). Serverless (26 Nov): the website is a
+    # static GitHub Pages site built from the public Leyline repo on push, so the leyline step is the site's deploy too.
+    "ship":    ("Ship to GitHub.bat", "Save everything to GitHub (then the public Leyline repo, whose push also rebuilds the website on GitHub Pages, then Leyline-Launcher)", True),
     "ship-again": ("tools/ship/Save again as one fresh commit.bat", "Save to GitHub again as one fresh commit (after GitHub refused a save)", False),
     # the bot smoke test (docs/BOTS-UPDATES.md): a throwaway realm from the canary images (bots-canary.yml) on this PC's
     # own extracted game data, a headless player, the bots checked, all removed after. Touches no realm of yours.
@@ -280,7 +287,7 @@ STEPS = {
     "build-realm-off": ("hosting/build-realm/Builders realm - off.bat", "Builders' Realm off: off Leyline, a 5-minute countdown for builders online, stopped (data kept)", False),
     "build-realm-saves": ("hosting/build-realm/Builders realm - saves.bat", "Builders' Realm saves: copy them to this PC, send the files in its send folder", False),
     "leyline-launcher": ("tools/leyline-repo/Update Leyline-Launcher repo.bat", "Leyline-Launcher repo (the old Open Vanilla one): the same Leyline version, copied and pushed (its site and releases kept)", False),
-    "leyline": ("tools/leyline-repo/Update Leyline repo.bat", "Leyline repo: copy and push (github.com/orionopenwow/Leyline)", False),
+    "leyline": ("tools/leyline-repo/Update Leyline repo.bat", "Leyline repo: copy and push (github.com/orionopenwow/Leyline; the push rebuilds the website on GitHub Pages)", False),
     # the phone release's own repo (docs/MOBILE-RELEASE.md): press after ship; the owner makes the repo on GitHub once
     "leyline-mobile": ("tools/leyline-repo/Update Leyline-Mobile repo.bat", "Leyline-Mobile repo: the phone release (touch layer, phone solo, the app's phone files, screenshots, guides, the Android build pinned to the Leyline repo's commit), copied and pushed as Orion (github.com/orionopenwow/Leyline-Mobile; make it on GitHub once first)", False),
     # Leyline Solo's own public repo (docs/LEYLINE-SOLO.md): the single player app's code, window and installer
@@ -456,6 +463,134 @@ READ_ONLY = {"check", "boss-rush", "combos-check", "ov112-check", "ov112-realm-c
 OWNER_ONLY = {"discord-apply", "discord-announce"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
+# ------------------------------------------------------------------ serverless (docs/SERVERLESS.md)
+# The owner shut down Leyline's only server on 26 Nov 2026: the website portal, the official realm, the relay, the
+# Discord bridge and Leyline HQ went with it. The website is now a static site on GitHub Pages, built from the public
+# Leyline repo on every push; the launcher, the engine, Den Lite and the add-ons come from GitHub releases. These steps
+# needed that server (ssh / scp to it, its SOAP, its website or realm): they are retired. Their .bat files and code stay;
+# Control hides them, Autopilot and Launch all skip them with a log line (and move the queue on), and no button runs
+# them. The switch to bring them back (a new server, once its name and ssh key are in place): control/server.json
+# {"on": true} for all of them, or {"steps": ["relay", ...]} for some; LEYLINE_SERVER=1 does the same as "on".
+SERVER_GONE = "the server was shut down on 26 Nov 2026"
+RETIRED = {
+    "client-build": "builds the browser game, which only the server hosted (the client step)",
+    "client": "deploys the browser game to the server",
+    "client-back": "rolls back the browser game on the server",
+    "signin": "deploys the website portal to the server (the site is now GitHub Pages, built on push)",
+    "page": "deploys the game page to the server",
+    "frontpage": "changes the server's website home",
+    "frontpage-off": "changes the server's website home",
+    "ov112-check": "reads the 1.12 jobs on the server",
+    "ov112-off": "turns off the 1.12 jobs on the server",
+    "ov112-realm-check": "reads the 1.12 realm on the server",
+    "ov112-on": "starts the 1.12 realm on the server",
+    "ov112-realm-off": "stops the 1.12 realm on the server",
+    "ov112-undo": "turns the 1.12 jobs back on on the server",
+    "vr-beacon": "lists the server's 1.12 realm on the relay",
+    "vr-beacon-off": "takes the server's 1.12 realm off the relay",
+    "vr-data-check": "checks the 1.12 game data upload to the server",
+    "vr-data": "uploads 1.12 game data to the server",
+    "vr-site-check": "checks the server's Vanilla Remastered page",
+    "vr-site": "deploys the Vanilla Remastered page to the server",
+    "vr-site-off": "takes the Vanilla Remastered page off the server",
+    "vr-test": "makes a test account on the server's 1.12 realm",
+    "sv-site-check": "checks Azeroth Survivors' site on the server",
+    "sv-site": "deploys Azeroth Survivors to the server",
+    "sv-site-off": "takes Azeroth Survivors off the server",
+    "scripts-reload": "reloads realm scripts on the server's official realm",
+    "scripts": "deploys realm scripts to the server's official realm",
+    "realm": "changes the server's official realm settings",
+    "realm-image": "pulls a new realm image on the server",
+    "combos": "changes character creation on the server's official realm",
+    "combos-all": "changes character creation on the server's official realm",
+    "combos-modern": "changes character creation on the server's official realm",
+    "combos-check": "reads character creation on the server's official realm",
+    "foreverui": "deploys the Forever UI look to the server's stream",
+    "slice": "builds and uploads the streamed game files to the server",
+    "slice-health": "checks the streamed game files on the server",
+    "slice-sampler": "builds the sampler's streamed files for the server",
+    "check": "the read-only server check (ssh to the server)",
+    "audit": "the release audit tests the server's website, realm and Hero Keys (python3 tools/audit/audit.py --only den,launcher still runs by hand)",
+    "gm": "installs the GM console on the server",
+    "bots-off": "changes the bots on the server's official realm",
+    "bots-on": "changes the bots on the server's official realm",
+    "lean": "changes the server's official realm",
+    "relay": "deploys the relay to the server",
+    "domain-check": "checks DNS and ports for the server",
+    "domain-on": "moves the server's names",
+    "domain-off": "moves the server's names back",
+    "hangout": "lists the server's official realm on the relay",
+    "hangout-off": "takes the server's official realm off the relay",
+    "build-realm-check": "reads the Builders' Realm on the server",
+    "build-realm-on": "starts the Builders' Realm on the server",
+    "build-realm-off": "stops the Builders' Realm on the server",
+    "build-realm-saves": "copies the Builders' Realm saves from the server",
+    "mods": "deploys the mods catalog to the server's realm and website",
+    "release-mirror": "copies releases to the server's mirror",
+    "release-mirror-check": "compares releases with the server's mirror",
+    "sampler-check": "reads the Sample Hangout on the server",
+    "sampler": "changes the server's official realm",
+    "sampler-off": "changes the server's official realm",
+    "brand-check": "reads the brand on the server's site and realm",
+    "brand-leyline": "changes the brand on the server's site and realm",
+    "brand-off": "changes the brand on the server's site and realm",
+    "homeart": "uploads the Home screenshots to the server's website",
+    "gamedata-off": "the server's game data switch",
+    "gamedata-on": "the server's game data switch",
+    "firewall-check": "reads the server's firewall",
+    "firewall": "changes the server's firewall",
+    "tidy-check": "reads the server's disk",
+    "server-fix": "fixes containers on the server",
+    "tidy": "removes files on the server",
+    "ov112-data-check": "reads the old 1.12 files on the server",
+    "ov112-data-remove-check": "reads the old 1.12 files on the server",
+    "ov112-data-remove": "removes the old 1.12 files on the server",
+    "worldlog": "reads the server's world server log",
+    "caddy-check": "reads the server's Caddy config",
+    "spike-test": "puts load on the server",
+    "h3-off": "changes the server's Caddy",
+    "h3-on": "changes the server's Caddy",
+    "phonelab": "reads phone sessions from the server's website",
+    "bugs": "pulls the bug reports from the server",
+    "feedback": "builds the feedback digest on the server",
+    "discord-bridge": "installs the game chat bridge on the server",
+    "hq-sync": "Leyline HQ lived on the server's website",
+    "hqnote": "Leyline HQ lived on the server's website",
+    "hq-inbox": "Leyline HQ lived on the server's website",
+    "first-run-test": "needs the server's website (a test Hero Key) and the official realm",
+    "fresh-test": "needs the server's website (a test Hero Key) and the official realm",
+    "fresh-sandbox": "needs the server's website (a test Hero Key) and the official realm",
+    "client-smoke": "plays the official realm, which was on the server",
+    "client-smoke-world": "plays the official realm, which was on the server",
+}
+SERVER_DOC = ROOT / "control" / "server.json"        # the switch: {"on": true} or {"steps": [...]} (no secrets)
+
+
+def server_doc() -> dict:
+    d = _read_json(SERVER_DOC)
+    return d if isinstance(d, dict) else {}
+
+
+def server_on() -> bool:
+    """True when the owner has a server again and said so (control/server.json "on", or LEYLINE_SERVER=1)."""
+    return os.environ.get("LEYLINE_SERVER") == "1" or server_doc().get("on") is True
+
+
+def retired(step: str) -> str:
+    """Why a step can't run any more ("" when it can): it needs the server that was shut down."""
+    why = RETIRED.get(step, "")
+    if not why or server_on():
+        return ""
+    back = server_doc().get("steps")
+    if isinstance(back, list) and step in back:
+        return ""
+    return why
+
+
+def retired_line(step: str, sid: str = "") -> str:
+    return (f"-- Skipped '{step}'{f' ({sid})' if sid else ''}: retired, {SERVER_GONE}: {retired(step)}. "
+            "Nothing ran. docs/SERVERLESS.md says how to bring it back.")
+
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).
 SECRET_RES = [
     # review 4 Nov: also *_KEY names (RELAY_BLOCK_FEED_KEY, HMAC_KEY...) and JSON's "token": "..." (the quote before the colon)
@@ -505,11 +640,19 @@ def scrub(line: str) -> str:
     for rx, rep in SECRET_RES:
         line = rx.sub(rep, line)
     return line
-CHECKS = [
+CHECKS = [            # the server's parts (only with the server switch on: docs/SERVERLESS.md)
     ("Play page", "https://leylinelauncher.com/wrath"),
     ("Game files", "https://play.leylinelauncher.com/data/__tier/index.json"),
     ("Client", "https://play.leylinelauncher.com/boot-manifest.json"),
 ]
+# Serverless (26 Nov 2026): the header shows GitHub instead, every 10 minutes (GitHub's public API, no token): the
+# launcher's release players download, and the public repo's newest finished build (the website's Pages build is one).
+PUBLIC_REPO = "orionopenwow/Leyline"
+GH_CHECKS = [
+    ("Launcher release", f"https://api.github.com/repos/{PUBLIC_REPO}/releases/tags/launcher-latest", "release"),
+    ("GitHub builds", f"https://api.github.com/repos/{PUBLIC_REPO}/actions/runs?branch=main&status=completed&per_page=1", "runs"),
+]
+HEALTH_EVERY = {"server": 30, "github": 600}
 
 state = {"running": None, "lines": [], "health": {}, "health_at": 0, "auto_failed": None}
 lock = threading.Lock()
@@ -535,7 +678,8 @@ def pending() -> list[dict]:
         sid, step = parts[0], parts[1].lower()
         note = parts[2] if len(parts) > 2 else ""
         title = STEPS.get(step, (None, "Unknown step", False))[1]
-        out.append({"id": sid, "step": step, "title": title, "note": note, "known": step in STEPS})
+        out.append({"id": sid, "step": step, "title": title, "note": note, "known": step in STEPS,
+                    "retired": retired(step)})
     return out
 
 
@@ -651,7 +795,7 @@ def autopilot_safe(items: list) -> list:
     """With "Ask before deploys" on: the read-only steps at the front of the queue, up to the first one that isn't."""
     safe = []
     for it in items:
-        if it["step"] not in READ_ONLY:
+        if it["step"] not in READ_ONLY and not retired(it["step"]):   # a retired line only gets skipped
             break
         safe.append(it)
     return safe
@@ -676,7 +820,7 @@ def autopilot_loop() -> None:
                 items = safe
             if items and not (failed and failed == pending_stamp()):
                 start_run("", items, title="Autopilot")
-            elif time.time() >= next_check:
+            elif time.time() >= next_check and not retired("check"):   # serverless: no server to check
                 next_check = time.time() + 3 * 3600
                 item = {"id": "check-auto-" + time.strftime("%Y%m%d-%H%M%S"), "step": "check",
                         "title": STEPS["check"][1], "note": "", "known": True}
@@ -710,6 +854,19 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                 state["auto_failed"] = pending_stamp()
                 write_last([item["id"]], False, item["step"])
                 return
+            if retired(item["step"]):
+                # serverless (docs/SERVERLESS.md): the step needed the server that was shut down. It doesn't run; the
+                # line leaves the queue (UPDATES-DONE.txt) with a log that says so, and the run goes on: not a failure.
+                msg = retired_line(item["step"], item["id"])
+                emit("line", msg)
+                try:
+                    (LOGS / f"{item['id']}-{item['step']}.log").write_text(msg + "\n", encoding="utf-8")
+                except OSError:
+                    pass
+                if record:
+                    with open(DONE, "a", encoding="utf-8") as d:
+                        d.write(item["id"] + "\n")
+                continue
             if item["step"] in OWNER_ONLY and not item.get("owner_confirmed"):
                 what = "the draft (Pending announcements)" if item["step"] == "discord-announce" else "the preview"
                 emit("line", f"!! '{item['step']}' runs only from Leyline Control's Discord panel, after you read "
@@ -1112,6 +1269,9 @@ def ks_run_step(step: str) -> int:
     if step not in STEPS or step in OWNER_ONLY:
         emit("line", f"!! {step}: not a step it may run")
         return 1
+    if retired(step):
+        emit("line", "    " + retired_line(step))
+        return 1
     bat = ROOT / STEPS[step][0]
     log = LOGS / f"killswitch-{time.strftime('%Y%m%d-%H%M%S')}-{step}.log"
     env = dict(os.environ, LEYLINE_CONTROL_ID=log.stem, LEYLINE_CONTROL_NOTE="kill switch")
@@ -1398,7 +1558,9 @@ def gm_overview() -> dict:
             "discord": {"token": d["token"]["saved"], "preview": (d.get("preview") or {}).get("when", ""),
                         "check": (d.get("check") or {}).get("when", ""), "check_ok": (d.get("check") or {}).get("ok")},
             "bugs": bugs_overview(), "mods": mods_overview(), "quick": quick_overview(),
-            "actions": [{"step": k, "label": v} for k, v in GM_ACTIONS if k in STEPS and k not in OWNER_ONLY]}
+            "serverless": not server_on(),
+            "actions": [{"step": k, "label": v} for k, v in GM_ACTIONS
+                        if k in STEPS and k not in OWNER_ONLY and not retired(k)]}
 
 
 def write_last_check(sid: str, ok: bool) -> None:
@@ -1414,7 +1576,7 @@ def hq_sync_quiet() -> None:
     """After a run: tell Leyline HQ what changed (tools/hq/HQ sync.bat). Never fails the run; its output goes to
     logs/hq-sync-auto.log only."""
     bat = ROOT / STEPS["hq-sync"][0]
-    if not bat.exists() or os.name != "nt":
+    if retired("hq-sync") or not bat.exists() or os.name != "nt":   # serverless: HQ was on the server
         return
     try:
         LOGS.mkdir(exist_ok=True)
@@ -1429,8 +1591,40 @@ def hq_sync_quiet() -> None:
         emit("line", f"== Leyline HQ sync skipped: {type(e).__name__}")
 
 
+def github_health() -> dict:
+    """Serverless: the launcher release and the public repo's newest finished build, from GitHub's public API."""
+    res = {}
+    for name, url, kind in GH_CHECKS:
+        t0 = time.time()
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Leyline-Control",
+                                                       "Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                d = json.loads(r.read(2_000_000) or b"{}")
+            ms = int((time.time() - t0) * 1000)
+            if kind == "release":
+                n = len(d.get("assets") or []) if isinstance(d, dict) else 0
+                res[name] = {"ok": n > 0, "ms": ms, "code": f"{n} files"}
+            else:
+                runs = d.get("workflow_runs") or [] if isinstance(d, dict) else []
+                c = (runs[0].get("conclusion") or "?") if runs else "none"
+                res[name] = {"ok": c == "success", "ms": ms, "code": str(c)[:20]}
+        except urllib.error.HTTPError as e:
+            res[name] = {"ok": False, "ms": int((time.time() - t0) * 1000), "code": e.code}
+        except Exception as e:   # noqa: BLE001
+            res[name] = {"ok": False, "ms": None, "code": type(e).__name__}
+    return res
+
+
 def check_health() -> None:
     while True:
+        if not server_on():          # serverless: nothing polls the old server's names (docs/SERVERLESS.md)
+            res = github_health()
+            with lock:
+                state["health"], state["health_at"] = res, time.time()
+            emit("state", {})
+            time.sleep(HEALTH_EVERY["github"])
+            continue
         res = {}
         for name, url in CHECKS:
             t0 = time.time()
@@ -1566,7 +1760,8 @@ class H(http.server.BaseHTTPRequestHandler):
                                                "health": health, "health_at": at, "lines": lines,
                                                "autopilot": autopilot_on(), "confirm": confirm_on(),
                                                "audit": audit_state(), "answers": answers(),
-                                               "discord": discord_state(), "killswitch": ks_state_safe()}))
+                                               "discord": discord_state(), "killswitch": ks_state_safe(),
+                                               "serverless": not server_on()}))
         if path == "/api/gm":
             return self._send(200, json.dumps(gm_overview()))
         if path == "/audit":
@@ -1651,6 +1846,9 @@ class H(http.server.BaseHTTPRequestHandler):
             set_autopilot(confirm=bool(body.get("on")))
             emit("state", {})
             return self._send(200, json.dumps({"ok": True, "confirm": confirm_on()}))
+        gone = {"/api/check": "check", "/api/audit": "audit", "/api/open-hq": "hq-sync", "/api/gm-console": "gm"}
+        if self.path in gone and retired(gone[self.path]):     # serverless: these were the server's (hidden on the page)
+            return self._send(409, json.dumps({"error": retired_line(gone[self.path])}))
         if self.path == "/api/open-hq":
             webbrowser.open(HQ_URL)
             return self._send(200, '{"ok":true}')
@@ -1691,6 +1889,8 @@ class H(http.server.BaseHTTPRequestHandler):
                     return self._send(400, '{"error":"unknown step"}')
                 if step in OWNER_ONLY:
                     return self._send(400, '{"error":"that one runs only from the Discord panel, after you type YES"}')
+                if retired(step):
+                    return self._send(409, json.dumps({"error": retired_line(step)}))
                 item = {"id": step + "-" + time.strftime("%Y%m%d-%H%M%S"), "step": step, "title": STEPS[step][1],
                         "note": "", "known": True, "open": True}
                 if not start_run("", [item], False, STEPS[step][1]):
@@ -1713,6 +1913,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self._send(200, '{"ok":true}')
             return self._send(400, '{"error":"nothing to do"}')
         if self.path == "/api/open-game":
+            if not server_on():    # serverless: the public repo (its releases; the website builds from it)
+                webbrowser.open(f"https://github.com/{PUBLIC_REPO}")
+                return self._send(200, '{"ok":true}')
             webbrowser.open("https://leylinelauncher.com/wrath")   # the site's name now (the old one still answers)
             return self._send(200, '{"ok":true}')
         self._send(404, '{"error":"not found"}')
@@ -1988,12 +2191,12 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
 <header><div class="brand"><span class="mark" aria-hidden="true"></span><h1>Leyline Control</h1></div>
 <div class="health" id="health"></div>
 <div class="actions"><button id="auto" title="While this window is open, Claude's updates run on their own">Autopilot: …</button>
-<button id="audit" title="Checks every feature as a new player would (about 10 minutes, read-only), then opens the report">Release audit</button>
+<button id="audit" data-server="1" title="Checks every feature as a new player would (about 10 minutes, read-only), then opens the report">Release audit</button>
 <a id="areport" class="sub" href="#" target="_blank" hidden></a>
 <details class="more"><summary>More</summary><div class="menu">
-<button id="hq" title="Leyline HQ: status, what needs you, releases, notes (leylinelauncher.com/wrath/admin)">Open HQ</button>
-<button id="gmc" title="Opens the GM console (bug reports, players, health, logs) in your browser">GM console</button>
-<button id="game">Open the game</button><button id="check">Check server</button>
+<button id="hq" data-server="1" title="Leyline HQ: status, what needs you, releases, notes (leylinelauncher.com/wrath/admin)">Open HQ</button>
+<button id="gmc" data-server="1" title="Opens the GM console (bug reports, players, health, logs) in your browser">GM console</button>
+<button id="game">Open the game</button><button id="check" data-server="1">Check server</button>
 <button id="ask" title="On: deploys wait for Launch all; read-only checks still run by themselves">Ask before deploys: …</button>
 </div></details></div></header>
 <section class="youbox"><h2>Waiting on you</h2><p>Everything Claude needs from you shows up here, with its button. Nothing else to look for.</p><div id="you"></div></section>
@@ -2099,7 +2302,9 @@ const h=$("health");h.innerHTML=Object.entries(s.health||{}).map(([k,v])=>`<span
 const c=s.claude||{};youList(c.waiting_on_you,s.answers||{});
 list($("now"),c.now,"now",c.note||"Idle.");list($("fin"),c.done,"fin","Nothing yet.");
 $("cupd").textContent=c.updated?`Updated ${c.updated}`:"";
-list($("pending"),(s.pending||[]).map(p=>({tag:p.step,text:p.title,detail:p.note})),"","Nothing to launch. You're up to date.");
+document.querySelectorAll("[data-server]").forEach(b=>{b.hidden=!!s.serverless});
+$("game").textContent=s.serverless?"Open the public repo":"Open the game";
+list($("pending"),(s.pending||[]).map(p=>p.retired?{tag:p.step+" (retired)",text:p.title,detail:"Will be skipped: "+p.retired+" (docs\\SERVERLESS.md)"}:{tag:p.step,text:p.title,detail:p.note}),"","Nothing to launch. You're up to date.");
 const a=$("auto");a.textContent=s.autopilot?"Autopilot: ON":"Autopilot: OFF";a.className=s.autopilot?"primary":"";a.dataset.on=s.autopilot?"1":"";
 const q=$("ask");q.textContent=s.confirm?"Ask before deploys: ON":"Ask before deploys: OFF";q.dataset.on=s.confirm?"1":"";
 $("go").disabled=!!s.running||!(s.pending||[]).length;$("stop").hidden=!s.running||s.running.step==="restarting";$("audit").disabled=!!s.running;
@@ -2113,15 +2318,16 @@ let gmAt=0,gmBusy=false;
 async function gmPanel(force){if(!force&&Date.now()-gmAt<20000)return;gmAt=Date.now();
 const r=await fetch("/api/gm",{headers:H});if(!r.ok)return;const g=await r.json();
 const hs=Object.entries(g.server.health||{}),up=hs.filter(([,v])=>v.ok).length,lc=g.server.last_check;
-let h=`<div class="item"><span class="tag">server</span><div>${hs.length?`${up} of ${hs.length} answering`:"checking…"}${lc?` · last check ${esc(lc.at)}: ${lc.ok?"ok":"failed"}`:""}</div></div>`;
-const b=g.bridge;h+=`<div class="item"><span class="tag">bridge</span><div>${b.seen?`wu-discord: ${esc(b.state||"?")}, ${esc(b.enabled||"?")} · seen ${esc(b.at)}`:"Not in the last server check yet: press Check server."}${b.lines.length?`<div class="sub">${b.lines.map(esc).join("<br>")}</div>`:""}</div></div>`;
+let h;if(g.serverless){h=`<div class="item"><span class="tag">server</span><div>None since 26 Nov: the website is GitHub Pages, downloads are GitHub releases. The server's steps are retired (docs\\SERVERLESS.md).${hs.length?`<div class="sub">GitHub: ${up} of ${hs.length} fine</div>`:""}</div></div>`}else{
+h=`<div class="item"><span class="tag">server</span><div>${hs.length?`${up} of ${hs.length} answering`:"checking…"}${lc?` · last check ${esc(lc.at)}: ${lc.ok?"ok":"failed"}`:""}</div></div>`;
+const b=g.bridge;h+=`<div class="item"><span class="tag">bridge</span><div>${b.seen?`wu-discord: ${esc(b.state||"?")}, ${esc(b.enabled||"?")} · seen ${esc(b.at)}`:"Not in the last server check yet: press Check server."}${b.lines.length?`<div class="sub">${b.lines.map(esc).join("<br>")}</div>`:""}</div></div>`}
 const d=g.discord;h+=`<div class="item"><span class="tag">bot</span><div>Token ${d.token?"saved":"not saved"}${d.check?` · bot settings ${esc(d.check)}${d.check_ok===false?" (stopped)":""}`:""}${d.preview?` · last preview ${esc(d.preview)}`:""}</div></div>`;
-const u=g.bugs;h+=`<div class="item"><span class="tag">bugs</span><div>${u.have?`${u.open} open · pulled ${esc(u.at)}`:"No bug list on this PC yet: press Pull bug reports."}${u.items.length?`<ul class="gml">${u.items.map(i=>`<li><b>${esc(i.status)}</b> ${esc(i.title)} <span class="sub">x${i.count} · ${esc(i.sources.join(", "))} · ${esc(i.last)}</span></li>`).join("")}</ul>`:""}</div></div>`;
+const u=g.bugs;h+=`<div class="item"><span class="tag">bugs</span><div>${u.have?`${u.open} open · pulled ${esc(u.at)}${g.serverless?" (the last pull before the shutdown)":""}`:g.serverless?"No bug list on this PC (the reports were on the server).":"No bug list on this PC yet: press Pull bug reports."}${u.items.length?`<ul class="gml">${u.items.map(i=>`<li><b>${esc(i.status)}</b> ${esc(i.title)} <span class="sub">x${i.count} · ${esc(i.sources.join(", "))} · ${esc(i.last)}</span></li>`).join("")}</ul>`:""}</div></div>`;
 const m=g.mods,names=m.addon_names.concat(m.look_names);h+=`<div class="item"><span class="tag">mods</span><div>${m.addons} addon(s) and ${m.looks} look(s) wait for your review (HQ, Mods)${names.length?`<div class="sub">${esc(names.join(", "))}</div>`:""}</div></div>`;
 if(g.quick.length)h+=`<div class="item"><span class="tag">quick</span><div>${g.quick.map(q=>`${esc(q.at)} ${esc(q.id)}, ${esc(q.deploy)}: ${q.ok?"done":"not done"}${q.why?` (${esc(q.why)})`:""}`).join("<br>")}</div></div>`;
 $("gmo").innerHTML=h;
 $("gmacts").innerHTML=g.actions.map(a=>`<button data-gmrun="${esc(a.step)}"${last&&last.running?" disabled":""}>${esc(a.label)}</button>`).join("")
-+'<button data-gm="console" title="The server GM console (bug reports, players, logs)">GM console</button><button data-gm="hq">Open HQ</button>'}
++(g.serverless?"":'<button data-gm="console" title="The server GM console (bug reports, players, logs)">GM console</button><button data-gm="hq">Open HQ</button>')}
 $("gmacts").addEventListener("click",e=>{const t=e.target.closest("button");if(!t||t.disabled)return;
 if(t.dataset.gmrun){$("con").innerHTML="";post("/api/do",{run:t.dataset.gmrun})}
 else if(t.dataset.gm==="console")$("gmc").click();else if(t.dataset.gm==="hq")$("hq").click()});

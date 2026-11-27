@@ -74,8 +74,13 @@ class Queue(unittest.TestCase):
         FakeProc.RESULTS, FakeProc.calls = {}, []
         ctl.state.pop("auto_failed", None)
         ctl.state["lines"] = []
+        # the queue's mechanics, tested with the server's steps (check, signin, audit) as they ran before 26 Nov: the
+        # server switch is on here; test_control_retired.py tests the same queue with it off (docs/SERVERLESS.md)
+        ctl.SERVER_DOC = self.t / "server.json"
+        os.environ["LEYLINE_SERVER"] = "1"
 
     def tearDown(self):
+        os.environ.pop("LEYLINE_SERVER", None)
         ctl.subprocess.Popen, ctl.hq_sync_quiet, ctl.discord_record = self._popen, self._hq, self._dr
 
     def pend(self, text):

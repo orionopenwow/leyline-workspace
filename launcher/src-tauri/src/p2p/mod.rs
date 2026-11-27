@@ -19,6 +19,10 @@
 //! * `friends`, `friendnet`: friends with no server: signed cards and friendships, sealed messages, the same network
 //!   or a relay's blind mailbox (docs/LEYLINE-FRIENDS.md).
 //!
+//! * `link`, `linknet`: launcher-to-launcher connections by key with no relay of ours: same network, direct, hole
+//!   punching, a mutual friend, community relays (docs/leyline/joining.md). The rules build everywhere; the network
+//!   side (`linknet`, iroh) only with the `link` feature on a desktop. On for friends with no site flag.
+//!
 //! See docs/P2P-AND-TORRENT.md.
 
 pub mod bencode;
@@ -27,6 +31,9 @@ pub mod direct;
 pub mod flags;
 pub mod friendnet;
 pub mod friends;
+pub mod link;
+#[cfg(all(feature = "link", desktop))]
+pub mod linknet;
 pub mod magnet;
 pub mod mesh;
 pub mod nat;

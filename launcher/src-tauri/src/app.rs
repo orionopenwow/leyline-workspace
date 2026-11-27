@@ -755,9 +755,18 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
         }
         let (lan, at) = crate::host::denways::ways_in(&link);
         let lan_kept = lan.clone().unwrap_or_default();
-        let (way, list, tried) = blocking(move || Ok(crate::host::denways::pick(lan.as_deref(), at.as_deref(), crate::host::denways::connects))).await?;
+        let (mut way, list, mut tried) = blocking(move || Ok(crate::host::denways::pick(lan.as_deref(), at.as_deref(), crate::host::denways::connects))).await?;
         let (relay2, rid2, secret2) = (relay.clone(), rid.clone(), secret.clone());
-        let (address, name) = if way == "relay" {
+        // from anywhere by the host's key (p2p/link.rs), before the relay: a forwarder on 127.0.0.1 here
+        let (l3, r3, s3) = (link.clone(), rid.clone(), secret.clone());
+        let by_key = if way == "relay" { blocking(move || Ok(crate::p2p::link::guest_join(&l3, &r3, &s3))).await? } else { None };
+        let (address, name) = if let Some(Ok((addr, _))) = &by_key {
+            way = "key";
+            (crate::host::denways::realmlist(&addr), if lasting { "Your friend's world".to_string() } else { "Your friend's Den".to_string() })
+        } else if way == "relay" {
+            if let Some(Err(e)) = &by_key {
+                tried.push(format!("From anywhere: {e}"));
+            }
             let tried_now = tried.clone();
             blocking(move || realms::knock(&format!("https://{relay2}"), &rid2, &secret2)).await.map_err(|e| {
                 let before = if tried_now.is_empty() { String::new() } else { format!("{} ", tried_now.join(" ")) };
@@ -2898,9 +2907,15 @@ fn world_invite_now(k: crate::host::engine::Kind) -> Result<DenInvite, String> {
     let link = litenet::invite_link(realms::RELAY, &mine, &secret, Some((&user, &pass)));
     let code = denhost::code_from_link(&link).unwrap_or_default();
     let link = wf::with_mark(&denways::with_ways(&link, lan.as_deref(), None));
+    // from anywhere by key, no relay of ours (p2p/link.rs): the link carries this PC's key, never an address
+    let key_way = match crate::p2p::link::offer_world(&mine, &secret, front, eng::WORLD_PORT) {
+        Ok(()) => InviteWay { id: "key", ok: true, line: "From anywhere: on (your friend's launcher reaches this PC by its key; nothing of ours in between).".into() },
+        Err(e) => InviteWay { id: "key", ok: false, line: format!("From anywhere: off ({e}).") },
+    };
+    let link = crate::p2p::link::with_my_key(&link);
     // the game's Leyline tab shows it to the host (ov_world_share)
     let _ = eng::sql(&p, "acore_characters", &format!("{} {}", wf::INGAME_TABLES, wf::share_sql(true, &link, now_secs())));
-    Ok(DenInvite { link, code, name: "your friend".into(), expires: now_secs() + wf::TICKET_DAYS * 86_400, tunnel, ways: vec![lan_way, own_way, relay_way] })
+    Ok(DenInvite { link, code, name: "your friend".into(), expires: now_secs() + wf::TICKET_DAYS * 86_400, tunnel, ways: vec![lan_way, key_way, own_way, relay_way] })
 }
 
 /// Sharing a world ends: the same-network way, and its tunnel when the tunnel is this world's; friends' lasting
@@ -2912,6 +2927,9 @@ fn world_share_off(k: crate::host::engine::Kind) {
     let mine = litenet::load_or_create_key(&litenet::key_path(&share)).and_then(|s| litenet::public_key(&s)).map(|p| litenet::realm_id(&p)).ok();
     if mine.as_ref().is_some_and(|m| &litenet::state().realm_id == m) {
         litenet::stop();
+    }
+    if let Some(m) = &mine {
+        crate::p2p::link::withdraw_world(m);
     }
     ws::lan_stop();
     wf::front_stop();
@@ -5263,6 +5281,8 @@ pub fn run() {
             crate::p2p::cmds::node_set,
             crate::p2p::cmds::node_check_network,
             crate::p2p::cmds::node_quit,
+            crate::p2p::cmds::link_state, // Settings › Network: friends from anywhere by key (p2p/link.rs)
+            crate::p2p::cmds::link_set,
             crate::p2p::cmds::p2p_flags,
             crate::p2p::cmds::p2p_set_flag,
             crate::p2p::cmds::p2p_set_limits,

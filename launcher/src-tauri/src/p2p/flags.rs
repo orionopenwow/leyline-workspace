@@ -5,6 +5,10 @@
 //!   through `stream/leyline_net.py: write_flags`), checked by its sha256 and cached for offline use;
 //! * this PC's own overrides (Settings > Advanced), in `<app data>/leyline-flags-local.json`.
 //!
+//! Not here: reaching friends by key (`link.rs`, Settings › Network, `<app data>/link.json`). There is no server to
+//! set a site flag, so that is on by default for friends and only this PC's own switches turn it off; Be a node's
+//! relay for other players is this PC's own opt-in too (decision of 27 Nov 2026, docs/UNSTOPPABLE.md section 3).
+//!
 //! A local override wins over the site, both ways: a player can turn a feature off that the site turned on,
 //! or try one early. A missing, broken or tampered site file counts as "all off". The format is in
 //! `docs/P2P-AND-TORRENT.md`.

@@ -24,6 +24,8 @@ use std::path::{Path, PathBuf};
 /// The key file's name, in the app data folder.
 pub const KEY_FILE: &str = "peer.key";
 pub const CTX_JOIN: &str = "leyline-join-v1";
+/// The root's word that a device key is its own (provisional; the Passport's device record replaces it).
+pub const CTX_DEVICE: &str = "leyline-device-v1";
 const SEAL_INFO: &[u8] = b"leyline-friends-seal-v1";
 /// How long a join challenge is good for.
 pub const JOIN_TTL: u64 = 120;
@@ -162,6 +164,45 @@ impl PeerIdentity {
         hex(&self.sign(format!("{context}\n{}", canonical(doc)).as_bytes()))
     }
 
+    /// The same identity again (the connection side keeps its own copy: p2p/linknet.rs).
+    pub fn duplicate(&self) -> PeerIdentity {
+        PeerIdentity { peer_id: self.peer_id.clone(), public_key: self.public_key, seed: self.seed }
+    }
+
+    /// This PC's device seed: the connection key (p2p/linknet.rs) is a device key, never the root, so the DHT packet
+    /// published under the connection key can't collide with records under the root key. Until the Passport's own
+    /// device records land, it is derived from the root seed (HKDF-SHA256, info "leyline device v1"); this is the
+    /// one place to change. Crate only; never logged or sent.
+    pub(crate) fn device_seed(&self) -> [u8; 32] {
+        struct L;
+        impl ring::hkdf::KeyType for L {
+            fn len(&self) -> usize {
+                32
+            }
+        }
+        let mut out = [0u8; 32];
+        ring::hkdf::Salt::new(ring::hkdf::HKDF_SHA256, &[])
+            .extract(&self.seed)
+            .expand(&[b"leyline device v1"], L)
+            .and_then(|o| o.fill(&mut out))
+            .expect("32 bytes from HKDF");
+        out
+    }
+
+    /// The device key's public half.
+    pub fn device_public(&self) -> [u8; 32] {
+        use ring::signature::KeyPair;
+        let kp = ring::signature::Ed25519KeyPair::from_seed_unchecked(&self.device_seed()).expect("a seed");
+        kp.public_key().as_ref().try_into().expect("32 bytes")
+    }
+
+    /// The root's signed word that the device key is this identity's ([`CTX_DEVICE`]); provisional until the
+    /// Passport's device records.
+    pub fn device_cert(&self) -> Value {
+        let doc = json!({"v": 1, "root": self.public_hex(), "device": hex(&self.device_public())});
+        json!({"doc": doc, "sig": self.sign_doc(CTX_DEVICE, &doc)})
+    }
+
     /// This identity's X25519 secret (from the Ed25519 seed: sha512, the first half; clamped when used).
     fn x_secret(&self) -> [u8; 32] {
         let d = ring::digest::digest(&ring::digest::SHA512, &self.seed);
@@ -174,6 +215,17 @@ impl PeerIdentity {
     pub fn open(&self, sealed: &[u8]) -> Result<Vec<u8>, String> {
         open_with(&self.x_secret(), &ed_to_x_public(&self.public_key).ok_or("bad key")?, sealed)
     }
+}
+
+/// A device cert's (root key, device key), when the root's signature holds.
+pub fn check_device_cert(cert: &Value) -> Option<([u8; 32], [u8; 32])> {
+    let d = &cert["doc"];
+    if d["v"].as_u64() != Some(1) {
+        return None;
+    }
+    let (root, dev) = (d["root"].as_str()?, d["device"].as_str()?);
+    let out = (unhex32(root)?, unhex32(dev)?);
+    verify_doc(root, d, CTX_DEVICE, cert["sig"].as_str()?).then_some(out)
 }
 
 /// `<app>/peer.key`.

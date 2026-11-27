@@ -1,6 +1,7 @@
 # Unstoppable Leyline: the plan after the server
 
-**Status (2026-11-27):** a plan. Nothing in phases 1 to 7 is built yet; section 1 lists what is. Written from the
+**Status (2026-11-27):** a plan. Phase 2's connections are built and tested on one PC (section 3); nothing else in
+phases 1 to 7 is built yet. Section 1 lists what is. Written from the
 owner's grand plan of 27 Nov 2026, the day after the only server (Hetzner) was shut down ([SERVERLESS.md](SERVERLESS.md),
 [STATIC-SITE.md](STATIC-SITE.md)). Player pages: `docs/leyline/way-forward.md`, `passport.md`, `joining.md`,
 `characters.md`, `guide-play-with-friends.md`.
@@ -26,7 +27,8 @@ a status line at the top, and never name the game, its maker or a client version
 | Mesh record format (`leyline-mesh-*-v1`), merge rules, blocks | `p2p/mesh.rs`, [LEYLINE-MESH.md](LEYLINE-MESH.md), [COMMONHOLD-V1.md](COMMONHOLD-V1.md) | built, off |
 | Signed release log and file sharing over BitTorrent | `p2p/share.rs`, `p2p/torrent.rs`, [P2P-AND-TORRENT.md](P2P-AND-TORRENT.md) | built, off |
 | Be a node | `p2p/node.rs`, `host/network.rs`, [BE-A-NODE.md](BE-A-NODE.md) | built, off |
-| NAT type check (classifies only; no hole punching) | `p2p/nat.rs` | built |
+| NAT type check (classifies only) | `p2p/nat.rs` | built |
+| Connections by key: same network, direct, hole punching (with a helper), a mutual friend, community relays; sealed messages kept by a shared friend | `p2p/link.rs` (rules), `p2p/linknet.rs` (iroh, feature `link` in `app`) | on for friends; tested in one process only (section 3) |
 
 Everything below is to build.
 
@@ -69,6 +71,39 @@ Order of attempts, first that works wins:
 
 Friend requests and messages go direct, or wait sealed with a shared friend or in a community relay's blind mailbox
 (today's `mailbox.py` design, run by anyone).
+
+### What is built (27 Nov 2026)
+
+- **Transport:** iroh 1.5 (MIT OR Apache-2.0; parts derived from tailscale under BSD-3), `presets::Minimal`: no
+  relays or DNS of iroh's maker. Relays (hole-punch helpers) come only from signed relay cards or Settings ›
+  Network; address lookup from friends' sealed presence, the LAN beacon, invite links and the Mainline DHT
+  (`iroh-mainline-address-lookup`, which publishes only the helper URL, never addresses). `link::Lookup` is the
+  boundary for the DHT records of `p2p/dht.rs` (`link::dht_lookup`, a stub until that lands).
+- **Keys:** the QUIC key is a **device key** (`identity.rs` `device_seed`: HKDF of the root seed, "leyline device
+  v1", until the Passport's device records replace it in that one function). Every stream starts with both sides'
+  device certs (`leyline-device-v1`, signed by the root key), so the peer key and peer id are unchanged and a wrong
+  device key from any hint is refused.
+- **Go-betweens:** a mutual friend (Settings › Network › Help friends connect: on by default, 1 GB a day, 4 at once)
+  or a community relay (Be a node plus "Carry sealed connections for other players", within Be a node's caps).
+  A second seal end to end (`leyline-link-seal-v1`: X25519 with both peer keys signing the transcript, then
+  ChaCha20-Poly1305 frames) means the go-between sees only sealed bytes and can't stand in for either side.
+- **Relay card:** a `leyline-mesh-node-v1` record with host `<peer id>.link.invalid` and a `link` part; passed to
+  friends in presence. Not yet on the DHT or the mesh sources.
+- **Wired in:** Invite a friend (single player, the original world) puts `~~key=` and `~~dev=` in the link and
+  offers the world's two ports behind a knock from the invite's secret; Join tries the key after the same network
+  and the host's own address, before the old relay, with a forwarder on 127.0.0.1 and the realm list rewrite
+  (`AuthRewriter`). Friend requests, presence and messages try the key after the same network and a shared direct
+  address; other messages wait with a shared friend (sealed, 7 days, 32 per person, 64 per sender, 256 in all).
+- **Flags:** none from the site. On for friends by default; Settings › Network turns parts off. Port mapping is off
+  until the player turns it on.
+- **Tested** (`cargo test --features link p2p::link`): the order of ways, caps and refusals, the seal (including
+  a go-between standing in), two launchers by key, three with a friend passing 100 KB both ways, a community relay,
+  a held message delivered when the friend is back, a guest game reaching a world through 127.0.0.1 with the realm
+  list rewritten, a device key that isn't the friend's refused. All on 127.0.0.1 in one process.
+- **Not tested:** two PCs on different home networks (the phase 2 gate, for the owner), hole punching (needs a
+  helper relay server; none is run by Leyline and none is in the tests), port mapping, the DHT lookup, IPv6, the
+  Settings › Network page, Leyline Solo (first-era) invites (not wired), Den invites (still the old relay or the
+  host's own address).
 
 Invite links carry the host's Passport key and world id, never an address, and open the launcher on Join
 (`leyline://join?...`).
@@ -149,7 +184,7 @@ The names of the new contexts are fixed when each phase starts; each gets test v
 
 | Decision | Options | Notes |
 |---|---|---|
-| Hole punching | iroh (Rust, QUIC, its own relays as fallback) vs our own on `p2p/nat.rs` | iroh is proven but brings its relay design; our own is smaller and fits the forwarder |
+| Hole punching | decided 27 Nov 2026: iroh, configured with no relays of its maker | Helpers are community-run `iroh-relay` servers named in signed relay cards; who runs the first ones is open |
 | Passport naming | "Passport" or another word | Player-facing; also the record names |
 | Hero Key retirement | one-time import window, then read-only, then gone | Date to set |
 | Guardians | default count; asked at first run or later | 2 of N fixed |

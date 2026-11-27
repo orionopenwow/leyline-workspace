@@ -22,6 +22,8 @@
     // Help › Found a bug?: the launcher's public repo's issues (the core's LINKS "issues")
     ISSUES: "https://github.com/orionopenwow/Leyline/issues",
   };
+  // with the switch on (the tests of the dormant code), the lite-only parts are taken out, so the page is as it was
+  if (on) document.addEventListener("DOMContentLoaded", () => document.querySelectorAll("[data-lite]").forEach((e) => e.remove()));
   if (!on) {
     document.documentElement.classList.add("lite");
     // the words that named what is gone, in the few inputs that had them (data-lite-placeholder)

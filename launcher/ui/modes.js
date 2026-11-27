@@ -86,7 +86,7 @@
   page.innerHTML = `
     <div class="panel wide md">
       <h2>Modes</h2>
-      <p class="lede">Duels and Boss Rush. PLAY signs you in and starts the game once your character is in the world.</p>
+      <p class="lede">${(window.LeylineLite && window.LeylineLite.lite) ? "Other ways to play. Boss Rush runs on this PC: pick a fight and go." : "Duels and Boss Rush. PLAY signs you in and starts the game once your character is in the world."}</p>
       <div class="toolbar">
         <label class="inline">Play with <select class="client-pick" data-for="modes"></select></label>
         <span class="md-how" id="md-how"></span>

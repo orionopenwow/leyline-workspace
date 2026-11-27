@@ -180,7 +180,7 @@ test('Single player is a top-level choice: the side menu (sword mark), Home and 
   await page.evaluate(() => window.LeylineNav.show('play'));
   await page.click('#pb-realm-btn');
   const rows = await page.$$eval('#pb-rmenu > li.pb-opt', (l) => l.map((x) => x.querySelector('.pb-opt-name').textContent));
-  assert.equal(rows[rows.indexOf('Your Den') + 1], 'Single player');
+  assert.equal(rows[0], 'Single player', 'lite (lite.js): Single player first in the realm picker');
   assert.equal(await page.textContent('#pb-rmenu .pb-solo .pb-opt-sub'), 'Set it up once');
   assert.equal(await page.getAttribute('#pb-rmenu .pb-solo', 'title'), TITLE);
   assert.ok(await page.$('#pb-rmenu .pb-solo .pb-solo-ic svg'));

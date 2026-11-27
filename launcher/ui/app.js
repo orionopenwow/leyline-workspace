@@ -122,7 +122,9 @@ const ALIASES = { mymods: ["mods", "installed"], installed: ["mods", "installed"
   community: ["forum", ""], friends: ["forum", ""], hub: ["forum", ""], chat: ["forum", ""] };
 // lite (no server): the pages that needed it land on what replaced them (a remembered page, a button, a link)
 const LITE_GONE = { forum: ["community", ""], community: ["community", ""], friends: ["community", ""], hub: ["community", ""],
-  chat: ["community", ""], account: ["play", ""], host: ["play", ""], dens: ["mods", "discover"] };
+  chat: ["community", ""], account: ["play", ""], dens: ["mods", "discover"] };
+// (the Host page has no menu item or Home banner in lite, but stays reachable for this PC's own Docker worlds: Single
+// player and the original world away from Windows open it to manage them)
 const loaders = { "mods:discover": () => loadCatalog(), "mods:installed": () => loadInstalled(),
   "mods:gamemodes": () => window.LeylineGameMods && window.LeylineGameMods.showSection(),
   "mods:dens": () => window.LeylineDenMarket && window.LeylineDenMarket.load(), realms: () => loadRealms(), host: () => loadHost(),
@@ -1699,7 +1701,7 @@ function renderRealmMenu() {
     run: () => show("host") }));
   // and the community realms you played on: the one picked now (or saved), then the ones before it
   const saved = !isOfficial() ? here : (state.settings.selected_realm && !isOfficialAddr(state.settings.selected_realm) ? state.settings.selected_realm : "");
-  for (const addr of [...new Set([saved, ...joinedRealms()].filter(Boolean))]) {
+  for (const addr of [...new Set([saved, ...joinedRealms()].filter((a) => a && a !== WORLD_ADDR))]) {   // this PC's worlds have their rows
     const r = realmAt(addr);
     const L = localAt(addr);
     if (L) { if (L !== DEN && L !== LOCAL.solo && L !== hostedLocal) mine.push(localRow(L)); }
@@ -4263,6 +4265,7 @@ refresh().then(() => {
     const ev = window.__TAURI__ && window.__TAURI__.event;
     if (ev && ev.listen) ev.listen("deep-link", () => { handleDeepLink(); });
   } catch (_) { /* no events: links still come at start */ }
+  readKit();   // the realm picker's My Den: hosted on this PC or not (this PC only, no network)
   setupDrop();
   let page = "play";
   try { page = localStorage.getItem("leyline.page") || "play"; } catch (_) { /* fine */ }
@@ -4274,7 +4277,6 @@ refresh().then(() => {
     handleDeepLink();   // a friend's invite or a realm link doesn't wait for the mods list
     loadUpdateState();
     loadNews();
-    readKit();   // the realm picker's My Den: hosted on this PC or not
   }, LITE ? 50 : 0);
 }).catch((e) => {
   document.body.prepend(el("p", "status bad", oops(e, "Leyline couldn't start. Close it and open it again, or ask on the Discord.")));

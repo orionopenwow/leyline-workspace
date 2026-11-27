@@ -17,13 +17,16 @@ const { chromium } = require('playwright');
 
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const SHOTS = process.env.LITE_SHOTS || '';
+// the built-in modes (what the core lists when the static site's modes.json is empty: modes.rs builtin)
+const MODES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'playmodes.json'), 'utf8')).modes
+  .map((m) => { const c = Object.assign({}, m); delete c.listed; return c; });
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 
 // what only the old server answered: never called in the lite app
 const SERVER_CMDS = ['social_status', 'social_call', 'social_key_found', 'forum_call', 'forum_post', 'forum_open', 'bug_report', 'play_realm_herokey',
   'open_browser_play', 'back_to_official', 'dens_browse', 'dens_post', 'dens_share', 'listing_post', 'listing_mine', 'boards_get', 'friends_mailbox'];
 
-const FAKE = (o) => {
+const FAKE = (o, MODES) => {
   const calls = (window.__calls = []);
   window.__t0 = performance.now();
   try {
@@ -61,7 +64,9 @@ const FAKE = (o) => {
       case 'launcher_update_state': return o.update || { mode: 'auto', checking: false, downloading: false, ready: null, info: { current: '0.4.0', latest: '0.4.0' }, checked_at: 1 };
       case 'host_info': return { dir: null, is_kit: false, problems: [], seeds: [], realm: null };
       case 'host_progress': case 'engine_progress': return { idle: true, kind: 'engine', running: false, code: null };
-      case 'modes_list': return { modes: [], from_cache: false, builtin: true, saved_at: null, error: null };
+      case 'modes_list': return { modes: MODES, from_cache: false, builtin: true, saved_at: null, error: null };
+      case 'den_state': return { lite: { available: true, can_get: false, running: false, address: '127.0.0.1', account: 'DEN', den_dir: '/den' },
+        kit: false, docker_den: false, other_realm: null, account: '', saves: 'lite', dens: [{ name: 'garden', saved: 1 }], packs: [] };
       case 'news_list': return { items: [{ tag: 'LEYLINE', title: 'Leyline, lighter', date: '2026-11-26', items: ['The launcher, without a server of its own.'] }], from_cache: false };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
       case 'world_status': return world(args.kind);
@@ -92,7 +97,7 @@ async function open(o = {}) {
   // nothing leaves this page: the site's pictures stand in, every other request is refused and kept
   const net = [];
   await page.route(/^https?:\/\//, (r) => { net.push(r.request().url()); return r.abort(); });
-  await page.addInitScript(FAKE, o);
+  await page.addInitScript(`(${FAKE.toString()})(${JSON.stringify(o)}, ${JSON.stringify(MODES)})`);
   await page.goto(INDEX);
   await page.waitForFunction(() => window.LeylineNav && document.querySelector('.page.on'));
   return { page, ctx, errors, net };
@@ -164,8 +169,6 @@ test('the pages that needed the server land elsewhere; Community has the Discord
   assert.deepEqual(await page.$$eval('.page.on', (p) => p.map((x) => x.id)), ['page-community'], 'a remembered Forum opens Community');
   await page.evaluate(() => window.LeylineNav.show('account'));
   assert.deepEqual(await page.$$eval('.page.on', (p) => p.map((x) => x.id)), ['page-play']);
-  await page.evaluate(() => window.LeylineNav.show('host'));
-  assert.deepEqual(await page.$$eval('.page.on', (p) => p.map((x) => x.id)), ['page-play']);
   await page.click('.nav[data-page="community"]');
   await page.click('#cm-discord');
   assert.deepEqual(await page.evaluate(() => window.__opened), ['discord']);
@@ -219,6 +222,48 @@ test('Single player: plays without asking to log in', async () => {
   assert.doesNotMatch(text, BRAND);
   assert.doesNotMatch(text, /hero key|log in to|sign in|wrath unleashed|official realm|relay/i);
   await shot(page, 'single');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Modes: Boss Rush on this PC, no Duels and no boards; the tour and the i bubbles say what is here', async () => {
+  const { page, ctx, errors } = await open();
+  await page.click('.nav[data-page="modes"]');
+  await page.waitForSelector('#md-list .md-card');
+  const ids = await page.$$eval('#md-list .md-card', (c) => c.map((x) => x.dataset.mode));
+  assert.deepEqual(ids, ['frozen-throne'], 'Duels ran on the official realm');
+  assert.equal(await page.isVisible('#md-boards'), false);
+  await page.click('#md-list .md-card[data-mode="frozen-throne"] .btn.primary');
+  assert.deepEqual(await page.$$eval('.page.on', (p) => p.map((x) => x.id)), ['page-bossrush'], 'a fight on this PC');
+  assert.equal(await page.isVisible('#br-boards'), false);
+  await page.evaluate(() => window.LeylineNav.show('modes'));
+  const text = await visibleText(page);
+  assert.doesNotMatch(text, BRAND);
+  assert.doesNotMatch(text, /duel|leaderboard|official realm|log in/i);
+  await shot(page, 'modes');
+  // the tour: no official realm or Host step; the realms instead
+  const tour = await page.evaluate(() => window.LeylineGuide.TOUR.map((t) => t.key));
+  assert.ok(!tour.includes('play') && !tour.includes('host') && tour.includes('realms'), String(tour));
+  // the i bubble on Realms
+  await page.evaluate(() => window.LeylineNav.show('realms'));
+  await page.click('#ll-info');
+  await page.waitForSelector('#ll-info-b:not([hidden])');
+  assert.match(await page.textContent('#ll-info-b'), /other servers/i);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Your Den: a copy to send a friend, no Workshop or shared Dens; Characters: this PC only', async () => {
+  const { page, ctx, errors } = await open();
+  await page.evaluate(() => window.LeylineNav.show('den'));
+  await page.waitForSelector('#yd .yd-tile');
+  const tiles = await page.$$eval('#yd .yd-tile h3', (h) => h.map((x) => x.textContent));
+  assert.ok(!tiles.includes('Share on the Workshop') && tiles.includes('Share a Den'), String(tiles));
+  const text = await visibleText(page);
+  assert.doesNotMatch(text, /workshop|relay|hero key|log in/i);
+  await page.evaluate(() => window.LeylineNav.show('characters'));
+  await page.waitForSelector('#ch-tab-local');
+  assert.equal(await page.locator('#ch-tab-online').count(), 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

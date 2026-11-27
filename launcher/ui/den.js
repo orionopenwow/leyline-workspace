@@ -945,7 +945,7 @@
     const addRow = mk("div", "yd-row");
     addRow.append(btn("Add a Den file", "btn small", () => fileIn.click()), fileIn);
     sd.append(addRow, fromLink(), fromCode());
-    grid.append(tile("Saved Dens", "Open one to step into it. Add a file a friend sent, a Den code, or a link from the Workshop.", sd, "wide"));
+    grid.append(tile("Saved Dens", (window.LeylineLite && window.LeylineLite.lite) ? "Open one to step into it. Add a file a friend sent, or a Den code." : "Open one to step into it. Add a file a friend sent, a Den code, or a link from the Workshop.", sd, "wide"));
     if (where() === "lite") grid.append(islandTile());
     // Packs
     const pk = mk("div", "");

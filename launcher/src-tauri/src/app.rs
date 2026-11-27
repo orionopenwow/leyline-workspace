@@ -1258,7 +1258,7 @@ fn host_ready_now(kind: &str, kit: Option<PathBuf>) -> crate::host::ready::Ready
         }
     }
     f.sleep_min = ready::sleep_now();
-    ready::judge(&f)
+    ready::same_network_only(ready::judge(&f))
 }
 
 /// The friend's side, after Join: does the host's world answer at the address Join used? Ok(ms), or why not (a world

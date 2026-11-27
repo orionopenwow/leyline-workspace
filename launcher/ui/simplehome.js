@@ -238,9 +238,11 @@
     // Host
     const hostGo = btn("Invite a friend", "btn", host, "sh-host-go");
     hostGo.disabled = !!S.busy;
+    const lite = !!(window.LeylineLite && window.LeylineLite.lite);   // lite.js: no Host page, no relay
     const hostMore = btn("Host settings", "link", () => nav("host"), "sh-host-more");
+    if (lite) hostMore.hidden = true;
     const hostState = metaLine(running ? `${w ? w.title : "Your world"} is running: friends can join as soon as you invite them.`
-      : "Friends join with your invite. No ports to open: they come in through the relay.", "sh-host-state");
+      : lite ? "Friends on the same network join with your invite." : "Friends join with your invite. No ports to open: they come in through the relay.", "sh-host-state");
 
     // Visit
     const code = btn("I have a link or code", "btn", visitCode, "sh-visit-code");

@@ -1,5 +1,7 @@
 # Moving Leyline to leylinelauncher.com
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): the names below pointed at the server, which is gone. The `domain-*` steps are retired. Where `leylinelauncher.com` points now (GitHub Pages) is the owner's DNS call.
+
 Owner, 1 Nov 2026: the domain was bought at 16:11 (registrar and DNS: Squarespace Domains).
 
 Status, 2 Nov: the site runs on `leylinelauncher.com`, with `play.`, `relay.` and `www.`; the old names answer only as

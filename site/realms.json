@@ -1,0 +1,5 @@
+{
+  "format": 1,
+  "about": "The servers Leyline lists (the static site's /wrath/realms.json and its Realms page). Curated by hand: each entry is a server its owner approved for the list. How to add one: site/README.md. Built by tools/site-static/build.py.",
+  "realms": []
+}

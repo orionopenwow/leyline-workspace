@@ -1,0 +1,5 @@
+{
+  "format": 1,
+  "about": "The launcher's News page and the site's News page (/wrath/leyline/news.json). Newest first, at most 20 posts. How to add one: site/README.md.",
+  "posts": []
+}

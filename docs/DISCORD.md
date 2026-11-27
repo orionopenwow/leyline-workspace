@@ -1,5 +1,7 @@
 # The Leyline Discord: the bot and its setup
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): the game chat bridge (`/opt/wu-discord`) and the website's bot ran on the server and are gone (`discord-bridge` is retired). Control's Discord card talks to Discord's API directly and still works.
+
 **At launch (3 Nov)** the server uses the 13-channel launch layout in [DISCORD-PLAN.md](DISCORD-PLAN.md), built by Leyline Control's Discord card (tools/discord-leyline); the website bot follows it with `WU_DISCORD_TEMPLATE=/app/discord_template_launch.json`. Its pinned posts are [discord-launch-posts.md](discord-launch-posts.md). The invite is https://discord.gg/RfChVr8J7T.
 
 The bigger layout for later (1 Nov: Wrath Unleashed, Your Den, Host a server, Mods & Workshop, Claude & the companion, Feedback

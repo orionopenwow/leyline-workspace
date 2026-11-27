@@ -141,6 +141,9 @@ pub const LINKS: &[(&str, &str)] = &[
     ("bugs", crate::site!("/wrath/bugs")), // the website's Report a bug form (signed out: Help › Report a bug)
     ("forumnew", crate::site!("/wrath/leyline/forum/new")),
     ("github", "https://github.com/orionopenwow/Leyline"),
+    // Help › Found a bug? (no server of ours: the launcher's public repo's issues; ui/bugreport.js Copy debug info)
+    ("issues", "https://github.com/orionopenwow/Leyline/issues"),
+    // TODO(owner): Leyline's Reddit address for the Community card (ui/lite.js REDDIT); until then the card shows the Discord only
     // Melty (ui/home.js meltyPane, owner 2 Nov 23:28-23:29): their site and its download page
     ("melty", "https://melty.gg"),
     ("meltydl", "https://melty.gg/download"),

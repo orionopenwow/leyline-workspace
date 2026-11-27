@@ -276,6 +276,10 @@ pub fn official() -> Realm {
 /// TODO(owner): the sibling 1.12 realm is not in the relay's listing and its desktop address is not
 /// written down anywhere in this repo; when it is, add it here (build 1.12.1, its core and its address).
 pub fn officials() -> Vec<Realm> {
+    // none with the server off (addresses.rs SERVER_FEATURES): Leyline runs no realm of its own any more
+    if !crate::addresses::SERVER_FEATURES {
+        return vec![];
+    }
     vec![official()]
 }
 
@@ -486,7 +490,82 @@ pub fn fetch_all(app_dir: &Path) -> RealmList {
         let _ = crate::settings::write_atomic(&cache_path(app_dir), doc.to_string().as_bytes());
         return list_of(&doc, false, Some(crate::p2p::mesh::now_secs()), None);
     }
+    if !crate::addresses::SERVER_FEATURES {
+        // the static website's list of other servers only (the relay is gone): see `aggregate`
+        let mut l = aggregate(fetch_all_within(NETWORK_URL, app_dir, net::REALMS_BUDGET));
+        reachable(&mut l.realms, Duration::from_millis(1500));
+        l.network = totals(&l.realms);
+        return l;
+    }
     fetch_network(&[NETWORK_URL, URL], app_dir)
+}
+
+/// With `SERVER_FEATURES` off (addresses.rs) Leyline is a launcher aggregator: no official realm of ours, and no realm
+/// reached through the relay (a community realm hosted through it, its invite link, its status file). What stays is a
+/// list of other servers, each played straight at its own realmlist.
+pub fn keep_realm(r: &Realm) -> bool {
+    use crate::addresses::dead_host;
+    if crate::addresses::SERVER_FEATURES {
+        return true;
+    }
+    let host = |a: &str| a.rsplit_once(':').filter(|(_, p)| p.parse::<u16>().is_ok()).map(|(h, _)| h.to_string()).unwrap_or_else(|| a.to_string());
+    !r.official
+        && !r.relay.as_deref().is_some_and(dead_host)
+        && !r.address.as_deref().is_some_and(|a| dead_host(&host(a)) || crate::addresses::is_official_realm(a))
+        && r.address.as_deref().is_some_and(|a| !a.trim().is_empty())
+}
+
+/// Each listed server checked from this PC (no server of ours watches them any more): its login port answering within
+/// `t` is "live", else "offline"; no player counts. At most 64 at once, all within about `t`.
+pub fn reachable(realms: &mut [Realm], t: Duration) {
+    let addrs: Vec<Option<String>> = realms.iter().map(|r| r.address.clone()).collect();
+    let mut states = vec![false; realms.len()];
+    for (chunk_i, chunk) in addrs.chunks(64).enumerate() {
+        let hs: Vec<_> = chunk
+            .iter()
+            .map(|a| {
+                let a = a.clone();
+                std::thread::spawn(move || a.is_some_and(|a| {
+                    let (h, p) = crate::status::host_port(&a);
+                    crate::status::ping(&h, p, t).is_some()
+                }))
+            })
+            .collect();
+        for (i, h) in hs.into_iter().enumerate() {
+            states[chunk_i * 64 + i] = h.join().unwrap_or(false);
+        }
+    }
+    for (r, up) in realms.iter_mut().zip(states) {
+        r.state = if up { "live" } else { "offline" }.into();
+        r.players = None;
+        r.bots = None;
+    }
+    order_kept(realms);
+}
+
+fn order_kept(realms: &mut [Realm]) {
+    let mut v = realms.to_vec();
+    order(&mut v);
+    realms.clone_from_slice(&v);
+}
+
+/// `list` without what `keep_realm` leaves out, counted again; links to the dead hosts dropped from what stays.
+pub fn aggregate(mut list: RealmList) -> RealmList {
+    if crate::addresses::SERVER_FEATURES {
+        return list;
+    }
+    list.realms.retain(keep_realm);
+    for r in list.realms.iter_mut() {
+        if r.join_url.as_deref().is_some_and(crate::addresses::off) {
+            r.join_url = None;
+        }
+        if r.status_url.as_deref().is_some_and(crate::addresses::off) {
+            r.status_url = None;
+        }
+        r.report_url = None;   // a report went to the old server (/wrath/realms/report)
+    }
+    list.network = totals(&list.realms);
+    list
 }
 
 fn has_realms(v: &Value) -> Result<(), String> {
@@ -529,7 +608,7 @@ fn fetch_network_within(urls: &[&str], app_dir: &Path, budget: Duration) -> Real
 pub fn cached_list(app_dir: &Path) -> Option<RealmList> {
     let (doc, saved_at) = net::read_cache(&cache_path(app_dir))?;
     has_realms(&doc).ok()?;
-    Some(list_of(&doc, true, saved_at, None))
+    Some(aggregate(list_of(&doc, true, saved_at, None)))
 }
 
 /// The network listing's `sample` block names the official realm: the Sample Hangout's name (temporary) while it
@@ -595,6 +674,7 @@ pub fn cached(app_dir: &Path) -> Vec<Realm> {
         v.extend(parse_community(&doc));
     }
     order(&mut v);
+    v.retain(keep_realm);
     v
 }
 
@@ -758,6 +838,9 @@ mod tests {
 
     #[test]
     fn the_official_realm_comes_first_even_offline() {
+        if !crate::addresses::SERVER_FEATURES {
+            return;   // the official realm's place on the list: only with the server's features on
+        }
         let d = tempfile::tempdir().unwrap();
         let base = serve_routes(vec![("/api/listing/realms.json", "200 OK", LISTING.as_bytes().to_vec())]);
         let l = fetch_all_from(&format!("{base}/api/listing/realms.json"), d.path());
@@ -769,11 +852,15 @@ mod tests {
         let none = fetch_all_from(&dead_url(), empty.path());
         assert_eq!(none.realms.len(), 1);
         assert!(none.error.is_some());
-        assert_eq!(cached(d.path()).len(), 3);
+        // the kept list as the window gets it: without the official realm and the relay's realms when the server is off
+        assert_eq!(cached(d.path()).len(), if crate::addresses::SERVER_FEATURES { 3 } else { 0 });
     }
 
     #[test]
     fn a_hanging_site_gives_up_within_the_budget_and_shows_the_kept_list() {
+        if !crate::addresses::SERVER_FEATURES {
+            return;   // the official realm's place on the list: only with the server's features on
+        }
         let d = tempfile::tempdir().unwrap();
         let base = serve_routes(vec![("/api/listing/realms.json", "200 OK", LISTING.as_bytes().to_vec())]);
         let _ = fetch_all_from(&format!("{base}/api/listing/realms.json"), d.path());   // a kept copy
@@ -795,7 +882,11 @@ mod tests {
         assert!(t.elapsed() < Duration::from_millis(2600), "{:?}", t.elapsed());
         assert!(l.from_cache && l.realms.len() == 3, "the kept list");
         let c = cached_list(d.path()).unwrap();
-        assert!(c.from_cache && c.realms.len() == 3 && c.realms[0].official);
+        if crate::addresses::SERVER_FEATURES {
+            assert!(c.from_cache && c.realms.len() == 3 && c.realms[0].official);
+        } else {
+            assert!(c.from_cache && c.realms.is_empty(), "no official realm, nothing through the relay");
+        }
         assert!(cached_list(tempfile::tempdir().unwrap().path()).is_none(), "nothing kept yet");
     }
 
@@ -843,6 +934,9 @@ mod tests {
 
     #[test]
     fn network_fields_and_order() {
+        if !crate::addresses::SERVER_FEATURES {
+            return;   // the official realm's place on the list: only with the server's features on
+        }
         let v: Value = serde_json::from_str(NETWORK).unwrap();
         let mut r = officials();
         r.extend(parse_community(&v));
@@ -869,6 +963,9 @@ mod tests {
 
     #[test]
     fn the_network_listing_first_then_the_relay() {
+        if !crate::addresses::SERVER_FEATURES {
+            return;   // the official realm's place on the list: only with the server's features on
+        }
         let d = tempfile::tempdir().unwrap();
         let net_base = serve_routes(vec![("/wrath/realms.json", "200 OK", NETWORK.as_bytes().to_vec())]);
         let relay = serve_routes(vec![("/api/listing/realms.json", "200 OK", LISTING.as_bytes().to_vec())]);
@@ -902,11 +999,16 @@ mod tests {
         // both down: the cache, still in order
         let l = fetch_network(&[&dead_url(), &dead_url()], d.path());
         assert!(l.from_cache && l.realms[0].official);
-        assert_eq!(cached(d.path())[0].group, "official");
+        if crate::addresses::SERVER_FEATURES {
+            assert_eq!(cached(d.path())[0].group, "official");
+        }
     }
 
     #[test]
     fn realm_mod_lists() {
+        if !crate::addresses::SERVER_FEATURES {
+            return;   // the official realm's place on the list: only with the server's features on
+        }
         for ok in ["mod:dalaran-dice", "mode:minigolf", "up:skada", "up:pfquest-wotlk", "up:x", "mod:abc"] {
             assert!(mod_id_ok(ok), "{ok}");
         }
@@ -957,5 +1059,40 @@ mod tests {
         assert!(status_url_ok(&format!("https://relay.openvanilla.app/r/{RID}/status.json")));
         assert!(!status_url_ok("https://relay.openvanilla.app/r/x/status.json"));
         assert!(!status_url_ok(&format!("http://relay.openvanilla.app/r/{RID}/status.json")));
+    }
+
+    #[test]
+    fn an_aggregator_lists_other_servers_only() {
+        if crate::addresses::SERVER_FEATURES {
+            return;
+        }
+        let doc: Value = serde_json::from_str(r#"{"kind":"network","realms":[
+          {"name":"Through the relay","state":"live","profile":{"version":"3.3.5a","address":"relay.openvanilla.app","port":40002},
+           "community":{"realmId":"abcdefghijk2345a","relay":"relay.openvanilla.app"}},
+          {"name":"Elsewhere","state":"live","profile":{"version":"3.3.5a","address":"logon.example.org","port":3724},
+           "community":{"realmId":"abcdefghijk2345b"},
+           "status":{"url":"https://relay.leylinelauncher.com/r/abcdefghijk2345b/status.json"}}]}"#).unwrap();
+        let l = aggregate(list_of(&doc, false, None, None));
+        let names: Vec<&str> = l.realms.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["Elsewhere"], "no official realm, nothing through the relay");
+        assert!(l.realms.iter().all(|r| r.report_url.is_none() && r.status_url.is_none() && r.join_url.is_none()));
+        assert_eq!(l.network.realms, 1);
+        assert!(!keep_realm(&official()));
+    }
+
+    #[test]
+    fn a_listed_server_is_checked_from_this_pc() {
+        let up = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = up.local_addr().unwrap().port();
+        let down = { let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap(); l.local_addr().unwrap().port() };   // closed again
+        let mut rs = vec![
+            Realm { name: "Down".into(), state: "live".into(), address: Some(format!("127.0.0.1:{down}")), players: Some(5), ..Default::default() },
+            Realm { name: "Up".into(), state: "live".into(), address: Some(format!("127.0.0.1:{port}")), ..Default::default() },
+        ];
+        reachable(&mut rs, Duration::from_millis(800));
+        let st: Vec<(&str, &str)> = rs.iter().map(|r| (r.name.as_str(), r.state.as_str())).collect();
+        assert!(st.contains(&("Up", "live")) && st.contains(&("Down", "offline")), "{st:?}");
+        assert!(rs.iter().all(|r| r.players.is_none()));
+        drop(up);
     }
 }

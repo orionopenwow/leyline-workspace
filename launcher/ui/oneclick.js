@@ -609,7 +609,7 @@
     "Your friend needs Leyline and their own game folder, the same version as yours.",
     "Press Invite a friend while your world runs, and send them the link. They open it, and Leyline takes them in.",
     "Their character stays on your world: next time they press Join again, with no new link.",
-    "On the same network they connect straight to your PC; from anywhere else, through the Leyline relay.",
+    (window.LeylineLite && window.LeylineLite.lite) ? "They join from the same network: at home, or in the same office." : "On the same network they connect straight to your PC; from anywhere else, through the Leyline relay.",
     "In the game, the Social panel's Leyline tab invites a friend without leaving the world.",
   ];
   function friendLines() {

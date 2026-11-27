@@ -4,6 +4,7 @@ against a fake AzerothCore SOAP server and a fake Open Vanilla realm service.
     python3 -I tests/test_stream.py wrath_portal.py
 """
 import http.client, json, os, sys, tempfile, threading, importlib.util, time, urllib.parse
+os.environ.setdefault("LEYLINE_DOMAIN_MOVE", "0")   # this suite checks the names from before the move (the default is the new names since 12 Nov)
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from xml.sax.saxutils import escape
 

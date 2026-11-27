@@ -1,4 +1,4 @@
-# WrathUnleashed: test the realm Lua scripts on every push, and deploy the changed ones to the live realm
+# WrathUnleashed: test the realm Lua scripts on every push (the deploy to the live realm is off: the server is gone)
 # (live "reload ale", no restart; luaup.sh backs up each file and puts the old ones back if the reload fails).
 # The deploy key is restricted to one command on the server (server/luaup-ci.sh): no shell, scripts in only.
 # Owner's standing rule (2026-10-24): Claude may push and deploy to the live realm once tests pass.
@@ -81,9 +81,12 @@ jobs:
         run: lua5.1 hosting/tests/test_ov_discord.lua realm/custom/lua_scripts/ov_discord.lua
       - name: every realm script parses
         run: for f in realm/custom/lua_scripts/*.lua stream/lua/ov_slices.lua; do luac5.1 -p "$f" || exit 1; done
+  # Off since 26 Nov: the live realm and its server are gone (docs/STATIC-SITE.md). The tests above still run. To deploy
+  # to a realm of your own again, point the ssh line at it and put the old condition back:
+  #   if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
   deploy:
     needs: test
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

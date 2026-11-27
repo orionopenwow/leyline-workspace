@@ -97,6 +97,44 @@
       "The first start needs the internet.",
     ] },
   };
+  // lite (lite.js: no server of ours): the words for the pages that changed, and Community. TODO(owner): his words
+  if (window.LeylineLite && window.LeylineLite.lite) {
+    Object.assign(PAGES, {
+      play: { title: "Home", link: "gettingstarted", lines: [
+        "Home is where you start. Play single player runs a world on this PC just for you.",
+        "Realms takes you to other servers, and Your Den is your own place to build.",
+      ] },
+      realms: { title: "Realms", link: "docsplay", lines: [
+        "Realms lists other servers: each is run by its own team, with its own accounts.",
+        "Add any realm by its address. Pick one and press Play: Leyline points your game at it.",
+      ] },
+      modes: { title: "Modes", link: "docsmodes", lines: [
+        "Modes are other ways to play. Boss Rush runs on this PC: pick a fight and go.",
+        "Your best runs from this PC show on the Boss Rush page.",
+      ], also: { label: "Commands", link: "docscommands" } },
+      community: { title: "Community", link: "discord", more: "Join the Discord", lines: [
+        "The Discord is where players meet: questions, groups, voice chat and news.",
+      ] },
+      den: { title: "Your Den", link: "docsden", lines: [
+        "Your Den is your own quiet green world on this PC to build in: no internet needed.",
+        "Open my Den takes you in, with your companion to help. Save it, or share it as a Den code.",
+        "Invite a friend gives a friend on the same network one link.",
+      ], also: { label: "Inviting a friend", link: "docsdeninvite" } },
+      bossrush: { title: "Boss Rush", link: "docsmodes", lines: [
+        "Boss Rush puts you straight into a boss fight: pick the fight, the difficulty and a hero, then Fight.",
+        "It runs on this PC. The first setup reads the raids from your game folder; after that each fight starts in seconds.",
+      ] },
+      characters: { title: "Characters", link: "docsingle", lines: [
+        "Every character on this PC in one place: single player, the original world and Boss Rush.",
+        "Play starts the right world and takes you to that character.",
+      ] },
+      findfiles: { title: "Find your game files", link: "gettingstarted", lines: [
+        "Leyline plays with a game folder you already have; it can't download the game for you.",
+        "Drop your folder or a zip of it here, or choose it. Leyline reads the version itself.",
+      ] },
+    });
+    delete PAGES.host; delete PAGES.forum; delete PAGES.account;
+  }
   // a part of a page with its own bubble while it is on screen (its element id → the same shape as PAGES)
   const SECTIONS = {
     spm: { page: "single", title: "Mods in this world", link: "docsmods", more: "Mods & Addons docs", lines: [

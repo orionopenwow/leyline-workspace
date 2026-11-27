@@ -255,6 +255,7 @@ check("arena: no file, not present", BF.arena_store.doc()["present"] is False an
 
 # --- the pages ----------------------------------------------------------------------------------------------------
 def visible(page: str) -> str:
+    page = (page.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(page, str) else page.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     page = re.sub(r"<style.*?</style>|<script.*?</script>|<!--.*?-->", " ", page, flags=re.S)
     attrs = " ".join(re.findall(r'(?:alt|title|content|aria-label|placeholder)="([^"]*)"', page))
     return re.sub(r"<[^>]+>", " ", page) + " " + attrs

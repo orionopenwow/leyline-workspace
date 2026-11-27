@@ -21,6 +21,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { chromium } = require('playwright');
+require('./fixtures/server-on.cjs');   // the server's features on: this part needed the server (ui/lite.js; docs/LAUNCHER-LITE.md)
 
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const KEY = 'ovk1.AbCdEf1234.' + 'k'.repeat(43);

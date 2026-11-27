@@ -1,5 +1,7 @@
 # Repo map
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): the server paths below (`/srv/wrath`, `/opt/wu-discord`, the realm) no longer exist. The code stays in the repo.
+
 The Leyline workspace (`orionopenwow/leyline-workspace`, on the owner's PC `Desktop\Leyline`), as of the launch
 cleanup on 2026-11-02. Leyline is the mod launcher and the P2P realm network; our own realm is Wrath Unleashed
 (3.3.5a). Rules of thumb are at the bottom.

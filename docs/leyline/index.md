@@ -39,16 +39,37 @@ Our own realm is Wrath Unleashed, the official realm, which gets our client addi
 | Hero Key sign-in on community realms | Built, off until the owner turns it on | [Hero Key](hero-key.md) |
 | Relays sharing one realm list (the Leyline mesh) | Our relay keeps the shared list since 2 Nov; launchers read it once the owner turns that on | [Other servers](cross-server.md) |
 | Leyline Launcher (desktop app): clients, mods, realms, hosting | Live: released for download | [Launcher](launcher.md) |
-| Your Den: one click into your own white world on your PC, with Build, Shape ground, Play, Save and Invite | Live in the launcher | [Getting started](getting-started.md#your-den) |
+| Your Den: one click into your own white world on your PC, with Build, Shape ground, Play, Save and Invite | Live in the launcher | [Your Den](den.md) |
+<!-- if single_player -->
+| Single player: your own world on your PC, no server and no account, with companions and a friend | Live in the launcher | [Single player](single-player.md) |
+<!-- end if -->
+| Friends: friend codes, people on your network, see who's on, invite to your world; no account, signed by you and your friends | Built in the launcher (12 Nov); the relay mailbox for friends far away is off until the owner turns it on | [Friends](friends.md) |
+| Leyline Solo: the first-era game on your PC, as its own small app | Built; the download shows on [its page](/wrath/solo) once the owner releases it | [Leyline Solo](solo.md) |
+| Boss Rush (instant boss fights, The Frozen Throne first), duels and the 1v1 arena queue | Live on Wrath | [Wrath Unleashed notes](wrath-unleashed.md#duels-boss-rush-and-your-den) |
+| Leaderboards for Boss Rush and Duels, each result signed by the realm that recorded it; your own runs on a separate Local runs board, only when you press Share | Built: [the boards page](/wrath/leaderboards) and the launcher's Leaderboards | [Wrath Unleashed notes](wrath-unleashed.md#duels-boss-rush-and-your-den) |
+| Azeroth Survivors in the browser | Live | [Azeroth Survivors](/wrath/survivors) |
+| Leyline on your phone: the browser game with touch controls, and the Android app | Live | [On your phone](mobile.md) |
+| Agents: your own AI assistant helps with Leyline, only with your OK | Live in the launcher | [Agents](agents.md) |
+<!-- if be_a_node -->
+| Be a node: your PC helps carry the network | Live in the launcher's Host page | [Help carry the network](be-a-node.md) |
+<!-- end if -->
+<!-- if not be_a_node -->
+| Be a node: your PC helps carry the network | Built, not open yet (the owner turns it on) | [Help carry the network](be-a-node.md) |
+<!-- end if -->
 | `wu-mod test` on a local test realm | Planned | [Mod format](mods.md#what-is-planned) |
 | Signed mod packages | Planned | [Mod format](mods.md#what-is-planned) |
 | Hopping between realms from the in-game list | Planned | [Hosting](hosting.md#the-realm-list) |
-| Friends across realms | Planned | [Working together](unite.md) |
+| Friends on other servers (beyond Leyline) | Planned | [Working together](unite.md) |
 | Peer-to-peer realm list and mod sharing | Built, off until the owner turns it on | [Launcher](launcher.md) |
 
 ## Where to go next
 
-- New player: [Play](play.md), then [Commands](commands.md).
+- New player: [Getting started](getting-started.md), then [Play](play.md).
+<!-- if single_player -->
+- Playing on your own: [Single player](single-player.md).
+<!-- end if -->
+- Playing with friends: [Friends](friends.md) and [Host for friends](host-for-friends.md).
+- Lost your Hero Key, or not sure what it is: [Hero Key](hero-key.md#lost-your-key).
 - Mod maker: [Mod format](mods.md), then [Publishing](publishing.md).
 - New to the network: [How the Leyline network works](network.md).
 - Host: [Hosting](hosting.md), then [Keep your realm up 24/7](always-on.md).

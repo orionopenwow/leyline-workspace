@@ -1,5 +1,7 @@
 # Leyline: handoff for a fresh Claude session
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): the server this handoff deploys to (portal, realm, relay, Discord bridge) was shut down. In Leyline Control, `signin`, `realm`, `scripts`, `scripts-reload`, `check`, `audit`, `server-fix`, `worldlog`, `gm` and the rest of the server's steps are retired: they are skipped with a log line. `ship` → `leyline` → `leyline-launcher` still works, and the website now builds on GitHub Pages from the public repo on that push. Read the rest as history.
+
 Written 2 Nov 2026, 21:50 (Phoenix time), updated 22:20. Read this first, then the newest `claude/morning-report-*`,
 `claude/release-goals-*` and `claude/community-digest/*` docs in the Leyline Launcher project. The same text is in
 the project as `claude/HANDOFF.md`.

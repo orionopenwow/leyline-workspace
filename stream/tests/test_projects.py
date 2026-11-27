@@ -427,6 +427,7 @@ check("old routes unchanged", req("GET", "/wrath/mods/pings")[0] == 200 and req(
 check("the token is never logged", TOKEN not in logbuf.getvalue() and TOKEN[4:] not in logbuf.getvalue())
 check("the token goes to GitHub only", all(a == "" for p, a in api_seen if not p.startswith("/gh/")))
 def visible(p):
+    p = (p.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(p, str) else p.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     return re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", p, flags=re.S))
 allp = "".join(req("GET", u, w)[2] for u, w in (("/wrath/mods", ""), ("/wrath/mods/submit", "alice"), ("/wrath/mods/submit", ""),
                                                  ("/wrath/mods/credits", ""), (f"/wrath/mods/p/{pid}", "admin"), (f"/wrath/mods/p/{wt['id']}", "")))

@@ -76,7 +76,10 @@ FIGHTS = (("frozen-throne", "The Frozen Throne"), ("bone-lord", "The Bone Lord")
           ("twilight-destroyer", "The Twilight Destroyer"), ("obsidian-sanctum", "The Obsidian Sanctum"),
           ("obsidian-three", "The Obsidian Sanctum, three drakes"), ("brood-mother", "The Brood Mother's Lair"),
           ("stone-watcher", "The Stone Watcher"), ("storm-watcher", "The Storm Watcher"), ("flame-watcher", "The Flame Watcher"),
-          ("frost-watcher", "The Frost Watcher"), ("spell-weaver", "The Spellweaver's Eye"))
+          ("frost-watcher", "The Frost Watcher"), ("spell-weaver", "The Spellweaver's Eye"),
+          ("icc-gunship", "The Gunship Battle"), ("icc-deathbringer", "The Deathbringer"), ("icc-bloat", "The Bloated Horror"),
+          ("icc-ooze", "The Ooze Horror"), ("icc-professor", "The Mad Professor"), ("icc-council", "The Blood Council"),
+          ("icc-blood-queen", "The Blood Queen"), ("icc-dreamwalker", "The Dreamwalker"), ("icc-frost-queen", "The Frost Queen"))
 FIGHT_TITLE = dict(FIGHTS)
 DUEL_BOARDS = (("duel", "Duels"), ("arena-1v1", "1v1 arena"))
 

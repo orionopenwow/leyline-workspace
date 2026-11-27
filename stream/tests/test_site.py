@@ -27,6 +27,7 @@ def check(name, ok, extra=""):
 
 BANNED = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard")
 def visible(p):
+    p = (p.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(p, str) else p.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     p = re.sub(r"<style.*?</style>", " ", p, flags=re.S)
     attrs = " ".join(re.findall(r'(?:alt|title|content|aria-label|placeholder)="([^"]*)"', p))
     return re.sub(r"<[^>]+>", " ", p) + " " + attrs
@@ -138,10 +139,16 @@ expire_strip()
 srv = ThreadingHTTPServer(("127.0.0.1", 0), wp.PageHandler)
 srv.daemon_threads = True
 threading.Thread(target=srv.serve_forever, daemon=True).start()
-def get(path, ip="203.0.113.5"):
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sitecss_fold import fold  # noqa: E402
+def _css(path):
+    c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+    c.request("GET", path); return c.getresponse().read()
+def get(path, ip="203.0.113.5", raw=False):
     c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
     c.request("GET", path, headers={"X-Forwarded-For": ip}); r = c.getresponse()
-    return r.status, {k.lower(): v for k, v in r.getheaders()}, r.read().decode("utf-8", "replace")
+    b = r.read()
+    return r.status, {k.lower(): v for k, v in r.getheaders()}, (b if raw else fold(b, _css)).decode("utf-8", "replace")
 
 NAV_ITEMS = [("Leyline", "/wrath/leyline"), ("Play", "/wrath/account"), ("Realms", "/wrath/realms"), ("Modes", "/wrath/modes"),
              ("Mods", "/wrath/mods"), ("Armory", "/wrath/armory"), ("Docs", "/wrath/docs"), ("Server", wp.HOST_URL), ("Discord", wp.DISCORD_URL),
@@ -392,6 +399,7 @@ check("share_box escapes", "&lt;" in wp.share_box("/wrath/<x>") and "<x>" not in
 # ---------------------------------------------------------------- 7. no game-brand names in the new code's strings
 for f in ("wrath_portal.py", "modes.py", "armory.py"):
     src = open(os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), f), encoding="utf-8").read()
+    src = src.replace("not affiliated with or endorsed by Blizzard Entertainment", " ")   # the legal line, the one allowed mention (LEGAL_LINE, in every footer)
     check(f"no game-brand names in {f}", not BANNED.findall(src), BANNED.findall(src)[:3])
 
 # ---------------------------------------------------------------- 8. the hub's frame (front door on): one product
@@ -409,6 +417,7 @@ def hub_menu(page):
     return m.group(1) if m else ""
 
 def check_frame(label, page, active, scripts=0):
+    page = fold(page.encode(), lambda _p: wp.site_css()[0]).decode()   # pages drawn here, not fetched: the same fold
     nav = hub_menu(page)
     check(f"{label}: the hub's frame (side menu, footer, tokens), not the old bar",
           page.count('<header class="hb-top">') == 1 and 'class="hb-foot"' in page and 'id="ly-site-nav"' not in page
@@ -481,6 +490,87 @@ st, _, md = get("/wrath/modes")
 nav = nav_of(md)
 check("module pages in the old bar list the hub's menu", 200 == st and all(f'href="{h}"' in nav and f">{t}</a>" in nav for t, h in HUB_MENU)
       and not OLD_ITEMS.search(nav), nav[:400])
+# ---------------------------------------------------------------- the frame's shared styles: one versioned stylesheet
+# (audit 12 Nov: ~125 KB of CSS inlined in every page, sent no-store, nothing reused between clicks)
+def raw(path, enc=""):
+    c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+    c.request("GET", path, headers={"X-Forwarded-For": "203.0.113.5", **({"Accept-Encoding": enc} if enc else {})})
+    r = c.getresponse()
+    return r.status, {k.lower(): v for k, v in r.getheaders()}, r.read()
+css_b, css_v, css_gz = wp.site_css()
+links = {}
+for p in ("/wrath/leyline", "/wrath/docs", "/wrath/start", "/wrath/guides", "/wrath/nope"):
+    st_p, h_p, pg = get(p, raw=True)
+    links[p] = re.findall(r'<link rel="stylesheet" href="/wrath/art/site\.css\?v=([0-9a-f]{12})">', pg)
+    check(f"site.css: {p} links the shared styles once, the current version", links[p] == [css_v], links[p])
+    check(f"site.css: {p} no longer carries the shared styles inline (under 80 KB)", len(pg.encode()) < 80_000
+          and wp.hub_mod.SIDE_CSS.strip()[:60] not in pg, len(pg))
+st_c, h_c, b_c = raw(f"/wrath/art/site.css?v={css_v}")
+check("site.css: the current version is CSS, kept a year (immutable), readable without a cookie", st_c == 200
+      and h_c.get("content-type") == "text/css; charset=utf-8" and "max-age=31536000" in h_c.get("cache-control", "")
+      and "immutable" in h_c.get("cache-control", "") and b_c == css_b and len(b_c) > 80_000, (st_c, h_c.get("cache-control")))
+check("site.css: holds the frame's styles (side menu, stone, phone)", wp.hub_mod.SIDE_CSS.strip()[:60].encode() in b_c
+      and b"hb-side" in b_c and wp.hub_mod.LIGHT_MQ.encode() not in b_c)
+st_o, h_o, b_o = raw("/wrath/art/site.css?v=000000000000")
+check("site.css: an old or made-up version gets today's bytes, kept only 5 minutes", st_o == 200 and b_o == css_b
+      and h_o.get("cache-control") == "public, max-age=300")
+st_z, h_z, b_z = raw(f"/wrath/art/site.css?v={css_v}", "gzip, br")
+import gzip as _gz
+check("site.css: gzip when the browser takes it", h_z.get("content-encoding") == "gzip" and _gz.decompress(b_z) == css_b
+      and len(b_z) < len(css_b) // 3 and "Accept-Encoding" in h_z.get("vary", ""))
+st_h, h_h, b_h = raw("/wrath/docs", "gzip")
+check("pages: gzip when the browser takes it, Vary set, still no-store", h_h.get("content-encoding") == "gzip"
+      and b"<html" in _gz.decompress(b_h) and "Accept-Encoding" in h_h.get("vary", "") and h_h.get("cache-control") == "no-store")
+st_n, h_n, b_n = raw("/wrath/docs")
+check("pages: no gzip unless asked", "content-encoding" not in h_n and b_n.startswith(b"<!doctype html"))
+LEGAL = "not affiliated with or endorsed by Blizzard Entertainment"
+for p in ("/wrath/leyline", "/wrath/docs", "/wrath/docs/play", "/wrath/start", "/wrath/guides", "/wrath/download",
+          "/wrath/leyline/realms", "/wrath/leyline/catalog", "/wrath/nope"):
+    st_l, _, pg = get(p)
+    check(f"legal line: in the footer of {p}, once", pg.count(LEGAL) == 1 and pg.index(LEGAL) > pg.index('class="hb-foot"'), (st_l, pg.count(LEGAL)))
+check("legal line: in the older pages' footer too (site_footer)", LEGAL in wp.site_footer() and "ly-legal" in wp.site_footer())
+# Single player and Be a node only where their switches say (audit 12 Nov: honest pages, owner decisions unchanged)
+os.environ["SINGLE_PLAYER_PUBLIC"] = "0"
+_, _, stp = get("/wrath/start")
+_, _, frp = get("/wrath/leyline")
+check("switch off: Start here has no Single player card, the front page no Single player link",
+      'id="st-single"' not in stp and 'aria-label="Four ways in"' in stp and "/wrath/single-player" not in frp)
+os.environ["SINGLE_PLAYER_PUBLIC"] = "1"
+_, _, stp = get("/wrath/start")
+_, _, frp = get("/wrath/leyline")
+check("switch on: Start here's second card is Single player, the front page links it under Start here",
+      'id="st-single" href="/wrath/single-player"' in stp and stp.index('id="st-play"') < stp.index('id="st-single"') < stp.index('id="st-launcher"')
+      and 'aria-label="Five ways in"' in stp and 'Or play on your own: Single player' in frp)
+os.environ["SINGLE_PLAYER_PUBLIC"] = "0"
+check("be_a_node off (no flags file): the queue's Skip the line has no Become a node card", not wp.be_a_node_on()
+      and 'id="q-node"' not in wp.skip_line_cards() and 'id="q-community"' in wp.skip_line_cards())
+_bn = wp.be_a_node_on
+wp.be_a_node_on = lambda: True
+check("be_a_node on: the card is back", 'id="q-node"' in wp.skip_line_cards())
+wp.be_a_node_on = _bn
+# robots.txt, sitemap.xml, canonical and link cards (audit 12 Nov: robots and sitemap 4xx, the front page had no card)
+st_r, h_r, rb = raw("/robots.txt")
+rt = rb.decode()
+check("robots.txt: 200, text, everything public allowed, sign-in and APIs not, the sitemap named",
+      st_r == 200 and h_r.get("content-type", "").startswith("text/plain") and "User-agent: *" in rt and "Disallow: /wrath/admin" in rt
+      and "Disallow: /wrath/api/" in rt and "Disallow: /\n" not in rt and re.search(r"Sitemap: https://[^/\s]+/sitemap\.xml", rt), rt[:300])
+st_s, h_s, sb = raw("/sitemap.xml")
+locs = re.findall(r"<loc>https://[^/<]+(/[^<]*)</loc>", sb.decode())
+check("sitemap.xml: 200, XML, the front page, Start here, docs and guides", st_s == 200 and "xml" in h_s.get("content-type", "")
+      and "/wrath/leyline" in locs and "/wrath/start" in locs and "/wrath/docs/friends" in locs and "/wrath/guides" in locs
+      and len(locs) == len(set(locs)) and len(locs) > 40, len(locs))
+check("sitemap.xml: no sign-in, admin or switched-off page", not any(l.startswith(("/wrath/admin", "/wrath/key", "/wrath/signin", "/wrath/single-player"))
+      for l in locs))
+bad_locs = [l for l in locs if get(l)[0] != 200]
+check("sitemap.xml: every address answers 200", not bad_locs, bad_locs[:5])
+for p in ("/wrath/leyline", "/wrath/leyline/realms", "/wrath/docs", "/wrath/start", "/wrath/guides"):
+    _, _, pg = get(p)
+    can = re.findall(r'<link rel="canonical" href="([^"]+)">', pg)
+    check(f"link card: {p} has one canonical (its own address) and og tags", len(can) == 1 and can[0].endswith(p)
+          and pg.count('property="og:title"') == 1 and pg.count('property="og:image"') == 1 and pg.count('name="description"') == 1, can)
+check("site.css: the same version on every page (one download for the whole site)", len({tuple(v) for v in links.values()}) == 1)
+check("site.css: brand words stay off it too", not BANNED.search(css_b.decode()))
+
 os.environ["WU_HUB_FRONT"] = "0"
 check("front door off: the gold frame as before", 'id="ly-site-nav"' in wp.signed_out_page().decode()
       and 'class="hb-top"' not in wp.signed_out_page().decode())

@@ -938,3 +938,4 @@
 1365b ship  Save as Orion and release the launcher: the picked-up 12 Nov batch (Modes are Duels and Boss Rush, Boss Rush start anywhere, signed leaderboards, bots window, mods in your single player world, Den builder comforts, offline guidance, leyline:// links, i bubble everywhere, engine updates and back-ups/restore, stop the world on close, friends keep characters after a lost key, Den Lite updates itself, friends mailbox tag fix)
 1366a ship  Save as Orion: people credited privately, at their request (a reporter's name taken out of a launcher code comment; nothing players see changes)
 1366b ship  Save as Orion: other projects no longer named in the Simple mode notes (nothing players see changes)
+1367b ship  Save as Orion and release: Leyline without its server (no sign-in, no official realm or relay, the realm list and mods from the static site, Control's server steps retired) and the website rebuilt as a static site on GitHub Pages

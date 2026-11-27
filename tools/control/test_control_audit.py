@@ -16,6 +16,7 @@ spec = importlib.util.spec_from_file_location("control", os.path.join(HERE, "con
 ctl = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ctl)
 T = Path(tempfile.mkdtemp())
+ctl.SERVER_DOC = T / "server.json"        # never this PC's own switch
 ctl.AUDIT_HTML, ctl.AUDIT_TXT = T / "audit-latest.html", T / "audit-latest.txt"
 srv = ThreadingHTTPServer(("127.0.0.1", PORT), ctl.H)
 srv.daemon_threads = True
@@ -53,6 +54,14 @@ class Audit(unittest.TestCase):
         st, _ = req("POST", "/api/audit")
         self.assertEqual(st, 403, "no token: refused")
         st, body = req("POST", "/api/audit", {"X-Token": ctl.TOKEN})
+        self.assertEqual(st, 409, "serverless (docs/SERVERLESS.md): the audit is retired, the button hidden")
+        self.assertIn(b"retired", body)
+        self.assertEqual(got, [], "nothing ran")
+        os.environ["LEYLINE_SERVER"] = "1"      # with the server switch on, the button works as before
+        try:
+            st, body = req("POST", "/api/audit", {"X-Token": ctl.TOKEN})
+        finally:
+            os.environ.pop("LEYLINE_SERVER", None)
         self.assertEqual(st, 200, body)
         (items, record, title), = got
         self.assertEqual(items[0]["step"], "audit")

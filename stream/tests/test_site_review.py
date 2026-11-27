@@ -106,6 +106,7 @@ def req(path, method="GET", body=None, cookie="", headers=None):
 
 
 def visible(p):
+    p = (p.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(p, str) else p.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     p = re.sub(r"<(style|script|svg)\b.*?</\1>", " ", p, flags=re.S | re.I)
     p = re.sub(r"<!--.*?-->", " ", p, flags=re.S)
     attrs = " ".join(re.findall(r'(?:alt|title|content|aria-label|placeholder|value)="([^"]*)"', p))

@@ -134,6 +134,18 @@ class Run(unittest.TestCase):
         self.assertIn("not behind the sign-in gate", out)
         self.assertNotIn("FASTLOOP OK", out)
 
+    def test_seo_route_added_once(self):
+        # robots.txt and sitemap.xml at the site's root go to the portal (audit 12 Nov); a second run adds nothing
+        rc, out = self.run_script()
+        self.assertEqual(rc, 0, out[-1500:])
+        cf = open(self.cf).read()
+        self.assertIn("@seofiles path /robots.txt /sitemap.xml\n\thandle @seofiles {\n\t\treverse_proxy wu-portal:8091", cf)
+        self.assertLess(cf.index("@seofiles"), cf.index("reverse_proxy ovlive-realm:8090"))
+        rc, out = self.run_script()
+        self.assertEqual(rc, 0, out[-1500:])
+        self.assertEqual(open(self.cf).read().count("leyline-seo-files"), 1)
+        self.assertIn("/robots.txt (200)", out)
+
     def _fails_with(self, name, code, words):
         with open(os.path.join(self.tmp, name), "w") as f:
             f.write(code)

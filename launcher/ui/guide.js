@@ -16,17 +16,24 @@
   const TOUR = [
     { key: "single", target: "#hm-single-go", fallback: '.side .nav[data-page="single"]', title: "Single player",
       text: "Your own world on this PC, with companions if you want them: no realm, no queue. Press Start." },
-    { key: "play", target: "#play-go", fallback: "#pb-realm-btn", title: "Play Wrath Unleashed",
+    { key: "play", target: "#play-go", fallback: "#pb-realm-btn", title: "Play Wrath Unleashed", server: true,
       text: "The official realm: hang out, level up, meet people. Press PLAY, or pick Play in your browser in the realm list." },
     { key: "den", target: "#pb-realm-btn", title: "Your Den",
       text: "Your own quiet green world on this PC, in the realm list next to PLAY. Build in it, save it, invite a friend." },
-    { key: "host", target: '.side .nav[data-page="host"]', title: "Host a server",
+    { key: "host", target: '.side .nav[data-page="host"]', title: "Host a server", server: true,
       text: "Run your own realm from a template, in one click. Friends join with your invite link." },
+    // lite (lite.js: no server): the realms of other servers, and any realm by its address, instead of the two above
+    { key: "realms", target: '.side .nav[data-page="realms"]', title: "Other servers", lite: true,
+      text: "Realms lists other servers, and takes any realm address. Pick one and press PLAY: Leyline points your game at it." },
     { key: "files", target: "#pb-client", title: "Find your game files", needsNoClient: true,
       text: "Leyline plays with a game folder you already have. Add it here, or see Find your game files for where it usually is." },
     { key: "info", target: "#ll-info", title: "Ask about any page",
       text: "The i button explains the page on screen and links its docs. Help, in the side menu under Launcher, replays this tour." },
   ];
+  {
+    const lite = !!(window.LeylineLite && window.LeylineLite.lite);
+    for (let i = TOUR.length - 1; i >= 0; i--) if (lite ? TOUR[i].server : TOUR[i].lite) TOUR.splice(i, 1);
+  }
   const MOMENTS = {
     "cheer-hosted": { line: "You're live — share this link and friends can join.", action: "Copy invite link" },
     "cheer-friend": { line: "A friend just joined your server. Say hello!" },

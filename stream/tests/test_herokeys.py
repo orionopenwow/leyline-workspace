@@ -248,6 +248,7 @@ def jar_add(jar, set_cookies):
 
 
 def visible(body):
+    body = (body.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(body, str) else body.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     body = re.sub(r"(?s)<script.*?</script>|<style.*?</style>", " ", body)
     return re.sub(r"<[^>]+>", " ", body)
 

@@ -1,5 +1,7 @@
 # Leyline HQ (the Admin Console)
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): Leyline HQ lived on the server's website and is gone with it. Control's `hq-sync`, `hqnote` and `hq-inbox` are retired, and Control no longer syncs with HQ after each run.
+
 **Leyline HQ** is the one place to run Leyline online: **https://leylinelauncher.com/wrath/admin**. Status, what needs
 you, what shipped, notes from Claude and to Claude, the people, the realms, the game, the content and the system,
 in plain words, on a phone too. Server-rendered by the Wrath portal (`stream/hq.py` for HQ, `stream/admin.py` for

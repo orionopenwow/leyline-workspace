@@ -408,7 +408,7 @@ check("signin step ships network.py, backs it up, puts it back", 'install -m 644
       and subprocess.run(["bash", "-n", os.path.join(STREAM, "fastloop.sh")]).returncode == 0)
 
 # ---------------------------------------------------------------- nothing player-visible names the game or its maker
-bad = [p for p in (page, hub, front, form) if re.search(r"(?i)world of warcraft|warcraft|lich king|blizzard|\bwow\b", p)]
+bad = [p for p in (page, hub, front, form) if re.search(r"(?i)world of warcraft|warcraft|lich king|blizzard|\bwow\b", p.replace("not affiliated with or endorsed by Blizzard Entertainment", " "))]
 check("no game-brand names on the network pages", not bad)
 
 print(f"\n{count - fails}/{count} passed")

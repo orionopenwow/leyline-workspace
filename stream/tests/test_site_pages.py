@@ -143,7 +143,7 @@ check("single player: six companion slots", page.count('data-slot="slots/sp-') =
 check("single player: the slots say a picture is coming (no broken image)", page.count("Picture coming soon") >= 6)
 check("single player: no <video> without its file (poster only, marked as coming)", "<video" not in page and 'data-video="soon"' in page)
 check("single player: the marketing lines are left for the owner", "TODO(owner)" in open(os.path.join(STREAM, "site_pages.py")).read())
-check("single player: no brand words", not BANNED.findall(v))
+check("single player: no brand words", not BANNED.findall(v.replace(LEGAL, " ")))   # the legal line is in the footer now
 check("single player: no version numbers", not VERSION.findall(v), VERSION.findall(v))
 check("flag on: the shelf has five cards", sp.shelf().count('class="lp-mode"') == 5)
 check("flag on: /wrath/modes/single-player answers", get("/wrath/modes/single-player")[0] == 200)
@@ -178,6 +178,9 @@ shutil.rmtree(os.path.join(ART, "slots"))
 
 # ---------------------------------------------------------------- guides
 st, _, page = get("/wrath/guides")
+check("guides: no \"Video coming soon\" placeholders, and no promise of videos while there are none",
+      "Video coming soon" not in page and "coming soon" not in page.lower() and ("Each has a video" in page) == any(sp._guide_video(g) for g in sp.guides()))
+check("guides: Be a node says Not open yet while its flag is off", "Not open yet" in page.split('href="/wrath/guides/be-a-node"', 1)[1].split("</li>", 1)[0])
 check("guides: every episode linked", all(f'href="/wrath/guides/{s}"' in page for s in EP))
 for g in sp.guides():
     st, _, page = get(f"/wrath/guides/{g['slug']}")
@@ -185,7 +188,8 @@ for g in sp.guides():
     check(f"guide {g['n']}: steps, Stuck?, the Discord", "<h2 id=\"gd-steps\">Steps</h2>" in page and "Stuck?" in v
           and re.search(r'href="https://discord\.gg/[^"]+"[^>]*>Discord</a>', page), g["slug"])
     check(f"guide {g['n']}: at least 4 steps and 2 stuck lines", len(g["steps"]) >= 4 and len(g["stuck"]) >= 2)
-    check(f"guide {g['n']}: a video slot", 'data-video="soon"' in page or "<video" in page)
+    check(f"guide {g['n']}: no placeholder: the video when its file is there, else no \"Video coming soon\" (audit 12 Nov)",
+          ("<video" in page) == sp._guide_video(g) and "Video coming soon" not in page and 'data-video="soon"' not in page)
     check(f"guide {g['n']}: links to the next and previous", (g["n"] == 12 or f'href="/wrath/guides/{EP[g["n"]]}"' in page)
           and (g["n"] == 1 or f'href="/wrath/guides/{EP[g["n"] - 2]}"' in page))
     for t, h in g.get("docs", []):

@@ -16,6 +16,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+require('./fixtures/server-on.cjs');   // the server's features on: written for the launcher with the official realm, the relay or the Workshop (the lite app: lite.browser.test.cjs; docs/LAUNCHER-LITE.md)
 
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const CATALOG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'playmodes.json'), 'utf8'));

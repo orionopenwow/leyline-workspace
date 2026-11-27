@@ -51,13 +51,13 @@ check("/wrath/realms: the official card is the Leyline Sample Hangout, temporary
       "Leyline Sample Hangout" in page and "Temporary" in page, page[:400])
 check("/wrath/realms: says to add your own game folder for the whole world, and community realms",
       "add your own game folder to explore the whole world" in page and "Community realms on Leyline" in page)
-check("/wrath/realms: no game-brand words", not BRAND.search(page))
+check("/wrath/realms: no game-brand words", not BRAND.search(page.replace("not affiliated with or endorsed by Blizzard Entertainment", " ")))
 ly = text(wp.leyline_page())
 check("/wrath/leyline: the official row says Sample Hangout, temporary", "Leyline Sample Hangout" in ly and "temporary" in ly)
 acct = text(wp.account_page("Tester", "WR000123", "pw", "nonce"))
 check("play page: the first card is the Leyline Sample Hangout, temporary, Play now",
       "Leyline Sample Hangout" in acct and "Temporary" in acct and "Play now" in acct, acct[:600])
-check("play page: no game-brand words", not BRAND.search(acct))
+check("play page: no game-brand words", not BRAND.search(acct.replace("not affiliated with or endorsed by Blizzard Entertainment", " ")))
 check("the copy line is marked for the owner", "TODO(owner)" in open(sys.argv[1], encoding="utf-8").read().split("SAMPLER_NOTE")[1][:800])
 
 wp = portal(STREAM_SLICES="mini")

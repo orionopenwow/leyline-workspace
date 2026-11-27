@@ -1,5 +1,7 @@
 # The kill switch
 
+> **Serverless since 26 Nov 2026** ([SERVERLESS.md](SERVERLESS.md)): the server parts (Community message, Realms and network, Website) need the server's ssh, so their preview reports problems now, and the realm steps Pause runs are retired. Untick those parts. The Discord and GitHub parts work as before.
+
 Owner, 3 Nov 2026: "Kill switch — even Discord and git source code"; "upgrade Leyline Control to have the kill
 switch and be able to delete everything and send a message to the community".
 

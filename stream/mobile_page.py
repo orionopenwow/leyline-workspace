@@ -346,7 +346,7 @@ def body() -> str:
            + '<p class="lp-dim">More about the network and hosting: <a href="/wrath/docs/mobile">the phone docs</a> and '
            '<a href="/wrath/docs/host-for-friends">Host for friends</a>.</p></section>')
     return (f'<div class="lp mb">{hero}{what}{touch}{solo}{join}{gal}{android}{guides}{where}{trouble}{faq}'
-            f'<p class="lp-legal">{_e(LEGAL)} Game names belong to their owners.</p></div>')
+            '</div>')   # the legal line is in the site's footer on every page now (audit 12 Nov)
 
 
 def page() -> bytes:

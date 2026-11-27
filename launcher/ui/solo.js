@@ -82,6 +82,7 @@
     const pack = PACK_FOR_MODE[m.id] || (m.start && m.start.host && PACK_NAMES[m.start.host] ? m.start.host : null);
     if (pack) return { kind: "realm", name: PACK_NAMES[pack] || pack, pack, profile: null, pick: m.kind === "realm" ? m.id : null, coming: m.status !== "live" };
     if (m.kind === "realm-type" && m.status !== "live") return { kind: "none", why: "Coming soon.", coming: true };
+    if ((window.LeylineLite && window.LeylineLite.lite)) return null;   // lite.js: no official realm, so no "Online only" chip either
     return { kind: "none", why: ONLINE_WHY[m.id] || "It needs the official realm for now." };
   }
   function forPack(p) {

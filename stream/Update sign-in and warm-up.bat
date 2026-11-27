@@ -67,6 +67,14 @@ rem the signed leaderboards (/wrath/boards, /wrath/api/boards/...; boards-export
 if exist boards.py set "LINKS=%LINKS% boards.py"
 rem Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors)
 if exist survivors.py set "LINKS=%LINKS% survivors.py"
+rem Leyline weekly ("This week" on the front page and the launcher Home: weekly.py and its picks, weekly.json, always as a pair),
+rem Den of the week (denweek.py), the den market (/wrath/dens, denmarket.py: also off until WU_DENS), game modes in Mods and
+rem the realm lists (gamemods.py) and the fork brand file reader (brandfile.py: idle unless WU_BRAND_FILE is set)
+if exist weekly.py if exist weekly.json set "LINKS=%LINKS% weekly.py weekly.json"
+if exist denweek.py set "LINKS=%LINKS% denweek.py"
+if exist denmarket.py set "LINKS=%LINKS% denmarket.py"
+if exist gamemods.py set "LINKS=%LINKS% gamemods.py"
+if exist brandfile.py set "LINKS=%LINKS% brandfile.py"
 rem the showcase pages (/wrath/guides, /wrath/press, /wrath/modes/<way>, site_pages.py) and Leyline on your phone (/wrath/mobile, mobile_page.py)
 if exist site_pages.py set "LINKS=%LINKS% site_pages.py"
 if exist mobile_page.py set "LINKS=%LINKS% mobile_page.py"
@@ -117,7 +125,7 @@ echo [1/2] Uploading...
 scp %OPTS% "%T%" %HOST%:/tmp/wu-fastloop.tgz || (echo Upload failed. If it says "timed out", wait 2 minutes and run this again. & pause & exit /b 1)
 
 echo [2/2] Applying it on the server (under a minute)...
-ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py modepack.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py discord_growth.py duels.py bossfights.py boards.py survivors.py site_pages.py mobile_page.py solo_page.py phonelab.py profiles.py herokeys.py network.py bugreport.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py linkqueue.py feedback.py staffdesk.py loadouts.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
+ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py modepack.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py discord_growth.py duels.py bossfights.py boards.py survivors.py site_pages.py mobile_page.py solo_page.py phonelab.py profiles.py herokeys.py network.py bugreport.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py linkqueue.py feedback.py staffdesk.py loadouts.py downloads.py hq_words.py looks.py namecheck.py weekly.py denweek.py denmarket.py gamemods.py brandfile.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
 if errorlevel 1 (
   echo.
   echo It did not report success; see the lines above. Anything it changed was put back.

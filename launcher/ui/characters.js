@@ -185,7 +185,10 @@
     const tabs = mk("div", "page-tabs");
     tabs.setAttribute("role", "tablist");
     tabs.setAttribute("aria-label", "Characters");
-    for (const [id, label] of [["local", "On this PC"], ["online", "Online"]]) {
+    // lite (lite.js): the official realm is gone, so only this PC's worlds
+    const lite = !!(window.LeylineLite && window.LeylineLite.lite);
+    if (lite) tab = "local";
+    for (const [id, label] of (lite ? [["local", "On this PC"]] : [["local", "On this PC"], ["online", "Online"]])) {
       const t = btn(label, "page-tab", () => { tab = id; store.set("leyline.chars.tab", id); paint(); }, `ch-tab-${id}`);
       t.setAttribute("role", "tab");
       t.setAttribute("aria-selected", String(tab === id));

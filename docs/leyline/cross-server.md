@@ -42,12 +42,12 @@ Each record is a Beacons schema 1 record plus a `community` block:
 | `order` | always `1000`; then live first, then by name |
 | `profile` | `game` (`wrath-3.3.5a`), `version`, `build`, `ruleset`, `address`, `port` |
 | `connect` | `{"kind": "web-signin", "url": ".../join/<id>", "label": "Join this realm"}` |
-| `status` | `{"url": ".../r/<id>/status.json", "format": "openvanilla-status-1"}` |
+| `status` | `{"url": ".../r/<id>/status.json", "format": ...}`: the status format's id, as in `hosting/site/SCHEMA-community.md` |
 | `community` | `realmId`, `relay`, `signed`, `claimed`, `claimedBy`, `firstSeen`, `lastSeen`, `lastHeartbeat` |
 
 Text from the host has fixed limits: name up to 32 characters, tagline 80, summary 400, up to 10 rules of 120, and a Discord link only as `https://discord.gg/...`. Readers should show it as text, never as HTML. Players and bots are separate numbers; bots are never added to players.
 
-A realm's own status uses the same `openvanilla-status-1` idea. Wrath's is at [leylinelauncher.com/wrath/status.json](https://leylinelauncher.com/wrath/status.json): realm, online, players, bots, queue, uptime and build.
+A realm's own status document uses the same format. Wrath's is at [leylinelauncher.com/wrath/status.json](https://leylinelauncher.com/wrath/status.json): realm, online, players, bots, queue, uptime and build.
 
 The full schema is `hosting/site/SCHEMA-community.md` in the repo.
 

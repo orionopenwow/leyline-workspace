@@ -7,6 +7,7 @@ an older record (a site-made key, seed v1) still working, no banned words.
     python3 -I stream/tests/test_hostflow.py stream/wrath_portal.py
 """
 import base64, http.client, importlib.util, json, os, re, shutil, stat, subprocess, sys, tempfile, threading, urllib.parse
+os.environ.setdefault("LEYLINE_DOMAIN_MOVE", "0")   # this suite checks the names from before the move (the default is the new names since 12 Nov)
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TMP = tempfile.mkdtemp(prefix="wu-hostflow-")
@@ -112,6 +113,7 @@ BANNED = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard"
 
 
 def visible(page):
+    page = (page.replace('not affiliated with or endorsed by Blizzard Entertainment', ' ') if isinstance(page, str) else page.replace(b'not affiliated with or endorsed by Blizzard Entertainment', b' '))   # the legal line is the one allowed mention (audit 12 Nov: it is in every footer now)
     page = page.decode() if isinstance(page, bytes) else page
     return re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", page, flags=re.S))
 

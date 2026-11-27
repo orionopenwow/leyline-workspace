@@ -171,7 +171,8 @@
       box.dataset.state = "wait";
       head.textContent = "Checking the way your friend comes in… (up to half a minute)";
       if (!ul.children.length) {
-        for (const [id, label] of [["server", "Your world is running"], ["tunnel", "Connected to the Leyline relay"], ["relay", "The relay sees your world"], ["path", "A friend can reach you"]]) {
+        // lite.js: no relay, so the same network's lines only (app.rs host_ready leaves the relay's out too)
+        for (const [id, label] of ((window.LeylineLite && window.LeylineLite.lite) ? [["server", "Your world is running"]] : [["server", "Your world is running"], ["tunnel", "Connected to the Leyline relay"], ["relay", "The relay sees your world"], ["path", "A friend can reach you"]])) {
           const li = mk("li", "wf-check wait");
           li.id = (o.prefix || "wf-c-") + id;
           li.append(mk("span", "wf-ic", ICON.wait), mk("b", "", label));
@@ -369,7 +370,12 @@
     d.id = "wf-guide";
     d.append(mk("summary", "", "How it works, and what to do when something's wrong"));
     const ul = mk("ul", "wf-how");
-    for (const t of [
+    for (const t of (window.LeylineLite && window.LeylineLite.lite) ? [
+      // TODO(owner): these lines, his words
+      "Your world runs on this PC. A friend on the same network (at home, or in the same office) comes in with your invite link.",
+      "Your friend needs Leyline and their own game folder (the same version as yours). Game files never travel.",
+      "Your world is there while Leyline is open and your PC is awake.",
+    ] : [
       "Your world runs on this PC. Your PC keeps one connection out to the Leyline relay, and the relay passes your friend's game through it: nothing to open on your router, and your address is never shown.",
       "Your friend needs Leyline, their own game folder (the same version as yours) and a Hero Key. Game files never travel.",
       "Your world is there while Leyline is open and your PC is awake. For a world that's always up, a full realm on an always-on computer is the way (Host page › More).",

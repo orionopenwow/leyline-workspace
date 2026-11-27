@@ -105,7 +105,7 @@ def _levels(lv) -> str:
     return f"Level {lo}" if lo == hi else f"Levels {lo}-{hi}"
 
 
-_host = {"name": "play.openvanilla.app"}   # the public host, for the full link in a Share box (set by page())
+_host = {"name": "leylinelauncher.com"}   # the public host, for the full link in a Share box (set by page())
 
 
 def _share(href: str) -> str:
@@ -178,7 +178,7 @@ def _featured_bosses() -> str:
 
 
 def page(css: str, art_url, have, card_meta, realm_name: str = "WrathUnleashed",
-         public_host: str = "play.openvanilla.app", games: str = "") -> bytes:
+         public_host: str = "leylinelauncher.com", games: str = "") -> bytes:
     """The /wrath/modes page. css is the portal's LEYLINE_CSS with its art filled in, art_url(name) the
     art route, have(name) whether that art file is there, card_meta(path, title) the link-preview tags,
     public_host the site's name for the full links in the Share boxes. The site's nav and footer are put

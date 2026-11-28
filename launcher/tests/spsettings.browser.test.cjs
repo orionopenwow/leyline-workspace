@@ -380,7 +380,7 @@ test('one Friends area on the Single player page: invite, friends on your world,
   // the parts in one panel, in reading order, after the settings and the world's mods (spmods.js #spm)
   const order = await page.evaluate(() => [...document.querySelectorAll('#page-single > .panel')].map((p) => p.id));
   assert.deepEqual(order.slice(-3), ['oc-set', 'spm', 'spf']);
-  assert.deepEqual(await page.evaluate(() => [...document.getElementById('spf').children].map((c) => c.id || c.className)), ['spf-head', 'pf', 'wf', 'fw', 'lf']);
+  assert.deepEqual(await page.evaluate(() => [...document.getElementById('spf').children].map((c) => c.id || c.className)), ['spf-head', 'pf', 'wf', 'fw', 'lp', 'lf']);
   assert.equal(await page.textContent('#spf-title'), 'Friends');
   assert.equal(await page.$$eval('#spf h2', (h) => h.length), 1, 'one heading for the area');
   assert.match(await page.textContent('#pf'), /Invite a friend to your world/);

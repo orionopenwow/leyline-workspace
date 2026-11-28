@@ -6,8 +6,9 @@ A plain guide for players: how your launcher finds worlds and friends, and what 
 
 **Status, 27 Nov 2026:** Leyline runs no server and no relays of its own. Same-network joins and the hand-picked
 realm list **work today**. Finding signed records with no centre is **built and on by default** in the launcher
-(see "Finding realms with no centre" below), but there are no signed realm records on the network yet. The rest of
-this section is **coming** ([the way forward](way-forward.md)).
+(see "Finding realms with no centre" below), and so are launcher-to-launcher connections by key, friends relaying
+for friends, and community relays. Few signed realm records are out on the network yet: they appear as hosts list
+their worlds.
 
 ```
   You (launcher)  <---- straight to your friend's PC when it can ---->  Your friend's PC

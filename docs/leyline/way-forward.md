@@ -1,7 +1,7 @@
 # The way forward
 
-**Status, 27 Nov 2026:** a plan. The parts marked **Works today** are in the launcher now. Everything else is
-**Coming**, in the order below.
+**Status, 27 Nov 2026:** most of this is now in the launcher (the table below says what). What is left is marked
+**Coming**.
 
 Leyline's own server closed on 26 Nov 2026. This page says what Leyline becomes without it: a launcher that needs
 no server of ours for anything. Not to log in, not to find friends, not to keep your characters.
@@ -29,7 +29,12 @@ The rules we hold to:
 | Friendships you both sign, and removing a friend | Yes, kept on your two PCs | [Friends](friends.md) |
 | A friend on the same home network joins your world | Yes | [Play with friends](guide-play-with-friends.md) |
 | A friend keeps their character on your world | Yes | [Characters](characters.md) |
-| A friend far away joins your world | Your Den only, if you open two ports on your router. Everything else: coming | [Joining a world](joining.md) |
+| Your Passport: a 12-word recovery phrase, a key per device and per world, two friends as guardians | Yes | [Passport](passport.md) |
+| A world in three clicks, and a one-click invite link | Yes | [Host for friends](host-for-friends.md) |
+| A friend far away joins your world, launcher to launcher by key, or through a friend or a community relay | Built, and tested on one PC; the test between two homes is next. Hole punching through home routers: coming | [Joining a world](joining.md) |
+| Signed character saves, sealed backups on 3 friends, and moving a character to another of your worlds | Yes | [Characters](characters.md) |
+| Taking a character to a friend's world, and visits | Coming | [Characters](characters.md) |
+| Finding realms and friends through a public table and mirrors, with no centre | Yes, on by default | [The network](network.md) |
 | Community servers on the realm list | Yes, chosen by hand | [Play](play.md) |
 
 ## What is changing

@@ -704,44 +704,46 @@ FORWARD_ICONS = {
 SOON = "Coming"
 # (id, eyebrow, building now?, heading, lede, [(point, coming?)], docs page, picture, alt)
 FORWARD = (
-    ("passport", "The Passport", True, "Log in with no server",
+    ("passport", "The Passport", False, "Log in with no server",
      "Your Passport is a key on your PC. When you join a world, the host and your launcher sign a login agreement "
      "together, so you never type a password and no website decides who you are.",
      [("A key on your PC, made by the launcher", False),
-      ("A key for each device, and a separate key per world for privacy", True),
-      ("A 12-word recovery phrase you keep", True),
-      ("Friends as guardians: two of them co-sign a recovery", True)],
+      ("A key for each device, and a separate key per world for privacy", False),
+      ("A 12-word recovery phrase you keep", False),
+      ("Friends as guardians: two of them co-sign a recovery", False)],
      "/wrath/docs/passport", "passport.svg",
      "A crystal key in the middle, linked to a laptop and a phone on one side and to three worlds on the other, "
      "each with its own small key; two friends below sign together."),
-    ("joining", "Friends & joining", True, "Friends connect straight to each other",
+    ("joining", "Friends & joining", False, "Friends connect straight to each other",
      "Launchers find each other by Passport key, with no relay of ours in the middle. When a relay is needed, it "
      "only passes encrypted bytes.",
      [("Signed friendships, kept on your PC", False),
-      ("Same network first, then direct, then hole punching: about 9 in 10 connections can go direct", True),
-      ("If not, a friend relays for you, then any community relay", True),
+      ("Same network first, then straight to their launcher by key", False),
+      ("Hole punching through home routers", True),
+      ("If not, a friend relays for you, then any community relay", False),
       ("One-click invite links to your world", False)],
      "/wrath/docs/joining", "joining.svg",
      "Two launchers joined by a direct line carrying locked packets, with fallback routes below through a friend "
      "and through a relay that only sees locked data."),
-    ("characters", "Characters", True, "Characters that outlive any server",
-     "Your character is yours, not the server's. If a world shuts down, you will be able to take your character to "
-     "another one.",
+    ("characters", "Characters", False, "Characters that outlive any server",
+     "Your character is yours, not the server's. Every save is signed and backed up with friends, so if a world "
+     "shuts down, your character goes on.",
      [("When you host, your friends' characters are kept on your world for them", False),
-      ("Signed saves on your PC", True),
-      ("Sealed backups on 3 friends' launchers", True),
-      ("Move a character to another world if one shuts down", True),
+      ("Signed saves on your PC", False),
+      ("Sealed backups on 3 friends' launchers", False),
+      ("Move a character to another of your worlds", False),
+      ("Take a character to a friend's world", True),
       ("Gold never travels, and nothing is traded across worlds", False)],
      "/wrath/docs/characters", "characters.svg",
      "A sealed character crystal inside a shield, with locked copies on three friends' laptops and an arrow "
      "carrying it from one world to another."),
     ("network", "A network with no centre", False, "Nobody can switch it off, including us",
      "Every realm, relay and release is a signed record, and launchers pass the records to each other. A public "
-     "table and several mirrors will keep copies too; this site will be one mirror among many.",
+     "table and mirrors keep copies too, and this site is just one of them.",
      [("Signed records for every realm, relay and release", False),
       ("Passed from launcher to launcher", False),
-      ("A public distributed table to find them", True),
-      ("Several mirrors, this site among them", True)],
+      ("A public distributed table to find them", False),
+      ("Mirrors of the records, this site among them", False)],
      "/wrath/docs/network", "network.svg",
      "A wide mesh of launchers linked to their neighbours, with no node in the middle and signed records "
      "travelling along the lines."),
